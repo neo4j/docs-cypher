@@ -1,0 +1,240 @@
+:description: The `RETURN` clause defines what to include in the query result set.
+
+[[query-return]]
+= RETURN
+
+[abstract]
+--
+The `RETURN` clause defines what to include in the query result set.
+--
+
+In the `RETURN` part of your query, you define which parts of the pattern you are interested in.
+It can be nodes, relationships, or properties on these.
+
+[TIP]
+====
+If what you actually want is the value of a property, make sure to not return the full node/relationship.
+This will improve performance.
+====
+
+image:graph_return_clause.svg[]
+
+////
+CREATE
+  (a {name: 'A', happy: 'Yes!', age: 55}),
+  (b {name: 'B'}),
+  (a)-[:KNOWS]->(b),
+  (a)-[:BLOCKS]->(b)
+////
+
+
+[[return-nodes]]
+== Return nodes
+
+To return a node, list it in the `RETURN` statement.
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n {name: 'B'})
+RETURN n
+----
+
+The example will return the node.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +n+
+| +Node[1]{name:"B"}+
+1+d|Rows: 1
+|===
+
+
+[[return-relationships]]
+== Return relationships
+
+To return a relationship, just include it in the `RETURN` list.
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n {name: 'A'})-[r:KNOWS]->(c)
+RETURN r
+----
+
+The relationship is returned by the example.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +r+
+| +:KNOWS[0]{}+
+1+d|Rows: 1
+|===
+
+
+[[return-property]]
+== Return property
+
+To return a property, use the dot separator, like this:
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n {name: 'A'})
+RETURN n.name
+----
+
+The value of the property `name` gets returned.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +n.name+
+| +"A"+
+1+d|Rows: 1
+|===
+
+
+[[return-all-elements]]
+== Return all elements
+
+When you want to return all nodes, relationships and paths found in a query, you can use the `*` symbol.
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH p = (a {name: 'A'})-[r]->(b)
+RETURN *
+----
+
+This returns the two nodes, the relationship and the path used in the query.
+
+.Result
+[role="queryresult",options="header,footer",cols="4*<m"]
+|===
+| +a+ | +b+ | +p+ | +r+
+| +Node[0]{name:"A",age:55,happy:"Yes!"}+ | +Node[1]{name:"B"}+ | +(0)-[BLOCKS,1]->(1)+ | +:BLOCKS[1]{}+
+| +Node[0]{name:"A",age:55,happy:"Yes!"}+ | +Node[1]{name:"B"}+ | +(0)-[KNOWS,0]->(1)+ | +:KNOWS[0]{}+
+4+d|Rows: 2
+|===
+
+
+[[return-variable-with-uncommon-characters]]
+== Variable with uncommon characters
+
+To introduce a placeholder that is made up of characters that are not contained in the English alphabet, you can use the ``` to enclose the variable, like this:
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (`This isn\'t a common variable`)
+WHERE `This isn\'t a common variable`.name = 'A'
+RETURN `This isn\'t a common variable`.happy
+----
+
+The node with name "A" is returned.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +`This isn\'t a common variable`.happy+
+| +"Yes!"+
+1+d|Rows: 1
+|===
+
+
+[[return-column-alias]]
+== Column alias
+
+If the name of the column should be different from the expression used, you can rename it by using `AS` <new name>.
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (a {name: 'A'})
+RETURN a.age AS SomethingTotallyDifferent
+----
+
+Returns the age property of a node, but renames the column.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +SomethingTotallyDifferent+
+| +55+
+1+d|Rows: 1
+|===
+
+
+[[return-optional-properties]]
+== Optional properties
+
+If a property might or might not be there, you can still select it as usual.
+It will be treated as `null` if it is missing.
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n)
+RETURN n.age
+----
+
+This example returns the age when the node has that property, or `null` if the property is not there.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +n.age+
+| +55+
+| +<null>+
+1+d|Rows: 2
+|===
+
+
+[[return-other-expressions]]
+== Other expressions
+
+Any expression can be used as a return item -- literals, predicates, properties, functions, and everything else.
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (a {name: 'A'})
+RETURN a.age > 30, "I'm a literal", [p=(a)-->() | p] AS `(a)-->()`
+----
+
+Returns a predicate, a literal and function call with a pattern expression parameter.
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| +a.age > 30+ | +"I'm a literal"+ | +(a)-->()+
+| +true+ | +"I'm a literal"+ | +[(0)-[BLOCKS,1]->(1),(0)-[KNOWS,0]->(1)]+
+3+d|Rows: 1
+|===
+
+
+[[return-unique-results]]
+== Unique results
+
+`DISTINCT` retrieves only unique rows depending on the columns that have been selected to output.
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (a {name: 'A'})-->(b)
+RETURN DISTINCT b
+----
+
+The node named "B" is returned by the query, but only once.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +b+
+| +Node[1]{name:"B"}+
+1+d|Rows: 1
+|===
+

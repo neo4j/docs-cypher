@@ -1,0 +1,593 @@
+:description: Predicates are boolean functions that return `true` or `false` for a given set of non-`null` input.
+
+[[query-functions-predicate]]
+= Predicate functions
+
+[abstract]
+--
+Predicates are boolean functions that return `true` or `false` for a given set of non-`null` input.
+They are most commonly used to filter out paths in the `WHERE` part of a query.
+--
+
+Functions:
+
+* xref::functions/predicate.adoc#functions-all[all()]
+* xref::functions/predicate.adoc#functions-any[any()]
+* xref::functions/predicate.adoc#functions-exists[exists()]
+* xref::functions/predicate.adoc#functions-isempty[isEmpty()]
+* xref::functions/predicate.adoc#functions-none[none()]
+* xref::functions/predicate.adoc#functions-single[single()]
+
+image:graph_predicate_functions.svg[]
+
+////
+CREATE
+  (alice {name:'Alice', age: 38, eyes: 'brown'}),
+  (bob {name: 'Bob', age: 25, eyes: 'blue'}),
+  (charlie {name: 'Charlie', age: 53, eyes: 'green'}),
+  (daniel {name: 'Daniel', age: 54, eyes: 'brown', liked_colors: []}),
+  (eskil {name: 'Eskil', age: 41, eyes: 'blue', liked_colors: ['pink', 'yellow', 'black']}),
+  (frank {alias: 'Frank', age: 61, eyes: '', liked_colors: ['blue', 'green']}),
+  (alice)-[:KNOWS]->(bob),
+  (grace:Person),
+  (alice)-[:KNOWS]->(charlie),
+  (bob)-[:KNOWS]->(daniel),
+  (charlie)-[:KNOWS]->(daniel),
+  (bob)-[:MARRIED]->(eskil)
+////
+
+
+[[functions-all]]
+== all()
+
+The function `all()` returns `true` if the predicate holds for all elements in the given list.
+`null` is returned if the list is `null` or all of its elements are `null`.
+
+*Syntax:*
+
+[source, syntax, role="noheader"]
+----
+all(variable IN list WHERE predicate)
+----
+
+*Returns:*
+
+|===
+
+| A Boolean.
+
+|===
+
+*Arguments:*
+
+[options="header"]
+|===
+
+| Name | Description
+
+| `list`
+a|
+An expression that returns a list.
+A single element cannot be explicitly passed as a literal in the cypher statement.
+However, an implicit conversion will happen for single elements when passing node properties during cypher execution.
+
+| `variable`
+| A variable that can be used from within the predicate.
+
+| `predicate`
+| A predicate that is tested against all items in the list.
+
+|===
+
+
+.+all()+
+======
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH p = (a)-[*1..3]->(b)
+WHERE
+  a.name = 'Alice'
+  AND b.name = 'Daniel'
+  AND all(x IN nodes(p) WHERE x.age > 30)
+RETURN p
+----
+
+All nodes in the returned paths will have a property `age` with a value larger than `30`.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+
+| +p+
+| +(0)-[KNOWS,1]->(2)-[KNOWS,3]->(3)+
+1+d|Rows: 1
+
+|===
+
+======
+
+
+[[functions-any]]
+== any()
+
+The function `any()` returns `true` if the predicate holds for at least one element in the given list.
+`null` is returned if the list is `null` or all of its elements are `null`.
+
+*Syntax:*
+
+[source, syntax, role="noheader"]
+----
+any(variable IN list WHERE predicate)
+----
+
+*Returns:*
+
+|===
+
+| A Boolean.
+
+|===
+
+*Arguments:*
+
+[options="header"]
+|===
+| Name | Description
+
+| `list`
+a|
+An expression that returns a list.
+A single element cannot be explicitly passed as a literal in the cypher statement.
+However, an implicit conversion will happen for single elements when passing node properties during cypher execution.
+
+| `variable`
+| A variable that can be used from within the predicate.
+
+| `predicate`
+| A predicate that is tested against all items in the list.
+
+|===
+
+
+.+any()+
+======
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n)
+WHERE any(color IN n.liked_colors WHERE color = 'yellow')
+RETURN n
+----
+
+The query returns nodes with the property `liked_colors` (as a list), where at least one element has the value `'yellow'`.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+
+| +n+
+| +Node[4]{eyes:"blue",liked_colors:["pink","yellow","black"],name:"Eskil",age:41}+
+1+d|Rows: 1
+
+|===
+
+======
+
+
+[[functions-exists]]
+== exists()
+
+The function `exists()` returns `true` if a match for the given pattern exists in the graph, or if the specified property exists in the node, relationship or map.
+`null` is returned if the input argument is `null`.
+
+*Syntax:*
+
+[source, syntax, role="noheader"]
+----
+exists(pattern-or-property)
+----
+
+*Returns:*
+
+|===
+
+| A Boolean.
+
+|===
+
+*Arguments:*
+
+[options="header"]
+|===
+| Name | Description
+
+| `pattern-or-property`
+| A pattern or a property (in the form 'variable.prop').
+
+|===
+
+
+.+exists()+
+======
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n)
+WHERE n.name IS NOT NULL
+RETURN
+  n.name AS name,
+  exists((n)-[:MARRIED]->()) AS is_married
+----
+
+The names of all nodes with the `name` property are returned, along with a boolean (`true` or `false`) indicating if they are married.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+
+| +name+ | +is_married+
+| +"Alice"+ | +false+
+| +"Bob"+ | +true+
+| +"Charlie"+ | +false+
+| +"Daniel"+ | +false+
+| +"Eskil"+ | +false+
+2+d|Rows: 5
+
+|===
+
+======
+
+
+.+exists()+
+======
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH
+  (a),
+  (b)
+WHERE
+  exists(a.name)
+  AND NOT exists(b.name)
+OPTIONAL MATCH (c:DoesNotExist)
+RETURN
+  a.name AS a_name,
+  b.name AS b_name,
+  exists(b.name) AS b_has_name,
+  c.name AS c_name,
+  exists(c.name) AS c_has_name
+ORDER BY a_name, b_name, c_name
+LIMIT 1
+----
+
+Three nodes are returned: one with a property `name`, one without a property `name`, and one that does not exist (e.g., is `null`).
+This query exemplifies the behavior of `exists()` when operating on `null` nodes.
+
+.Result
+[role="queryresult",options="header,footer",cols="5*<m"]
+|===
+
+| +a_name+ | +b_name+ | +b_has_name+ | +c_name+ | +c_has_name+
+| +"Alice"+ | +<null>+ | +false+ | +<null>+ | +<null>+
+5+d|Rows: 1
+
+|===
+
+======
+
+[NOTE]
+====
+Note that the `exists()` function is deprecated for property input.
+Please use the xref::syntax/operators.adoc#cypher-comparison[`IS NOT NULL` predicate] instead.
+====
+
+
+[[functions-isempty]]
+== isEmpty()
+
+The function `isEmpty()` returns `true` if the given list or map contains no elements or if the given string contains no characters.
+
+*Syntax:*
+
+[source, syntax, role="noheader"]
+----
+isEmpty(list)
+----
+
+*Returns:*
+
+|===
+
+| A Boolean.
+
+|===
+
+*Arguments:*
+
+[options="header"]
+|===
+| Name | Description
+
+| `list`
+| An expression that returns a list.
+
+|===
+
+
+.+isEmpty(list)+
+======
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n)
+WHERE NOT isEmpty(n.liked_colors)
+RETURN n
+----
+
+The nodes with the property `liked_colors` being non-empty are returned.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +n+
+| +Node[4]{eyes:"blue",liked_colors:["pink","yellow","black"],name:"Eskil",age:41}+
+| +Node[5]{eyes:"",liked_colors:["blue","green"],alias:"Frank",age:61}+
+1+d|Rows: 2
+|===
+
+======
+
+
+*Syntax:*
+
+[source, syntax, role="noheader"]
+----
+isEmpty(map)
+----
+
+*Returns:*
+
+|===
+
+| A Boolean.
+
+|===
+
+*Arguments:*
+
+[options="header"]
+|===
+| Name | Description
+
+| `map`
+| An expression that returns a map.
+
+|===
+
+
+.+isEmpty(map)+
+======
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n)
+WHERE isEmpty(properties(n))
+RETURN n
+----
+
+Nodes that does not have any properties are returned.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+
+| +n+
+| +Node[6]{}+
+1+d|Rows: 1
+
+|===
+
+======
+
+
+*Syntax:*
+
+[source, syntax, role="noheader"]
+----
+isEmpty(string)
+----
+
+*Returns:*
+|===
+
+| A Boolean.
+
+|===
+
+*Arguments:*
+
+[options="header"]
+|===
+| Name | Description
+
+| `string`
+| An expression that returns a string.
+
+|===
+
+
+.+isEmpty(string)+
+======
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n)
+WHERE isEmpty(n.eyes)
+RETURN n.age AS age
+----
+
+The age are returned for each node that has a property `eyes` where the value evaulates to be empty (empty string).
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+
+| +age+
+| +61+
+1+d|Rows: 1
+
+|===
+
+======
+
+[NOTE]
+====
+The function `isEmpty()`, like most other Cypher functions, returns `null` if `null` is passed in to the function.
+That means that a predicate `isEmpty(n.eyes)` will filter out all nodes where the `eyes` property is not set.
+Thus, `isEmpty()` is not suited to test for `null`-values.
+`IS NULL` or `IS NOT NULL` should be used for that purpose.
+====
+
+
+[[functions-none]]
+== none()
+
+The function `none()` returns `true` if the predicate does _not_ hold for any element in the given list.
+`null` is returned if the list is `null` or all of its elements are `null`.
+
+*Syntax:*
+
+[source, syntax, role="noheader"]
+----
+none(variable IN list WHERE predicate)
+----
+
+*Returns:*
+|===
+
+|A Boolean.
+
+|===
+
+*Arguments:*
+
+[options="header"]
+|===
+| Name | Description
+
+| `list`
+a|
+An expression that returns a list.
+A single element cannot be explicitly passed as a literal in the cypher statement.
+However, an implicit conversion will happen for single elements when passing node properties during cypher execution.
+
+| `variable`
+| A variable that can be used from within the predicate.
+
+| `predicate`
+| A predicate that is tested against all items in the list.
+
+|===
+
+
+.+none()+
+======
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH p = (n)-[*1..3]->(b)
+WHERE
+  n.name = 'Alice'
+  AND none(x IN nodes(p) WHERE x.age = 25)
+RETURN p
+----
+
+No node in the returned paths has a property `age` with the value `25`.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+
+| +p+
+| +(0)-[KNOWS,1]->(2)+
+| +(0)-[KNOWS,1]->(2)-[KNOWS,3]->(3)+
+1+d|Rows: 2
+
+|===
+
+======
+
+
+[[functions-single]]
+== single()
+
+The function `single()` returns `true` if the predicate holds for exactly _one_ of the elements in the given list.
+`null` is returned if the list is `null` or all of its elements are `null`.
+
+*Syntax:*
+
+[source, syntax, role="noheader"]
+----
+single(variable IN list WHERE predicate)
+----
+
+*Returns:*
+|===
+
+| A Boolean.
+
+|===
+
+*Arguments:*
+[options="header"]
+|===
+| Name | Description
+
+| `list`
+| An expression that returns a list.
+
+| `variable`
+| A variable that can be used from within the predicate.
+
+| `predicate`
+| A predicate that is tested against all items in the list.
+
+|===
+
+
+.+single()+
+======
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH p = (n)-->(b)
+WHERE
+  n.name = 'Alice'
+  AND single(var IN nodes(p) WHERE var.eyes = 'blue')
+RETURN p
+----
+
+In every returned path there is exactly one node that has a property `eyes` with the value `'blue'`.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+
+| +p+
+| +(0)-[KNOWS,0]->(1)+
+1+d|Rows: 1
+
+|===
+
+======
+

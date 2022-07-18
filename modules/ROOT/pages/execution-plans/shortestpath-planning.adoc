@@ -1,0 +1,284 @@
+:description: Shortest path and how it is planned.
+
+[[query-shortestpath-planning]]
+= Shortest path planning
+
+[abstract]
+--
+Shortest path finding in Cypher and how it is planned.
+--
+
+Planning shortest paths in Cypher can lead to different query plans depending on the predicates that need to be evaluated.
+Internally, Neo4j will use a fast bidirectional breadth-first search algorithm if the predicates can be evaluated whilst searching for the path.
+Therefore, this fast algorithm will always be certain to return the right answer when there are universal predicates on the path; for example, when searching for the shortest path where all nodes have the `Person` label, or where there are no nodes with a `name` property.
+
+If the predicates need to inspect the whole path before deciding on whether it is valid or not, this fast algorithm cannot be relied on to find the shortest path, and Neo4j may have to resort to using a slower exhaustive depth-first search algorithm to find the path.
+This means that query plans for shortest path queries with non-universal predicates will include a fallback to running the exhaustive search to find the path should the fast algorithm not succeed.
+For example, depending on the data, an answer to a shortest path query with existential predicates -- such as the requirement that at least one node contains the property `name='Kevin Bacon'` -- may not be able to be found by the fast algorithm.
+In this case, Neo4j will fall back to using the exhaustive search to enumerate all paths and potentially return an answer.
+
+The running times of these two algorithms may differ by orders of magnitude, so it is important to ensure that the fast approach is used for time-critical queries.
+
+When the exhaustive search is planned, it is still only executed when the fast algorithm fails to find any matching paths.
+The fast algorithm is always executed first, since it is possible that it can find a valid path even though that could not be guaranteed at planning time.
+
+Please note that falling back to the exhaustive search may prove to be a very time consuming strategy in some cases; such as when there is no shortest path between two nodes.
+Therefore, in these cases, it is recommended to set `cypher.forbid_exhaustive_shortestpath` to `true`, as explained in xref:4.4@operations-manual:ROOT:reference/configuration-settings/index.adoc#config_cypher.forbid_exhaustive_shortestpath[Operations Manual -> Configuration settings].
+
+
+== Shortest path -- fast algorithm
+
+
+.Query evaluated with the fast algorith
+======
+
+////
+CREATE
+  (KevinB:Person {name: 'Kevin Bacon'}),
+  (JackN:Person {name: 'Jack Nicholson'}),
+  (Keanu:Person {name: 'Keanu Reeves'}),
+  (Al:Person {name: 'Al Pacino'}),
+  (NancyM:Person {name: 'Nancy Meyers'}),
+  (RobR:Person {name: 'Rob Reiner'}),
+  (Taylor:Person {name: 'Taylor Hackford'}),
+
+  (AFewGoodMen:Movie {title: 'A Few Good Men'}),
+  (JackN)-[:ACTED_IN {role: 'Col. Nathan R. Jessup'}]->(AFewGoodMen),
+  (KevinB)-[:ACTED_IN {role: 'Capt. Jack Ross'}]->(AFewGoodMen),
+  (RobR)-[:DIRECTED]->(AFewGoodMen),
+
+  (SomethingsGottaGive:Movie {title: 'Something´s Gotta Give'}),
+  (JackN)-[:ACTED_IN {role: 'Harry Sanborn'}]->(SomethingsGottaGive),
+  (Keanu)-[:ACTED_IN {role: 'Julian Mercer'}]->(SomethingsGottaGive),
+  (NancyM)-[:DIRECTED]->(SomethingsGottaGive),
+
+  (TheDevilsAdvocate:Movie {title: 'The Devil´s Advocate'}),
+  (Keanu)-[:ACTED_IN {role: 'Kevin Lomax'}]->(TheDevilsAdvocate),
+  (Al)-[:ACTED_IN {role: 'John Milton'}]->(TheDevilsAdvocate)
+
+CREATE INDEX FOR (n:Person)
+ON (n.name)
+////
+
+This query can be evaluated with the fast algorithm -- there are no predicates that need to see the whole path before being evaluated.
+
+.Query
+[source, cypher, role="noplay"]
+----
+MATCH
+  (KevinB:Person {name: 'Kevin Bacon'}),
+  (Al:Person {name: 'Al Pacino'}),
+  p = shortestPath((KevinB)-[:ACTED_IN*]-(Al))
+WHERE all(r IN relationships(p) WHERE r.role IS NOT NULL)
+RETURN p
+----
+
+.Query plan
+[source, query plan, role="noheader"]
+----
+Compiler CYPHER 4.4
+
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version 4.4
+
++---------------------+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| Operator            | Details                                                                                        | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Other         |
++---------------------+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| +ProduceResults     | p                                                                                              |              2 |    1 |       0 |                |                    1/0 |     0.159 | In Pipeline 1 |
+| |                   +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| +ShortestPath       | p = (KevinB)-[anon_0:ACTED_IN*]-(Al) WHERE all(r IN relationships(p) WHERE r.role IS NOT NULL) |              2 |    1 |      23 |           3176 |                        |           | In Pipeline 1 |
+| |                   +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| +MultiNodeIndexSeek | BTREE INDEX KevinB:Person(name) WHERE name = $autostring_0,                                    |              2 |    1 |       4 |            112 |                    1/1 |     0.233 | In Pipeline 0 |
+|                     | BTREE INDEX Al:Person(name) WHERE name = $autostring_1                                         |                |      |         |                |                        |           |               |
++---------------------+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+
+Total database accesses: 27, total allocated memory: 3240
+----
+
+======
+
+
+== Shortest path -- additional predicate checks on the paths
+
+Predicates used in the `WHERE` clause that apply to the shortest path pattern are evaluated before deciding what the shortest matching path is. 
+
+
+.Consider using the exhaustive search as a fallback
+======
+
+////
+CREATE
+  (KevinB:Person {name: 'Kevin Bacon'}),
+  (JackN:Person {name: 'Jack Nicholson'}),
+  (Keanu:Person {name: 'Keanu Reeves'}),
+  (Al:Person {name: 'Al Pacino'}),
+  (NancyM:Person {name: 'Nancy Meyers'}),
+  (RobR:Person {name: 'Rob Reiner'}),
+  (Taylor:Person {name: 'Taylor Hackford'}),
+
+  (AFewGoodMen:Movie {title: 'A Few Good Men'}),
+  (JackN)-[:ACTED_IN {role: 'Col. Nathan R. Jessup'}]->(AFewGoodMen),
+  (KevinB)-[:ACTED_IN {role: 'Capt. Jack Ross'}]->(AFewGoodMen),
+  (RobR)-[:DIRECTED]->(AFewGoodMen),
+
+  (SomethingsGottaGive:Movie {title: 'Something´s Gotta Give'}),
+  (JackN)-[:ACTED_IN {role: 'Harry Sanborn'}]->(SomethingsGottaGive),
+  (Keanu)-[:ACTED_IN {role: 'Julian Mercer'}]->(SomethingsGottaGive),
+  (NancyM)-[:DIRECTED]->(SomethingsGottaGive),
+
+  (TheDevilsAdvocate:Movie {title: 'The Devil´s Advocate'}),
+  (Keanu)-[:ACTED_IN {role: 'Kevin Lomax'}]->(TheDevilsAdvocate),
+  (Al)-[:ACTED_IN {role: 'John Milton'}]->(TheDevilsAdvocate)
+
+CREATE INDEX FOR (n:Person)
+ON (n.name)
+////
+
+.Query
+[source, cypher, role="noplay"]
+----
+MATCH
+  (KevinB:Person {name: 'Kevin Bacon'}),
+  (Al:Person {name: 'Al Pacino'}),
+  p = shortestPath((KevinB)-[*]-(Al))
+WHERE length(p) > 1
+RETURN p
+----
+
+This query, in contrast with the one above, needs to check that the whole path follows the predicate before we know if it is valid or not, and so the query plan will also include the fallback to the slower exhaustive search algorithm.
+
+.Query plan
+[source, query plan, role="noheader"]
+----
+Compiler CYPHER 4.4
+
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version 4.4
+
++--------------------------+-------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                 | Details                                                     | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Other               |
++--------------------------+-------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults          | p                                                           |              1 |    1 |       0 |                |                        |           | Fused in Pipeline 6 |
+| |                        +-------------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
+| +AntiConditionalApply    |                                                             |              1 |    1 |       0 |          41456 |                    0/0 |     0.496 | Fused in Pipeline 6 |
+| |\                       +-------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Top                   | anon_1 ASC LIMIT 1                                          |              2 |    0 |       0 |           4280 |                    0/0 |     0.000 | In Pipeline 5       |
+| | |                      +-------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Projection            | length(p) AS anon_1                                         |           7966 |    0 |       0 |                |                        |           | Fused in Pipeline 4 |
+| | |                      +-------------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
+| | +Filter                | length(p) > $autoint_2                                      |           7966 |    0 |       0 |                |                        |           | Fused in Pipeline 4 |
+| | |                      +-------------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
+| | +Projection            | (KevinB)-[anon_0*]-(Al) AS p                                |          26554 |    0 |       0 |                |                        |           | Fused in Pipeline 4 |
+| | |                      +-------------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
+| | +VarLengthExpand(Into) | (KevinB)-[anon_0*]-(Al)                                     |          26554 |    0 |       0 |                |                        |           | Fused in Pipeline 4 |
+| | |                      +-------------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
+| | +Argument              | KevinB, Al                                                  |              2 |    0 |       0 |              0 |                    0/0 |     0.000 | Fused in Pipeline 4 |
+| |                        +-------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Apply                   |                                                             |              2 |    1 |       0 |                |                    0/0 |     0.021 |                     |
+| |\                       +-------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Optional              | KevinB, Al                                                  |              2 |    1 |       0 |          37608 |                    0/0 |     0.148 | In Pipeline 3       |
+| | |                      +-------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +ShortestPath          | p = (KevinB)-[anon_0*]-(Al) WHERE length(p) > $autoint_2    |              1 |    1 |       1 |          32872 |                        |           | In Pipeline 2       |
+| | |                      +-------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Argument              | KevinB, Al                                                  |              2 |    1 |       0 |          24680 |                    0/0 |     0.032 | In Pipeline 1       |
+| |                        +-------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +MultiNodeIndexSeek      | BTREE INDEX KevinB:Person(name) WHERE name = $autostring_0, |              2 |    1 |       4 |            112 |                    2/0 |     0.330 | In Pipeline 0       |
+|                          | BTREE INDEX Al:Person(name) WHERE name = $autostring_1      |                |      |         |                |                        |           |                     |
++--------------------------+-------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 5, total allocated memory: 50144
+----
+
+======
+
+The way the bigger exhaustive query plan works is by using `Apply`/`Optional` to ensure that when the fast algorithm does not find any results, a `null` result is generated instead of simply stopping the result stream.
+On top of this, the planner will issue an `AntiConditionalApply`, which will run the exhaustive search if the path variable is pointing to `null` instead of a path.
+
+An `ErrorPlan` operator will appear in the execution plan in cases where:
+
+* `cypher.forbid_exhaustive_shortestpath` is set to `true`.
+* The fast algorithm is not able to find the shortest path.
+
+
+.Prevent the exhaustive search from being used as a fallback
+======
+
+////
+CREATE
+  (KevinB:Person {name: 'Kevin Bacon'}),
+  (JackN:Person {name: 'Jack Nicholson'}),
+  (Keanu:Person {name: 'Keanu Reeves'}),
+  (Al:Person {name: 'Al Pacino'}),
+  (NancyM:Person {name: 'Nancy Meyers'}),
+  (RobR:Person {name: 'Rob Reiner'}),
+  (Taylor:Person {name: 'Taylor Hackford'}),
+
+  (AFewGoodMen:Movie {title: 'A Few Good Men'}),
+  (JackN)-[:ACTED_IN {role: 'Col. Nathan R. Jessup'}]->(AFewGoodMen),
+  (KevinB)-[:ACTED_IN {role: 'Capt. Jack Ross'}]->(AFewGoodMen),
+  (RobR)-[:DIRECTED]->(AFewGoodMen),
+
+  (SomethingsGottaGive:Movie {title: 'Something´s Gotta Give'}),
+  (JackN)-[:ACTED_IN {role: 'Harry Sanborn'}]->(SomethingsGottaGive),
+  (Keanu)-[:ACTED_IN {role: 'Julian Mercer'}]->(SomethingsGottaGive),
+  (NancyM)-[:DIRECTED]->(SomethingsGottaGive),
+
+  (TheDevilsAdvocate:Movie {title: 'The Devil´s Advocate'}),
+  (Keanu)-[:ACTED_IN {role: 'Kevin Lomax'}]->(TheDevilsAdvocate),
+  (Al)-[:ACTED_IN {role: 'John Milton'}]->(TheDevilsAdvocate)
+
+CREATE INDEX FOR (n:Person)
+ON (n.name)
+////
+
+.Query
+[source, cypher, role="noplay"]
+----
+MATCH
+  (KevinB:Person {name: 'Kevin Bacon'}),
+  (Al:Person {name: 'Al Pacino'}),
+  p = shortestPath((KevinB)-[*]-(Al))
+WITH p
+WHERE length(p) > 1
+RETURN p
+----
+
+This query, just like the one above, needs to check that the whole path follows the predicate before we know if it is valid or not.
+However, the inclusion of the `WITH` clause means that the query plan will not include the fallback to the slower exhaustive search algorithm.
+Instead, any paths found by the fast algorithm will subsequently be filtered, which may result in no answers being returned.
+
+.Query plan
+[source, query plan, role="noheader"]
+----
+Compiler CYPHER 4.4
+
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version 4.4
+
++---------------------+-------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| Operator            | Details                                                     | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Other         |
++---------------------+-------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| +ProduceResults     | p                                                           |              1 |    1 |       0 |                |                    1/0 |     0.118 | In Pipeline 1 |
+| |                   +-------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| +Filter             | length(p) > $autoint_2                                      |              1 |    1 |       0 |                |                    0/0 |     0.063 | In Pipeline 1 |
+| |                   +-------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| +ShortestPath       | p = (KevinB)-[anon_0*]-(Al)                                 |              2 |    1 |       1 |           3176 |                        |           | In Pipeline 1 |
+| |                   +-------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| +MultiNodeIndexSeek | BTREE INDEX KevinB:Person(name) WHERE name = $autostring_0, |              2 |    1 |       4 |            112 |                    2/0 |     0.226 | In Pipeline 0 |
+|                     | BTREE INDEX Al:Person(name) WHERE name = $autostring_1      |                |      |         |                |                        |           |               |
++---------------------+-------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+
+Total database accesses: 5, total allocated memory: 3240
+----
+
+======
+

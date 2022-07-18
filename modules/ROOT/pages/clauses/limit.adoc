@@ -1,0 +1,148 @@
+:description: `LIMIT` constrains the number of returned rows.
+
+[[query-limit]]
+= LIMIT
+
+[abstract]
+--
+`LIMIT` constrains the number of returned rows.
+--
+
+`LIMIT` accepts any expression that evaluates to a positive integer -- however the expression cannot refer to nodes or relationships.
+
+image:graph_limit_clause.svg[]
+
+////
+CREATE
+  (a {name: 'A'}),
+  (b {name: 'B'}),
+  (c {name: 'C'}),
+  (d {name: 'D'}),
+  (e {name: 'E'}),
+  (a)-[:KNOWS]->(b),
+  (a)-[:KNOWS]->(c),
+  (a)-[:KNOWS]->(d),
+  (a)-[:KNOWS]->(e)
+////
+
+
+[[limit-subset-rows]]
+== Return a limited subset of the rows
+
+To return a limited subset of the rows, use this syntax:
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n)
+RETURN n.name
+ORDER BY n.name
+LIMIT 3
+----
+
+Limit to 3 rows by the example query.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +n.name+
+| +"A"+
+| +"B"+
+| +"C"+
+1+d|Rows: 3
+|===
+
+
+[[limit-subset-rows-using-expression]]
+== Using an expression with `LIMIT` to return a subset of the rows
+
+Limit accepts any expression that evaluates to a positive integer as long as it is not referring to any external variables:
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n)
+RETURN n.name
+ORDER BY n.name
+LIMIT 1 + toInteger(3 * rand())
+----
+
+Limit 1 row plus randomly 0, 1, or 2.
+So randomly limit to 1, 2, or 3 rows.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +n.name+
+| +"A"+
+| +"B"+
+| +"C"+
+1+d|Rows: 3
+|===
+
+
+[[limit-will-not-stop-side-effects]]
+== `LIMIT` will not stop side effects
+
+The use of `LIMIT` in a query will not stop side effects, like `CREATE`, `DELETE`, or `SET`, from happening if the limit is in the same query part as the side effect.
+This behaviour was undefined in Neo4j versions before `4.3`.
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE (n)
+RETURN n
+LIMIT 0
+----
+
+This query returns nothing, but creates one node:
+
+.Result
+[role="queryresult",options="footer",cols="1*<m"]
+|===
+1+|(empty result)
+1+d|Rows: 0 +
+Nodes created: 1
+|===
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n {name: 'A'})
+SET n.age = 60
+RETURN n
+LIMIT 0
+----
+
+This query returns nothing, but writes one property:
+
+.Result
+[role="queryresult",options="footer",cols="1*<m"]
+|===
+1+|(empty result)
+1+d|Rows: 0 +
+Properties set: 1
+|===
+
+If we want to limit the number of updates we can split the query using the `WITH` clause:
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n)
+WITH n LIMIT 1
+SET n.locked = true
+RETURN n
+----
+
+Writes `locked` property on one node and return that node:
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +n+
+| +Node[0]{locked:true,name:"A"}+
+1+d|Rows: 1 +
+Properties set: 1
+|===
+

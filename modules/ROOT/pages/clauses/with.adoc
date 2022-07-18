@@ -1,0 +1,184 @@
+:description: The `WITH` clause allows query parts to be chained together, piping the results from one to be used as starting points or criteria in the next.
+
+[[query-with]]
+= WITH
+
+[abstract]
+--
+The `WITH` clause allows query parts to be chained together, piping the results from one to be used as starting points or criteria in the next.
+--
+
+[NOTE]
+====
+It is important to note that `WITH` affects variables in scope.
+Any variables not included in the `WITH` clause are not carried over to the rest of the query.
+The wildcard `*` can be used to include all variables that are currently in scope.
+====
+
+Using `WITH`, you can manipulate the output before it is passed on to the following query parts.
+Manipulations can be done to the shape and/or number of entries in the result set.
+
+One common usage of `WITH` is to limit the number of entries passed on to other `MATCH` clauses.
+By combining `ORDER BY` and `LIMIT`, it is possible to get the top X entries by some criteria and then bring in additional data from the graph.
+
+`WITH` can also be used to introduce new variables containing the results of expressions for use in the following query parts (see xref::clauses/with.adoc#with-introduce-variables[Introducing variables for expressions]).
+For convenience, the wildcard `*` expands to all variables that are currently in scope and carries them over to the next query part (see xref::clauses/with.adoc#with-wildcard[Using the wildcard to carry over variables]).
+
+Another use is to filter on aggregated values.
+`WITH` is used to introduce aggregates which can then be used in predicates in `WHERE`.
+These aggregate expressions create new bindings in the results.
+
+`WITH` is also used to separate reading from updating of the graph.
+Every part of a query must be either read-only or write-only.
+When going from a writing part to a reading part, the switch must be done with a `WITH` clause.
+
+image:graph_with_clause.svg[]
+
+////
+CREATE
+  (a {name: 'Anders'}),
+  (b {name: 'Bossman'}),
+  (c {name: 'Caesar'}),
+  (d {name: 'David'}),
+  (e {name: 'George'}),
+  (a)-[:KNOWS]->(b),
+  (a)-[:BLOCKS]->(c),
+  (d)-[:KNOWS]->(a),
+  (b)-[:KNOWS]->(e),
+  (c)-[:KNOWS]->(e),
+  (b)-[:BLOCKS]->(d)
+////
+
+
+[[with-introduce-variables]]
+== Introducing variables for expressions
+
+You can introduce new variables for the result of evaluating expressions.
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (george {name: 'George'})<--(otherPerson)
+WITH otherPerson, toUpper(otherPerson.name) AS upperCaseName
+WHERE upperCaseName STARTS WITH 'C'
+RETURN otherPerson.name
+----
+
+This query returns the name of persons connected to *'George'* whose name starts with a `C`, regardless of capitalization.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +otherPerson.name+
+| +"Caesar"+
+1+d|Rows: 1
+|===
+
+
+[[with-wildcard]]
+== Using the wildcard to carry over variables
+
+You can use the wildcard `*` to carry over all variables that are in scope, in addition to introducing new variables.
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (person)-[r]->(otherPerson)
+WITH *, type(r) AS connectionType
+RETURN person.name, otherPerson.name, connectionType
+----
+
+This query returns the names of all related persons and the type of relationship between them.
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| +person.name+ | +otherPerson.name+ | +connectionType+
+| +"David"+ | +"Anders"+ | +"KNOWS"+
+| +"Anders"+ | +"Bossman"+ | +"KNOWS"+
+| +"Anders"+ | +"Caesar"+ | +"BLOCKS"+
+| +"Bossman"+ | +"David"+ | +"BLOCKS"+
+| +"Bossman"+ | +"George"+ | +"KNOWS"+
+| +"Caesar"+ | +"George"+ | +"KNOWS"+
+3+d|Rows: 6
+|===
+
+
+[[with-filter-on-aggregate-function-results]]
+== Filter on aggregate function results
+
+Aggregated results have to pass through a `WITH` clause to be able to filter on.
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (david {name: 'David'})--(otherPerson)-->()
+WITH otherPerson, count(*) AS foaf
+WHERE foaf > 1
+RETURN otherPerson.name
+----
+
+The name of the person connected to *'David'* with the at least more than one outgoing relationship will be returned by the query.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +otherPerson.name+
+| +"Anders"+
+1+d|Rows: 1
+|===
+
+
+[[with-sort-results-before-using-collect-on-them]]
+== Sort results before using collect on them
+
+You can sort your results before passing them to collect, thus sorting the resulting list.
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n)
+WITH n
+ORDER BY n.name DESC
+LIMIT 3
+RETURN collect(n.name)
+----
+
+A list of the names of people in reverse order, limited to 3, is returned in a list.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +collect(n.name)+
+| +["George","David","Caesar"]+
+1+d|Rows: 1
+|===
+
+
+[[with-limit-branching-of-path-search]]
+== Limit branching of a path search
+
+You can match paths, limit to a certain number, and then match again using those paths as a base, as well as any number of similar limited searches.
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n {name: 'Anders'})--(m)
+WITH m
+ORDER BY m.name DESC
+LIMIT 1
+MATCH (m)--(o)
+RETURN o.name
+----
+
+Starting at *'Anders'*, find all matching nodes, order by name descending and get the top result, then find all the nodes connected to that top result, and return their names.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +o.name+
+| +"Anders"+
+| +"Bossman"+
+1+d|Rows: 2
+|===
+

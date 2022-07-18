@@ -1,0 +1,321 @@
+:description: This section describes parameterized quering.
+
+[[cypher-parameters]]
+= Parameters
+
+[abstract]
+--
+This section describes parameterized quering.
+--
+
+[[cypher-parameters-introduction]]
+== Introduction
+
+Cypher supports querying with parameters.
+A parameterized query is a query in which placeholders are used for parameters and the parameter values are supplied at execution time.
+This means developers do not have to resort to string building to create a query.
+Additionally, parameters make caching of execution plans much easier for Cypher, thus leading to faster query execution times.
+
+Parameters can be used for:
+
+* literals and expressions
+* node and relationship ids
+
+Parameters cannot be used for the following constructs, as these form part of the query structure that is compiled into a query plan:
+
+* property keys; so, `MATCH (n) WHERE n.$param = 'something'` is invalid
+* relationship types
+* labels
+
+Parameters may consist of letters and numbers, and any combination of these, but cannot start with a number or a currency symbol.
+
+Setting parameters when running a query is dependent on the client environment.
+For example:
+
+* To set a parameter in Cypher Shell use `+:param name => 'Joe'+`.
+  For more information refer to xref:4.4@operations-manual:ROOT:tools/cypher-shell/index.adoc#cypher-shell-parameters[Operations Manual -> Cypher Shell - Query Parameters].
+* For Neo4j Browser use the same syntax as Cypher Shell, `+:param name => 'Joe'+`.
+* When using drivers, the syntax is dependent on the language choice.
+  See the examples in _Transactions_ in the link:{docs-base-uri}[Neo4j Driver manuals].
+* For usage via the Neo4j HTTP API, see the xref:4.4@http-api:ROOT:index.adoc#http-api[HTTP API documentation].
+
+We provide below a comprehensive list of examples of parameter usage.
+In these examples, parameters are given in JSON; the exact manner in which they are to be submitted depends upon the driver being used.
+
+[NOTE]
+====
+The old parameter syntax `+{param}+` was deprecated in Neo4j 3.0 and removed entirely in Neo4j 4.0.
+Using it will result in a syntax error.
+However, it is still possible to use it, with warnings, if you prefix the query with `CYPHER 3.5`.
+See xref::deprecations-additions-removals-compatibility.adoc#cypher-compatibility[Cypher Compatibility] for further information.
+====
+
+
+[[cypher-parameters-auto-parameterization]]
+== Auto-parameterization
+
+When a query does not use parameters, Cypher will try to infer parameters anyway.
+Each literal in the query is replaced with a parameter.
+This increases the re-usability of the computed plan for queries that are identical except for the literals.
+It is not recommended to rely on this behavior - users should rather use parameters where they think it is appropriate.
+
+[NOTE]
+====
+If at least one parameter is used in the query, auto-parameterization is turned off for that query.
+This means that any remaining literals will not be turned into parameters.
+====
+
+
+[[cypher-parameters-string-literal]]
+== String literal
+
+// neo4j-manual-modeling-antora/cypherManual/build/4.4/antora/modules/ROOT/partials/neo4j-cypher-docs/docs/dev/syntax/includes/exampleWithStringLiteralAsParameter.adoc
+
+.Parameters
+[source,javascript, indent=0]
+----
+{
+  "name": "Johan"
+}
+----
+
+.Query
+[source,cypher, indent=0]
+----
+MATCH (n:Person)
+WHERE n.name = $name
+RETURN n
+----
+
+You can use parameters in this syntax as well:
+
+// neo4j-manual-modeling-antora/cypherManual/build/4.4/antora/modules/ROOT/partials/neo4j-cypher-docs/docs/dev/syntax/includes/exampleWithShortSyntaxStringLiteralAsParameter.adoc
+
+.Parameters
+[source,javascript, indent=0]
+----
+{
+  "name": "Johan"
+}
+----
+
+.Query
+[source,cypher, indent=0]
+----
+MATCH (n:Person {name: $name})
+RETURN n
+----
+
+
+[[cypher-parameters-regular-expression]]
+== Regular expression
+
+// neo4j-manual-modeling-antora/cypherManual/build/4.4/antora/modules/ROOT/partials/neo4j-cypher-docs/docs/dev/syntax/includes/exampleWithParameterRegularExpression.adoc
+
+.Parameters
+[source,javascript, indent=0]
+----
+{
+  "regex": ".*h.*"
+}
+----
+
+.Query
+[source,cypher, indent=0]
+----
+MATCH (n:Person)
+WHERE n.name =~ $regex
+RETURN n.name
+----
+
+
+[[cypher-parameters-case-sensitive-pattern-matching]]
+== Case-sensitive string pattern matching
+
+// neo4j-manual-modeling-antora/cypherManual/build/4.4/antora/modules/ROOT/partials/neo4j-cypher-docs/docs/dev/syntax/includes/exampleWithParameterCSCIStringPatternMatching.adoc
+
+.Parameters
+[source,javascript, indent=0]
+----
+{
+  "name": "Michael"
+}
+----
+
+.Query
+[source,cypher, indent=0]
+----
+MATCH (n:Person)
+WHERE n.name STARTS WITH $name
+RETURN n.name
+----
+
+
+[[cypher-parameters-create-node-with-properties]]
+== Create node with properties
+
+// neo4j-manual-modeling-antora/cypherManual/build/4.4/antora/modules/ROOT/partials/neo4j-cypher-docs/docs/dev/syntax/includes/create_node_from_map.adoc 
+
+.Parameters
+[source,javascript, indent=0]
+----
+{
+  "props": {
+    "name": "Andy",
+    "position": "Developer"
+  }
+}
+----
+
+.Query
+[source,cypher, indent=0]
+----
+CREATE ($props)
+----
+
+
+[[cypher-parameters-create-multiple-nodes-with-properties]]
+== Create multiple nodes with properties
+
+// neo4j-manual-modeling-antora/cypherManual/build/4.4/antora/modules/ROOT/partials/neo4j-cypher-docs/docs/dev/syntax/includes/create_multiple_nodes_from_map.adoc
+
+.Parameters
+[source,javascript, indent=0]
+----
+{
+  "props": [ {
+    "awesome": true,
+    "name": "Andy",
+    "position": "Developer"
+  }, {
+    "children": 3,
+    "name": "Michael",
+    "position": "Developer"
+  } ]
+}
+----
+
+.Query
+[source,cypher, indent=0]
+----
+UNWIND $props AS properties
+CREATE (n:Person)
+SET n = properties
+RETURN n
+----
+
+
+[[cypher-parameters-setting-all-properties-on-a-node]]
+== Setting all properties on a node
+
+Note that this will replace all the current properties.
+
+// neo4j-manual-modeling-antora/cypherManual/build/4.4/antora/modules/ROOT/partials/neo4j-cypher-docs/docs/dev/syntax/includes/set_properties_on_a_node_from_a_map.adoc
+
+.Parameters
+[source,javascript, indent=0]
+----
+{
+  "props": {
+    "name": "Andy",
+    "position": "Developer"
+  }
+}
+----
+
+.Query
+[source,cypher, indent=0]
+----
+MATCH (n:Person)
+WHERE n.name = 'Michaela'
+SET n = $props
+----
+
+
+[[cypher-parameters-skip-and-limit]]
+== `SKIP` and `LIMIT`
+
+// neo4j-manual-modeling-antora/cypherManual/build/4.4/antora/modules/ROOT/partials/neo4j-cypher-docs/docs/dev/syntax/includes/exampleWithParameterForSkipLimit.adoc
+
+.Parameters
+[source,javascript, indent=0]
+----
+{
+  "s": 1,
+  "l": 1
+}
+----
+
+.Query
+[source,cypher, indent=0]
+----
+MATCH (n:Person)
+RETURN n.name
+SKIP $s
+LIMIT $l
+----
+
+
+[[cypher-parameters-node-id]]
+== Node id
+
+// neo4j-manual-modeling-antora/cypherManual/build/4.4/antora/modules/ROOT/partials/neo4j-cypher-docs/docs/dev/syntax/includes/exampleWithParameterForNodeId.adoc
+
+.Parameters
+[source,javascript, indent=0]
+----
+{
+  "id" : 0
+}
+----
+
+.Query
+[source,cypher, indent=0]
+----
+MATCH (n)
+WHERE id(n) = $id
+RETURN n.name
+----
+
+
+[[cypher-parameters-multiple-node-ids]]
+== Multiple node ids
+
+// example with parameter for multiple node IDs
+
+.Parameters
+[source,javascript, indent=0]
+----
+{
+  "ids" : [ 0, 1, 2 ]
+}
+----
+
+.Query
+[source,cypher, indent=0]
+----
+MATCH (n)
+WHERE id(n) IN $ids
+RETURN n.name
+----
+
+
+[[cypher-parameters-call-procedure]]
+== Calling procedures
+
+// example with parameter procedure call
+
+.Parameters
+[source,javascript, indent=0]
+----
+{
+  "indexname" : "My index"
+}
+----
+
+.Query
+[source,cypher, indent=0]
+----
+CALL db.resampleIndex($indexname)
+----
+

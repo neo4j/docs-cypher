@@ -1,0 +1,236 @@
+:description: `ORDER BY` is a sub-clause following `RETURN` or `WITH`, and it specifies that the output should be sorted and how.
+
+[[query-order]]
+= ORDER BY
+
+[abstract]
+--
+`ORDER BY` is a sub-clause following `RETURN` or `WITH`, and it specifies that the output should be sorted and how.
+--
+
+`ORDER BY` relies on comparisons to sort the output, see xref::syntax/operators.adoc#cypher-ordering[Ordering and comparison of values].
+You can sort on many different values, e.g. node/relationship properties, the node/relationship ids, or on most expressions.
+If you do not specify what to sort on, there is a risk that the results are arbitrarily sorted and therefore it is best practice to be specific when using `ORDER BY`.
+
+In terms of scope of variables, `ORDER BY` follows special rules, depending on if the projecting `RETURN` or `WITH` clause is either aggregating or `DISTINCT`.
+If it is an aggregating or `DISTINCT` projection, only the variables available in the projection are available.
+If the projection does not alter the output cardinality (which aggregation and `DISTINCT` do), variables available from before the projecting clause are also available.
+When the projection clause shadows already existing variables, only the new variables are available.
+
+Lastly, it is not allowed to use aggregating expressions in the `ORDER BY` sub-clause if they are not also listed in the projecting clause.
+This last rule is to make sure that `ORDER BY` does not change the results, only the order of them.
+
+The performance of Cypher queries using `ORDER BY` on node properties can be influenced by the existence and use of an index for finding the nodes.
+If the index can provide the nodes in the order requested in the query, Cypher can avoid the use of an expensive `Sort` operation.
+Read more about this capability in xref::query-tuning/indexes.adoc[The use of indexes].
+
+The following graph is used for the examples below:
+
+image:graph_order_by_clause.svg[]
+
+////
+CREATE
+  (a {name: 'A', age: 34, length: 170}),
+  (b {name: 'B', age: 36}),
+  (c {name: 'C', age: 32, length: 185}),
+  (a)-[:KNOWS]->(b),
+  (b)-[:KNOWS]->(c)
+////
+
+[NOTE]
+====
+Strings that contain special characters can have inconsistent or non-deterministic ordering in Neo4j.
+For details, see xref::syntax/values.adoc#property-types-sip-note[Sorting of special characters].
+====
+
+[[order-nodes-by-property]]
+== Order nodes by property
+
+`ORDER BY` is used to sort the output.
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n)
+RETURN n.name, n.age
+ORDER BY n.name
+----
+
+The nodes are returned, sorted by their name.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +n.name+ | +n.age+
+| +"A"+ | +34+
+| +"B"+ | +36+
+| +"C"+ | +32+
+2+d|Rows: 3
+|===
+
+
+[[order-nodes-by-multiple-properties]]
+== Order nodes by multiple properties
+
+You can order by multiple properties by stating each variable in the `ORDER BY` clause.
+Cypher will sort the result by the first variable listed, and for equals values, go to the next property in the `ORDER BY` clause, and so on.
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n)
+RETURN n.name, n.age
+ORDER BY n.age, n.name
+----
+
+This returns the nodes, sorted first by their age, and then by their name.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +n.name+ | +n.age+
+| +"C"+ | +32+
+| +"A"+ | +34+
+| +"B"+ | +36+
+2+d|Rows: 3
+|===
+
+
+[[order-nodes-by-id]]
+== Order nodes by ID
+
+`ORDER BY` is used to sort the output.
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n)
+RETURN n.name, n.age
+ORDER BY id(n)
+----
+
+The nodes are returned, sorted by their internal ID.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +n.name+ | +n.age+
+| +"A"+ | +34+
+| +"B"+ | +36+
+| +"C"+ | +32+
+2+d|Rows: 3
+|===
+
+[NOTE]
+====
+Keep in mind that Neo4j reuses its internal IDs when nodes and relationships are deleted.
+This means that applications using, and relying on, internal Neo4j IDs, are brittle or at risk of making mistakes.
+It is therefore recommended to use application-generated IDs instead.
+====
+
+
+[[order-nodes-by-expression]]
+== Order nodes by expression
+
+`ORDER BY` is used to sort the output.
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n)
+RETURN n.name, n.age, n.length
+ORDER BY keys(n)
+----
+
+The nodes are returned, sorted by their properties.
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| +n.name+ | +n.age+ | +n.length+
+| +"B"+ | +36+ | +<null>+
+| +"A"+ | +34+ | +170+
+| +"C"+ | +32+ | +185+
+3+d|Rows: 3
+|===
+
+
+[[order-nodes-in-descending-order]]
+== Order nodes in descending order
+
+By adding `DESC[ENDING]` after the variable to sort on, the sort will be done in reverse order.
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n)
+RETURN n.name, n.age
+ORDER BY n.name DESC
+----
+
+The example returns the nodes, sorted by their name in reverse order.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +n.name+ | +n.age+
+| +"C"+ | +32+
+| +"B"+ | +36+
+| +"A"+ | +34+
+2+d|Rows: 3
+|===
+
+
+[[order-null]]
+== Ordering `null`
+
+When sorting the result set, `null` will always come at the end of the result set for ascending sorting, and first when doing descending sort.
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n)
+RETURN n.length, n.name, n.age
+ORDER BY n.length
+----
+
+The nodes are returned sorted by the length property, with a node without that property last.
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| +n.length+ | +n.name+ | +n.age+
+| +170+ | +"A"+ | +34+
+| +185+ | +"C"+ | +32+
+| +<null>+ | +"B"+ | +36+
+3+d|Rows: 3
+|===
+
+
+[[order-with]]
+== Ordering in a `WITH` clause
+
+When `ORDER BY` is present on a `WITH` clause , the immediately following clause will receive records in the specified order.
+The order is not guaranteed to be retained after the following clause, unless that also has an `ORDER BY` subclause.
+The ordering guarantee can be useful to exploit by operations which depend on the order in which they consume values.
+For example, this can be used to control the order of items in the list produced by the `collect()` aggregating function.
+The `MERGE` and `SET` clauses also have ordering dependencies which can be controlled this way.
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n)
+WITH n ORDER BY n.age
+RETURN collect(n.name) AS names
+----
+
+The list of names built from the `collect` aggregating function contains the names in order of the `age` property.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +names+
+| +["C","A","B"]+
+1+d|Rows: 1
+|===
+

@@ -1,0 +1,868 @@
+:description: How to use Cypher to manage databases in Neo4j DBMS: creating, modifying, deleting, starting, and stopping individual databases within a single server.
+
+[[administration-databases]]
+= Database management
+
+[abstract]
+--
+This section explains how to use Cypher to manage databases in Neo4j DBMS: creating, modifying, deleting, starting, and stopping individual databases within a single server.
+--
+
+Neo4j supports the management of multiple databases within the same DBMS.
+The metadata for these databases, including the associated security model, is maintained in a special database called the `system` database.
+All multi-database administrative commands must be run against the `system` database.
+These administrative commands are automatically routed to the `system` database when connected to the DBMS over Bolt.
+
+The syntax of the database management commands is as follows:
+
+.Database management command syntax
+[options="header", width="100%", cols="1m,5a"]
+|===
+| Command | Syntax
+
+| SHOW DATABASE
+|
+[source, syntax, role="noheader"]
+----
+SHOW { DATABASE name \| DATABASES \| DEFAULT DATABASE \| HOME DATABASE }
+[WHERE expression]
+----
+
+[source, syntax, role="noheader"]
+----
+SHOW { DATABASE name \| DATABASES \| DEFAULT DATABASE \| HOME DATABASE }
+YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]
+[WHERE expression]
+[RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+----
+
+| CREATE DATABASE
+|
+[source, syntax, role="noheader"]
+----
+CREATE DATABASE name [IF NOT EXISTS]
+[OPTIONS "{" option: value[, ...] "}"]
+[WAIT [n [SEC[OND[S]]]]\|NOWAIT]
+----
+
+[source, syntax, role="noheader"]
+----
+CREATE OR REPLACE DATABASE name [WAIT [n [SEC[OND[S]]]]\|NOWAIT]
+----
+
+| ALTER DATABASE
+|
+[source, syntax, role="noheader"]
+----
+ALTER DATABASE name [IF EXISTS] SET ACCESS {READ ONLY \| READ WRITE}
+----
+
+| STOP DATABASE
+|
+[source, syntax, role="noheader"]
+----
+STOP DATABASE name [WAIT [n [SEC[OND[S]]]]\|NOWAIT]
+----
+
+| START DATABASE
+|
+[source, syntax, role="noheader"]
+----
+START DATABASE name [WAIT [n [SEC[OND[S]]]]\|NOWAIT]
+----
+
+| DROP DATABASE
+|
+[source, syntax, role="noheader"]
+----
+DROP DATABASE name [IF EXISTS] [{DUMP\|DESTROY} [DATA]] [WAIT [n [SEC[OND[S]]]]\|NOWAIT]
+----
+
+|===
+
+
+[[administration-databases-show-databases]]
+== Listing databases
+
+There are four different commands for listing databases:
+
+* Listing all databases.
+* Listing a particular database.
+* Listing the default database.
+* Listing the home database.
+
+These commands return the following columns:
+
+.Listing databases output
+[options="header", width="100%", cols="4m,6a"]
+|===
+| Column | Description
+
+| name
+| The name of the database. label:default-output[]
+
+| aliases
+| The names of any aliases the database may have. label:default-output[]
+
+| access
+| The database access mode, either `read-write` or `read-only`. label:default-output[]
+
+| databaseID
+| The database unique ID.
+
+| serverID
+| The server instance ID.
+
+| address
+|
+Instance address in a clustered DBMS.
+The default for a standalone database is `neo4j://localhost:7687`. label:default-output[]
+
+| role
+| The current role of the database (`standalone`, `leader`, `follower`, `read_replica`, `unknown`). label:default-output[]
+
+| requestedStatus
+| The expected status of the database. label:default-output[]
+
+| currentStatus
+| The actual status of the database. label:default-output[]
+
+| error
+| An error message explaining why the database is not in the correct state. label:default-output[]
+
+| default
+|
+Show if this is the default database for the DBMS. label:default-output[]
+
+[NOTE]
+====
+Not returned by `SHOW HOME DATABASE` or `SHOW DEFAULT DATABASE`.
+====
+
+| home
+|
+Shown if this is the home database for the current user. label:default-output[]
+
+[NOTE]
+====
+Not returned by `SHOW HOME DATABASE` or `SHOW DEFAULT DATABASE`.
+====
+
+| lastCommittedTxn
+| The ID of the last transaction received.
+
+| replicationLag
+|
+Number of transactions the current database is behind compared to the database on the primary instance.
+The lag is expressed in negative integers. In standalone environments, the value is always `0`.
+
+|===
+
+
+.+SHOW DATABASES+
+======
+
+A summary of all available databases can be displayed using the command `SHOW DATABASES`. 
+
+////
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+////
+
+.Query
+[source, cypher, indent=0]
+----
+SHOW DATABASES
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="10*<m"]
+|===
+
+| +name+ | +aliases+ | +access+ | +address+ | +role+ | +requestedStatus+ | +currentStatus+ | +error+ | +default+ | +home+
+| +"movies"+ | +["films","motion pictures"]+ | +"read-write"+ | +"localhost:7687"+ | +"standalone"+ | +"online"+ | +"online"+ | +""+ | +false+ | +false+
+| +"neo4j"+ | +[]+ | +"read-write"+ | +"localhost:7687"+ | +"standalone"+ | +"online"+ | +"online"+ | +""+ | +true+ | +true+
+| +"system"+ | +[]+ | +"read-write"+ | +"localhost:7687"+ | +"standalone"+ | +"online"+ | +"online"+ | +""+ | +false+ | +false+
+10+d|Rows: 3
+
+|===
+
+
+[NOTE]
+====
+The results of this command are filtered according to the `ACCESS` privileges of the user.
+However, users with `CREATE/DROP/ALTER DATABASE`, `SET DATABASE ACCESS`, or `DATABASE MANAGEMENT` privileges can see all databases regardless of their `ACCESS` privileges.
+If a user has not been granted `ACCESS` privilege to any databases, the command can still be executed but will only return the `system` database, which is always visible.
+====
+
+======
+
+
+.+SHOW DATABASES+
+======
+
+In this example, the detailed information for a particular database can be displayed using the command `SHOW DATABASE name YIELD *`.
+When a `YIELD` clause is provided, the full set of columns is returned.
+
+////
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+////
+
+.Query
+[source, cypher, indent=0]
+----
+SHOW DATABASE movies YIELD *
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="14*<m"]
+|===
+
+| +name+ | +aliases+ | +access+ | +databaseID+ | +serverID+ | +address+ | +role+ | +requestedStatus+ | +currentStatus+ | +error+ | +default+ | +home+ | +lastCommittedTxn+ | +replicationLag+
+| +"movies"+ | +["films","motion pictures"]+ | +"read-write"+ | +"4917FA22626DD62C8955FDE7D0CAE0C971E990C4DD1DDB3AECB8CE4C6798B484"+ | +"8af5d882-d4ce-4ce7-a3a5-7e550967f06b"+ | +"localhost:7687"+ | +"standalone"+ | +"online"+ | +"online"+ | +""+ | +false+ | +false+ | +3+ | +0+
+14+d|Rows: 1
+
+|===
+
+======
+
+
+.+SHOW DATABASES+
+======
+
+The number of databases can be seen using a `count()` aggregation with `YIELD` and `RETURN`.
+
+////
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+////
+
+.Query
+[source, cypher, indent=0]
+----
+SHOW DATABASES YIELD *
+RETURN count(*) AS count
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+
+| +count+
+| +3+
+1+d|Rows: 1
+
+|===
+
+======
+
+
+.+SHOW DEFAULT DATABASE+
+======
+
+The default database can be seen using the command `SHOW DEFAULT DATABASE`.
+
+////
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+////
+
+.Query
+[source, cypher, indent=0]
+----
+SHOW DEFAULT DATABASE
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="8*<m"]
+|===
+
+| +name+ | +aliases+ | +access+ | +address+ | +role+ | +requestedStatus+ | +currentStatus+ | +error+
+| +"neo4j"+ | +[]+ | +"read-write"+ | +"localhost:7687"+ | +"standalone"+ | +"online"+ | +"online"+ | +""+
+8+d|Rows: 1
+
+|===
+
+======
+
+
+.+SHOW HOME DATABASE+
+======
+
+The home database for the current user can be seen using the command `SHOW HOME DATABASE`.
+
+////
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+////
+
+.Query
+[source, cypher, indent=0]
+----
+SHOW HOME DATABASE
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="8*<m"]
+|===
+
+| +name+ | +aliases+ | +access+ | +address+ | +role+ | +requestedStatus+ | +currentStatus+ | +error+
+| +"neo4j"+ | +[]+ | +"read-write"+ | +"localhost:7687"+ | +"standalone"+ | +"online"+ | +"online"+ | +""+
+8+d|Rows: 1
+
+|===
+
+======
+
+
+.+SHOW DATABASES+
+======
+
+It is also possible to filter and sort the results by using `YIELD`, `ORDER BY`, and `WHERE`.
+
+////
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+////
+
+.Query
+[source, cypher, indent=0]
+----
+SHOW DATABASES YIELD name, currentStatus, requestedStatus
+ORDER BY currentStatus
+WHERE name CONTAINS 'e'
+----
+
+In this example:
+
+* The number of columns returned has been reduced with the `YIELD` clause.
+* The order of the returned columns has been changed.
+* The results have been filtered to only show database names containing `'e'`.
+* The results are ordered by the `currentStatus` column using `ORDER BY`.
+
+It is also possible to use `SKIP` and `LIMIT` to paginate the results.
+
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+
+| +name+ | +currentStatus+ | +requestedStatus+
+| +"movies"+ | +"online"+ | +"online"+
+| +"neo4j"+ | +"online"+ | +"online"+
+| +"system"+ | +"online"+ | +"online"+
+3+d|Rows: 3
+
+|===
+
+
+[NOTE]
+====
+Note that for failed databases, the `currentStatus` and `requestedStatus` are different.
+This often implies an error, but **does not always**.
+For example, a database may take a while to transition from `offline` to `online` due to performing recovery.
+Or, during normal operation a database's `currentStatus` may be transiently different from its `requestedStatus` due to a necessary automatic process, such as one Neo4j instance copying store files from another.
+The possible statuses are `initial`, `online`, `offline`, `store copying` and `unknown`.
+====
+
+======
+
+
+[role=enterprise-edition]
+[[administration-databases-create-database]]
+== Creating databases
+
+Databases can be created using `CREATE DATABASE`.
+
+
+.+CREATE DATABASE+
+======
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE DATABASE customers
+----
+
+.Result
+[source, result, role="noheader"]
+----
+System updates: 1
+Rows: 0
+----
+
+[NOTE]
+====
+Database names are subject to the xref::syntax/naming.adoc[standard Cypher restrictions on valid identifiers].
+
+The following naming rules apply:
+
+* Database name length must be between 3 and 63 characters.
+* The first character must be an ASCII alphabetic character.
+* Subsequent characters can be ASCII alphabetic (`mydatabase`), numeric characters (`mydatabase2`), dots (`main.db`), and dashes (enclosed within backticks, e.g., `CREATE DATABASE ++`main-db`++`).
+* Names cannot end with dots or dashes.
+* Names that begin with an underscore or with the prefix `system` are reserved for internal use.
+====
+
+======
+
+
+.+SHOW DATABASES+
+======
+
+When a database has been created, it will show up in the listing provided by the command `SHOW DATABASES`.
+
+////
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+////
+
+.Query
+[source, cypher, indent=0]
+----
+SHOW DATABASES
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="10*<m"]
+|===
+
+| +name+ | +aliases+ | +access+ | +address+ | +role+ | +requestedStatus+ | +currentStatus+ | +error+ | +default+ | +home+
+| +"customers"+ | +[]+ | +"read-write"+ | +"localhost:7687"+ | +"standalone"+ | +"online"+ | +"online"+ | +""+ | +false+ | +false+
+| +"movies"+ | +["films","motion pictures"]+ | +"read-write"+ | +"localhost:7687"+ | +"standalone"+ | +"online"+ | +"online"+ | +""+ | +false+ | +false+
+| +"neo4j"+ | +[]+ | +"read-write"+ | +"localhost:7687"+ | +"standalone"+ | +"online"+ | +"online"+ | +""+ | +true+ | +true+
+| +"system"+ | +[]+ | +"read-write"+ | +"localhost:7687"+ | +"standalone"+ | +"online"+ | +"online"+ | +""+ | +false+ | +false+
+10+d|Rows: 4
+
+|===
+
+======
+
+
+[role=enterprise-edition]
+[[administration-databases-create-database-existing]]
+=== Handling Existing Databases
+
+This command is optionally idempotent, with the default behavior to fail with an error if the database already exists.
+Appending `IF NOT EXISTS` to the command ensures that no error is returned and nothing happens should the database already exist.
+Adding `OR REPLACE` to the command will result in any existing database being deleted and a new one created.
+
+
+.+CREATE DATABASE+
+======
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE DATABASE customers IF NOT EXISTS
+----
+
+======
+
+
+.+CREATE OR REPLACE DATABASE+
+======
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE OR REPLACE DATABASE customers
+----
+
+This is equivalent to running `DROP DATABASE customers IF EXISTS` followed by `CREATE DATABASE customers`.
+
+[NOTE]
+====
+The `IF NOT EXISTS` and `OR REPLACE` parts of this command cannot be used together.
+====
+
+======
+
+
+[role=enterprise-edition]
+[[administration-databases-create-database-options]]
+=== Options
+
+The create database command can have a map of options, e.g. `OPTIONS {key: 'value'}`.
+
+
+[options="header"]
+|===
+
+| Key | Value | Description
+
+| `existingData`
+| `use`
+|
+Controls how the system handles existing data on disk when creating the database.
+Currently this is only supported with `existingDataSeedInstance` and must be set to `use` which indicates the existing data files should be used for the new database.
+
+| `existingDataSeedInstance`
+| instance ID of the cluster node
+|
+Defines which instance is used for seeding the data of the created database.
+The instance id can be taken from the id column of the `dbms.cluster.overview()` procedure. Can only be used in clusters.
+
+|===
+
+
+[NOTE]
+====
+The `existingData` and `existingDataSeedInstance` options cannot be combined with the `OR REPLACE` part of this command.
+====
+
+
+[role=enterprise-edition]
+[[administration-databases-alter-database]]
+== Altering databases
+
+Databases can be modified using the command `ALTER DATABASE`.
+For example, a database always has read-write access mode on creation, unless the configuration parameter `dbms.databases.default_to_read_only` is set to `true`.
+To change it to read-only, you can use the `ALTER DATABASE` command with the sub-clause `SET ACCESS READ ONLY`.
+Subsequently, the database access mode can be switched back to read-write using the sub-clause `SET ACCESS READ WRITE`.
+Altering the database access mode is allowed at all times, whether a database is online or offline. 
+
+Database access modes can also be managed using the configuration parameters `dbms.databases.default_to_read_only`, `dbms.databases.read_only`, and `dbms.database.writable`.
+For details, see xref:4.4@operations-manual:ROOT:manage-databases/configuration/index.adoc#manage-databases-parameters[Configuration parameters].
+If conflicting modes are set by the `ALTER DATABASE` command and the configuration parameters, i.e. one says read-write and the other read-only, the database will be read-only and prevent write queries.
+
+
+.+ALTER DATABASE+
+======
+
+////
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+////
+
+.Query
+[source, cypher, indent=0]
+----
+ALTER DATABASE customers SET ACCESS READ ONLY
+----
+
+.Result
+[source, result, role="noheader"]
+----
+System updates: 1
+Rows: 0
+----
+
+======
+
+
+.+SHOW DATABASES+
+======
+
+The database access mode can be seen in the `access` output column of the command `SHOW DATABASES`.
+
+////
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+////
+
+.Query
+[source, cypher, indent=0]
+----
+SHOW DATABASES yield name, access
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +name+ | +access+
+| +"customers"+ | +"read-only"+
+| +"movies"+ | +"read-write"+
+| +"neo4j"+ | +"read-write"+
+| +"system"+ | +"read-write"+
+2+d|Rows: 4
+|===
+
+======
+
+
+.+ALTER DATABASE+
+======
+
+This command is optionally idempotent, with the default behavior to fail with an error if the database does not exist.
+Appending `IF EXISTS` to the command ensures that no error is returned and nothing happens should the database not exist.
+
+////
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+////
+
+.Query
+[source, cypher, indent=0]
+----
+ALTER DATABASE nonExisting IF EXISTS
+SET ACCESS READ WRITE
+----
+
+======
+
+
+[role=enterprise-edition]
+[[administration-databases-stop-database]]
+== Stopping databases
+
+Databases can be stopped using the command `STOP DATABASE`.
+
+
+.+STOP DATABASE+
+======
+
+////
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+////
+
+.Query
+[source, cypher, indent=0]
+----
+STOP DATABASE customers
+----
+
+.Result
+[source, result, role="noheader"]
+----
+System updates: 1
+Rows: 0
+----
+
+======
+
+
+.+SHOW DATABASE+
+======
+
+The status of the stopped database can be seen using the command `SHOW DATABASE name`.
+
+////
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+////
+
+.Query
+[source, cypher, indent=0]
+----
+SHOW DATABASE customers
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="10*<m"]
+|===
+| +name+ | +aliases+ | +access+ | +address+ | +role+ | +requestedStatus+ | +currentStatus+ | +error+ | +default+ | +home+
+| +"customers"+ | +[]+ | +"read-only"+ | +"localhost:7687"+ | +"standalone"+ | +"offline"+ | +"offline"+ | +""+ | +false+ | +false+
+10+d|Rows: 1
+|===
+
+======
+
+
+[role=enterprise-edition]
+[[administration-databases-start-database]]
+== Starting databases
+
+Databases can be started using the command `START DATABASE`.
+
+
+.+START DATABASE+
+======
+
+.Query
+[source, cypher, indent=0]
+----
+START DATABASE customers
+----
+
+.Result
+[source, result, role="noheader"]
+----
+System updates: 1
+Rows: 0
+----
+
+======
+
+
+.+SHOW DATABASE+
+======
+
+The status of the started database can be seen using the command `SHOW DATABASE name`.
+
+.Query
+[source, cypher, indent=0]
+----
+SHOW DATABASE customers
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="10*<m"]
+|===
+| +name+ | +aliases+ | +access+ | +address+ | +role+ | +requestedStatus+ | +currentStatus+ | +error+ | +default+ | +home+
+| +"customers"+ | +[]+ | +"read-only"+ | +"localhost:7687"+ | +"standalone"+ | +"online"+ | +"online"+ | +""+ | +false+ | +false+
+10+d|Rows: 1
+|===
+
+======
+
+
+[role=enterprise-edition]
+[[administration-databases-drop-database]]
+== Deleting databases
+
+Databases can be deleted using the command `DROP DATABASE`.
+
+
+.+DROP DATABASE+
+======
+
+.Query
+[source, cypher, indent=0]
+----
+DROP DATABASE customers
+----
+
+.Result
+[source, result, role="noheader"]
+----
+System updates: 1
+Rows: 0
+----
+
+======
+
+
+.+SHOW DATABASES+
+======
+
+When a database has been deleted, it will no longer show up in the listing provided by the command `SHOW DATABASES`.
+
+////
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+////
+
+.Query
+[source, cypher, indent=0]
+----
+SHOW DATABASES
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="10*<m"]
+|===
+| +name+ | +aliases+ | +access+ | +address+ | +role+ | +requestedStatus+ | +currentStatus+ | +error+ | +default+ | +home+
+| +"movies"+ | +["films","motion pictures"]+ | +"read-write"+ | +"localhost:7687"+ | +"standalone"+ | +"online"+ | +"online"+ | +""+ | +false+ | +false+
+| +"neo4j"+ | +[]+ | +"read-write"+ | +"localhost:7687"+ | +"standalone"+ | +"online"+ | +"online"+ | +""+ | +true+ | +true+
+| +"system"+ | +[]+ | +"read-write"+ | +"localhost:7687"+ | +"standalone"+ | +"online"+ | +"online"+ | +""+ | +false+ | +false+
+10+d|Rows: 3
+|===
+
+======
+
+
+.+DROP DATABASE+
+======
+
+This command is optionally idempotent, with the default behavior to fail with an error if the database does not exist.
+Appending `IF EXISTS` to the command ensures that no error is returned and nothing happens should the database not exist.
+It will always return an error, if there is an existing alias that targets the database. In that case, the alias needs to be dropped before dropping the database.
+
+.Query
+[source, cypher, indent=0]
+----
+DROP DATABASE customers IF EXISTS
+----
+
+The `DROP DATABASE` command will remove a database entirely.
+
+======
+
+
+.+DROP DATABASE+
+======
+
+You can request that a dump of the store files is produced first, and stored in the path configured using the `dbms.directories.dumps.root` setting (by default `<neo4j-home>/data/dumps`).
+This can be achieved by appending `DUMP DATA` to the command (or `DESTROY DATA` to explicitly request the default behavior).
+These dumps are equivalent to those produced by `neo4j-admin dump` and can be similarly restored using `neo4j-admin load`.
+
+.Query
+[source, cypher, indent=0]
+----
+DROP DATABASE customers DUMP DATA
+----
+
+The options `IF EXISTS` and  `DUMP DATA`/ `DESTROY DATA` can also be combined.
+An example could look like this:
+
+.Query
+[source, cypher, indent=0]
+----
+DROP DATABASE customers IF EXISTS DUMP DATA
+----
+
+======
+
+
+[role=enterprise-edition]
+[[administration-wait-nowait]]
+== Wait options
+
+Aside from `SHOW DATABASES` and `ALTER DATABASE`, all database management commands accept an optional `WAIT`/`NOWAIT` clause. The `WAIT`/`NOWAIT` clause allows you to specify a time limit in which the command must complete and return.
+
+The options are:
+
+* `WAIT n SECONDS` - Return once completed or when the specified time limit of `n` seconds is up.
+* `WAIT` - Return once completed or when the default time limit of 300 seconds is up.
+* `NOWAIT` - Return immediately.
+
+A command using a `WAIT` clause will automatically commit the current transaction when it executes successfully, as the command needs to run immediately for it to be possible to `WAIT` for it to complete.
+Any subsequent commands executed will therefore be performed in a new transaction.
+This is different to the usual transactional behavior, and for this reason it is recommended that these commands be run in their own transaction.
+The default behavior is `NOWAIT`, so if no clause is specified the transaction will behave normally and the action is performed in the background post-commit.
+
+[NOTE]
+====
+A command with a `WAIT` clause may be interrupted whilst it is waiting to complete.
+In this event the command will continue to execute in the background and will not be aborted.
+====
+
+
+.+CREATE DATABASE+
+======
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE DATABASE slow WAIT 5 SECONDS
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="4*<m"]
+|===
+| +address+ | +state+ | +message+ | +success+
+| +"localhost:7687"+ | +"CaughtUp"+ | +"caught up"+ | +true+
+4+d|Rows: 1
+|===
+
+The `success` column provides an aggregate status of whether or not the command is considered successful and thus every row will have the same value.
+The intention of this column is to make it easy to determine, for example in a script, whether or not the command completed successfully without timing out.
+
+======
+

@@ -1,0 +1,2075 @@
+:description: This section explains how to manage indexes used for search performance.
+
+[[administration-indexes-search-performance]]
+= Indexes for search performance
+
+[abstract]
+--
+This section explains how to manage indexes used for search performance.
+--
+
+For query performance purposes, it is important to also understand how the indexes are used by the Cypher planner.
+Refer to xref::query-tuning/index.adoc[] for examples and in-depth discussions on how query plans result from different index and query scenarios.
+See specifically xref::query-tuning/indexes.adoc[The use of indexes] for examples of how various index scenarios result in different query plans.
+
+For information on index configuration and limitations, refer to xref:4.4@operations-manual:ROOT:performance/index-configuration/index.adoc[Operations Manual -> Index configuration].
+
+
+[[administration-indexes-types]]
+== Indexes (types and limitations)
+
+A database index is a redundant copy of some of the data in the database for the purpose of making searches of related data more efficient.
+This comes at the cost of additional storage space and slower writes, so deciding what to index and what not to index is an important and often non-trivial task.
+
+Once an index has been created, it will be managed and kept up to date by the DBMS.
+Neo4j will automatically pick up and start using the index once it has been created and brought online.
+
+There are multiple index types available: B-tree (deprecated), fulltext, lookup, and text index types.
+See xref::indexes-for-full-text-search.adoc[Full-text search index] for more information about fulltext indexes.
+Token lookup indexes contain nodes with one or more labels or relationship types, without regard for any properties.
+
+Cypher enables the creation of B-tree indexes on one or more properties for all nodes or relationships with a given label or relationship type:
+
+* An index created on a single property for any given label or relationship type is called a _single-property index_.
+* An index created on more than one property for any given label or relationship type is called a _composite index_.
+
+Differences in the usage patterns between composite and single-property indexes are described in xref::indexes-for-search-performance.adoc#administration-indexes-single-vs-composite-index[].
+
+Additionally, a text index is a kind of single-property index, with the limitation that it only recognizes properties with string values.
+Nodes or relationships with the indexed label or relationship type where the indexed property is of another value type are not included in the index.
+
+The following is true for indexes:
+
+* Best practice is to give the index a name when it is created.
+If the index is not explicitly named, it gets an auto-generated name.
+* The index name must be unique among both indexes and constraints.
+* Index creation is by default not idempotent, and an error will be thrown if you attempt to create the same index twice.
+Using the keyword `IF NOT EXISTS` makes the command idempotent, and no error will be thrown if you attempt to create the same index twice.
+
+
+[[administration-indexes-syntax]]
+== Syntax
+
+.Syntax for managing indexes
+[options="header", width="100%", cols="5a, 3, 3a"]
+|===
+| Command | Description | Comment
+
+| [source, cypher, role=noplay, indent=0]
+----
+CREATE [BTREE] INDEX [index_name] [IF NOT EXISTS]
+FOR (n:LabelName)
+ON (n.propertyName)
+[OPTIONS "{" option: value[, ...] "}"]
+----
+| Create a single-property index on nodes.
+
+Index provider and configuration can be specified using the `OPTIONS` clause.
+
+Explicit use of `BTREE` keyword or B-tree options are deprecated in 4.4 and will be replaced in 5.0.
+.8+.^| Best practice is to give the index a name when it is created.
+If the index is not explicitly named, it gets an auto-generated name.
+
+The index name must be unique among both indexes and constraints.
+
+The command is optionally idempotent, with the default behavior to throw an error if you attempt to create the same index twice.
+With `IF NOT EXISTS`, no error is thrown and nothing happens should an index with the same name or same schema and index type already exist.
+It may still throw an error if conflicting constraints exist, such as constraints with the same name or schema and backing index type.
+
+| [source, cypher, role=noplay, indent=0]
+----
+CREATE [BTREE] INDEX [index_name] [IF NOT EXISTS]
+FOR ()-"["r:TYPE_NAME"]"-()
+ON (r.propertyName)
+[OPTIONS "{" option: value[, ...] "}"]
+----
+| Create a single-property index on relationships.
+
+Index provider and configuration can be specified using the `OPTIONS` clause.
+
+Explicit use of `BTREE` keyword or B-tree options are deprecated in 4.4 and will be replaced in 5.0.
+
+| [source, cypher, role=noplay, indent=0]
+----
+CREATE [BTREE] INDEX [index_name] [IF NOT EXISTS]
+FOR (n:LabelName)
+ON (n.propertyName_1,
+    n.propertyName_2,
+    …
+    n.propertyName_n)
+[OPTIONS "{" option: value[, ...] "}"]
+----
+| Create a composite index on nodes.
+
+Index provider and configuration can be specified using the `OPTIONS` clause.
+
+Explicit use of `BTREE` keyword or B-tree options are deprecated in 4.4 and will be replaced in 5.0.
+
+| [source, cypher, role=noplay, indent=0]
+----
+CREATE [BTREE] INDEX [index_name] [IF NOT EXISTS]
+FOR ()-"["r:TYPE_NAME"]"-()
+ON (r.propertyName_1,
+    r.propertyName_2,
+    …
+    r.propertyName_n)
+[OPTIONS "{" option: value[, ...] "}"]
+----
+| Create a composite index on relationships.
+
+Index provider and configuration can be specified using the `OPTIONS` clause.
+
+Explicit use of `BTREE` keyword or B-tree options are deprecated in 4.4 and will be replaced in 5.0.
+
+| [source, cypher, role=noplay, indent=0]
+----
+CREATE LOOKUP INDEX [index_name] [IF NOT EXISTS]
+FOR (n)
+ON EACH labels(n)
+[OPTIONS "{" option: value[, ...] "}"]
+----
+| Create a node label lookup index.
+
+Index provider can be specified using the `OPTIONS` clause.
+
+| [source, cypher, role=noplay, indent=0]
+----
+CREATE LOOKUP INDEX [index_name] [IF NOT EXISTS]
+FOR ()-"["r"]"-()
+ON [EACH] type(r)
+[OPTIONS "{" option: value[, ...] "}"]
+----
+| Create a relationship type lookup index.
+
+Index provider can be specified using the `OPTIONS` clause.
+
+| [source, cypher, role=noplay, indent=0]
+----
+CREATE TEXT INDEX [index_name] [IF NOT EXISTS]
+FOR (n:LabelName)
+ON (n.propertyName)
+[OPTIONS "{" option: value[, ...] "}"]
+----
+| Create a text index on nodes where the property has a string value.
+
+Index provider can be specified using the `OPTIONS` clause.
+
+| [source, cypher, role=noplay, indent=0]
+----
+CREATE TEXT INDEX [index_name] [IF NOT EXISTS]
+FOR ()-"["r:TYPE_NAME"]"-()
+ON (r.propertyName)
+[OPTIONS "{" option: value[, ...] "}"]
+----
+| Create a text index on relationships where the property has a string value.
+
+Index provider can be specified using the `OPTIONS` clause.
+
+| [source, cypher, role=noplay, indent=0]
+----
+DROP INDEX index_name [IF EXISTS]
+----
+| Drop an index of any index type.
+| The command is optionally idempotent, with the default behavior to throw an error if you attempt to drop the same index twice.
+With `IF EXISTS`, no error is thrown and nothing happens should the index not exist.
+
+| [source, cypher, role=noplay, indent=0]
+----
+SHOW [ALL\|BTREE\|FULLTEXT\|LOOKUP\|TEXT] INDEX[ES]
+    [YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+    [WHERE expression]
+    [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+----
+| List indexes in the database, either all or filtered on index type.
+| When using the `RETURN` clause, the `YIELD` clause is mandatory and must not be omitted.
+
+| [source, cypher, role=noplay, indent=0]
+----
+DROP INDEX ON :LabelName(propertyName)
+----
+| Drop a single-property index on nodes without specifying a name.
+.2+.^| [deprecated]#This syntax is deprecated.#
+
+| [source, cypher, role=noplay, indent=0]
+----
+DROP INDEX ON :LabelName (n.propertyName_1,
+n.propertyName_2,
+…
+n.propertyName_n)
+----
+| Drop a composite index on nodes without specifying a name.
+|===
+
+Creating an index requires xref::access-control/database-administration.adoc#access-control-database-administration-index[the `CREATE INDEX` privilege],
+while dropping an index requires xref::access-control/database-administration.adoc#access-control-database-administration-index[the `DROP INDEX` privilege] and
+listing indexes require xref::access-control/database-administration.adoc#access-control-database-administration-index[the `SHOW INDEX` privilege].
+
+xref::query-tuning/using.adoc[Planner hints and the USING keyword] describes how to make the Cypher planner use specific indexes (especially in cases where the planner would not necessarily have used them).
+
+
+[[administration-indexes-single-vs-composite-index]]
+== Composite index limitations
+
+Like single-property B-tree indexes, composite B-tree indexes support all predicates:
+
+* equality check: `n.prop = value`
+* list membership check: `n.prop IN list`
+* existence check: `n.prop IS NOT NULL`
+* range search: `n.prop > value`
+* prefix search: `STARTS WITH`
+* suffix search: `ENDS WITH`
+* substring search: `CONTAINS`
+
+[NOTE]
+====
+For details about each operator, see xref::syntax/operators.adoc[Operators].
+====
+
+However, predicates might be planned as existence check and a filter.
+For most predicates, this can be avoided by following these restrictions:
+
+* If there is any `equality check` and `list membership check` predicates,
+they need to be for the first properties defined by the index.
+* There can be up to one `range search` or `prefix search` predicate.
+* There can be any number of `existence check` predicates.
+* Any predicate after a `range search`, `prefix search` or `existence check` predicate has to be an `existence check` predicate.
+
+However, the `suffix search` and `substring search` predicates are always planned as existence check and a filter and
+any predicates following after will therefore also be planned as such.
+
+For example, an index on nodes with `:Label(prop1,prop2,prop3,prop4,prop5,prop6)` and predicates:
+
+[source, cypher, role=noplay, indent=0]
+----
+WHERE n.prop1 = 'x' AND n.prop2 = 1 AND n.prop3 > 5 AND n.prop4 < 'e' AND n.prop5 = true AND n.prop6 IS NOT NULL
+----
+
+will be planned as:
+
+[source, cypher, role=noplay, indent=0]
+----
+WHERE n.prop1 = 'x' AND n.prop2 = 1 AND n.prop3 > 5 AND n.prop4 IS NOT NULL AND n.prop5 IS NOT NULL AND n.prop6 IS NOT NULL
+----
+
+with filters on `n.prop4 < 'e'` and `n.prop5 = true`, since `n.prop3` has a `range search` predicate.
+
+And an index on nodes with `:Label(prop1,prop2)` with predicates:
+
+[source, cypher, role=noplay, indent=0]
+----
+WHERE n.prop1 ENDS WITH 'x' AND n.prop2 = false
+----
+
+will be planned as:
+
+[source, cypher, role=noplay, indent=0]
+----
+WHERE n.prop1 IS NOT NULL AND n.prop2 IS NOT NULL
+----
+
+with filters on `n.prop1 ENDS WITH 'x'` and `n.prop2 = false`, since `n.prop1` has a `suffix search` predicate.
+
+Composite indexes require predicates on all properties indexed.
+If there are predicates on only a subset of the indexed properties, it will not be possible to use the composite index.
+To get this kind of fallback behavior, it is necessary to create additional indexes on the relevant sub-set of properties or on single properties.
+
+
+[[administration-indexes-examples]]
+== +CREATE INDEX+ examples
+
+* xref::indexes-for-search-performance.adoc#administration-indexes-create-a-single-property-b-tree-index-for-nodes[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-create-a-single-property-b-tree-index-for-relationships[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-create-a-single-property-b-tree-index-only-if-it-does-not-already-exist[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-create-a-single-property-b-tree-index-with-specified-index-provider[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-create-a-single-property-b-tree-index-with-specified-index-configuration[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-create-a-composite-b-tree-index-for-nodes[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-create-a-composite-b-tree-index-for-relationships[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-create-a-composite-b-tree-index-with-specified-index-provider-and-configuration[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-create-a-node-label-lookup-index[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-create-a-relationship-type-lookup-index[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-create-a-token-lookup-index-specifying-the-index-provider[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-create-a-node-text-index[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-create-a-relationship-text-index[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-create-a-text-index-only-if-it-does-not-already-exist[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-create-a-text-index-specifying-the-index-provider[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-failure-to-create-an-already-existing-index[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-failure-to-create-an-index-with-the-same-name-as-an-already-existing-index[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-failure-to-create-an-index-when-a-constraint-already-exists[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-failure-to-create-an-index-with-the-same-name-as-an-already-existing-constraint[]
+
+
+[discrete]
+[[administration-indexes-create-a-single-property-b-tree-index-for-nodes]]
+=== Create a single-property B-tree index for nodes
+
+A named B-tree index on a single property for all nodes with a particular label can be created with:
+
+[source, syntax, role="noheader"]
+----
+CREATE [BTREE] INDEX index_name FOR (n:Label) ON (n.property)
+----
+
+[NOTE]
+====
+The index is not immediately available, but is created in the background.
+====
+
+
+.+CREATE BTREE INDEX+
+======
+
+////
+CREATE (p0:Person {age: 35, name: 'Smith'})
+CREATE (p1:Person {age: 40, name: 'Jones'})
+////
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE INDEX node_index_name FOR (n:Person) ON (n.name)
+----
+
+Note that the index name must be unique.
+
+.Result
+[queryresult]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes added: 1
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-create-a-single-property-b-tree-index-for-relationships]]
+=== Create a single-property B-tree index for relationships
+
+A named B-tree index on a single property for all relationships with a particular relationship type can be created with:
+
+[source, syntax, role="noheader"]
+----
+CREATE [BTREE] INDEX index_name FOR ()-[r:TYPE]-() ON (r.property)
+----
+
+[NOTE]
+====
+The index is not immediately available, but is created in the background.
+====
+
+
+.+CREATE BTREE INDEX+
+======
+////
+CREATE (p0:Person {age: 35, name: 'Smith'})
+CREATE (p1:Person {age: 40, name: 'Jones'})
+CREATE (p0)-[:KNOWS {location: 'Earth', since: 1992}]->(p1)
+////
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE INDEX rel_index_name FOR ()-[r:KNOWS]-() ON (r.since)
+----
+
+Note that the index name must be unique.
+
+.Result
+[queryresult]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes added: 1
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-create-a-single-property-b-tree-index-only-if-it-does-not-already-exist]]
+=== Create a single-property B-tree index only if it does not already exist
+
+If it is not known whether an index exists or not, add `IF NOT EXISTS` to ensure it does.
+
+
+.+CREATE BTREE INDEX+
+======
+
+////
+CREATE (p0:Person {age: 35, name: 'Smith'})
+CREATE (p1:Person {age: 40, name: 'Jones'})
+CREATE (p0)-[:KNOWS {location: 'Earth', since: 1992}]->(p1)
+CREATE INDEX node_index_name FOR (n:Person) ON (n.name)
+//CREATE BTREE INDEX rel_index_name for ()-[r:KNOWS]-() ON (r.since)
+////
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE INDEX node_index_name IF NOT EXISTS FOR (n:Person) ON (n.surname)
+----
+
+Note that the index will not be created if there already exists an index with the same schema and type, same name or both.
+
+.Result
+[queryresult]
+----
++--------------------------------------------+
+| No data returned, and nothing was changed. |
++--------------------------------------------+
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-create-a-single-property-b-tree-index-with-specified-index-provider]]
+=== Create a single-property B-tree index with specified index provider label:deprecated[]
+
+To create a single property B-tree index with a specific index provider, the `OPTIONS` clause is used.
+Valid values for the index provider are `native-btree-1.0` and `lucene+native-3.0`, default is `native-btree-1.0`.
+
+
+.+CREATE BTREE INDEX+
+======
+
+////
+CREATE (p0:Person {age: 35, name: 'Smith'})
+CREATE (p1:Person {age: 40, name: 'Jones'})
+CREATE (p0)-[:TYPE {name: 'Example', since: 1992}]->(p1)
+////
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE BTREE INDEX index_with_provider FOR ()-[r:TYPE]-() ON (r.prop1)
+OPTIONS {indexProvider: 'native-btree-1.0'}
+----
+
+Can be combined with specifying index configuration.
+
+.Result
+[queryresult]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes added: 1
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-create-a-single-property-b-tree-index-with-specified-index-configuration]]
+=== Create a single-property B-tree index with specified index configuration label:deprecated[]
+
+To create a single property B-tree index with a specific index configuration, the `OPTIONS` clause is used.
+
+The valid configuration settings are:
+
+* `spatial.cartesian.min`
+* `spatial.cartesian.max`
+* `spatial.cartesian-3d.min`
+* `spatial.cartesian-3d.max`
+* `spatial.wgs-84.min`
+* `spatial.wgs-84.max`
+* `spatial.wgs-84-3d.min`
+* `spatial.wgs-84-3d.max`
+
+Non-specified settings have their respective default values.
+
+
+.+CREATE BTREE INDEX+
+======
+
+////
+CREATE (n0:Label {prop2: 20, age: 35, name: 'Smith'})
+CREATE (n1:Label {prop2: -30, age: 40, name: 'Jones'})
+////
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE BTREE INDEX index_with_config FOR (n:Label) ON (n.prop2)
+OPTIONS {
+  indexConfig: {
+    `spatial.cartesian.min`: [-100.0, -100.0],
+    `spatial.cartesian.max`: [100.0, 100.0]
+  }
+}
+----
+
+Can be combined with specifying index provider.
+
+.Result
+[queryresult]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes added: 1
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-create-a-composite-b-tree-index-for-nodes]]
+=== Create a composite B-tree index for nodes
+
+A named B-tree index on multiple properties for all nodes with a particular label -- i.e. a composite index -- can be created with:
+
+[source, syntax, role="noheader"]
+----
+CREATE INDEX index_name FOR (n:Label) ON (n.prop1, ..., n.propN)
+----
+
+Only nodes with the specified label and that contain all the properties in the index definition will be added to the index.
+
+[NOTE]
+====
+The composite index is not immediately available, but is created in the background.
+====
+
+
+.+CREATE BTREE INDEX+
+======
+
+The following statement will create a named composite index on all nodes labeled with `Person` and which have both an `age` and `country` property: 
+
+////
+CREATE (n0:Person {age: 35, name: 'Smith', country: 'Sweden'})
+CREATE (n1:Person {age: 40, name: 'Jones', country: 'Example'})
+////
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE INDEX node_index_name FOR (n:Person) ON (n.age, n.country)
+----
+
+Note that the index name must be unique.
+
+.Result
+[queryresult]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes added: 1
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-create-a-composite-b-tree-index-for-relationships]]
+=== Create a composite B-tree index for relationships
+
+A named B-tree index on multiple properties for all relationships with a particular relationship type -- i.e. a composite index -- can be created with `+CREATE INDEX index_name FOR ()-[r:TYPE]-() ON (r.prop1, ..., r.propN)+`.
+Only relationships with the specified type and that contain all the properties in the index definition will be added to the index.
+Note that the composite index is not immediately available, but is created in the background.
+
+
+.+CREATE BTREE INDEX+
+======
+
+The following statement will create a named composite index on all relationships labeled with `PURCHASED` and which have both a `date` and `amount` property: 
+
+////
+create BTREE index `index_44d2128f` for (n:`Person`) ON (n.`middlename`);
+create BTREE index `index_58a1c03e` for (n:`Person`) ON (n.`location`);
+create BTREE index `index_d7c12ba3` for (n:`Person`) ON (n.`highScore`);
+create BTREE index `index_deeafdb2` for (n:`Person`) ON (n.`firstname`);
+create TEXT index `index_763f72db` for (n:`Person`) ON (n.`middlename`);
+create TEXT index `index_eadb868e` for (n:`Person`) ON (n.`surname`);
+create (_0:`Person` {`age`:35, `country`:"UK", `firstname`:"John", `highScore`:54321, `middlename`:"Ron", `name`:"john", `surname`:"Smith"})
+create (_1:`Person` {`age`:40, `country`:"Sweden", `firstname`:"Andy", `highScore`:12345, `middlename`:"Mark", `name`:"andy", `surname`:"Jones"})
+create (_0)-[:`KNOWS` {`lastMet`:2021, `lastMetIn`:"Stockholm", `metIn`:"Malmo", `since`:1992}]->(_1)
+////
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE INDEX rel_index_name FOR ()-[r:PURCHASED]-() ON (r.date, r.amount)
+----
+
+Note that the index name must be unique.
+
+.Result
+[queryresult]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes added: 1
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-create-a-composite-b-tree-index-with-specified-index-provider-and-configuration]]
+=== Create a composite B-tree index with specified index provider and configuration label:deprecated[]
+
+To create a composite B-tree index with a specific index provider and configuration, the `OPTIONS` clause is used.
+Valid values for the index provider are `native-btree-1.0` and `lucene+native-3.0`, default is `native-btree-1.0`.
+The valid configuration settings are:
+
+* `spatial.cartesian.min`
+* `spatial.cartesian.max`
+* `spatial.cartesian-3d.min`
+* `spatial.cartesian-3d.max`
+* `spatial.wgs-84.min`
+* `spatial.wgs-84.max`
+* `spatial.wgs-84-3d.min`
+* `spatial.wgs-84-3d.max`
+
+Non-specified settings have their respective default values.
+
+
+.+CREATE BTREE INDEX+
+======
+
+////
+CREATE (n0:Label1 {prop1: 3, prop2: 'Green')
+CREATE (n1:Label1 {prop1: 5, prop2: 'Pink')
+////
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE INDEX index_with_options FOR (n:Label) ON (n.prop1, n.prop2)
+OPTIONS {
+ indexProvider: 'lucene+native-3.0',
+ indexConfig: {
+   `spatial.wgs-84.min`: [-100.0, -80.0],
+   `spatial.wgs-84.max`: [100.0, 80.0]
+  }
+}
+----
+
+Specifying index provider and configuration can be done individually.
+
+.Result
+[queryresult]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes added: 1
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-create-a-node-label-lookup-index]]
+=== Create a node label lookup index
+
+A named token lookup index for all nodes with one or more labels can be created with:
+
+[source, syntax, role="noheader"]
+----
+CREATE LOOKUP INDEX index_name FOR (n) ON EACH labels(n)
+----
+
+[NOTE]
+====
+The index is not immediately available, but is created in the background.
+====
+
+
+.+CREATE LOOKUP INDEX+
+======
+
+////
+CREATE (n0:Label1:Label2 {prop1: 3, prop2: 'Green')
+CREATE (n1:Label1:Label3 {prop1: 5, prop2: 'Pink')
+CREATE (n2:Label1 {prop1: 7, prop2: 'Blue')
+////
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE LOOKUP INDEX node_label_lookup_index FOR (n) ON EACH labels(n)
+----
+
+Note that it can only be created once and that the index name must be unique.
+
+.Result
+[queryresult]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes added: 1
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-create-a-relationship-type-lookup-index]]
+=== Create a relationship type lookup index
+
+A named token lookup index for all relationships with any relationship type can be created with:
+
+[source, syntax, role="noheader"]
+----
+CREATE LOOKUP INDEX index_name FOR ()-[r]-() ON EACH type(r)
+----
+
+[NOTE]
+====
+The index is not immediately available, but is created in the background.
+====
+
+.+CREATE LOOKUP INDEX+
+======
+
+////
+CREATE (n0:Label1:Label2 {prop1: 3, prop2: 'Green')
+CREATE (n1:Label1:Label3 {prop1: 5, prop2: 'Pink')
+CREATE (n2:Label1 {prop1: 7, prop2: 'Blue')
+CREATE (n0)-[TYPE1]->(n1)
+CREATE (n0)-[TYPE2]->(n2)
+////
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE LOOKUP INDEX rel_type_lookup_index FOR ()-[r]-() ON EACH type(r)
+----
+
+Note that it can only be created once and that the index name must be unique.
+
+.Result
+[queryresult]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes added: 1
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-create-a-token-lookup-index-specifying-the-index-provider]]
+=== Create a token lookup index specifying the index provider
+
+Token lookup indexes allow setting the index provider using the `OPTIONS` clause.
+Only one valid value exists for the index provider, `token-lookup-1.0`, which is the default value.
+
+////
+CREATE (n0:Label1:Label2 {prop1: 3, prop2: 'Green')
+CREATE (n1:Label1:Label3 {prop1: 5, prop2: 'Pink')
+CREATE (n2:Label1 {prop1: 7, prop2: 'Blue')
+////
+
+
+.+CREATE LOOKUP INDEX+
+======
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE LOOKUP INDEX node_label_lookup_index_2 FOR (n) ON EACH labels(n)
+OPTIONS {indexProvider: 'token-lookup-1.0'}
+----
+
+There is no supported index configuration for token lookup indexes.
+
+.Result
+[queryresult]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes added: 1
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-create-a-node-text-index]]
+=== Create a node text index
+
+A named text index on a single property for all nodes with a particular label can be created with:
+Text indexes only recognize string values, do not support multiple properties, and that the index name must be unique.
+
+[source, syntax, role="noheader"]
+----
+CREATE TEXT INDEX index_name FOR (n:Label) ON (n.property)
+----
+
+[NOTE]
+====
+The index is not immediately available, but is created in the background.
+====
+
+.+CREATE TEXT INDEX+
+======
+
+////
+CREATE (n0:Label1:Label2 {prop1: 3, prop2: 'Green')
+CREATE (n1:Label1:Label3 {prop1: 5, prop2: 'Pink')
+CREATE (n2:Label1 {prop1: 7, prop2: 'Blue')
+////
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE TEXT INDEX node_index_name FOR (n:Person) ON (n.nickname)
+----
+
+.Result
+[queryresult]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes added: 1
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-create-a-relationship-text-index]]
+=== Create a relationship text index
+
+A named text index on a single property for all relationships with a particular relationship type can be created with:
+
+[source, syntax, role="noheader"]
+----
+CREATE TEXT INDEX index_name FOR ()-[r:TYPE]-() ON (r.property)
+----
+
+[NOTE]
+====
+The index is not immediately available, but is created in the background.
+====
+
+.+CREATE TEXT INDEX+
+======
+
+////
+CREATE (n0:Label1:Label2 {prop1: 3, prop2: 'Green')
+CREATE (n1:Label1:Label3 {prop1: 5, prop2: 'Pink')
+CREATE (n2:Label1 {prop1: 7, prop2: 'Blue')
+CREATE (n0)-[:KNOWS {interest: 'tennis'}]->(n1)
+////
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE TEXT INDEX rel_index_name FOR ()-[r:KNOWS]-() ON (r.interest)
+----
+
+Note that text indexes only recognize string values, do not support multiple properties, and that the index name must be unique.
+
+.Result
+[queryresult]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes added: 1
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-create-a-text-index-only-if-it-does-not-already-exist]]
+=== Create a text index only if it does not already exist
+
+If it is not known whether an index exists or not, add `IF NOT EXISTS` to ensure it does.
+
+
+.+CREATE TEXT INDEX+
+======
+
+////
+CREATE (n0:Label1:Label2 {prop1: 3, prop2: 'Green')
+CREATE (n1:Label1:Label3 {prop1: 5, prop2: 'Pink')
+CREATE (n2:Label1 {prop1: 7, prop2: 'Blue')
+////
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE TEXT INDEX node_index_name IF NOT EXISTS FOR (n:Person) ON (n.nickname)
+----
+
+Note that the index will not be created if there already exists an index with the same schema and type, same name or both.
+
+.Result
+[queryresult]
+----
++--------------------------------------------+
+| No data returned, and nothing was changed. |
++--------------------------------------------+
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-create-a-text-index-specifying-the-index-provider]]
+=== Create a text index specifying the index provider
+
+To create a text index with a specific index provider, the `OPTIONS` clause is used.
+Only one valid value exists for the index provider, `text-1.0`, which is the default value.
+
+.+CREATE TEXT INDEX+
+======
+
+////
+CREATE (n0:Label1:Label2 {prop1: 3, prop2: 'Green')
+CREATE (n1:Label1:Label3 {prop1: 5, prop2: 'Pink')
+CREATE (n2:Label1 {prop1: 7, prop2: 'Blue')
+CREATE (n0)-[:TYPE1 {prop1: 'tennis'}]->(n1)
+////
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE TEXT INDEX index_with_provider FOR ()-[r:TYPE]-() ON (r.prop1)
+OPTIONS {indexProvider: 'text-1.0'}
+----
+
+There is no supported index configuration for text indexes.
+
+.Result
+[queryresult]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes added: 1
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-failure-to-create-an-already-existing-index]]
+=== Failure to create an already existing index
+
+Create an index on the property `title` on nodes with the `Book` label, when that index already exists.
+
+.+CREATE BTREE INDEX+
+======
+
+////
+CREATE (n0:Label1:Label2 {prop1: 3, prop2: 'Green')
+CREATE (n1:Label1:Label3 {prop1: 5, prop2: 'Pink')
+CREATE (n2:Label1 {prop1: 7, prop2: 'Blue')
+CREATE INDEX example_index FOR (n:Book) ON (n.title)
+////
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE INDEX bookTitleIndex FOR (book:Book) ON (book.title)
+----
+
+In this case the index can not be created because it already exists.
+
+.Error message
+[source, role=nocopy, indent=0]
+----
+There already exists an index (:Book {title}).
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-failure-to-create-an-index-with-the-same-name-as-an-already-existing-index]]
+=== Failure to create an index with the same name as an already existing index
+
+Create a named index on the property `numberOfPages` on nodes with the `Book` label, when an index with that name already exists.
+
+
+.+CREATE BTREE INDEX+
+======
+
+////
+CREATE (n0:Label1:Label2 {prop1: 3, prop2: 'Green')
+CREATE (n1:Label1:Label3 {prop1: 5, prop2: 'Pink')
+CREATE (n2:Label1 {prop1: 7, prop2: 'Blue')
+CREATE INDEX bookTitleIndex FOR (n:Label1) ON (b.prop1)
+////
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE INDEX indexOnBooks FOR (book:Book) ON (book.numberOfPages)
+----
+
+In this case the index can't be created because there already exists an index with that name.
+
+.Error message
+[source, role=nocopy, indent=0]
+----
+There already exists an index called 'indexOnBooks'.
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-failure-to-create-an-index-when-a-constraint-already-exists]]
+=== Failure to create an index when a constraint already exists
+
+Create an index on the property `isbn` on nodes with the `Book` label, when an index-backed constraint already exists on that schema.
+
+
+.+CREATE BTREE INDEX+
+======
+
+////
+CREATE CONSTRAINT ....
+////
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE INDEX bookIsbnIndex FOR (book:Book) ON (book.isbn)
+----
+
+In this case the index can not be created because a index-backed constraint already exists on that label and property combination.
+
+.Error message
+[source, role=nocopy, indent=0]
+----
+There is a uniqueness constraint on (:Book {isbn}), so an index is already created that matches this.
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-failure-to-create-an-index-with-the-same-name-as-an-already-existing-constraint]]
+=== Failure to create an index with the same name as an already existing constraint
+
+Create a named index on the property `numberOfPages` on nodes with the `Book` label, when a constraint with that name already exists.
+
+
+.+CREATE BTREE INDEX+
+======
+
+////
+CREATE CONSTRAINT ....
+////
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE INDEX bookRecommendations FOR (book:Book) ON (book.recommendations)
+----
+
+In this case the index can not be created because there already exists a constraint with that name.
+
+.Error message
+[source, role=nocopy, indent=0]
+----
+There already exists a constraint called 'bookRecommendations'.
+----
+
+======
+
+
+[[administration-indexes-list-indexes]]
+== +SHOW INDEXES+
+
+Listing indexes can be done with `SHOW INDEXES`, which will produce a table with the following columns:
+
+[NOTE]
+====
+The command `SHOW INDEXES` returns only the default output.
+For a full output use the optional `YIELD` command.
+Full output: `+SHOW INDEXES YIELD *+`.
+====
+
+.List indexes output
+[options="header", cols="4,6"]
+|===
+| Column | Description
+
+| `id`
+| The id of the index. label:default-output[]
+
+| `name`
+| Name of the index (explicitly set by the user or automatically assigned). label:default-output[]
+
+| `state`
+| Current state of the index. label:default-output[]
+
+| `populationPercent`
+| % of index population. label:default-output[]
+
+| `uniqueness`
+| Tells if the index is only meant to allow one value per key. label:default-output[]
+
+| `type`
+| The IndexType of this index (`BTREE`, `FULLTEXT`, `LOOKUP`, or `TEXT`). label:default-output[]
+
+| `entityType`
+| Type of entities this index represents (nodes or relationship). label:default-output[]
+
+| `labelsOrTypes`
+| The labels or relationship types of this index. label:default-output[]
+
+| `properties`
+| The properties of this index. label:default-output[]
+
+| `indexProvider`
+| The index provider for this index. label:default-output[]
+
+| `options`
+| The options passed to `CREATE` command.
+
+| `failureMessage`
+| The failure description of a failed index.
+
+| `createStatement`
+| Statement used to create the index.
+
+|===
+
+Listing indexes also allows for `WHERE` and `YIELD` clauses to filter the returned rows and columns.
+
+[NOTE]
+====
+While the command for listing indexes require the xref::access-control/database-administration.adoc#access-control-database-administration-index[`SHOW INDEX` privilege], the deprecated built-in procedures for listing indexes, such as `db.indexes`, work as before and are not affected by the privilege.
+====
+
+
+== +SHOW INDEXES+ examples
+
+* xref::indexes-for-search-performance.adoc#administration-indexes-listing-all-indexes[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-listing-indexes-with-filtering[]
+
+
+[discrete]
+[[administration-indexes-listing-all-indexes]]
+=== Listing all indexes
+
+To list all indexes with the default output columns, the `SHOW INDEXES` command can be used.
+If all columns are required, use `SHOW INDEXES YIELD *`.
+
+
+.+SHOW INDEXES+
+======
+
+////
+create BTREE index `index_44d2128f` for (n:`Person`) ON (n.`middlename`);
+create BTREE index `index_58a1c03e` for (n:`Person`) ON (n.`location`);
+create BTREE index `index_d7c12ba3` for (n:`Person`) ON (n.`highScore`);
+create BTREE index `index_deeafdb2` for (n:`Person`) ON (n.`firstname`);
+create TEXT index `index_763f72db` for (n:`Person`) ON (n.`middlename`);
+create TEXT index `index_eadb868e` for (n:`Person`) ON (n.`surname`);
+////
+
+.Query
+[source, cypher, indent=0]
+----
+SHOW INDEXES
+----
+
+One of the output columns from `SHOW INDEXES` is the name of the index.
+This can be used to drop the index with the xref::indexes-for-search-performance.adoc#administration-indexes-drop-an-index[`DROP INDEX` command].
+
+.Result
+[queryresult]
+----
++-------------------------------------------------------------------------------------------------------------------------------------------------+
+| id | name             | state    | populationPercent | uniqueness  | type    | entityType | labelsOrTypes | properties     | indexProvider      |
++-------------------------------------------------------------------------------------------------------------------------------------------------+
+| 4  | "index_44d2128f" | "ONLINE" | 100.0             | "NONUNIQUE" | "BTREE" | "NODE"     | ["Person"]    | ["middlename"] | "native-btree-1.0" |
+| 7  | "index_58a1c03e" | "ONLINE" | 100.0             | "NONUNIQUE" | "BTREE" | "NODE"     | ["Person"]    | ["location"]   | "native-btree-1.0" |
+| 5  | "index_763f72db" | "ONLINE" | 100.0             | "NONUNIQUE" | "TEXT"  | "NODE"     | ["Person"]    | ["middlename"] | "text-1.0"         |
+| 8  | "index_d7c12ba3" | "ONLINE" | 100.0             | "NONUNIQUE" | "BTREE" | "NODE"     | ["Person"]    | ["highScore"]  | "native-btree-1.0" |
+| 3  | "index_deeafdb2" | "ONLINE" | 100.0             | "NONUNIQUE" | "BTREE" | "NODE"     | ["Person"]    | ["firstname"]  | "native-btree-1.0" |
+| 6  | "index_eadb868e" | "ONLINE" | 100.0             | "NONUNIQUE" | "TEXT"  | "NODE"     | ["Person"]    | ["surname"]    | "text-1.0"         |
++-------------------------------------------------------------------------------------------------------------------------------------------------+
+6 rows
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-listing-indexes-with-filtering]]
+=== Listing indexes with filtering
+
+One way of filtering the output from `SHOW INDEXES` by index type is the use of type keywords,
+listed in the xref::indexes-for-search-performance.adoc#administration-indexes-syntax[syntax table].
+For example, to show only B-tree indexes, use `SHOW BTREE INDEXES`.
+Another more flexible way of filtering the output is to use the `WHERE` clause.
+An example is to only show indexes not belonging to constraints.
+
+
+.+SHOW BTREE INDEXES+
+======
+
+////
+create BTREE index `index_44d2128f` for (n:`Person`) ON (n.`middlename`);
+create BTREE index `index_58a1c03e` for (n:`Person`) ON (n.`location`);
+create BTREE index `index_d7c12ba3` for (n:`Person`) ON (n.`highScore`);
+create BTREE index `index_deeafdb2` for (n:`Person`) ON (n.`firstname`);
+create TEXT index `index_763f72db` for (n:`Person`) ON (n.`middlename`);
+create TEXT index `index_eadb868e` for (n:`Person`) ON (n.`surname`);
+////
+
+.Query
+[source, cypher, indent=0]
+----
+SHOW BTREE INDEXES WHERE uniqueness = 'NONUNIQUE'
+----
+
+This will only return the default output columns.
+To get all columns, use `+SHOW INDEXES YIELD * WHERE ...+`.
+
+.Result
+[queryresult]
+----
++-----------------------------------------------------------------------------------------------------------------------------------------------------+
+| id | name             | state    | populationPercent | uniqueness  | type    | entityType     | labelsOrTypes | properties     | indexProvider      |
++-----------------------------------------------------------------------------------------------------------------------------------------------------+
+| 4  | "index_44d2128f" | "ONLINE" | 100.0             | "NONUNIQUE" | "BTREE" | "NODE"         | ["Person"]    | ["middlename"] | "native-btree-1.0" |
+| 7  | "index_58a1c03e" | "ONLINE" | 100.0             | "NONUNIQUE" | "BTREE" | "NODE"         | ["Person"]    | ["location"]   | "native-btree-1.0" |
+| 9  | "index_c207e3e6" | "ONLINE" | 100.0             | "NONUNIQUE" | "BTREE" | "RELATIONSHIP" | ["KNOWS"]     | ["since"]      | "native-btree-1.0" |
+| 8  | "index_d7c12ba3" | "ONLINE" | 100.0             | "NONUNIQUE" | "BTREE" | "NODE"         | ["Person"]    | ["highScore"]  | "native-btree-1.0" |
+| 3  | "index_deeafdb2" | "ONLINE" | 100.0             | "NONUNIQUE" | "BTREE" | "NODE"         | ["Person"]    | ["firstname"]  | "native-btree-1.0" |
++-----------------------------------------------------------------------------------------------------------------------------------------------------+
+5 rows
+----
+
+======
+
+
+[[administration-indexes-drop-indexes]]
+== +DROP INDEX+
+
+An index can be dropped (removed) using the name with the `DROP INDEX index_name` command.
+This command can drop indexes of any type, except those backing constraints.
+The name of the index can be found using the xref::indexes-for-search-performance.adoc#administration-indexes-list-indexes[`SHOW INDEXES` command], given in the output column `name`.
+
+
+[[drop-indexes-examples]]
+== +DROP INDEX+ examples
+
+* xref::indexes-for-search-performance.adoc#administration-indexes-drop-an-index[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-drop-a-non-existing-index[]
+
+
+[discrete]
+[[administration-indexes-drop-an-index]]
+=== Drop an index
+
+
+.+DROP INDEX+
+======
+
+////
+create BTREE index `index_44d2128f` for (n:`Person`) ON (n.`middlename`);
+create BTREE index `index_58a1c03e` for (n:`Person`) ON (n.`location`);
+create BTREE index `index_d7c12ba3` for (n:`Person`) ON (n.`highScore`);
+create BTREE index `index_deeafdb2` for (n:`Person`) ON (n.`firstname`);
+create TEXT index `index_763f72db` for (n:`Person`) ON (n.`middlename`);
+create TEXT index `index_eadb868e` for (n:`Person`) ON (n.`surname`);
+////
+
+.Query
+[source, cypher, indent=0]
+----
+DROP INDEX index_name
+----
+
+.Result
+[queryresult]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes removed: 1
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-drop-a-non-existing-index]]
+=== Drop a non-existing index
+
+If it is uncertain if an index exists and you want to drop it if it does but not get an error should it not, use `IF EXISTS`.
+
+
+.+DROP INDEX+
+======
+
+.Query
+[source, cypher, indent=0]
+----
+DROP INDEX missing_index_name IF EXISTS
+----
+
+.Result
+[queryresult]
+----
++--------------------------------------------+
+| No data returned, and nothing was changed. |
++--------------------------------------------+
+----
+
+======
+
+
+[[indexes-future-indexes]]
+== Future indexes
+
+Two new types of indexes, point and range indexes, will be introduced in a future release.
+They cannot be used in queries yet, but they can be created and dropped for migration purposes.
+These new index types together with text indexes will replace the current B-tree indexes.
+For more details on these new types, see the xref:4.4@operations-manual:ROOT:performance/index-configuration/index.adoc#future-indexes[Operations Manual -> Future indexes].
+
+Like B-tree indexes, range indexes are created on one or more properties for all nodes or relationships with a given label or relationship type:
+
+* An index created on a single property for any given label or relationship type is called a _single-property index_.
+* An index created on more than one property for any given label or relationship type is called a _composite index_.
+
+The differences in the usage patterns between composite and single-property indexes described in xref::indexes-for-search-performance.adoc#administration-indexes-single-vs-composite-index[] also applies to range indexes.
+
+Similar to B-tree indexes, range indexes may also back constraints by giving the range index provider when creating an index-backed constraint.
+
+Point indexes, like text indexes, are a kind of single-property indexes, with the limitation that they only recognize properties with point values.
+Nodes or relationships with the indexed label or relationship type where the indexed property is of another value type are not included in the index.
+
+
+=== Syntax
+
+.Syntax for managing future indexes
+[options="header", width="100%", cols="5a,3, 3a"]
+|===
+| Command | Description | Comment
+| [source, cypher, role=noplay, indent=0]
+----
+CREATE RANGE INDEX [index_name] [IF NOT EXISTS]
+FOR (n:LabelName)
+ON (n.propertyName_1[,
+    n.propertyName_2,
+    ...
+    n.propertyName_n])
+[OPTIONS "{" option: value[, ...] "}"]
+----
+| Create a range index on nodes, either on a single property or composite.
+
+Index provider can be specified using the `OPTIONS` clause.
+
+.4+.^| Best practice is to give the index a name when it is created.
+If the index is not explicitly named, it gets an auto-generated name.
+
+The index name must be unique among both indexes and constraints.
+
+The command is optionally idempotent, with the default behavior to throw an error if you attempt to create the same index twice.
+With `IF NOT EXISTS`, no error is thrown and nothing happens should an index with the same name or same schema and index type already exist.
+It may still throw an error if conflicting constraints exist, such as constraints with the same name or schema and backing index type.
+
+| [source, cypher, role=noplay, indent=0]
+----
+CREATE RANGE INDEX [index_name] [IF NOT EXISTS]
+FOR ()-"["r:TYPE_NAME"]"-()
+ON (r.propertyName_1[,
+    r.propertyName_2,
+    ...
+    r.propertyName_n])
+[OPTIONS "{" option: value[, ...] "}"]
+----
+| Create a range index on relationships, either on a single property or composite.
+
+Index provider can be specified using the `OPTIONS` clause.
+
+| [source, cypher, role=noplay, indent=0]
+----
+CREATE POINT INDEX [index_name] [IF NOT EXISTS]
+FOR (n:LabelName)
+ON (n.propertyName)
+[OPTIONS "{" option: value[, ...] "}"]
+----
+| Create a point index on nodes where the property has a point value.
+
+Index provider and configuration can be specified using the `OPTIONS` clause.
+
+| [source, cypher, role=noplay, indent=0]
+----
+CREATE POINT INDEX [index_name] [IF NOT EXISTS]
+FOR ()-"["r:TYPE_NAME"]"-()
+ON (r.propertyName)
+[OPTIONS "{" option: value[, ...] "}"]
+----
+| Create a point index on relationships where the property has a point value.
+
+Index provider and configuration can be specified using the `OPTIONS` clause.
+
+| [source, cypher, role=noplay, indent=0]
+----
+DROP INDEX index_name [IF EXISTS]
+----
+| Drop an index of any index type.
+This is the xref::indexes-for-search-performance.adoc#administration-indexes-drop-indexes[same command] as for the existing indexes.
+| The command is optionally idempotent, with the default behavior to throw an error if you attempt to drop the same index twice.
+With `IF EXISTS`, no error is thrown and nothing happens should the index not exist.
+
+| [source, cypher, role=noplay, indent=0]
+----
+SHOW [ALL\|BTREE\|FULLTEXT\|LOOKUP\|POINT\|RANGE\|TEXT] INDEX[ES]
+  [YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+  [WHERE expression]
+  [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+----
+| Extending the existing xref::indexes-for-search-performance.adoc#administration-indexes-list-indexes[list index command] with filters for the new types.
+| When using the `RETURN` clause, the `YIELD` clause is mandatory and must not be omitted.
+|===
+
+
+=== Examples
+
+* xref::indexes-for-search-performance.adoc#administration-indexes-create-a-single-property-range-index-for-nodes[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-create-a-single-property-range-index-for-relationships[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-create-a-range-index-only-if-it-does-not-already-exist[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-create-a-range-index-specifying-the-index-provider[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-create-a-composite-range-index-for-nodes[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-create-a-composite-range-index-for-relationships[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-create-a-node-point-index[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-create-a-relationship-point-index[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-create-a-point-index-only-if-it-does-not-already-exist[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-create-a-point-index-specifying-the-index-provider[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-create-a-point-index-specifying-the-index-configuration[]
+* xref::indexes-for-search-performance.adoc#administration-indexes-create-a-point-index-specifying-both-the-index-provider-and-configuration[]
+
+
+[discrete]
+[[administration-indexes-create-a-single-property-range-index-for-nodes]]
+==== Create a single-property range index for nodes
+
+A named range index on a single property for all nodes with a particular label can be created with:
+
+[source, syntax, role="noheader"]
+----
+CREATE RANGE INDEX index_name FOR (n:Label) ON (n.property)
+----
+
+[NOTE]
+====
+The index is not immediately available, but is created in the background.
+====
+
+.+CREATE RANGE INDEX+
+======
+
+////
+create (p0:Person {surname: 'Smith'})
+create (p1:Person {surename: 'John'})
+////
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE RANGE INDEX node_range_index_name FOR (n:Person) ON (n.surname)
+----
+
+Note that the index name must be unique.
+
+.Result
+[queryresult]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes added: 1
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-create-a-single-property-range-index-for-relationships]]
+==== Create a single-property range index for relationships
+
+A named range index on a single property for all relationships with a particular relationship type can be created with:
+
+[source, syntax, role="noheader"]
+----
+CREATE RANGE INDEX index_name FOR ()-[r:TYPE]-() ON (r.property)
+----
+
+[NOTE]
+====
+The index is not immediately available, but is created in the background.
+====
+
+
+.+CREATE RANGE INDEX+
+======
+
+////
+CREATE (_0:`Person` {`age`:35, `country`:"UK", `firstname`:"John", `highScore`:54321, `middlename`:"Ron", `name`:"john", `surname`:"Smith"})
+CREATE (_1:`Person` {`age`:40, `country`:"Sweden", `firstname`:"Andy", `highScore`:12345, `middlename`:"Mark", `name`:"andy", `surname`:"Jones"})
+CREATE (_0)-[:`KNOWS` {`lastMet`:2021, `lastMetIn`:"Stockholm", `metIn`:"Malmo", `since`:1992}]->(_1)
+////
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE RANGE INDEX rel_range_index_name FOR ()-[r:KNOWS]-() ON (r.since)
+----
+
+Note that the index name must be unique.
+
+.Result
+[queryresult]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes added: 1
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-create-a-range-index-only-if-it-does-not-already-exist]]
+==== Create a range index only if it does not already exist
+
+If it is not known whether an index exists or not, add `IF NOT EXISTS` to ensure it does.
+
+
+.+CREATE RANGE INDEX+
+======
+
+////
+CREATE (_0:`Person` {`age`:35, `country`:"UK", `firstname`:"John", `highScore`:54321, `middlename`:"Ron", `name`:"john", `surname`:"Smith"})
+CREATE (_1:`Person` {`age`:40, `country`:"Sweden", `firstname`:"Andy", `highScore`:12345, `middlename`:"Mark", `name`:"andy", `surname`:"Jones"})
+CREATE (_0)-[:`KNOWS` {`lastMet`:2021, `lastMetIn`:"Stockholm", `metIn`:"Malmo", `since`:1992}]->(_1)
+////
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE RANGE INDEX node_range_index_name IF NOT EXISTS FOR (n:Person) ON (n.surname)
+----
+
+Note that the index will not be created if there already exists an index with the same schema and type, same name or both.
+
+.Result
+[queryresult]
+----
++--------------------------------------------+
+| No data returned, and nothing was changed. |
++--------------------------------------------+
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-create-a-range-index-specifying-the-index-provider]]
+==== Create a range index specifying the index provider
+
+To create a range index with a specific index provider, the `OPTIONS` clause is used.
+Only one valid value exists for the index provider, `range-1.0`, which is the default value.
+
+
+.+CREATE RANGE INDEX+
+======
+
+////
+CREATE (_0:`Person` {`age`:35, `country`:"UK", `firstname`:"John", `highScore`:54321, `middlename`:"Ron", `name`:"john", `surname`:"Smith"})
+CREATE (_1:`Person` {`age`:40, `country`:"Sweden", `firstname`:"Andy", `highScore`:12345, `middlename`:"Mark", `name`:"andy", `surname`:"Jones"})
+CREATE (_0)-[:`KNOWS` {`lastMet`:2021, `lastMetIn`:"Stockholm", `metIn`:"Malmo", `since`:1992}]->(_1)
+////
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE RANGE INDEX range_index_with_provider FOR ()-[r:TYPE]-() ON (r.prop1)
+OPTIONS {indexProvider: 'range-1.0'}
+----
+
+There is no supported index configuration for range indexes.
+
+.Result
+[queryresult]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes added: 1
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-create-a-composite-range-index-for-nodes]]
+==== Create a composite range index for nodes
+
+A named range index on multiple properties for all nodes with a particular label -- i.e. a composite index -- can be created with:
+
+[source, syntax, role="noheader"]
+----
+CREATE RANGE INDEX index_name FOR (n:Label) ON (n.prop1, ..., n.propN)
+----
+
+Only nodes with the specified label and that contain all the properties in the index definition will be added to the index.
+
+[NOTE]
+====
+The composite index is not immediately available, but is created in the background.
+====
+
+
+.+CREATE RANGE INDEX+
+======
+
+The following statement will create a named composite range index on all nodes labeled with `Person` and which have both an `age` and `country` property: 
+
+////
+CREATE (_0:`Person` {`age`:35, `country`:"UK", `firstname`:"John", `highScore`:54321, `middlename`:"Ron", `name`:"john", `surname`:"Smith"})
+CREATE (_1:`Person` {`age`:40, `country`:"Sweden", `firstname`:"Andy", `highScore`:12345, `middlename`:"Mark", `name`:"andy", `surname`:"Jones"})
+////
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE RANGE INDEX composite_range_node_index_name FOR (n:Person) ON (n.age, n.country)
+----
+
+Note that the index name must be unique.
+
+.Result
+[queryresult]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes added: 1
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-create-a-composite-range-index-for-relationships]]
+==== Create a composite range index for relationships
+
+A named range index on multiple properties for all relationships with a particular relationship type -- i.e. a composite index -- can be created with:
+
+[source, syntax, role="noheader"]
+----
+CREATE RANGE INDEX index_name FOR ()-[r:TYPE]-() ON (r.prop1, ..., r.propN)
+----
+
+Only relationships with the specified type and that contain all the properties in the index definition will be added to the index.
+
+[NOTE]
+====
+The composite index is not immediately available, but is created in the background.
+====
+
+
+.+CREATE RANGE INDEX+
+======
+
+The following statement will create a named composite range index on all relationships labeled with `PURCHASED` and which have both a `date` and `amount` property: 
+
+////
+CREATE (_0:`Person` {`age`:35, `country`:"UK", `firstname`:"John", `highScore`:54321, `middlename`:"Ron", `name`:"john", `surname`:"Smith"})
+CREATE (_1:`Person` {`age`:40, `country`:"Sweden", `firstname`:"Andy", `highScore`:12345, `middlename`:"Mark", `name`:"andy", `surname`:"Jones"})
+CREATE (_0)-[:`KNOWS` {`lastMet`:2021, `lastMetIn`:"Stockholm", `metIn`:"Malmo", `since`:1992}]->(_1)
+////
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE RANGE INDEX composite_range_rel_index_name FOR ()-[r:PURCHASED]-() ON (r.date, r.amount)
+----
+
+Note that the index name must be unique.
+
+.Result
+[queryresult]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes added: 1
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-create-a-node-point-index]]
+==== Create a node point index
+
+A named point index on a single property for all nodes with a particular label can be created with:
+
+[source, syntax, role="noheader"]
+----
+CREATE POINT INDEX index_name FOR (n:Label) ON (n.property)
+----
+
+[NOTE]
+====
+The index is not immediately available, but is created in the background.
+====
+
+
+.+CREATE POINT INDEX+
+======
+
+////
+CREATE (_0:`Person` {`age`:35, `country`:"UK", `firstname`:"John", `highScore`:54321, `middlename`:"Ron", `name`:"john", `surname`:"Smith"})
+CREATE (_1:`Person` {`age`:40, `country`:"Sweden", `firstname`:"Andy", `highScore`:12345, `middlename`:"Mark", `name`:"andy", `surname`:"Jones"})
+////
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE POINT INDEX node_index_name FOR (n:Person) ON (n.location)
+----
+
+Note that point indexes only recognize point values, do not support multiple properties, and that the index name must be unique.
+
+.Result
+[queryresult]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes added: 1
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-create-a-relationship-point-index]]
+==== Create a relationship point index
+
+A named point index on a single property for all relationships with a particular relationship type can be created with:
+
+[source, syntax, role="noheader"]
+----
+CREATE POINT INDEX index_name FOR ()-[r:TYPE]-() ON (r.property)
+----
+
+[NOTE]
+====
+The index is not immediately available, but is created in the background.
+====
+
+
+.+CREATE POINT INDEX+
+======
+
+////
+CREATE (_0:`Person` {`age`:35, `country`:"UK", `firstname`:"John", `highScore`:54321, `middlename`:"Ron", `name`:"john", `surname`:"Smith"})
+CREATE (_1:`Person` {`age`:40, `country`:"Sweden", `firstname`:"Andy", `highScore`:12345, `middlename`:"Mark", `name`:"andy", `surname`:"Jones"})
+CREATE (_0)-[:`KNOWS` {`lastMet`:2021, `lastMetIn`:"Stockholm", `metIn`:"Malmo", `since`:1992}]->(_1)
+////
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE POINT INDEX rel_index_name FOR ()-[r:STREET]-() ON (r.intersection)
+----
+
+Note that point indexes only recognize point values, do not support multiple properties, and that the index name must be unique.
+
+.Result
+[queryresult]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes added: 1
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-create-a-point-index-only-if-it-does-not-already-exist]]
+==== Create a point index only if it does not already exist
+
+If it is not known whether an index exists or not, add `IF NOT EXISTS` to ensure it does.
+
+
+.+CREATE POINT INDEX+
+======
+
+////
+CREATE (p0:Person {location: point({x: 5, y: 10})})
+CREATE (p1:Person {location: point({x: 7, y: 11})})
+////
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE POINT INDEX node_index_name IF NOT EXISTS FOR (n:Person) ON (n.location)
+----
+
+Note that the index will not be created if there already exists an index with the same schema and type, same name or both.
+
+.Result
+[queryresult]
+----
++--------------------------------------------+
+| No data returned, and nothing was changed. |
++--------------------------------------------+
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-create-a-point-index-specifying-the-index-provider]]
+==== Create a point index specifying the index provider
+
+To create a point index with a specific index provider, the `OPTIONS` clause is used.
+Only one valid value exists for the index provider, `point-1.0`, which is the default value.
+
+.+CREATE POINT INDEX+
+======
+
+////
+CREATE (p0:Person {location: point({x: 5, y: 10})})
+CREATE (p1:Person {location: point({x: 7, y: 11})})
+////
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE POINT INDEX index_with_provider FOR (n:Label) ON (n.prop1)
+OPTIONS {indexProvider: 'point-1.0'}
+----
+
+Can be combined with specifying index configuration.
+
+.Result
+[queryresult]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes added: 1
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-create-a-point-index-specifying-the-index-configuration]]
+==== Create a point index specifying the index configuration
+
+To create a point index with a specific index configuration, the `OPTIONS` clause is used.
+The valid configuration settings are:
+
+* `spatial.cartesian.min`
+* `spatial.cartesian.max`
+* `spatial.cartesian-3d.min`
+* `spatial.cartesian-3d.max`
+* `spatial.wgs-84.min`
+* `spatial.wgs-84.max`
+* `spatial.wgs-84-3d.min`
+* `spatial.wgs-84-3d.max`
+
+Non-specified settings have their respective default values.
+
+
+.+CREATE POINT INDEX+
+======
+
+////
+CREATE (p0:Person {location: point({x: 5, y: 10})})
+CREATE (p1:Person {location: point({x: 7, y: 11})})
+////
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE POINT INDEX index_with_config FOR (n:Label) ON (n.prop2)
+OPTIONS {
+  indexConfig: {
+    `spatial.cartesian.min`: [-100.0, -100.0],
+    `spatial.cartesian.max`: [100.0, 100.0]
+  }
+}
+----
+
+Can be combined with specifying index provider.
+
+.Result
+[queryresult]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes added: 1
+----
+
+======
+
+
+[discrete]
+[[administration-indexes-create-a-point-index-specifying-both-the-index-provider-and-configuration]]
+==== Create a point index specifying both the index provider and configuration
+
+To create a point index with a specific index provider and configuration, the `OPTIONS` clause is used.
+Only one valid value exists for the index provider, `point-1.0`, which is the default value.
+The valid configuration settings are:
+
+* `spatial.cartesian.min`
+* `spatial.cartesian.max`
+* `spatial.cartesian-3d.min`
+* `spatial.cartesian-3d.max`
+* `spatial.wgs-84.min`
+* `spatial.wgs-84.max`
+* `spatial.wgs-84-3d.min`
+* `spatial.wgs-84-3d.max`
+
+Non-specified settings have their respective default values.
+
+
+.+CREATE POINT INDEX+
+======
+
+////
+CREATE (p0:Person {location: point({x: 5, y: 10})})
+CREATE (p1:Person {location: point({x: 7, y: 11})})
+CREATE (p0)-[:TYPE {prop1: point({x: 5, y: 10})}]->(p1)
+////
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE POINT INDEX index_with_options FOR ()-[r:TYPE]-() ON (r.prop1)
+OPTIONS {
+  indexProvider: 'point-1.0',
+  indexConfig: {
+    `spatial.wgs-84.min`: [-100.0, -80.0],
+    `spatial.wgs-84.max`: [100.0, 80.0]
+  }
+}
+----
+
+Specifying index provider and configuration can be done individually.
+
+.Result
+[queryresult]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes added: 1
+----
+
+======
+
+
+[role=deprecated]
+[[administration-indexes-examples-deprecated-syntax]]
+== Deprecated syntax
+
+[NOTE]
+====
+This syntax only supports dropping B-tree node property indexes, all others can only be dropped by name.
+====
+
+[[administration-indexes-drop-a-single-property-index]]
+=== Drop a single-property index
+
+A B-tree index on all nodes with a label and single property combination can be dropped with:
+
+[source, syntax, role="noheader"]
+----
+DROP INDEX ON :Label(property)
+----
+
+
+.+DROP INDEX+
+======
+
+////
+CREATE BTREE index `index_deeafdb2` for (n:Person) ON (n.firstname)
+////
+
+.Query
+[source, cypher, indent=0]
+----
+DROP INDEX ON :Person(firstname)
+----
+
+.Result
+[queryresult]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes removed: 1
+----
+
+======
+
+
+[[administration-indexes-drop-a-composite-index]]
+=== Drop a composite index
+
+A composite B-tree index on all nodes with a label and multiple property combination can be dropped with:
+
+[source, syntax, role="noheader"]
+----
+DROP INDEX ON :Label(prop1, ..., propN)
+----
+
+
+.+DROP INDEX+
+======
+
+The following statement will drop a composite index on all nodes labeled with `Person` and which have both an `age` and `country` property: 
+
+////
+CREATE BTREE index `index_44d2128f` for (n:Person) ON (n.middlename, n.country)
+////
+
+.Query
+[source, cypher, indent=0]
+----
+DROP INDEX ON :Person(age, country)
+----
+
+.Result
+[queryresult]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes removed: 1
+----
+======
+

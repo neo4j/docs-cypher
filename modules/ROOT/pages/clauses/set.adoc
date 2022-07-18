@@ -1,0 +1,419 @@
+:description: The `SET` clause is used to update labels on nodes and properties on nodes and relationships.
+
+[[query-set]]
+= SET
+
+[abstract]
+--
+The `SET` clause is used to update labels on nodes and properties on nodes and relationships.
+--
+
+`SET` can be used with a map -- provided as a literal, a parameter, or a node or relationship -- to set properties.
+
+[NOTE]
+====
+Setting labels on a node is an idempotent operation -- nothing will occur if an attempt is made to set a label on a node that already has that label.
+The query statistics will state whether any updates actually took place.
+====
+
+The examples use this graph as a starting point:
+
+image:graph_set_clause.svg[]
+
+////
+CREATE
+  (a:Swedish {name: 'Andy', age: 36, hungry: true}),
+  (b {name: 'Stefan'}),
+  (c {name: 'Peter', age: 34}),
+  (d {name: 'George'}),
+  (a)-[:KNOWS]->(c),
+  (b)-[:KNOWS]->(a),
+  (d)-[:KNOWS]->(c)
+////
+
+
+[[set-set-a-property]]
+== Set a property
+
+Use `SET` to set a property on a node or relationship:
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n {name: 'Andy'})
+SET n.surname = 'Taylor'
+RETURN n.name, n.surname
+----
+
+The newly-changed node is returned by the query.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +n.name+ | +n.surname+
+| +"Andy"+ | +"Taylor"+
+2+d|Rows: 1 +
+Properties set: 1
+|===
+
+It is possible to set a property on a node or relationship using more complex expressions.
+For instance, in contrast to specifying the node directly, the following query shows how to set a property for a node selected by an expression: 
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n {name: 'Andy'})
+SET (CASE WHEN n.age = 36 THEN n END).worksIn = 'Malmo'
+RETURN n.name, n.worksIn
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +n.name+ | +n.worksIn+
+| +"Andy"+ | +"Malmo"+
+2+d|Rows: 1 +
+Properties set: 1
+|===
+
+No action will be taken if the node expression evaluates to `null`, as shown in this example:
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n {name: 'Andy'})
+SET (CASE WHEN n.age = 55 THEN n END).worksIn = 'Malmo'
+RETURN n.name, n.worksIn
+----
+
+As no node matches the `CASE` expression, the expression returns a `null`.
+As a consequence, no updates occur, and therefore no `worksIn` property is set.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +n.name+ | +n.worksIn+
+| +"Andy"+ | +<null>+
+2+d|Rows: 1
+|===
+
+
+[[set-update-a-property]]
+== Update a property
+
+`SET` can be used to update a property on a node or relationship.
+This query forces a change of type in the `age` property:
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n {name: 'Andy'})
+SET n.age = toString(n.age)
+RETURN n.name, n.age
+----
+
+The `age` property has been converted to the string `'36'`.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +n.name+ | +n.age+
+| +"Andy"+ | +"36"+
+2+d|Rows: 1 +
+Properties set: 1
+|===
+
+
+[[set-remove-a-property]]
+== Remove a property
+
+Although xref::clauses/remove.adoc[`REMOVE`] is normally used to remove a property, it is sometimes convenient to do it using the `SET` command.
+A case in point is if the property is provided by a parameter.
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n {name: 'Andy'})
+SET n.name = null
+RETURN n.name, n.age
+----
+
+The `name` property is now missing.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +n.name+ | +n.age+
+| +<null>+ | +36+
+2+d|Rows: 1 +
+Properties set: 1
+|===
+
+
+[[set-copying-properties-between-nodes-and-relationships]]
+== Copy properties between nodes and relationships
+
+`SET` can be used to copy all properties from one node or relationship to another.
+This will remove _all_ other properties on the node or relationship being copied to.
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH
+  (at {name: 'Andy'}),
+  (pn {name: 'Peter'})
+SET at = pn
+RETURN at.name, at.age, at.hungry, pn.name, pn.age
+----
+
+The `'Andy'` node has had all its properties replaced by the properties of the `'Peter'` node.
+
+.Result
+[role="queryresult",options="header,footer",cols="5*<m"]
+|===
+| +at.name+ | +at.age+ | +at.hungry+ | +pn.name+ | +pn.age+
+| +"Peter"+ | +34+ | +<null>+ | +"Peter"+ | +34+
+5+d|Rows: 1 +
+Properties set: 3
+|===
+
+
+[[set-replace-properties-using-map]]
+== Replace all properties using a map and `=`
+
+The property replacement operator `=` can be used with `SET` to replace all existing properties on a node or relationship with those provided by a map:
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (p {name: 'Peter'})
+SET p = {name: 'Peter Smith', position: 'Entrepreneur'}
+RETURN p.name, p.age, p.position
+----
+
+This query updated the `name` property from `Peter` to `Peter Smith`, deleted the `age` property, and added the `position` property to the `'Peter'` node.
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| +p.name+ | +p.age+ | +p.position+
+| +"Peter Smith"+ | +<null>+ | +"Entrepreneur"+
+3+d|Rows: 1 +
+Properties set: 3
+|===
+
+
+[[set-remove-properties-using-empty-map]]
+== Remove all properties using an empty map and `=`
+
+All existing properties can be removed from a node or relationship by using `SET` with `=` and an empty map as the right operand:
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (p {name: 'Peter'})
+SET p = {}
+RETURN p.name, p.age
+----
+
+This query removed all the existing properties -- namely, `name` and `age` -- from the `'Peter'` node.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +p.name+ | +p.age+
+| +<null>+ | +<null>+
+2+d|Rows: 1 +
+Properties set: 2
+|===
+
+
+[[set-setting-properties-using-map]]
+== Mutate specific properties using a map and `+=`
+
+The property mutation operator `+=` can be used with `SET` to mutate properties from a map in a fine-grained fashion:
+
+* Any properties in the map that are not on the node or relationship will be _added_.
+* Any properties not in the map that are on the node or relationship will be left as is.
+* Any properties that are in both the map and the node or relationship will be _replaced_ in the node or relationship.
+However, if any property in the map is `null`, it will be _removed_ from the node or relationship.
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (p {name: 'Peter'})
+SET p += {age: 38, hungry: true, position: 'Entrepreneur'}
+RETURN p.name, p.age, p.hungry, p.position
+----
+
+This query left the `name` property unchanged, updated the `age` property from `34` to `38`, and added the `hungry` and `position` properties to the `'Peter'` node.
+
+.Result
+[role="queryresult",options="header,footer",cols="4*<m"]
+|===
+| +p.name+ | +p.age+ | +p.hungry+ | +p.position+
+| +"Peter"+ | +38+ | +true+ | +"Entrepreneur"+
+4+d|Rows: 1 +
+Properties set: 3
+|===
+
+xref::clauses/set.adoc#set-remove-properties-using-empty-map[In contrast to the property replacement operator `=`], providing an empty map as the right operand to `+=` will not remove any existing properties from a node or relationship.
+In line with the semantics detailed above, passing in an empty map with `+=` will have no effect:
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (p {name: 'Peter'})
+SET p += {}
+RETURN p.name, p.age
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +p.name+ | +p.age+
+| +"Peter"+ | +34+
+2+d|Rows: 1
+|===
+
+
+[[set-set-multiple-properties-using-one-set-clause]]
+== Set multiple properties using one `SET` clause
+
+Set multiple properties at once by separating them with a comma:
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n {name: 'Andy'})
+SET n.position = 'Developer', n.surname = 'Taylor'
+----
+
+.Result
+[role="queryresult",options="footer",cols="1*<m"]
+|===
+1+|(empty result)
+1+d|Rows: 0 +
+Properties set: 2
+|===
+
+
+[[set-set-a-property-using-a-parameter]]
+== Set a property using a parameter
+
+Use a parameter to set the value of a property:
+
+.Parameters
+[source,javascript, indent=0]
+----
+{
+  "surname": "Taylor"
+}
+----
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n {name: 'Andy'})
+SET n.surname = $surname
+RETURN n.name, n.surname
+----
+
+A `surname` property has been added to the `'Andy'` node.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +n.name+ | +n.surname+
+| +"Andy"+ | +"Taylor"+
+2+d|Rows: 1 +
+Properties set: 1
+|===
+
+
+[[set-set-all-properties-using-a-parameter]]
+== Set all properties using a parameter
+
+This will replace all existing properties on the node with the new set provided by the parameter.
+
+.Parameters
+[source,javascript, indent=0]
+----
+{
+  "props" : {
+    "name": "Andy",
+    "position": "Developer"
+  }
+}
+----
+
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n {name: 'Andy'})
+SET n = $props
+RETURN n.name, n.position, n.age, n.hungry
+----
+
+The `'Andy'` node has had all its properties replaced by the properties in the `props` parameter.
+
+.Result
+[role="queryresult",options="header,footer",cols="4*<m"]
+|===
+| +n.name+ | +n.position+ | +n.age+ | +n.hungry+
+| +"Andy"+ | +"Developer"+ | +<null>+ | +<null>+
+4+d|Rows: 1 +
+Properties set: 4
+|===
+
+
+[[set-set-a-label-on-a-node]]
+== Set a label on a node
+
+Use `SET` to set a label on a node:
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n {name: 'Stefan'})
+SET n:German
+RETURN n.name, labels(n) AS labels
+----
+
+The newly-labeled node is returned by the query.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +n.name+ | +labels+
+| +"Stefan"+ | +["German"]+
+2+d|Rows: 1 +
+Labels added: 1
+|===
+
+
+[[set-set-multiple-labels-on-a-node]]
+== Set multiple labels on a node
+
+Set multiple labels on a node with `SET` and use `:` to separate the different labels:
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n {name: 'George'})
+SET n:Swedish:Bossman
+RETURN n.name, labels(n) AS labels
+----
+
+The newly-labeled node is returned by the query.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +n.name+ | +labels+
+| +"George"+ | +["Swedish","Bossman"]+
+2+d|Rows: 1 +
+Labels added: 2
+|===
+
