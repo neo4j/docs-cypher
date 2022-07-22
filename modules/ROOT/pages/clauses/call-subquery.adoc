@@ -1,11 +1,11 @@
-:description: The `CALL {}` clause evaluates a subquery that returns some values.
+:description: The `+CALL {}+` clause evaluates a subquery that returns some values.
 
 [[query-call-subquery]]
-= CALL {} (subquery)
+= +CALL {}+ (subquery)
 
 [abstract]
 --
-The `CALL {}` clause evaluates a subquery that returns some values.
+The `+CALL {}+` clause evaluates a subquery that returns some values.
 --
 
 `CALL` allows to execute subqueries, i.e. queries inside of other queries.
@@ -44,7 +44,85 @@ CREATE
   (d:Person {age: 30, name: 'Dora'})
   CREATE (a)-[:FRIEND_OF]->(b)
   CREATE (a)-[:CHILD_OF]->(c)
+CREATE (:Counter {count: 0})
 ////
+
+
+[[call-semantics]]
+== Semantics
+
+A `CALL` clause is executed once for each incoming row.
+
+
+.Execute for each incomming row
+======
+
+The `CALL` clause executes three times, one for each row that the `UNWIND` clause outputs.
+
+.Query
+[source, cypher, role="noplay"]
+----
+UNWIND [0, 1, 2] AS x
+CALL {
+  RETURN 'hello' AS innerReturn
+}
+RETURN innerReturn
+----
+
+.Result
+[source, result, role="noheader"]
+----
+Rows: 3
+
++-------------+
+| innerReturn |
++-------------+
+| 'hello'     |
+| 'hello'     |
+| 'hello'     |
++-------------+
+----
+
+======
+
+
+Each execution of a `CALL` clause can observe changes from previous executions.
+
+
+.Observe changes from previous execution
+======
+
+.Query
+[source, cypher, role="noplay"]
+----
+UNWIND [0, 1, 2] AS x
+CALL {
+  MATCH (n:Counter)
+  SET n.count = n.count + 1
+  RETURN n.count AS innerCount
+}
+WITH innerCount
+MATCH (n:Counter)
+RETURN
+  innerCount,
+  n.count AS totalCount
+----
+
+.Result
+[source, result, role="noheader"]
+----
+Rows: 3
+
++------------+------------+
+| innerCount | totalCount |
++------------+------------+
+| 1          | 3          |
+| 2          | 3          |
+| 3          | 3          |
++------------+------------+
+----
+
+======
 
 
 [[subquery-correlated-importing]]
@@ -78,6 +156,65 @@ An importing `WITH` clause must:
 
 * Consist only of simple references to outside variables - e.g. `WITH x, y, z`. Aliasing or expressions are not supported in importing `WITH` clauses - e.g. `WITH a AS b` or `WITH a+1 AS b`.
 * Be the first clause of a subquery (or the second clause, if directly following a `USE` clause).
+
+
+[CAUTION]
+====
+The order in which subqueries are executed is not defined.
+If a query result depends on the order of execution of subqueries, an `ORDER BY` clause should precede the `CALL` clause.
+====
+
+
+.The order in which subqueries are executed
+======
+
+This query creates a linked list of all `:Person` nodes in order of ascending age.
+
+The `CALL` clause is relying on the incoming row ordering to ensure that a correctly linked list is created, thus the incoming rows must be ordered with a preceding `ORDER BY` clause.
+
+.Query
+[source, cypher, role="noplay"]
+----
+MATCH (person:Person)
+WITH person ORDER BY person.age ASC LIMIT 1
+  SET person:ListHead
+WITH *
+MATCH (next: Person)
+  WHERE NOT next:ListHead
+WITH next ORDER BY next.age
+CALL {
+  WITH next
+  MATCH (current:ListHead)
+    REMOVE current:ListHead
+    SET next:ListHead
+    CREATE(current)-[r:IS_YOUNGER_THAN]->(next)
+  RETURN current AS from, next AS to
+}
+RETURN
+  from.name AS name,
+  from.age AS age,
+  to.name AS closestOlderName,
+  to.age AS closestOlderAge
+----
+
+.Result
+[source, result, role="noheader"]
+----
+Added Labels: 4
+Created Relationships: 3
+Removed Labels: 3
+Rows: 3
+
++---------+-----+------------------+-----------------+
+| name    | age | closestOlderName | closestOlderAge |
++---------+-----+------------------+-----------------+
+| 'Alice' | 20  | 'Bob'            | 27              |
+| 'Bob'   | 27  | 'Dora'           | 30              |
+| 'Dora'  | 30  | 'Charlie'        | 65              |
++---------+-----+------------------+-----------------+
+----
+
+======
 
 
 [[subquery-post-union]]
