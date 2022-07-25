@@ -26,6 +26,8 @@ Therefore, it is important to know what kind of predicates that can be solved by
 
 The different indexes are:
 
+// TODO: new indexes in 5.0
+
 * `BTREE`
 * `TEXT`
 
@@ -127,12 +129,19 @@ Examples:
 
 In this example, a `KNOWS(since)` relationship `BTREE` index is available.
 
+////
+CREATE BTREE INDEX
+FOR ()-[r:KNOWS]-() ON (r.since)
+////
+
 .Query
 [source, cypher, indent=0]
 ----
 MATCH (person)-[relationship:KNOWS {since: 1992}]->(friend)
 RETURN person, friend
 ----
+
+//TODO: check result
 
 .Query Plan
 [source, query plan, role="noheader"]
@@ -320,7 +329,7 @@ But in these cases rewrites might happen depending on which properties have whic
 The following query will use the composite index defined xref::indexes-for-search-performance.adoc#administration-indexes-create-a-composite-b-tree-index-for-nodes[earlier]:
 
 ////
-CREATE INDEX node_index_name FOR (n:Person) ON (n.age, n.country)
+CREATE BTREE INDEX node_index_name FOR (n:Person) ON (n.age, n.country)
 CREATE (p0:`Person` {`age`:35, `country`:"UK", `firstname`:"John", `highScore`:54321, `middlename`:"Ron", `name`:"john", `surname`:"Smith"})
 ////
 
@@ -334,6 +343,8 @@ RETURN n
 
 However, the query `MATCH (n:Person) WHERE n.age = 35 RETURN n` will not be backed by the composite index, as the query does not contain a predicate on the `country` property.
 It will only be backed by an index on the `Person` label and `age` property defined thus: `:Person(age)`; i.e. a single-property index.
+
+//TODO: check example
 
 .Result
 [source, result, role="noheader"]
@@ -472,6 +483,13 @@ Total database accesses: 2, total allocated memory: 176
 When the `WHERE` clause contains multiple inequality (range) comparisons for the same property, these can be combined in a single index range seek.
 That single range seek created in the following query will then use the composite index `Person(highScore, name)` if it exists.
 
+////
+CREATE INDEX
+FOR (p:Person) ON (p.highScore, p.name)
+
+CREATE (:Person)
+////
+
 .Query
 [source, cypher, indent=0]
 ----
@@ -479,6 +497,8 @@ MATCH (person:Person)
 WHERE 10000 < person.highScore < 20000 AND person.name IS NOT NULL
 RETURN person
 ----
+
+//TODO: check result
 
 .Query Plan
 [source, query plan, role="noheader"]
@@ -664,6 +684,11 @@ Total database accesses: 2, total allocated memory: 176
 The `ENDS WITH` predicate on `r.metIn` in the following query uses the `KNOWS(metIn)` index, if it exists.
 All values stored in the `KNOWS(metIn)` index are searched, and entries ending with `'mo'` are returned.
 This means that although the search is not optimized to the extent of queries using `=`, `IN`, `>`, `<` or `STARTS WITH`, it is still faster than not using an index in the first place.
+
+////
+CREATE BTREE INDEX
+FOR ()-[r:KNOWS]-() ON (r.metIn)
+////
 
 .Query
 [source, cypher, indent=0]
@@ -901,6 +926,11 @@ Total database accesses: 3, total allocated memory: 176
 [[administration-indexes-spatial-distance-searches-single-property-index]]
 === Spatial distance searches (single-property index)
 
+////
+CREATE POINT INDEX
+FOR ()-[r:KNOWS]-() ON (r.lastMetPoint)
+////
+
 If a property with point values is indexed, the index is used for spatial distance searches as well as for range queries.
 
 .Query
@@ -946,6 +976,13 @@ Total database accesses: 19, total allocated memory: 176
 If a property with point values is indexed, the index is used for spatial distance searches as well as for range queries.
 Any following (non-existence check) predicates (here on property `p.name` for index `:Person(place,name)`) will be rewritten as existence check with a filter.
 
+////
+CREATE BTREE INDEX
+FOR (p:Person) ON (p.place, p.name)
+
+CREATE (:Person {place: point({x: 10, y: 10}), name: 'example'})
+////
+
 .Query
 [source, cypher, indent=0]
 ----
@@ -953,6 +990,8 @@ MATCH (p:Person)
 WHERE point.distance(p.place, point({x: 1, y: 2})) < 2 AND p.name IS NOT NULL
 RETURN p.place
 ----
+
+//TODO: check result
 
 .Query Plan
 [source, query plan, role="noheader"]
@@ -987,6 +1026,7 @@ Total database accesses: 10, total allocated memory: 176
 === Spatial bounding box searches (single-property index)
 
 The ability to do index seeks on bounded ranges works even with the 2D and 3D spatial `Point` types.
+
 
 .Query
 [source, cypher, indent=0]
@@ -1031,6 +1071,13 @@ Any following (non-existence check) predicates (here on property `p.firstname` f
 For index `:Person(firstname,place)`, if the predicate on `firstname` is equality or list membership then the bounded range is handled as a range itself.
 If the predicate on `firstname` is anything else then the bounded range is rewritten to existence and filter.
 
+////
+CREATE BTREE INDEX
+FOR (p:Person) ON (p.place, p.firstname)
+
+CREATE (:Person {place: point({x: 1.5, y: 2.0}), firstname: 'example'})
+////
+
 .Query
 [source, cypher, indent=0]
 ----
@@ -1040,6 +1087,8 @@ WHERE
   AND person.firstname IS NOT NULL
 RETURN person
 ----
+
+//TODO: check result
 
 .Query Plan
 [source, query plan, role="noheader"]
