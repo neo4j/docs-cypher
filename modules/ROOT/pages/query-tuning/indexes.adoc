@@ -26,28 +26,91 @@ Therefore, it is important to know what kind of predicates that can be solved by
 
 The different indexes are:
 
-// TODO: new indexes in 5.0
-
-* `BTREE`
+* `RANGE`
+* `POINT`
 * `TEXT`
+//* `BTREE` label:deprecated[]
 
 
-== BTREE indexes
+== RANGE indexes
 
-`BTREE` indexes support all types of predicates:
+`RANGE` indexes support most types of predicates:
 
-[options="header"]
+[cols="2", options="header"]
 |===
 
 | Predicate | Syntax
 
-| equality check| `n.prop = value`
-| list membership check| `n.prop IN list`
-| existence check| `n.prop IS NOT NULL`
-| range search| `n.prop > value`
-| prefix search| `STARTS WITH`
-| suffix search| `ENDS WITH`
-| substring search| `CONTAINS`
+| Equality check.
+a|
+[source, syntax, role="noheader"]
+----
+n.prop = value
+----
+
+| List membership check.
+a|
+[source, syntax, role="noheader"]
+----
+n.prop IN list
+----
+
+| Existence check.
+a|
+[source, syntax, role="noheader"]
+----
+n.prop IS NOT NULL
+----
+
+| Range search.
+a|
+[source, syntax, role="noheader"]
+----
+n.prop > value
+----
+
+| Prefix search.
+a|
+[source, syntax, role="noheader"]
+----
+STARTS WITH
+----
+
+|===
+
+
+== POINT indexes
+
+
+`POINT` indexes only work for predicates operating on points.
+Therefore, `POINT` indexes are only used when it is known that the predicate evaluates to `null` for all non-point values.
+
+`POINT` indexes only support point type predicates:
+
+[cols="2", options="header"]
+|===
+| Predicate | Syntax
+
+| Property point value.
+a|
+[source, syntax, role="noheader"]
+----
+n.prop = point({x: value, y: value})
+----
+
+| Within bounding box.
+a|
+[source, syntax, role="noheader"]
+----
+point.withinBBox(n.prop, lowerLeftCorner, upperRightCorner)
+----
+
+| Distance.
+a|
+[source, syntax, role="noheader"]
+----
+point.distance(n.prop, center) < = distance
+----
 
 |===
 
@@ -73,27 +136,63 @@ This means that a `TEXT` index is not able to solve e.g. `a.prop = b.prop`.
 
 In summary, `TEXT` indexes support the following predicates:
 
-[options="header"]
+[cols="2", options="header"]
 |===
 | Predicate | Syntax
 
-| equality check| `n.prop = "string"`
-| list membership check | `n.prop IN ["a", "b", "c"]`
-| range search| `n.prop > "string"`
-| prefix search| `STARTS WITH`
-| suffix search| `ENDS WITH`
-| substring search| `CONTAINS`
+| Equality check.
+a|
+[source, syntax, role="noheader"]
+----
+n.prop = 'example_string'
+----
+
+| List membership check.
+a|
+[source, syntax, role="noheader"]
+----
+n.prop IN ['abc', 'example_string', 'neo4j']
+----
+
+| Range search.
+a|
+[source, syntax, role="noheader"]
+----
+n.prop > 'example_string'
+----
+
+| Prefix search.
+a|
+[source, syntax, role="noheader"]
+----
+STARTS WITH
+----
+
+| Suffix search.
+a|
+[source, syntax, role="noheader"]
+----
+ENDS WITH
+----
+
+| Substring search.
+a|
+[source, syntax, role="noheader"]
+----
+CONTAINS
+----
 
 |===
+
 
 == Index preference
 
 When multiple indexes are available and able to solve a predicate, there is an order defined that decides which index to use.
 It is defined as such:
 
-* `TEXT` indexes are preferred over `BTREE` indexes for `CONTAINS` and `ENDS WITH`.
-* `BTREE` indexes are preferred over `TEXT` indexes in all other cases.
-
+* `TEXT` indexes are used over `RANGE` and `POINT` indexes for `CONTAINS` and `ENDS WITH`.
+* `POINT` indexes are used over `RANGE` and `TEXT` indexes for distance and within a bounding box.
+* `RANGE` indexes are preferred over `TEXT` and `POINT` indexes in all other cases.
 
 Examples:
 
@@ -243,8 +342,8 @@ Total database accesses: 3, total allocated memory: 176
 [[administration-indexes-multiple-available-index-types]]
 === Multiple available index types
 
-In the example below, both a `Person(middlename)` node `TEXT` index and a `Person(middlename)` node `BTREE` index are available.
-The `TEXT` node index is chosen.
+In the example below, both a `Person(middlename)` node `TEXT` index and a `Person(middlename)` node `RANGE` index are available.
+The `RANGE` node index is chosen.
 
 .Query
 [source, cypher, indent=0]
@@ -252,6 +351,8 @@ The `TEXT` node index is chosen.
 MATCH (person:Person {middlename: 'Ron'})
 RETURN person
 ----
+
+//TODO check result
 
 .Query Plan
 [source, query plan, role="noheader"]
