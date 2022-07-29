@@ -27,6 +27,7 @@ Full-text indexes:
 * will automatically populate newly created indexes with the existing data in a store.
 * can be checked by the consistency checker, and they can be rebuilt if there is a problem with them.
 * are a projection of the store, and can only index nodes and relationships by the contents of their properties.
+* include only property values of types String or String Array.
 * can support any number of documents in a single index.
 * are created, dropped, and updated transactionally, and is automatically replicated throughout a cluster.
 * can be accessed via Cypher procedures.
@@ -417,6 +418,71 @@ RETURN node.title, node.description, score
 ======
 
 A complete description of the Lucene query syntax can be found in the link:https://lucene.apache.org/core/8_2_0/queryparser/org/apache/lucene/queryparser/classic/package-summary.html#package.description[Lucene documentation].
+
+
+[[administration-indexes-fulltext-search-text-array-properties]]
+== Handling of Text Array properties
+
+If the indexed property contains a text array, each element of this array is analyzed independently and all produced terms are associated with the same property name.
+This means that when querying such an indexed node or relationship, there is a match if any of the array elements match the query.
+
+
+.Text Array properties
+======
+
+////
+CREATE (m:Movie {title: 'The Matrix', reviews: ['The best movie ever.', 'The movie is nonsense.']})
+
+CREATE FULLTEXT INDEX reviews FOR (n:Movie) ON EACH [n.reviews]
+////
+
+For example, both of the following queries match the same node while referring different elements:
+
+.Query
+[source, cypher, role="noplay"]
+----
+CALL db.index.fulltext.queryNodes("reviews", 'best') YIELD node, score
+RETURN
+  node.title AS title,
+  node.reviews AS reviews,
+  score
+----
+
+.Result
+[source, result, role="noheader"]
+----
+Rows: 1
+
++--------------+----------------------------------------------------+---------------------+
+| title        | reviews                                            | score               |
++--------------+----------------------------------------------------+---------------------+
+| 'The Matrix' | ['The best movie ever.', 'The movie is nonsense.'] | 0.13076457381248474 |
++--------------+----------------------------------------------------+---------------------+
+----
+
+.Query
+[source, cypher, role="noplay"]
+----
+CALL db.index.fulltext.queryNodes("reviews", 'nonsense') YIELD node, score
+RETURN
+  node.title AS title,
+  node.reviews AS reviews,
+  score
+----
+
+.Result
+[source, result, role="noheader"]
+----
+Rows: 1
+
++--------------+----------------------------------------------------+---------------------+
+| title        | reviews                                            | score               |
++--------------+----------------------------------------------------+---------------------+
+| 'The Matrix' | ['The best movie ever.', 'The movie is nonsense.'] | 0.13076457381248474 |
++--------------+----------------------------------------------------+---------------------+
+----
+
+======
 
 
 [[administration-indexes-fulltext-search-drop]]
