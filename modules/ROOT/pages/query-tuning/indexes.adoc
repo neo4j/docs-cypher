@@ -217,9 +217,7 @@ Examples:
 * xref::query-tuning/indexes.adoc#administration-indexes-existence-check-using-is-not-null-single-property-index[]
 * xref::query-tuning/indexes.adoc#administration-indexes-existence-check-using-is-not-null-composite-index[]
 * xref::query-tuning/indexes.adoc#administration-indexes-spatial-distance-searches-single-property-index[]
-* xref::query-tuning/indexes.adoc#administration-indexes-spatial-distance-searches-composite-index[]
 * xref::query-tuning/indexes.adoc#administration-indexes-spatial-bounding-box-searches-single-property-index[]
-* xref::query-tuning/indexes.adoc#administration-indexes-spatial-bounding-box-searches-composite-index[]
 
 
 [discrete]
@@ -1071,58 +1069,6 @@ Total database accesses: 19, total allocated memory: 176
 
 
 [discrete]
-[[administration-indexes-spatial-distance-searches-composite-index]]
-=== Spatial distance searches (composite index)
-
-If a property with point values is indexed, the index is used for spatial distance searches as well as for range queries.
-Any following (non-existence check) predicates (here on property `p.name` for index `:Person(place,name)`) will be rewritten as existence check with a filter.
-
-////
-CREATE BTREE INDEX
-FOR (p:Person) ON (p.place, p.name)
-
-CREATE (:Person {place: point({x: 10, y: 10}), name: 'example'})
-////
-
-.Query
-[source, cypher, indent=0]
-----
-MATCH (p:Person)
-WHERE point.distance(p.place, point({x: 1, y: 2})) < 2 AND p.name IS NOT NULL
-RETURN p.place
-----
-
-//TODO: check result
-
-.Query Plan
-[source, query plan, role="noheader"]
-----
-Compiler CYPHER 4.4
-
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version 4.4
-
-+-----------------+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator        | Details                                                                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Other               |
-+-----------------+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults | `p.place`                                                                                            |              0 |    9 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |               +------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Projection     | cache[p.place] AS `p.place`                                                                          |              0 |    9 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |               +------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Filter         | point.distance(cache[p.place], point({x: $autoint_0, y: $autoint_1})) < $autoint_2                   |              0 |    9 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |               +------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +NodeIndexSeek  | BTREE INDEX p:Person(place, name) WHERE point.distance(place, point($autoint_0, $autoint_1)) < $auto |              0 |    9 |      10 |            112 |                    6/0 |     1.370 | Fused in Pipeline 0 |
-|                 | int_2 AND name IS NOT NULL, cache[p.place]                                                           |                |      |         |                |                        |           |                     |
-+-----------------+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-Total database accesses: 10, total allocated memory: 176
-----
-
-
-[discrete]
 [[administration-indexes-spatial-bounding-box-searches-single-property-index]]
 === Spatial bounding box searches (single-property index)
 
@@ -1160,57 +1106,5 @@ Runtime version 4.4
 +-----------------------+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
 Total database accesses: 4, total allocated memory: 176
-----
-
-
-[discrete]
-[[administration-indexes-spatial-bounding-box-searches-composite-index]]
-=== Spatial bounding box searches (composite index)
-
-The ability to do index seeks on bounded ranges works even with the 2D and 3D spatial `Point` types.
-Any following (non-existence check) predicates (here on property `p.firstname` for index `:Person(place,firstname)`) will be rewritten as existence check with a filter.
-For index `:Person(firstname,place)`, if the predicate on `firstname` is equality or list membership then the bounded range is handled as a range itself.
-If the predicate on `firstname` is anything else then the bounded range is rewritten to existence and filter.
-
-////
-CREATE BTREE INDEX
-FOR (p:Person) ON (p.place, p.firstname)
-
-CREATE (:Person {place: point({x: 1.5, y: 2.0}), firstname: 'example'})
-////
-
-.Query
-[source, cypher, indent=0]
-----
-MATCH (person:Person)
-WHERE
-  point.withinBBox(person.place, point({x: 1.2, y: 5.4}), point({x: 1.3, y: 5.5}))
-  AND person.firstname IS NOT NULL
-RETURN person
-----
-
-//TODO: check result
-
-.Query Plan
-[source, query plan, role="noheader"]
-----
-Compiler CYPHER 4.4
-
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version 4.4
-
-+-----------------+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator        | Details                                                                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Other               |
-+-----------------+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults | person                                                                                               |              1 |    1 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |               +------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +NodeIndexSeek  | BTREE INDEX person:Person(place, firstname) WHERE point.withinBBox(place, point($autodouble_0, $auto |              1 |    1 |       2 |            112 |                    6/0 |     1.065 | Fused in Pipeline 0 |
-|                 | double_1), point($autodouble_2, $autodouble_3)) AND firstname IS NOT NULL                            |                |      |         |                |                        |           |                     |
-+-----------------+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-Total database accesses: 2, total allocated memory: 176
 ----
 
