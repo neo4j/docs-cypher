@@ -196,7 +196,9 @@ It is defined as such:
 
 Examples:
 
-* xref::query-tuning/indexes.adoc#administration-indexes-relationship-btree-index-example[]
+// * xref::query-tuning/indexes.adoc#administration-indexes-relationship-btree-index-example[] removed in 5.0
+// * xref::query-tuning/indexes.adoc#administration-indexes-node-range-index-example[] missing
+* xref::query-tuning/indexes.adoc#administration-indexes-relationship-range-index-example[]
 * xref::query-tuning/indexes.adoc#administration-indexes-node-text-index-example[]
 * xref::query-tuning/indexes.adoc#administration-indexes-relationship-text-index-example[]
 * xref::query-tuning/indexes.adoc#administration-indexes-multiple-available-index-types[]
@@ -224,11 +226,10 @@ Examples:
 [[administration-indexes-relationship-btree-index-example]]
 === Relationship BTREE index
 
-In this example, a `KNOWS(since)` relationship `BTREE` index is available.
+In this example, a `KNOWS(since)` relationship `RANGE` index is available.
 
 ////
-CREATE BTREE INDEX
-FOR ()-[r:KNOWS]-() ON (r.since)
+CREATE RANGE INDEX FOR ()-[r:KNOWS]-() ON (r.since)
 ////
 
 .Query
@@ -384,6 +385,7 @@ A query containing equality comparisons of a single indexed property in the `WHE
 It is also possible for a query with multiple `OR` predicates to use multiple indexes, if indexes exist on the properties.
 For example, if indexes exist on both `:Label(p1)` and `:Label(p2)`, `MATCH (n:Label) WHERE n.p1 = 1 OR n.p2 = 2 RETURN n` will use both indexes.
 
+
 .Query
 [source, cypher, indent=0]
 ----
@@ -428,7 +430,7 @@ But in these cases rewrites might happen depending on which properties have whic
 The following query will use the composite index defined xref::indexes-for-search-performance.adoc#administration-indexes-create-a-composite-b-tree-index-for-nodes[earlier]:
 
 ////
-CREATE BTREE INDEX node_index_name FOR (n:Person) ON (n.age, n.country)
+CREATE RANGE INDEX node_index_name FOR (n:Person) ON (n.age, n.country)
 CREATE (p0:`Person` {`age`:35, `country`:"UK", `firstname`:"John", `highScore`:54321, `middlename`:"Ron", `name`:"john", `surname`:"Smith"})
 ////
 
@@ -781,12 +783,10 @@ Total database accesses: 2, total allocated memory: 176
 === Suffix search using `ENDS WITH` (single-property index)
 
 The `ENDS WITH` predicate on `r.metIn` in the following query uses the `KNOWS(metIn)` index, if it exists.
-All values stored in the `KNOWS(metIn)` index are searched, and entries ending with `'mo'` are returned.
-This means that although the search is not optimized to the extent of queries using `=`, `IN`, `>`, `<` or `STARTS WITH`, it is still faster than not using an index in the first place.
+Text indexes are optimized for `CONTAINS` and `ENDS WITH` and they are the only indexes that can solve those predicates.
 
 ////
-CREATE BTREE INDEX
-FOR ()-[r:KNOWS]-() ON (r.metIn)
+CREATE TEXT INDEX FOR ()-[r:KNOWS]-() ON (r.metIn)
 ////
 
 .Query
@@ -819,15 +819,21 @@ Runtime version 4.4
 Total database accesses: 3, total allocated memory: 176
 ----
 
+Text indexes only index String values and therefore do not find other values.
+
 
 [discrete]
 [[administration-indexes-suffix-search-using-ends-with-composite-index]]
 === Suffix search using `ENDS WITH` (composite index)
 
-The `ENDS WITH` predicate on `r.metIn` in the following query uses the `KNOWS(metIn,lastMetIn)` index, if it exists.
+The `ENDS WITH` predicate on `r.metIn` in the following query uses the `KNOWS(metIn, lastMetIn)` index, if it exists.
 However, it is rewritten as existence check and a filter due to the index not supporting actual suffix searches for composite indexes, this is still faster than not using an index in the first place.
 Any (non-existence check) predicate on `KNOWS.lastMetIn` is also rewritten as existence check with a filter.
 More information about how the rewriting works can be found in xref::indexes-for-search-performance.adoc#administration-indexes-single-vs-composite-index[composite index limitations].
+
+////
+
+////
 
 .Query
 [source, cypher, indent=0]
@@ -868,8 +874,7 @@ Total database accesses: 3, total allocated memory: 176
 === Substring search using `CONTAINS` (single-property index)
 
 The `CONTAINS` predicate on `person.firstname` in the following query will use the `Person(firstname)` index, if it exists.
-All values stored in the `Person(firstname)` index will be searched, and entries containing `'h'` will be returned.
-This means that although the search will not be optimized to the extent of queries using `=`, `IN`, `>`, `<` or `STARTS WITH`, it is still faster than not using an index in the first place.
+Text indexes are optimized for `CONTAINS` and `ENDS WITH` and they are the only indexes that can solve those predicates.
 Composite indexes are currently not able to support `CONTAINS`.
 
 .Query
@@ -901,6 +906,8 @@ Runtime version 4.4
 
 Total database accesses: 2, total allocated memory: 176
 ----
+
+Text indexes only index String values and therefore do not find other values.
 
 
 [discrete]
