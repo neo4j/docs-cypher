@@ -8,33 +8,91 @@
 This section describes the query plans when indexes are used in various scenarios.
 --
 
-The task of tuning calls for different indexes depending on what the queries look like.
+The task of tuning calls for different indexes depends on what the queries look like.
 Therefore, it is important to have a fundamental understanding of how the indexes operate.
 This section describes the query plans that result from different index scenarios.
 
 Node indexes and relationship indexes operate in the same way.
 Therefore, node and relationship indexes are used interchangeably in this section.
 
-Please refer to xref::indexes-for-search-performance.adoc[] for instructions on how to create and maintain the indexes themselves.
+For instructions on how to create and maintain indexes, refer to xref::indexes-for-search-performance.adoc[].
+
 
 == Index types and predicate compatibility
 
-There are different types of indexes available in Neo4j but they are not all compatible with the same property predicates.
+Generally, an index solves some combination of a label/relationship type predicate and property predicates at the same time.
+There are different types of indexes available in Neo4j and these are compatible with different property predicates.
 
-Indexes are commonly used for `MATCH` and `OPTIONAL MATCH` clauses that combine a label predicate with a property predicate.
-Therefore, it is important to know what kind of predicates that can be solved by the different indexes.
+Indexes are most often used for `MATCH` and `OPTIONAL MATCH` clauses that combine a label/relationship type predicate with a property predicate.
+Therefore, it is important to know what kind of predicates can be solved by the different indexes.
 
-The different indexes are:
+The different index types used for search performance are:
 
+* `LOOKUP`
 * `RANGE`
 * `POINT`
 * `TEXT`
-//* `BTREE` label:deprecated[]
+* `BTREE` label:deprecated[]
+
+[NOTE]
+====
+The `RANGE` and `TEXT` indexes can only perform limited matching on strings - exact, prefix, substring, or suffix matches.
+A `FULLTEXT` index will instead tokenize the indexed string values, so it can match terms anywhere within the strings.
+See xref::indexes-for-full-text-search.adoc[].
+====
+
+
+=== LOOKUP indexes
+
+`LOOKUP` indexes are present by default and solve only node label and relationship type predicates:
+
+[cols="2", options="header"]
+|===
+| Predicate | Syntax (example)
+
+| Node label predicate.
+|
+[source, syntax, role="noheader"]
+----
+MATCH (n:Label)
+----
+
+| Node label predicate.
+|
+[source, syntax, role="noheader"]
+----
+MATCH (n)
+WHERE n:Label
+----
+
+| Relationship type predicate.
+|
+[source, syntax, role="noheader"]
+----
+MATCH ()-[r:REL]->()
+----
+
+| Relationship type predicate.
+|
+[source, syntax, role="noheader"]
+----
+MATCH ()-[r]->()
+WHERE r:REL
+----
+
+|===
+
+[WARNING]
+====
+`LOOKUP` indexes are the most important index type in the database because they improve the performance of the Cypher queries and the population of other indexes.
+Dropping these indexes may lead to severe performance degradation.
+Therefore, carefully consider the consequences before doing so.
+====
 
 
 == RANGE indexes
 
-`RANGE` indexes support most types of predicates:
+In combination with node label and relationship type predicates, `RANGE` indexes support most types of predicates:
 
 [cols="2", options="header"]
 |===
@@ -81,8 +139,7 @@ STARTS WITH
 
 == POINT indexes
 
-
-`POINT` indexes only work for predicates operating on points.
+In combination with node label and relationship type predicates, `POINT` indexes only solve predicates operating on points.
 Therefore, `POINT` indexes are only used when it is known that the predicate evaluates to `null` for all non-point values.
 
 `POINT` indexes only support point type predicates:
@@ -117,7 +174,7 @@ point.distance(n.prop, center) < = distance
 
 == TEXT indexes
 
-`TEXT` indexes only work for predicates operating on strings.
+In combination with node label and relationship type predicates, `TEXT` indexes only solve predicates operating on strings.
 That means that `TEXT` indexes are only used when it is known that the predicate evaluates to `null` for all non-string values.
 
 Predicates that only operate on strings are always solvable by a `TEXT` index:
@@ -188,16 +245,20 @@ CONTAINS
 == Index preference
 
 When multiple indexes are available and able to solve a predicate, there is an order defined that decides which index to use.
+
 It is defined as such:
 
 * `TEXT` indexes are used over `RANGE` and `POINT` indexes for `CONTAINS` and `ENDS WITH`.
 * `POINT` indexes are used over `RANGE` and `TEXT` indexes for distance and within a bounding box.
 * `RANGE` indexes are preferred over `TEXT` and `POINT` indexes in all other cases.
 
-Examples:
+`LOOKUP` indexes are not defined in this order since they never solve the same set of predicates as the other indexes.
 
-// * xref::query-tuning/indexes.adoc#administration-indexes-relationship-btree-index-example[] removed in 5.0
-// * xref::query-tuning/indexes.adoc#administration-indexes-node-range-index-example[] missing
+*Examples:*
+
+* xref::query-tuning/indexes.adoc#administration-indexes-node-label-lookup-index-example[]
+* xref::query-tuning/indexes.adoc#administration-indexes-relationship-type-lookup-index-example[]
+* xref::query-tuning/indexes.adoc#administration-indexes-node-range-index-example[]
 * xref::query-tuning/indexes.adoc#administration-indexes-relationship-range-index-example[]
 * xref::query-tuning/indexes.adoc#administration-indexes-node-text-index-example[]
 * xref::query-tuning/indexes.adoc#administration-indexes-relationship-text-index-example[]
@@ -223,13 +284,133 @@ Examples:
 
 
 [discrete]
+[[administration-indexes-node-label-lookup-index-example]]
+=== Node label LOOKUP index example
+
+In the example below, a node `LOOKUP` index is available.
+
+////
+CREATE LOOKUP INDEX node_label_lookup_index FOR (n) ON EACH labels(n)
+////
+
+.Query
+[source, cypher]
+----
+MATCH (person:Person)
+RETURN person
+----
+
+.Query Plan
+[source]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version 5.0
+
+Batch size 128
+
++------------------+---------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator         | Details       | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++------------------+---------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults  | person        |             42 |   42 |       0 |                |                        |           |                     |
+| |                +---------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeByLabelScan | person:Person |             42 |   42 |      43 |            120 |                    2/1 |     0.565 | Fused in Pipeline 0 |
++------------------+---------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 43, total allocated memory: 184
+----
+
+
+[discrete]
+[[administration-indexes-relationship-type-lookup-index-example]]
+=== Relationship type LOOKUP index example
+
+In the example below, a relationship `LOOKUP` index is available.
+
+////
+CREATE LOOKUP INDEX rel_type_lookup_index FOR ()-[r]-() ON EACH type(r)
+////
+
+.Query
+[source, cypher]
+----
+MATCH ()-[r:KNOWS]->()
+RETURN r
+----
+
+.Query Plan
+[source]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version 5.0
+
+Batch size 128
+
++-------------------------------+------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                      | Details                      | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-------------------------------+------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults               | r                            |             22 |   22 |       0 |                |                        |           |                     |
+| |                             +------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +DirectedRelationshipTypeScan | (anon_0)-[r:KNOWS]->(anon_1) |             22 |   22 |      23 |            120 |                    3/1 |     0.915 | Fused in Pipeline 0 |
++-------------------------------+------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 23, total allocated memory: 184
+----
+
+
+[discrete]
+[[administration-indexes-node-range-index-example]]
+=== Node RANGE index example
+
+In the example below, a `Person(firstname)` node `RANGE` index is available.
+
+////
+CREATE RANGE INDEX node_range_index_name FOR (n:Person) ON (n.firstname)
+////
+
+.Query
+[source,cypher]
+----
+MATCH (person:Person {firstname: 'Andy'})
+RETURN person
+----
+
+.Query Plan
+[source]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version 5.0
+
+Batch size 128
+
++-----------------+----------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator        | Details                                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-----------------+----------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults | person                                                               |              1 |    1 |       0 |                |                        |           |                     |
+| |               +----------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeIndexSeek  | RANGE INDEX person:Person(firstname) WHERE firstname = $autostring_0 |              1 |    1 |       2 |            120 |                    2/1 |     0.635 | Fused in Pipeline 0 |
++-----------------+----------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 2, total allocated memory: 184
+----
+
+
+[discrete]
 [[administration-indexes-relationship-btree-index-example]]
 === Relationship BTREE index
 
 In this example, a `KNOWS(since)` relationship `RANGE` index is available.
 
 ////
-CREATE RANGE INDEX FOR ()-[r:KNOWS]-() ON (r.since)
+CREATE RANGE INDEX rel_range_index_name FOR ()-[r:KNOWS]-() ON (r.since)
 ////
 
 .Query
