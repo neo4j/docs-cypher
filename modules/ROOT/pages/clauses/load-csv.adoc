@@ -15,7 +15,7 @@
 * xref::clauses/load-csv.adoc#load-csv-import-data-from-a-csv-file-containing-headers[Import data from a CSV file containing headers]
 * xref::clauses/load-csv.adoc#load-csv-import-data-from-a-csv-file-with-a-custom-field-delimiter[Import data from a CSV file with a custom field delimiter]
 * xref::clauses/load-csv.adoc#load-csv-importing-large-amounts-of-data[Importing large amounts of data]
-* xref::clauses/load-csv.adoc#load-csv-setting-the-rate-of-periodic-commits[Setting the rate of periodic commits]
+* xref::clauses/load-csv.adoc#load-csv-setting-the-rate-of-call-in-transactions[Setting the rate of +CALL { ... } IN TRANSACTIONS+]
 * xref::clauses/load-csv.adoc#load-csv-import-data-containing-escaped-characters[Import data containing escaped characters]
 * xref::clauses/load-csv.adoc#load-csv-using-linenumber-with-load-csv[Using linenumber() with LOAD CSV]
 * xref::clauses/load-csv.adoc#load-csv-using-file-with-load-csv[Using file() with LOAD CSV]
@@ -33,7 +33,8 @@
   Alternatively, `LOAD CSV` also supports accessing CSV files via _HTTPS_, _HTTP_, and _FTP_.
 * `LOAD CSV` supports resources compressed with _gzip_ and _Deflate_. Additionally `LOAD CSV` supports locally stored CSV files compressed with _ZIP_.
 * `LOAD CSV` will follow _HTTP_ redirects but for security reasons it will not follow redirects that changes the protocol, for example if the redirect is going from _HTTPS_ to _HTTP_.
-* `LOAD CSV` is often used in conjunction with the query hint `PERIODIC COMMIT`; more information on this may be found in xref::query-tuning/using.adoc#query-using-periodic-commit-hint[[deprecated\]#`PERIODIC COMMIT` query hint].
+* `LOAD CSV` is often used in conjunction with the query clause `+CALL { ... } IN TRANSACTIONS+`, see xref::clauses/call-subquery#subquery-call-in-transactions[].
+
 
 .Configuration settings for file URLs
 xref:5.0@operations-manual:ROOT:reference/configuration-settings/index.adoc#config_dbms.security.allow_csv_import_from_file_urls[dbms.security.allow_csv_import_from_file_urls]::
@@ -228,27 +229,33 @@ Labels added: 4
 
 [[load-csv-importing-large-amounts-of-data]]
 == Importing large amounts of data
-If the CSV file contains a significant number of rows (approaching hundreds of thousands or millions), `USING PERIODIC COMMIT` can be used to instruct Neo4j to perform a commit after a number of rows.
+
+If the CSV file contains a significant number of rows (approaching hundreds of thousands or millions), `+CALL { ... } IN TRANSACTIONS+` can be used to instruct Neo4j to commit a transaction after a number of rows.
 This reduces the memory overhead of the transaction state.
-By default, the commit happens every 1000 rows.
-Note that `PERIODIC COMMIT` is only allowed in xref::introduction/transactions.adoc[implicit (auto-commit or `:auto`) transactions].
-For more information, see xref::query-tuning/using.adoc#query-using-periodic-commit-hint[[deprecated\]#`PERIODIC COMMIT` query hint].
 
 [NOTE]
 ====
-The xref::clauses/use.adoc[`USE` clause] can not be used together with the `PERIODIC COMMIT` query hint.
+The query clause `+CALL { ... } IN TRANSACTIONS+` is only allowed in xref::introduction/transactions.adoc[implicit (auto-commit or `:auto`) transactions].
+For more information, see xref::clauses/call-subquery#subquery-call-in-transactions[].
 ====
 
-[NOTE]
-====
-Queries with the `PERIODIC COMMIT` query hint can not be routed by xref:5.0@operations-manual:ROOT:clustering/internals/index.adoc#causal-clustering-routing[Server-side routing].
-====
+.+artists.csv+
+[source, csv, role="noheader"]
+----
+1,ABBA,1992
+2,Roxette,1986
+3,Europe,1979
+4,The Cardigans,1992
+----
 
 .Query
-[source, cypher, subs=attributes+, indent=0]
+[source, cypher, subs=attributes+]
 ----
-USING PERIODIC COMMIT LOAD CSV FROM 'file:///artists.csv' AS line
-CREATE (:Artist {name: line[1], year: toInteger(line[2])})
+LOAD CSV FROM 'file:///artists.csv' AS line
+CALL {
+  WITH line
+  CREATE (:Artist {name: line[1], year: toInteger(line[2])})
+} IN TRANSACTIONS
 ----
 
 .Result
@@ -260,18 +267,33 @@ CREATE (:Artist {name: line[1], year: toInteger(line[2])})
 Nodes created: 4
 Properties set: 8
 Labels added: 4
+Transactions committed: 1
 ----
 
 
-[[load-csv-setting-the-rate-of-periodic-commits]]
-== Setting the rate of periodic commits
-You can set the number of rows as in the example, where it is set to 500 rows.
+[[load-csv-setting-the-rate-of-call-in-transactions]]
+== Setting the rate of CALL IN TRANSACTIONS
+
+You can set the number of rows as in the example, where it is set to `500` rows.
+
+
+.+artists.csv+
+[source, csv, role="noheader"]
+----
+1,ABBA,1992
+2,Roxette,1986
+3,Europe,1979
+4,The Cardigans,1992
+----
 
 .Query
-[source, cypher, subs=attributes+, indent=0]
+[source, cypher, subs=attributes+]
 ----
-USING PERIODIC COMMIT 500 LOAD CSV FROM 'file:///artists.csv' AS line
-CREATE (:Artist {name: line[1], year: toInteger(line[2])})
+LOAD CSV FROM 'file:///artists.csv' AS line
+CALL {
+  WITH line
+  CREATE (:Artist {name: line[1], year: toInteger(line[2])})
+} IN TRANSACTIONS OF 500 ROWS
 ----
 
 .Result
@@ -283,6 +305,7 @@ CREATE (:Artist {name: line[1], year: toInteger(line[2])})
 Nodes created: 4
 Properties set: 8
 Labels added: 4
+Transactions committed: 1
 ----
 
 
