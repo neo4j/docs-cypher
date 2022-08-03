@@ -423,3 +423,622 @@ However, as `null = null` does not yield `true`, the `WHEN null THEN -1` branch 
 
 ======
 
+
+[[label-expressions]]
+== Label expressions
+
+Label expressions evaluate to `true` or `false` when applied to the set of labels for a node.
+
+Assuming no other filters are applied, then a label expression evaluating to `true` means the node is matched.
+
+The following table displays whether the label expression matches the node:
+
+.Label expression matches
+[cols="^3,^2,^2,^2,^2,^2,^2,^2,^2"]
+|===
+|
+8+^|*Node*
+
+|*Label expression* | `()` | `(:A)` | `(:B)` | `(:C)` | `(:A:B)` | `(:A:C)` | `(:B:C)` | `(:A:B:C)`
+| `()`
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+
+| `(:A)`
+|
+| {check-mark}
+|
+|
+| {check-mark}
+| {check-mark}
+|
+| {check-mark}
+
+| `(:A&B)`
+|
+|
+|
+|
+| {check-mark}
+|
+|
+| {check-mark}
+
+| `(:A\|B)`
+|
+| {check-mark}
+| {check-mark}
+|
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+
+| `(:!A)`
+| {check-mark}
+|
+| {check-mark}
+| {check-mark}
+|
+|
+| {check-mark}
+|
+
+| `(:!!A)`
+|
+| {check-mark}
+|
+|
+| {check-mark}
+| {check-mark}
+|
+| {check-mark}
+
+| `(:A&!A)`
+|
+|
+|
+|
+|
+|
+|
+|
+
+| `(:A\|!A)`
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+
+| `(:%)`
+|
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+
+| `(:!%)`
+| {check-mark}
+|
+|
+|
+|
+|
+|
+|
+
+| `(:%\|!%)`
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+
+| `(:%&!%)`
+|
+|
+|
+|
+|
+|
+|
+|
+
+| `(:A&%)`
+|
+| {check-mark}
+|
+|
+| {check-mark}
+| {check-mark}
+|
+| {check-mark}
+
+| `(:A\|%)`
+|
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+
+| `(:(A&B)&!(B&C))`
+|
+|
+|
+|
+| {check-mark}
+|
+|
+|
+
+| `(:!(A&%)&%))`
+|
+|
+| {check-mark}
+| {check-mark}
+|
+|
+| {check-mark}
+|
+
+|===
+
+[WARNING]
+====
+Label expressions cannot be combined with label syntax.
+For example, `:A:B&C` will throw an error.
+Instead, use either `:A&B&C` or `:A:B:C`.
+====
+
+The following graph is used for the examples below:
+
+////
+CREATE
+  (:A {name:'Alice'}),
+  (:B {name:'Bob'}),
+  (:C {name:'Charlie'}),
+  (:A:B {name:'Daniel'}),
+  (:A:C {name:'Eskil'}),
+  (:B:C {name:'Frank'}),
+  (:A:B:C {name:'George'}),
+  ({name:'Henry'})
+////
+
+image:graph_label_expressions.svg[]
+
+
+*Examples:*
+
+* xref:syntax/expressions.adoc#label-expressions-match-without-label-expression[]
+* xref:syntax/expressions.adoc#label-expressions-match-on-single-node-label[]
+* xref:syntax/expressions.adoc#label-expressions-match-and-expression[]
+* xref:syntax/expressions.adoc#label-expressions-match-or-expression[]
+* xref:syntax/expressions.adoc#label-expressions-match-not-expression[]
+* xref:syntax/expressions.adoc#label-expressions-match-wildcard-expression[]
+* xref:syntax/expressions.adoc#label-expressions-match-nesting-label-expression[]
+* xref:syntax/expressions.adoc#label-expressions-match-predicate-label-expression[]
+* xref:syntax/expressions.adoc#label-expressions-match-return-label-expression[]
+
+
+[discrete]
+[[label-expressions-match-without-label-expression]]
+=== Match without label expression
+
+A match without a label expression returns all nodes in the graph, non withstanding if the node is empty.
+
+.+Label expression+
+======
+////
+CREATE
+  (:A {name:'Alice'}),
+  (:B {name:'Bob'}),
+  (:C {name:'Charlie'}),
+  (:A:B {name:'Daniel'}),
+  (:A:C {name:'Eskil'}),
+  (:B:C {name:'Frank'}),
+  (:A:B:C {name:'George'}),
+  ({name:'Henry'})
+////
+
+.Query
+[source, cypher]
+----
+MATCH (n)
+RETURN n.name AS name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Alice"+
+| +"Bob"+
+| +"Charlie"+
+| +"Daniel"+
+| +"Eskil"+
+| +"Frank"+
+| +"George"+
+| +"Henry"+
+1+d|Rows: 8
+|===
+
+======
+
+
+[discrete]
+[[label-expressions-match-on-single-node-label]]
+=== Match on single node label
+
+A match on a single node label returns the nodes that contains the specified label.
+
+
+.+Label expression+
+======
+////
+CREATE
+  (:A {name:'Alice'}),
+  (:B {name:'Bob'}),
+  (:C {name:'Charlie'}),
+  (:A:B {name:'Daniel'}),
+  (:A:C {name:'Eskil'}),
+  (:B:C {name:'Frank'}),
+  (:A:B:C {name:'George'}),
+  ({name:'Henry'})
+////
+
+.Query
+[source, cypher]
+----
+MATCH (n:A)
+RETURN n.name AS name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Alice"+
+| +"Daniel"+
+| +"Eskil"+
+| +"George"+
+1+d|Rows: 4
+|===
+
+======
+
+
+[discrete]
+[[label-expressions-match-and-expression]]
+=== Match with an `AND` expression for the node labels
+
+A match with an `AND` expression for the node label returns the nodes that contains both the specified labels.
+
+
+.+Label expression+
+======
+
+////
+CREATE
+  (:A {name:'Alice'}),
+  (:B {name:'Bob'}),
+  (:C {name:'Charlie'}),
+  (:A:B {name:'Daniel'}),
+  (:A:C {name:'Eskil'}),
+  (:B:C {name:'Frank'}),
+  (:A:B:C {name:'George'}),
+  ({name:'Henry'})
+////
+
+.Query
+[source, cypher]
+----
+MATCH (n:A&B)
+RETURN n.name AS name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Daniel"+
+| +"George"+
+1+d|Rows: 2
+|===
+
+======
+
+
+[discrete]
+[[label-expressions-match-or-expression]]
+=== Match with an `OR` expression for the node labels
+
+A match with an `OR` expression for the node label returns the nodes that contains either of the specified labels.
+
+
+.+Label expression+
+======
+
+////
+CREATE
+  (:A {name:'Alice'}),
+  (:B {name:'Bob'}),
+  (:C {name:'Charlie'}),
+  (:A:B {name:'Daniel'}),
+  (:A:C {name:'Eskil'}),
+  (:B:C {name:'Frank'}),
+  (:A:B:C {name:'George'}),
+  ({name:'Henry'})
+////
+
+.Query
+[source, cypher]
+----
+MATCH (n:A|B)
+RETURN n.name AS name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Alice"+
+| +"Bob"+
+| +"Daniel"+
+| +"Eskil"+
+| +"Frank"+
+| +"George"+
+1+d|Rows: 6
+|===
+
+======
+
+
+[discrete]
+[[label-expressions-match-not-expression]]
+=== Match with a `NOT` expression for the node labels
+
+A match with a `NOT` expression for the node label returns the nodes that does not contain the specified label.
+
+
+.+Label expression+
+======
+
+////
+CREATE
+  (:A {name:'Alice'}),
+  (:B {name:'Bob'}),
+  (:C {name:'Charlie'}),
+  (:A:B {name:'Daniel'}),
+  (:A:C {name:'Eskil'}),
+  (:B:C {name:'Frank'}),
+  (:A:B:C {name:'George'}),
+  ({name:'Henry'})
+////
+
+.Query
+[source, cypher]
+----
+MATCH (n:!A)
+RETURN n.name AS name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Bob"+
+| +"Charlie"+
+| +"Frank"+
+| +"Henry"+
+1+d|Rows: 4
+|===
+
+======
+
+
+[discrete]
+[[label-expressions-match-wildcard-expression]]
+=== Match with a `Wildcard` expression for the node labels
+
+A match with a `Wildcard` expression for the node label returns the nodes that contains any label.
+
+
+.+Label expression+
+======
+
+////
+CREATE
+  (:A {name:'Alice'}),
+  (:B {name:'Bob'}),
+  (:C {name:'Charlie'}),
+  (:A:B {name:'Daniel'}),
+  (:A:C {name:'Eskil'}),
+  (:B:C {name:'Frank'}),
+  (:A:B:C {name:'George'}),
+  ({name:'Henry'})
+////
+
+.Query
+[source, cypher]
+----
+MATCH (n:%)
+RETURN n.name AS name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Alice"+
+| +"Bob"+
+| +"Charlie"+
+| +"Daniel"+
+| +"Eskil"+
+| +"Frank"+
+| +"George"+
+1+d|Rows: 7
+|===
+
+======
+
+
+[discrete]
+[[label-expressions-match-nesting-label-expression]]
+=== Match with a nesting of label expressions for the node labels
+
+A match with a nesting of label expressions for the node label returns the nodes for which the full expression is `true`.
+
+
+.+Label expression+
+======
+
+////
+CREATE
+  (:A {name:'Alice'}),
+  (:B {name:'Bob'}),
+  (:C {name:'Charlie'}),
+  (:A:B {name:'Daniel'}),
+  (:A:C {name:'Eskil'}),
+  (:B:C {name:'Frank'}),
+  (:A:B:C {name:'George'}),
+  ({name:'Henry'})
+////
+
+.Query
+[source, cypher]
+----
+MATCH (n:(!A&!B)|C)
+RETURN n.name AS name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Charlie"+
+| +"Eskil"+
+| +"Frank"+
+| +"George"+
+| +"Henry"+
+1+d|Rows: 5
+|===
+
+======
+
+
+[discrete]
+[[label-expressions-match-predicate-label-expression]]
+=== Match with label expressions in the predicate
+
+A label expression can also be used as a predicate in the `WHERE` clause.
+
+
+.+Label expression+
+======
+
+////
+CREATE
+  (:A {name:'Alice'}),
+  (:B {name:'Bob'}),
+  (:C {name:'Charlie'}),
+  (:A:B {name:'Daniel'}),
+  (:A:C {name:'Eskil'}),
+  (:B:C {name:'Frank'}),
+  (:A:B:C {name:'George'}),
+  ({name:'Henry'})
+////
+
+.Query
+[source, cypher]
+----
+MATCH (n)
+WHERE n:A|B
+RETURN n.name AS name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Alice"+
+| +"Bob"+
+| +"Daniel"+
+| +"Eskil"+
+| +"Frank"+
+| +"George"+
+1+d|Rows: 6
+|===
+
+======
+
+
+[discrete]
+[[label-expressions-match-return-label-expression]]
+=== Match with label expressions in the return
+
+A label expression can also be used in the `WITH` or `RETURN` statement.
+
+
+.+Label expression+
+======
+
+////
+CREATE
+  (:A {name:'Alice'}),
+  (:B {name:'Bob'}),
+  (:C {name:'Charlie'}),
+  (:A:B {name:'Daniel'}),
+  (:A:C {name:'Eskil'}),
+  (:B:C {name:'Frank'}),
+  (:A:B:C {name:'George'}),
+  ({name:'Henry'})
+////
+
+.Query
+[source, cypher]
+----
+MATCH (n)
+RETURN n:A&B
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +n:A&B+
+| +false+
+| +false+
+| +false+
+| +true+
+| +false+
+| +false+
+| +true+
+| +false+
+1+d|Rows: 8
+|===
+
+======
+
+
+// TODO
+//[[relationship-type-expressions]]
+//== Relationship Type Expressions
+
