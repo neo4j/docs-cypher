@@ -2390,6 +2390,61 @@ Total database accesses: 68, total allocated memory: 1208
 ======
 
 
+[[query-plan-breadth-first-varlength-expand-pruning-bfs]]
+== Breadth First VarLength Expand Pruning
+// VarLengthExpand(Pruning,BFS)
+// New in 5.0
+
+Given a start node, the `VarLengthExpand(Pruning,BFS)` operator traverses variable-length relationships much like the xref::execution-plans/operators.adoc#query-plan-varlength-expand-all[`VarLengthExpand(All)`] operator.
+However, as an optimization, it instead performs a breadth-first search (BFS) and while expanding, some paths are not explored if they are guaranteed to produce an end node that has already been found (by means of a previous path traversal).
+This is only used in cases where the individual paths are not of interest.
+
+This kind of expand is only planned when:
+
+* The individual paths are not of interest.
+* The relationships have an upper bound.
+* The lower bound is either `0` or `1` (default).
+
+This operator guarantees that all the end nodes produced are unique.
+
+.Query
+[source, cypher]
+----
+MATCH (p:Person)-[:FRIENDS_WITH *..4]-(q:Person)
+RETURN DISTINCT p, q
+----
+
+.Query Plan
+[source]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version 5.0
+
+Batch size 128
+
++-------------------------------+-----------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                      | Details                     | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-------------------------------+-----------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults               | p, q                        |             56 |   68 |       0 |                |                        |           |                     |
+| |                             +-----------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Distinct                     | p, q                        |             56 |   68 |       0 |           4480 |                        |           |                     |
+| |                             +-----------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Filter                       | q:Person                    |             59 |   68 |     136 |                |                        |           |                     |
+| |                             +-----------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +VarLengthExpand(Pruning,BFS) | (p)-[:FRIENDS_WITH*..4]-(q) |             59 |   68 |     280 |            696 |                        |           |                     |
+| |                             +-----------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Filter                       | p:Person                    |             14 |   14 |      35 |                |                        |           |                     |
+| |                             +-----------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +AllNodesScan                 | p                           |             35 |   35 |      36 |            120 |                    6/0 |    18.868 | Fused in Pipeline 0 |
++-------------------------------+-----------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 487, total allocated memory: 5256
+----
+
+
 [[query-plan-assert-same-node]]
 == Assert Same Node
 // AssertSameNode
