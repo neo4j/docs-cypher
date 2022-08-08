@@ -35,6 +35,7 @@ An expression in Cypher can be:
 * A path-pattern: `+(a)-[r]->(b)+`, `+(a)-[r]-(b)+`, `+(a)--(b)+`, `+(a)-->()<--(b)+`.
 * An operator application: `1 + 2`, `3 < 4`.
 * A predicate expression is an expression that returns `true` or `false`: `a.prop = 'Hello'`, `length(p) > 10`, `a.name IS NOT NULL`.
+* A special case of predicates are label and relationship type expressions: `(n:A|B)`, `()-[r:R1|R2]->()`.
 * An existential subquery is an expression that returns `true` or `false`:
 `EXISTS {
   MATCH (n)-[r]->(p)
@@ -1038,7 +1039,409 @@ RETURN n:A&B
 ======
 
 
-// TODO
-//[[relationship-type-expressions]]
-//== Relationship Type Expressions
+[[relationship-type-expressions]]
+== Relationship type expressions
+
+Relationship type expressions evaluate to `true` or `false` when applied to the type of a relationship.
+ 
+Assuming no other filters are applied, then a relationship type expression evaluating to `true` means the relationship is matched.
+
+[IMPORTANT]
+====
+Relationships must have exactly one type.
+So for example the expressions: `(a)-[r:R&Q]-(b)` or `(a)-[r:!%]-(b)` will never return any results.
+====
+
+[NOTE]
+====
+<<cypher-pattern-varlength, Variable length relationships>> may only have relationship type expressions consisting of `|`.
+That means that `()-[r:!R*]-()` is not allowed, whereas `()-[r:Q|R*]-()` is allowed.
+====
+
+
+The following table displays whether the relationship type expression matches the relationship:
+
+[cols="^3,^2,^2,^2"]
+|===
+|
+3+^|*Relationship*
+
+|*Relationship type expression* |  `[:A]` | `[:B]` | `[:C]`
+
+| `[]`
+| {check-mark}
+| {check-mark}
+| {check-mark}
+
+| `[:A]`
+| {check-mark}
+|
+|
+
+| `[:A&B]`
+|
+|
+|
+
+| `[:A\|B]`
+| {check-mark}
+| {check-mark}
+|
+
+| `[:!A]`
+|
+| {check-mark}
+| {check-mark}
+
+| `[:!!A]`
+| {check-mark}
+|
+|
+
+| `[:A&!A]`
+|
+|
+|
+
+| `[:A\|!A]`
+| {check-mark}
+| {check-mark}
+| {check-mark}
+
+| `[:%]`
+| {check-mark}
+| {check-mark}
+| {check-mark}
+
+| `[:!%]`
+|
+|
+|
+
+| `[:%\|!%]`
+| {check-mark}
+| {check-mark}
+| {check-mark}
+
+| `[:%&!%]`
+|
+|
+|
+
+| `[:A&%]`
+|
+|
+|
+
+| `[:A\|%]`
+| {check-mark}
+| {check-mark}
+| {check-mark}
+
+|===
+
+
+*Examples:*
+
+* xref:syntax/expressions.adoc#relationship-type-expressions-match-without-relationship-type-expression[]
+* xref:syntax/expressions.adoc#relationship-type-expressions-match-on-single-relationship-type[]
+* xref:syntax/expressions.adoc#relationship-type-expressions-match-or-expression[]
+* xref:syntax/expressions.adoc#relationship-type-expressions-match-not-expression[]
+* xref:syntax/expressions.adoc#relationship-type-expressions-match-nesting-type-expression[]
+* xref:syntax/expressions.adoc#relationship-type-expressions-match-predicate-type-expression[]
+* xref:syntax/expressions.adoc#relationship-type-expressions-match-return-type-expression[]
+* xref:syntax/expressions.adoc#relationship-type-expressions-match-case-type-expression[]
+
+
+The following graph is used for the examples below:
+
+image:graph_relationship_type_expressions.svg[]
+
+
+[discrete]
+[[relationship-type-expressions-match-without-relationship-type-expression]]
+=== Match without relationship type expression
+
+A match without a relationship type expression returns all relationships in the graph.
+
+
+.Relationship type expression
+======
+
+////
+CREATE
+  (:A:B)-[:R1 {name:'Teaches'}]->(:B),
+  (:C)-[:R2 {name:'Studies'}]->(:D),
+  (:E)-[:R3 {name:'Parents'}]->(:F)
+////
+
+.Query
+[source, cypher]
+----
+MATCH ()-[r]->()
+RETURN r.name as name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Teaches"+
+| +"Studies"+
+| +"Parents"+
+1+d|Rows: 3
+|===
+
+======
+
+
+[discrete]
+[[relationship-type-expressions-match-on-single-relationship-type]]
+=== Match on single relationship type
+
+A match on a single relationship type returns the relationships that contains the specified type.
+
+
+.Relationship type expression
+======
+
+////
+CREATE
+  (:A:B)-[:R1 {name:'Teaches'}]->(:B),
+  (:C)-[:R2 {name:'Studies'}]->(:D),
+  (:E)-[:R3 {name:'Parents'}]->(:F)
+////
+
+.Query
+[source, cypher]
+----
+MATCH ()-[r:R1]->()
+RETURN r.name AS name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Teaches"+
+1+d|Rows: 1
+|===
+
+======
+
+
+[discrete]
+[[relationship-type-expressions-match-or-expression]]
+=== Match with an `OR` expression for the relationship types
+
+A match with an `OR` expression for the relationship type returns the relationships that contains either of the specified types.
+
+
+.Relationship type expression
+======
+
+.Query
+[source, cypher]
+----
+MATCH ()-[r:R1|R2]->()
+RETURN r.name AS name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Teaches"+
+| +"Studies"+
+1+d|Rows: 2
+|===
+
+======
+
+
+[discrete]
+[[relationship-type-expressions-match-not-expression]]
+=== Match with a `NOT` expression for the relationship types
+
+A match with a `NOT` expression for the relationship type returns the relationships that does not contain the specified type.
+
+
+.Relationship type expression
+======
+
+////
+CREATE
+  (:A:B)-[:R1 {name:'Teaches'}]->(:B),
+  (:C)-[:R2 {name:'Studies'}]->(:D),
+  (:E)-[:R3 {name:'Parents'}]->(:F)
+////
+
+.Query
+[source, cypher]
+----
+MATCH ()-[r:!R1]->()
+RETURN r.name AS name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Studies"+
+| +"Parents"+
+1+d|Rows: 2
+|===
+
+======
+
+
+[discrete]
+[[relationship-type-expressions-match-nesting-type-expression]]
+=== Match with a nesting of relationship type expressions for the relationship types
+
+A match with a nesting of relationship type expressions for the relationship type returns the nodes for which the full expression is `true`.
+
+
+.Relationship type expression
+======
+
+////
+CREATE
+  (:A:B)-[:R1 {name:'Teaches'}]->(:B),
+  (:C)-[:R2 {name:'Studies'}]->(:D),
+  (:E)-[:R3 {name:'Parents'}]->(:F)
+////
+
+.Query
+[source, cypher]
+----
+MATCH ()-[r:(!R1&!R2)|R3]->()
+RETURN r.name as name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Parents"+
+1+d|Rows: 1
+|===
+
+======
+
+
+[discrete]
+[[relationship-type-expressions-match-predicate-type-expression]]
+=== Match with relationship type expressions in the predicate
+
+A relationship type expression can also be used as a predicate in the `WHERE` clause.
+
+
+.Relationship type expression
+======
+
+////
+CREATE
+  (:A:B)-[:R1 {name:'Teaches'}]->(:B),
+  (:C)-[:R2 {name:'Studies'}]->(:D),
+  (:E)-[:R3 {name:'Parents'}]->(:F)
+////
+
+.Query
+[source, cypher]
+----
+MATCH (n)-[r]->(m)
+WHERE r:R1|R2
+RETURN r.name AS name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Teaches"+
+| +"Studies"+
+1+d|Rows: 2
+|===
+
+======
+
+
+[discrete]
+[[relationship-type-expressions-match-return-type-expression]]
+=== Match with relationship type expression in the return
+
+A relationship type expression can also be used in the `WITH` or `RETURN` statement.
+
+
+.Relationship type expression
+======
+
+////
+CREATE
+  (:A:B)-[:R1 {name:'Teaches'}]->(:B),
+  (:C)-[:R2 {name:'Studies'}]->(:D),
+  (:E)-[:R3 {name:'Parents'}]->(:F)
+////
+
+.Query
+[source, cypher]
+----
+MATCH (n)-[r]->(m)
+RETURN r:R1|R2 AS result
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +result+
+| +true+
+| +true+
+| +false+
+1+d|Rows: 3
+|===
+
+======
+
+
+[discrete]
+[[relationship-type-expressions-match-case-type-expression]]
+=== Match with relationship type expression and node label expression in a case
+
+A relationship type expression and a label expression can also be used in a case statement.
+
+
+.Relationship type expression
+======
+
+////
+CREATE
+  (:A:B)-[:R1 {name:'Teaches'}]->(:B),
+  (:C)-[:R2 {name:'Studies'}]->(:D),
+  (:E)-[:R3 {name:'Parents'}]->(:F)
+////
+
+.Query
+[source, cypher]
+----
+MATCH (n)-[r]->(m)
+RETURN
+CASE
+  WHEN n:A&B THEN 1
+  WHEN r:!R1&!R2 THEN 2
+  ELSE -1
+END AS result
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +result+
+| +1+
+| +-1+
+| +2+
+1+d|Rows: 3
+|===
+
+======
 
