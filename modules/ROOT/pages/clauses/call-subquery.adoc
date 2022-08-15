@@ -452,6 +452,93 @@ As the size of the CSV file in this example is small, only a single separate tra
 ====
 
 
+[[delete-with-call-in-transactions]]
+=== Deleting a large volume of nodes
+
+Using `+CALL { ... } IN TRANSACTIONS+` is the recommended way of deleting a large volume of nodes.
+
+
+.+DETACH DELETE+
+======
+
+////
+CREATE
+  (a:Person:Child {age: 20, name: 'Alice'}),
+  (b:Person {age: 27, name: 'Bob'}),
+  (c:Person:Parent {age: 65, name: 'Charlie'}),
+  (d:Person {age: 30, name: 'Dora'}),
+  (:Counter {count: 0})
+  CREATE (a)-[:FRIEND_OF]->(b)
+  CREATE (a)-[:CHILD_OF]->(c)
+////
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n)
+CALL {
+  WITH n
+  DETACH DELETE n
+} IN TRANSACTIONS
+----
+
+.Result
+[role="queryresult",options="footer",cols="1*<m"]
+|===
+1+|(empty result)
+1+d|Rows: 0 +
+Nodes deleted: 5 +
+Relationships deleted: 2 +
+Transactions committed: 1
+|===
+
+[IMPORTANT]
+====
+The `+CALL { ... } IN TRANSACTIONS+` subquery is handled by the database so as to ensure optimal performance.
+Modifying the subquery may result in `OutOfMemory` exceptions for sufficiently large datasets.
+====
+
+======
+
+
+.+DETACH DELTE+
+======
+
+The `+CALL { ... } IN TRANSACTIONS+` subquery should not be modified.
+
+Any necessary filtering can be done before the subquery.
+
+////
+CREATE
+  (a:Person:Child {age: 20, name: 'Alice'}),
+  (b:Person {age: 27, name: 'Bob'}),
+  (c:Person:Parent {age: 65, name: 'Charlie'}),
+  (d:Person {age: 30, name: 'Dora'}),
+  (:Counter {count: 0})
+  CREATE (a)-[:FRIEND_OF]->(b)
+  CREATE (a)-[:CHILD_OF]->(c)
+////
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n:Label) WHERE n.prop > 100
+CALL {
+  WITH n
+  DETACH DELETE n
+} IN TRANSACTIONS
+----
+
+.Result
+[role="queryresult",options="footer",cols="1*<m"]
+|===
+1+|(empty result)
+1+d|Rows: 0
+|===
+
+======
+
+
 === Batching
 
 The amount of work to do in each separate transaction can be specified in terms of how many input rows
