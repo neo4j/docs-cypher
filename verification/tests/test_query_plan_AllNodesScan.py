@@ -1,13 +1,19 @@
 import pytest
 import logging
+import pprint
 
 from textwrap import dedent
 from prettytable import PrettyTable
 
 log = logging.getLogger()
+pp = pprint.PrettyPrinter(indent=1, width=120, sort_dicts=False)
 
-# python -m pytest tests/consume_records.py
+# python -m pytest tests/test_query_plan_AllNodesScan.py
 def test_consume(neo4j_container):
+
+    test_id = "8563b9dd-31ed-49fe-9c04-a491377526d0"
+
+    adoc = "/home/martin/WSPACEDOCS/docs-cypher/modules/ROOT/pages/execution-plans/operators.adoc"
 
     # neo4j.GraphDatabase.driver
     driver = neo4j_container.get_driver()
@@ -15,7 +21,6 @@ def test_consume(neo4j_container):
     # CLEAN
     with driver.session() as session:
         session.run("MATCH (_) DETACH DELETE _").consume()
-        # delete indexes and other stuff
 
     # STATE
     with driver.session() as session:
@@ -25,27 +30,31 @@ def test_consume(neo4j_container):
     # EXAMPLE
     def match_person_nodes(tx):
         q = dedent('''\
-        MATCH (a:Person)
-        RETURN
-          a.ix AS repr,
-          a.name AS name
-        ORDER BY a.name''')
+        PROFILE
+        MATCH (n)
+        RETURN n''')
         result = tx.run(q)
-        data = [[record["repr"], record["name"]] for record in result]
-        return (result.keys(), data)
+        data = [[record["n"],] for record in result]
+        summary = result.consume()
+        return (result.keys(), data, summary)
 
     with driver.session() as session:
-        keys, data = session.read_transaction(match_person_nodes)
+        keys, data, summary = session.read_transaction(match_person_nodes)
 
     driver.close()
 
     log.info(data)
+    log.info("\nCounters:\n{}".format(summary.counters))
+    log.info("\nNotifications:\n{}".format(summary.notifications))
+    log.info("\nQuery Plan:\n{}".format(summary.plan))
+    profile = pp.pformat(summary.profile)
+    log.info("\nQuery Profile:\n{}".format(profile))
 
-    assert keys == ["repr", "name"]
-    assert data == [
-        [7, "Alice"],
-        [2, "Bob"],
-    ]
+    # assert keys == ["repr", "name"]
+    # assert data == [
+    #     [7, "Alice"],
+    #     [2, "Bob"],
+    # ]
 
     pt = PrettyTable()
     pt.align = "l"
@@ -80,14 +89,9 @@ def test_consume(neo4j_container):
 
     log.info("\n{}".format(pt))
 
-    assert str(pt) == dedent('''\
-    +------+-------+
-    | repr | name  |
-    +------+-------+
-    | 7    | Alice |
-    | 2    | Bob   |
-    +------+-------+''')
-
     # Test that the ID for the test is present on a specific page
     # Test that the example is present on a specific page
     # Test that the result is present on a specific page
+
+    # WSPACEDOCS/docs-cypher/modules/ROOT/pages/execution-plans/operators.adoc
+

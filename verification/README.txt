@@ -1,3 +1,34 @@
+Check you python version.
+
+```
+python --version
+```
+
+Check where you python binary is located.
+
+```
+which python
+```
+
+```
+python -m pip lists
+```
+
+```
+python -m pip install -r requirements.txt
+```
+
+Run all tests.
+```
+python -m tox
+```
+
+or
+
+```
+tox
+```
+
 To create a virtual environment named sandbox, use:
 
 ```
@@ -69,6 +100,11 @@ Check the health of the Neo4j instance
 
 https://tox.wiki/en/latest/
 
+Recreate the environment if you change the tests/requirements.txt file.
+
+```
+tox --recreate
+```
 
 # Style guide
 
