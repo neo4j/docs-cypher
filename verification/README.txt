@@ -1,5 +1,37 @@
 # Cypher Documentation Tests
 
+The tests run pytest.
+
+The fixture that get a specific Neo4j version is defined in:
+
+```
+docs-cypher/verification/tests/conftest.py
+```
+
+This fixture uses the testcontainers module to fetch a specific docker image of Neo4j and starts it and when all tests have run stops it.
+
+https://github.com/testcontainers/testcontainers-python
+
+The testcontainers module exposes a Neo4j driver also.
+
+
+## Test examples
+
+
+### tests/test_container.py
+
+This is a simple example that show how to run a Cypher query.
+
+
+### tests/test_match_clause.py
+
+This is a WIP example to show how a Cypher query example should be tested.
+
+
+### tests/test_query_plan_AllNodesScan.py
+
+This is a WIP example to show how a query plan output should be tested.
+
 
 ## Python
 
