@@ -1,24 +1,11 @@
-Check you python version.
+# Cypher Documentation Tests
 
-```
-python --version
-```
 
-Check where you python binary is located.
+## Python
 
-```
-which python
-```
-
-```
-python -m pip lists
-```
-
-```
-python -m pip install -r requirements.txt
-```
 
 Run all tests.
+
 ```
 python -m tox
 ```
@@ -29,62 +16,84 @@ or
 tox
 ```
 
-To create a virtual environment named sandbox, use:
+### Check you python version
+
+```
+python --version
+```
+
+### Check where you python binary is located
+
+```
+which python
+```
+
+### Create a virtual environment named sandbox
 
 ```
 python -m venv sandbox
 ```
 
-To activate the virtual environment named sandbox, use:
+### Activate the virtual environment named sandbox
 
 ```
 source sandbox/bin/activate
 ```
 
-To deactivate the current active virtual environment, use:
+### Deactivate the current active virtual environment
 
 ```
 deactivate
 ```
 
-Upgrade pip
+### Upgrade pip
 
 ```
 python -m pip install --upgrade pip
 ```
 
-Install requirements
+### Check whats is installed
 
 ```
-python -m pip install --requirement requirements.txt
+python -m pip lists
 ```
 
-```
-python -m pip list
-```
+### Install modules specified in a requirements file
 
 ```
-attrs      22.1.0
-iniconfig  1.1.1
-neo4j      4.4.5
-packaging  21.3
-pip        22.2.2
-pluggy     1.0.0
-py         1.11.0
-pyparsing  3.0.9
-pytest     7.1.2
-pytz       2022.1
-setuptools 58.1.0
-tomli      2.0.1
+python -m pip install -r requirements.txt
 ```
 
 
-Run integration tests
+## Tests
+
+### Run all tests
+
+```
+tox
+```
+
+### Run a specific test file
+
+```
+python -m pytest tests/test_container.py
+```
+
+### tox
+
+https://tox.wiki/en/latest/
+
+Recreate the environment if you change the tests/requirements.txt file.
+
+```
+tox --recreate
+```
+
+### Other
 
 ```
 docker run --name neo4j --env NEO4J_AUTH=neo4j/pass -p7687:7687 --rm neo4j:latest
 ```
-
 
 Check the health of the Neo4j instance
 
@@ -96,21 +105,16 @@ Check the health of the Neo4j instance
 ```
 
 
-# tox
-
-https://tox.wiki/en/latest/
-
-Recreate the environment if you change the tests/requirements.txt file.
-
-```
-tox --recreate
-```
-
-# Style guide
+## Style guide
 
 https://google.github.io/styleguide/pyguide.html
 
 https://docs.python.org/3/library/textwrap.html#textwrap.dedent
 
 
+## Generate UUID
+
+```
+python uuid4.py
+```
 

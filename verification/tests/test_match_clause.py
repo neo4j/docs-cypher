@@ -13,7 +13,7 @@ def test_consume(neo4j_container):
 
     test_id = "9c50f265-f7e9-4a9a-a4c2-871b02ae22e6"
 
-    adoc = "/home/martin/WSPACEDOCS/docs-cypher/modules/ROOT/pages/clauses/match.adoc"
+    adoc_path = "docs-cypher/modules/ROOT/pages/clauses/match.adoc"
 
     # Test that the ID for the test is present on a specific page
     # Test that the example is present on a specific page
