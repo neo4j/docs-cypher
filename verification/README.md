@@ -150,3 +150,40 @@ https://docs.python.org/3/library/textwrap.html#textwrap.dedent
 python uuid4.py
 ```
 
+
+# Development environment
+
+## Create a virtual python environment
+
+```
+python -m venv sandbox
+```
+
+```
+source sandbox/bin/activate
+```
+
+```
+python -m pip install --upgrade pip
+```
+
+```
+python -m pip install -r requirements.txt
+```
+
+## Run all tests
+
+The tests are defined in the directory `tests`.
+
+What tox is doing is specified in the `tox.ini` file.
+
+```
+python -m tox
+```
+
+or
+
+```
+tox
+```
+
