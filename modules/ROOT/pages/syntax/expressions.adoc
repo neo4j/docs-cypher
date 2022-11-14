@@ -36,7 +36,7 @@ An expression in Cypher can be:
 * An operator application: `1 + 2`, `3 < 4`.
 * A predicate expression is an expression that returns `true` or `false`: `a.prop = 'Hello'`, `length(p) > 10`, `a.name IS NOT NULL`.
 * A special case of predicates are label and relationship type expressions: `(n:A|B)`, `()-[r:R1|R2]->()`.
-* An existential subquery is an expression that returns `true` or `false`:
+* A subquery expression. For example:
 `EXISTS {
   MATCH (n)-[r]->(p)
   WHERE p.name = 'Sven'
@@ -423,6 +423,606 @@ However, as `null = null` does not yield `true`, the `WHEN null THEN -1` branch 
 |===
 
 ======
+
+
+[[cypher-subquery-expressions]]
+== Subquery expressions
+
+Subquery expressions can appear anywhere that an expression is valid.
+A subquery has a scope, as indicated by the opening and closing braces, `{` and `}`.
+Any variable that is defined in the outside scope can be referenced inside the subquery's own scope.
+Variables introduced inside the subquery are not part of the outside scope and therefore can't be accessed on the outside.
+
+
+The following graph is used for the examples below:
+
+.Graph
+["dot", "Subquery expressions-1.svg", "neoviz", ""]
+----
+  N0 [
+    label = "{Swedish, Person|age = 36\lname = \'Andy\'\l}"
+  ]
+  N0 -> N3 [
+    color = "#2e3436"
+    fontcolor = "#2e3436"
+    label = "HAS_DOG\nsince = 2016\l"
+  ]
+  N1 [
+    label = "{Person|age = 25\lname = \'Timothy\'\l}"
+  ]
+  N2 [
+    label = "{Person|age = 35\lname = \'Peter\'\l}"
+  ]
+  N2 -> N5 [
+    color = "#2e3436"
+    fontcolor = "#2e3436"
+    label = "HAS_DOG\nsince = 2018\l"
+  ]
+  N2 -> N4 [
+    color = "#2e3436"
+    fontcolor = "#2e3436"
+    label = "HAS_DOG\nsince = 2010\l"
+  ]
+  N3 [
+    label = "{Dog|name = \'Andy\'\l}"
+  ]
+  N4 [
+    label = "{Dog|name = \'Fido\'\l}"
+  ]
+  N4 -> N6 [
+    color = "#4e9a06"
+    fontcolor = "#4e9a06"
+    label = "HAS_TOY\n"
+  ]
+  N5 [
+    label = "{Dog|name = \'Ozzy\'\l}"
+  ]
+  N6 [
+    label = "{Toy|name = \'Banana\'\l}"
+  ]
+
+----
+ 
+
+[[existential-subqueries]]
+=== `EXISTS` subqueries
+
+An `EXISTS` subquery can be used to find out if a specified pattern exists at least once in the data.
+It serves the same purpose as a <<filter-on-patterns, path pattern>> but is more powerful because it allows you to use `MATCH` and `WHERE` clauses internally.
+Moreover, it can appear in any expression position, unlike path patterns.
+If the subquery evaluates to at least one row, the whole expression will become true.
+This also means that the system only needs to evaluate if there is at least one row and can skip the rest of the work.
+
+
+*Syntax:*
+[source, cypher, role=noplay]
+EXISTS {
+  MATCH [Pattern]
+  WHERE [Expression]
+}
+
+
+It is worth noting that the `MATCH` keyword can be omitted in such subqueries and that the `WHERE` clause is optional.
+
+[[existential-subquery-simple-case]]
+==== Simple `EXISTS` subquery
+
+Variables introduced by the outside scope can be used in the `EXISTS` subquery without importing them,
+unlike the case for `CALL` subqueries, <<subquery-correlated-importing,as they require importing>>.
+The following example shows this:
+
+
+.Query
+[source, cypher]
+----
+MATCH (person:Person)
+WHERE EXISTS {
+  MATCH (person)-[:HAS_DOG]->(:Dog)
+}
+RETURN person.name AS name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Andy"+
+| +"Peter"+
+1+d|Rows: 2
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE
+(andy:Swedish:Person {name: 'Andy', age: 36}),
+(timothy:Person {name: 'Timothy', age: 25}),
+(peter:Person {name: 'Peter', age: 35}),
+(andy)-[:HAS_DOG {since: 2016}]->(:Dog {name:'Andy'}),
+(fido:Dog {name:'Fido'})<-[:HAS_DOG {since: 2010}]-(peter)-[:HAS_DOG {since: 2018}]->(:Dog {name:'Ozzy'}),
+(fido)-[:HAS_TOY]->(:Toy{name:'Banana'})
+
+]]></database><command><![CDATA[
+MATCH (person:Person)
+WHERE EXISTS {
+  MATCH (person)-[:HAS_DOG]->(:Dog)
+}
+RETURN person.name AS name
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[[existential-subquery-with-where]]
+==== `EXISTS` subquery with `WHERE` clause
+
+A `WHERE` clause can be used in conjunction to the `MATCH`.
+Variables introduced by the `MATCH` clause and the outside scope can be used in this scope.
+
+
+.Query
+[source, cypher]
+----
+MATCH (person:Person)
+WHERE EXISTS {
+  MATCH (person)-[:HAS_DOG]->(dog:Dog)
+  WHERE person.name = dog.name
+}
+RETURN person.name AS name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Andy"+
+1+d|Rows: 1
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE
+(andy:Swedish:Person {name: 'Andy', age: 36}),
+(timothy:Person {name: 'Timothy', age: 25}),
+(peter:Person {name: 'Peter', age: 35}),
+(andy)-[:HAS_DOG {since: 2016}]->(:Dog {name:'Andy'}),
+(fido:Dog {name:'Fido'})<-[:HAS_DOG {since: 2010}]-(peter)-[:HAS_DOG {since: 2018}]->(:Dog {name:'Ozzy'}),
+(fido)-[:HAS_TOY]->(:Toy{name:'Banana'})
+
+]]></database><command><![CDATA[
+MATCH (person:Person)
+WHERE EXISTS {
+  MATCH (person)-[:HAS_DOG]->(dog:Dog)
+  WHERE person.name = dog.name
+}
+RETURN person.name AS name
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[[existential-subquery-nesting]]
+==== Nesting `EXISTS` subqueries
+
+`EXISTS` subqueries can be nested like the following example shows.
+The nesting also affects the scopes.
+That means that it is possible to access all variables from inside the subquery which are either from the outside scope or defined in the very same subquery.
+
+
+.Query
+[source, cypher]
+----
+MATCH (person:Person)
+WHERE EXISTS {
+  MATCH (person)-[:HAS_DOG]->(dog:Dog)
+  WHERE EXISTS {
+    MATCH (dog)-[:HAS_TOY]->(toy:Toy)
+    WHERE toy.name = 'Banana'
+  }
+}
+RETURN person.name AS name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Peter"+
+1+d|Rows: 1
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE
+(andy:Swedish:Person {name: 'Andy', age: 36}),
+(timothy:Person {name: 'Timothy', age: 25}),
+(peter:Person {name: 'Peter', age: 35}),
+(andy)-[:HAS_DOG {since: 2016}]->(:Dog {name:'Andy'}),
+(fido:Dog {name:'Fido'})<-[:HAS_DOG {since: 2010}]-(peter)-[:HAS_DOG {since: 2018}]->(:Dog {name:'Ozzy'}),
+(fido)-[:HAS_TOY]->(:Toy{name:'Banana'})
+
+]]></database><command><![CDATA[
+MATCH (person:Person)
+WHERE EXISTS {
+  MATCH (person)-[:HAS_DOG]->(dog:Dog)
+  WHERE EXISTS {
+    MATCH (dog)-[:HAS_TOY]->(toy:Toy)
+    WHERE toy.name = 'Banana'
+  }
+}
+RETURN person.name AS name
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[[existential-subquery-outside-where]]
+==== `EXISTS` subquery outside of a `WHERE` clause
+
+`EXISTS` subquery expressions can appear anywhere that an expression is valid.
+Here the result is a boolean that shows whether the subquery can find the given pattern.
+
+
+.Query
+[source, cypher]
+----
+MATCH (person:Person)
+RETURN person.name AS name, EXISTS {
+  MATCH (person)-[:HAS_DOG]->(:Dog)
+} AS hasDog
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +name+ | +hasDog+
+| +"Andy"+ | +true+
+| +"Timothy"+ | +false+
+| +"Peter"+ | +true+
+2+d|Rows: 3
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE
+(andy:Swedish:Person {name: 'Andy', age: 36}),
+(timothy:Person {name: 'Timothy', age: 25}),
+(peter:Person {name: 'Peter', age: 35}),
+(andy)-[:HAS_DOG {since: 2016}]->(:Dog {name:'Andy'}),
+(fido:Dog {name:'Fido'})<-[:HAS_DOG {since: 2010}]-(peter)-[:HAS_DOG {since: 2018}]->(:Dog {name:'Ozzy'}),
+(fido)-[:HAS_TOY]->(:Toy{name:'Banana'})
+
+]]></database><command><![CDATA[
+MATCH (person:Person)
+RETURN person.name AS name, EXISTS {
+  MATCH (person)-[:HAS_DOG]->(:Dog)
+} AS hasDog
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[[count-subqueries]]
+=== `COUNT` subqueries
+
+A `COUNT` subquery expression can be used to count the number of results of the subquery.
+
+
+*Syntax:*
+[source, cypher, role=noplay]
+COUNT {
+  MATCH [Pattern]
+  WHERE [Expression]
+}
+
+
+It is worth noting that the `MATCH` keyword can be omitted in such subqueries and that the `WHERE` clause is optional.
+
+[[count-subquery-simple-case]]
+==== Simple `COUNT` subquery
+
+Variables introduced by the outside scope can be used in the `COUNT` subquery without importing them,
+unlike the case for `CALL` subqueries, <<subquery-correlated-importing,as they require importing>>.
+The following query exemplifies this and outputs the owners of more than one dog:
+
+
+.Query
+[source, cypher]
+----
+MATCH (person:Person)
+WHERE COUNT { (person)-[:HAS_DOG]->(:Dog) } > 1
+RETURN person.name AS name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Peter"+
+1+d|Rows: 1
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE
+(andy:Swedish:Person {name: 'Andy', age: 36}),
+(timothy:Person {name: 'Timothy', age: 25}),
+(peter:Person {name: 'Peter', age: 35}),
+(andy)-[:HAS_DOG {since: 2016}]->(:Dog {name:'Andy'}),
+(fido:Dog {name:'Fido'})<-[:HAS_DOG {since: 2010}]-(peter)-[:HAS_DOG {since: 2018}]->(:Dog {name:'Ozzy'}),
+(fido)-[:HAS_TOY]->(:Toy{name:'Banana'})
+
+]]></database><command><![CDATA[
+MATCH (person:Person)
+WHERE COUNT { (person)-[:HAS_DOG]->(:Dog) } > 1
+RETURN person.name AS name
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[[count-subquery-with-where]]
+==== `COUNT` subquery with `WHERE` clause
+
+A `WHERE` clause can be used inside the `COUNT` pattern.
+Variables introduced by the `MATCH` clause and the outside scope can be used in this scope.
+
+
+.Query
+[source, cypher]
+----
+MATCH (person:Person)
+WHERE COUNT {
+  (person)-[:HAS_DOG]->(dog:Dog)
+  WHERE person.name = dog.name
+} = 1
+RETURN person.name AS name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Andy"+
+1+d|Rows: 1
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE
+(andy:Swedish:Person {name: 'Andy', age: 36}),
+(timothy:Person {name: 'Timothy', age: 25}),
+(peter:Person {name: 'Peter', age: 35}),
+(andy)-[:HAS_DOG {since: 2016}]->(:Dog {name:'Andy'}),
+(fido:Dog {name:'Fido'})<-[:HAS_DOG {since: 2010}]-(peter)-[:HAS_DOG {since: 2018}]->(:Dog {name:'Ozzy'}),
+(fido)-[:HAS_TOY]->(:Toy{name:'Banana'})
+
+]]></database><command><![CDATA[
+MATCH (person:Person)
+WHERE COUNT {
+  (person)-[:HAS_DOG]->(dog:Dog)
+  WHERE person.name = dog.name
+} = 1
+RETURN person.name AS name
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[[count-subqueries-other-clauses]]
+==== Using `COUNT` subqueries inside other clauses
+
+`COUNT` can be used in any position in a query, with the exception of administration commands, where it is restricted.
+See a few examples below:
+
+[[count-subqueries-with-return]]
+===== Using `COUNT` in `RETURN`
+
+
+.Query
+[source, cypher]
+----
+MATCH (person:Person)
+RETURN person.name, COUNT { (person)-[:HAS_DOG]->(:Dog) } as howManyDogs
+      
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +person.name+ | +howManyDogs+
+| +"Andy"+ | +1+
+| +"Timothy"+ | +0+
+| +"Peter"+ | +2+
+2+d|Rows: 3
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE
+(andy:Swedish:Person {name: 'Andy', age: 36}),
+(timothy:Person {name: 'Timothy', age: 25}),
+(peter:Person {name: 'Peter', age: 35}),
+(andy)-[:HAS_DOG {since: 2016}]->(:Dog {name:'Andy'}),
+(fido:Dog {name:'Fido'})<-[:HAS_DOG {since: 2010}]-(peter)-[:HAS_DOG {since: 2018}]->(:Dog {name:'Ozzy'}),
+(fido)-[:HAS_TOY]->(:Toy{name:'Banana'})
+
+]]></database><command><![CDATA[
+MATCH (person:Person)
+RETURN person.name, COUNT { (person)-[:HAS_DOG]->(:Dog) } as howManyDogs
+      
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[[count-subqueries-with-set]]
+===== Using `COUNT` in `SET`
+
+
+.Query
+[source, cypher]
+----
+MATCH (person:Person) WHERE person.name ="Andy"
+SET person.howManyDogs = COUNT { (person)-[:HAS_DOG]->(:Dog) }
+RETURN person.howManyDogs as howManyDogs
+      
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +howManyDogs+
+| +1+
+1+d|Rows: 1 +
+Properties set: 1
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE
+(andy:Swedish:Person {name: 'Andy', age: 36}),
+(timothy:Person {name: 'Timothy', age: 25}),
+(peter:Person {name: 'Peter', age: 35}),
+(andy)-[:HAS_DOG {since: 2016}]->(:Dog {name:'Andy'}),
+(fido:Dog {name:'Fido'})<-[:HAS_DOG {since: 2010}]-(peter)-[:HAS_DOG {since: 2018}]->(:Dog {name:'Ozzy'}),
+(fido)-[:HAS_TOY]->(:Toy{name:'Banana'})
+
+]]></database><command><![CDATA[
+MATCH (person:Person) WHERE person.name ="Andy"
+SET person.howManyDogs = COUNT { (person)-[:HAS_DOG]->(:Dog) }
+RETURN person.howManyDogs as howManyDogs
+      
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[[count-subqueries-with-case]]
+===== Using `COUNT` in `CASE`
+
+
+.Query
+[source, cypher]
+----
+MATCH (person:Person)
+RETURN
+   CASE
+     WHEN COUNT { (person)-[:HAS_DOG]->(:Dog) } > 1 THEN "Doglover " + person.name
+     ELSE person.name
+   END AS result
+              
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +result+
+| +"Andy"+
+| +"Timothy"+
+| +"Doglover Peter"+
+1+d|Rows: 3
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE
+(andy:Swedish:Person {name: 'Andy', age: 36}),
+(timothy:Person {name: 'Timothy', age: 25}),
+(peter:Person {name: 'Peter', age: 35}),
+(andy)-[:HAS_DOG {since: 2016}]->(:Dog {name:'Andy'}),
+(fido:Dog {name:'Fido'})<-[:HAS_DOG {since: 2010}]-(peter)-[:HAS_DOG {since: 2018}]->(:Dog {name:'Ozzy'}),
+(fido)-[:HAS_TOY]->(:Toy{name:'Banana'})
+
+]]></database><command><![CDATA[
+MATCH (person:Person)
+RETURN
+   CASE
+     WHEN COUNT { (person)-[:HAS_DOG]->(:Dog) } > 1 THEN "Doglover " + person.name
+     ELSE person.name
+   END AS result
+              
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[[count-subqueries-as-grouping-key]]
+===== Using `COUNT` as a grouping key
+
+The following query groups all persons by how many dogs they own,
+and then calculates the average age for each group.
+
+
+.Query
+[source, cypher]
+----
+MATCH (person:Person)
+RETURN COUNT { (person)-[:HAS_DOG]->(:Dog) } AS numDogs,
+       avg(person.age) AS averageAge
+ ORDER BY numDogs
+              
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +numDogs+ | +averageAge+
+| +0+ | +25.0+
+| +1+ | +36.0+
+| +2+ | +35.0+
+2+d|Rows: 3
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE
+(andy:Swedish:Person {name: 'Andy', age: 36}),
+(timothy:Person {name: 'Timothy', age: 25}),
+(peter:Person {name: 'Peter', age: 35}),
+(andy)-[:HAS_DOG {since: 2016}]->(:Dog {name:'Andy'}),
+(fido:Dog {name:'Fido'})<-[:HAS_DOG {since: 2010}]-(peter)-[:HAS_DOG {since: 2018}]->(:Dog {name:'Ozzy'}),
+(fido)-[:HAS_TOY]->(:Toy{name:'Banana'})
+
+]]></database><command><![CDATA[
+MATCH (person:Person)
+RETURN COUNT { (person)-[:HAS_DOG]->(:Dog) } AS numDogs,
+       avg(person.age) AS averageAge
+ ORDER BY numDogs
+              
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
 
 
 [[label-expressions]]
