@@ -454,21 +454,21 @@ image:graph_expression_subqueries.svg[]
 === `EXISTS` subqueries
 
 An `EXISTS` subquery can be used to find out if at least one row is returned by the given query.
-It is more powerful than using a path pattern as it allows full queries to be executed.
+It is more powerful than using a xref::clauses/where.adoc#filter-on-patterns[path pattern] as it allows full queries to be executed.
 If the subquery evaluates to at least one row, the whole expression will become true.
 This also means that the system only needs to evaluate if there is at least one row and can skip the rest of the work.
 
-Any non-updating query is allowed, how it differs from regular queries is that the final `RETURN` clause may be omitted
+Any non-writing query is allowed, how it differs from regular queries is that the final `RETURN` clause may be omitted
 as any variable defined within the subquery will not be available outside of the expression, even if a final `RETURN` clause is used.
 
 It is worth noting that the `MATCH` keyword can be omitted in subqueries in the case where the `EXISTS` consists of only
-a Pattern and an optional `WHERE` clause.
+a pattern and an optional `WHERE` clause.
 
 [[existential-subquery-simple-case]]
 ==== Simple `EXISTS` subquery
 
 Variables introduced by the outside scope can be used in the `EXISTS` subquery without importing them,
-unlike the case for `CALL` subqueries, <<subquery-correlated-importing,as they require importing>>.
+unlike the case for `CALL` subqueries, xref::clauses/call-subquery.adoc#subquery-correlated-importing[where they require importing].
 The following example shows this:
 
 
@@ -679,7 +679,9 @@ endif::nonhtmloutput[]
 
 [[existential-subquery-with-union]]
 ==== `EXISTS` subquery with a `UNION`
+
 `Exists` can be used with a `UNION` clause, and the `RETURN` clauses are not required.
+It is worth noting that if one branch has a `RETURN` clause, then all branches require one.
 Here is the result that shows if at least one row is returned from the union of 2 queries.
 
 .Query
@@ -735,8 +737,10 @@ endif::nonhtmloutput[]
 
 [[existential-subquery-with-with]]
 ==== `EXISTS` subquery with `WITH`
+
 Variables from the outside scope will not go out of scope when using a `WITH`, they are visible for the entirety of the subquery,
 this means that shadowing of these variables is also not allowed.
+Shadowing of an outside scope variable is when a newly introduced variable inside the inner scope is defined with the same name as one from the outside scope.
 Here is an example where a `WITH` clause introduces a new variable, and the outer scope variable person being referenced is still available after:
 
 .Query
@@ -786,23 +790,75 @@ RETURN person.name AS name
 ++++
 endif::nonhtmloutput[]
 
+[[existential-subquery-with-return]]
+==== `EXISTS` subquery with `RETURN`
+
+`EXISTS` subqueries do not require a `RETURN` clause at the end of the subquery, but if one is present, it does not
+need to be aliased, a difference from xref::clauses/call-subquery.adoc[`CALL` subqueries].
+Any variables returned in an `EXISTS` subquery will not be available after the subquery.
+
+.Query
+[source, cypher]
+----
+MATCH (person:Person)
+WHERE EXISTS {
+    MATCH (person)-[:HAS_DOG]->(:Dog)
+    RETURN person.name
+}
+RETURN person.name AS name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Andy"+
+| +"Peter"+
+1+d|Rows: 2
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE
+(andy:Swedish:Person {name: 'Andy', age: 36}),
+(timothy:Person {name: 'Timothy', age: 25}),
+(peter:Person {name: 'Peter', age: 35}),
+(andy)-[:HAS_DOG {since: 2016}]->(:Dog {name:'Andy'}),
+(timothy)-[:HAS_CAT {since: 2019}]->(:Cat {name:'Mittens'}),
+(fido:Dog {name:'Fido'})<-[:HAS_DOG {since: 2010}]-(peter)-[:HAS_DOG {since: 2018}]->(:Dog {name:'Ozzy'}),
+(fido)-[:HAS_TOY]->(:Toy{name:'Banana'})
+
+]]></database><command><![CDATA[
+MATCH (person:Person)
+WHERE EXISTS {
+    MATCH (person)-[:HAS_DOG]->(:Dog)
+    RETURN person.name
+}
+RETURN person.name AS name
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
 [[count-subqueries]]
 === `COUNT` subqueries
 
-A `COUNT` subquery expression can be used to count the number of results of the subquery.
+A `COUNT` subquery expression can be used to count the number of rows returned by the subquery.
 
-
-Any non-updating query is allowed, how it differs from regular queries is that the final `RETURN` clause may be omitted
+Any non-writing query is allowed, how it differs from regular queries is that the final `RETURN` clause may be omitted
 as any variable defined within the subquery will not be available outside of the expression,
-even if a final `RETURN` clause is used. One exception to this is that for `DISTINCT UNIONS` the `RETURN` is still mandatory.
+even if a final `RETURN` clause is used. One exception to this is that for a `DISTINCT UNION` the `RETURN` is still mandatory.
 
-It is worth noting that the `MATCH` keyword can be omitted in subqueries in the case where the `COUNT` consists of only a Pattern and an optional `WHERE` clause.
+It is worth noting that the `MATCH` keyword can be omitted in subqueries in the case where the `COUNT` consists of only a pattern and an optional `WHERE` clause.
 
 [[count-subquery-simple-case]]
 ==== Simple `COUNT` subquery
 
 Variables introduced by the outside scope can be used in the `COUNT` subquery without importing them,
-unlike the case for `CALL` subqueries, <<subquery-correlated-importing,as they require importing>>.
+unlike the case for `CALL` subqueries, xref::clauses/call-subquery.adoc#subquery-correlated-importing[where they require importing].
 The following query exemplifies this and outputs the owners of more than one dog:
 
 
@@ -901,6 +957,7 @@ endif::nonhtmloutput[]
 ==== `COUNT` subquery with a `UNION`
 
 `COUNT` can be used with a `UNION` clause, if the `UNION` clause is distinct, the `RETURN` clause is required.
+`UNION ALL` clauses do not require the `RETURN` clause, however, it is worth noting that if one branch has a `RETURN` clause, then all require one.
 Here is the result that shows the count of pets each person has by using a `UNION`:
 
 .Query
@@ -963,6 +1020,7 @@ endif::nonhtmloutput[]
 
 Variables from the outside scope will not go out of scope when using a `WITH`,
 they are visible for the entirety of the subquery, this means that shadowing of these variables is also not allowed.
+Shadowing of an outside scope variable is when a newly introduced variable inside the inner scope is defined with the same name as one from the outside scope.
 Here is an example where a `WITH` clause introduces a new variable,
 and the outer scope variable person being referenced is still available after:
 
@@ -1215,6 +1273,57 @@ RETURN COUNT { (person)-[:HAS_DOG]->(:Dog) } AS numDogs,
 ++++
 endif::nonhtmloutput[]
 
+[[count-subquery-with-return]]
+==== `COUNT` subquery with `RETURN`
+
+`COUNT` subqueries do not require a `RETURN` clause at the end of the subquery, but if one is present, it does not
+need to be aliased, a difference from xref::clauses/call-subquery.adoc[`CALL` subqueries].
+Any variables returned in a `COUNT` subquery will not be available after the subquery.
+
+.Query
+[source, cypher]
+----
+MATCH (person:Person)
+WHERE COUNT {
+    MATCH (person)-[:HAS_DOG]->(:Dog)
+    RETURN person.name
+} = 1
+RETURN person.name AS name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Andy"+
+1+d|Rows: 1
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE
+(andy:Swedish:Person {name: 'Andy', age: 36}),
+(timothy:Person {name: 'Timothy', age: 25}),
+(peter:Person {name: 'Peter', age: 35}),
+(andy)-[:HAS_DOG {since: 2016}]->(:Dog {name:'Andy'}),
+(timothy)-[:HAS_CAT {since: 2019}]->(:Cat {name:'Mittens'}),
+(fido:Dog {name:'Fido'})<-[:HAS_DOG {since: 2010}]-(peter)-[:HAS_DOG {since: 2018}]->(:Dog {name:'Ozzy'}),
+(fido)-[:HAS_TOY]->(:Toy{name:'Banana'})
+
+]]></database><command><![CDATA[
+MATCH (person:Person)
+WHERE COUNT {
+    MATCH (person)-[:HAS_DOG]->(:Dog)
+    RETURN person.name
+} = 1
+RETURN person.name AS name
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
 
 [[label-expressions]]
 == Label expressions
