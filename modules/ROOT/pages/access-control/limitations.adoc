@@ -5,33 +5,35 @@
 
 [abstract]
 --
-This section explains known limitations and implications of Neo4js role-based access control security.
+This section lists the known limitations and implications of Neo4js role-based access control security.
 --
 
 [[access-control-limitations-indexes]]
 == Security and Indexes
 
 As described in xref::indexes-for-search-performance.adoc[Indexes for search performance], Neo4j {neo4j-version} supports the creation and use of indexes to improve the performance of Cypher queries.
-The Neo4j security model will impact the results of queries (regardless if the indexes are used).
+
+Note that the Neo4j security model impacts the results of queries, regardless if the indexes are used or not.
 When using non full-text Neo4j indexes, a Cypher query will always return the same results it would have if no index existed.
-This means that if the security model causes fewer results to be returned due to restricted read access in xref::access-control/manage-privileges.adoc[Graph and sub-graph access control], the index will also return the same fewer results.
+This means that, if the security model causes fewer results to be returned due to restricted read access in xref::access-control/manage-privileges.adoc[Graph and sub-graph access control],
+the index will also return the same fewer results.
 
 However, this rule is not fully obeyed by xref::indexes-for-full-text-search.adoc[Indexes for full-text search].
-These specific indexes are backed by Lucene internally.
-It is therefore not possible to know for certain whether a security violation occurred for each specific entry returned from the index.
-As a result, Neo4j will return zero results from full-text indexes if it is determined that any result might violate the security privileges active for that query.
+These specific indexes are backed by _Lucene_ internally.
+It is therefore not possible to know for certain whether a security violation has affected each specific entry returned from the index.
+In face of this, Neo4j will return zero results from full-text indexes in case it is determined that any result might be violating the security privileges active for that query.
 
-Since full-text indexes are not automatically used by Cypher, this does not lead to the case where the same Cypher query would return different results simply because such an index got created.
+Since full-text indexes are not automatically used by Cypher, they do not lead to the case where the same Cypher query would return different results simply because such an index was created.
 Users need to explicitly call procedures to use these indexes.
-The problem is only that if this behavior is not understood by the user, they might expect the full text index to return the same results that a different, but semantically similar, Cypher query does.
+The problem is only that, if this behavior is not known by the user, they might expect the full-text index to return the same results that a different, but semantically similar, Cypher query does.
 
 === Example with denied properties
 
 Consider the following example.
-The database has nodes with labels `:User` and `:Person`, and these have properties `name` and `surname`.
-We have indexes on both properties:
+The database has nodes with labels `:User` and `:Person`, and they have properties `name` and `surname`.
+There are indexes on both properties:
 
-[source, cypher, indent=0]
+[source, cypher]
 ----
 CREATE INDEX singleProp FOR (n:User) ON (n.name)
 CREATE INDEX composite  FOR (n:User) ON (n.name, n.surname)
@@ -46,16 +48,16 @@ See xref::indexes-for-full-text-search.adoc[Indexes for full-text search] for mo
 
 After creating these indexes, it would appear that the latter two indexes accomplish the same thing.
 However, this is not completely accurate.
-The composite and fulltext indexes behave in different ways and are focused on different use cases.
-A key difference is that full-text indexes are backed by Lucene, and will use the Lucene syntax for querying the index.
+The composite and full-text indexes behave in different ways and are focused on different use cases.
+A key difference is that full-text indexes are backed by _Lucene_, and will use the _Lucene_ syntax for querying.
 
 This has consequences for users restricted on the labels or properties involved in the indexes.
-Ideally, if the labels and properties in the index are denied, we can correctly return zero results from both native indexes and full-text indexes.
+Ideally, if the labels and properties in the index are denied, they can correctly return zero results from both native indexes and full-text indexes.
 However, there are borderline cases where this is not as simple.
 
 Imagine the following nodes were added to the database:
 
-[source, cypher, indent=0]
+[source, cypher]
 ----
 CREATE (:User {name: 'Sandy'})
 CREATE (:User {name: 'Mark', surname: 'Andy'})
@@ -64,84 +66,83 @@ CREATE (:User:Person {name: 'Mandy', surname: 'Smith'})
 CREATE (:User:Person {name: 'Joe', surname: 'Andy'})
 ----
 
-Consider denying the label `:Person`.
+Consider denying the label `:Person`:
 
-[source, cypher, indent=0]
+[source, cypher]
 ----
 DENY TRAVERSE Person ON GRAPH * TO users
 ----
 
 If the user runs a query that uses the native single property index on `name`:
 
-[source, cypher, indent=0]
+[source, cypher]
 ----
 MATCH (n:User) WHERE n.name CONTAINS 'ndy' RETURN n.name
 ----
 
 This query performs several checks:
 
-* do a scan on the index to create a stream of results of nodes with the `name` property, which leads to five results
-* filter the results to include only nodes where `n.name CONTAINS 'ndy'`, filtering out `Mark` and `Joe` so we have three results
-* filter the results to exclude nodes that also have the denied label `:Person`, filtering out `Mandy` so we have two results
+* Scans the index to create a stream of results of nodes with the `name` property, which leads to five results.
+* Filters the results to include only nodes where `n.name CONTAINS 'ndy'`, filtering out `Mark` and `Joe`, which leads to three results.
+* Filters the results to exclude nodes that also have the denied label `:Person`, filtering out `Mandy`, which leads to two results.
 
-For the above dataset, we can see we will get two results and that only one of these has the `surname` property.
+Two results will be returned from this dataset and only one of them has the `surname` property.
 
-To use the native composite index on `name` and `surname`, the query needs to include a predicate on the `surname` property as well:
+In order to use the native composite index on `name` and `surname`, the query needs to include a predicate on the `surname` property as well:
 
-[source, cypher, indent=0]
+[source, cypher]
 ----
 MATCH (n:User)
 WHERE n.name CONTAINS 'ndy' AND n.surname IS NOT NULL
 RETURN n.name
 ----
 
-This query performs several checks, almost identical to the single property index query:
+This query performs several checks, which are almost identical to the single property index query:
 
-* do a scan on the index to create a stream of results of nodes with the `name` and `surname` property, which leads to four results
-* filter the results to include only nodes where `n.name CONTAINS 'ndy'`, filtering out `Mark` and `Joe` so we have two results
-* filter the results to exclude nodes that also have the denied label `:Person`, filtering out `Mandy` so we only have one result
+* Scans the index to create a stream of results of nodes with the `name` and `surname` property, which leads to four results.
+* Filters the results to include only nodes where `n.name CONTAINS 'ndy'`, filtering out `Mark` and `Joe`, which leads to two results.
+* Filters the results to exclude nodes that also have the denied label `:Person`, filtering out `Mandy`, which leads to only one result.
 
-For the above dataset, we can see we will get one result.
+Only one result was returned from the above dataset.
+What if this query with the full-text index was used instead:
 
-What if we query this with the full-text index:
-
-[source, cypher, indent=0]
+[source, cypher]
 ----
 CALL db.index.fulltext.queryNodes("userNames", "ndy") YIELD node, score
 RETURN node.name
 ----
 
-The problem now is that we do not know if the results provided by the index were because of a match to the `name` or the `surname` property.
+The problem now is that it is not certain whether the results provided by the index were achieved due to a match to the `name` or the `surname` property.
 The steps taken by the query engine would be:
 
-* run a _Lucene_ query on the full-text index to produce results containing `ndy` in either property, leading to five results.
-* filter the results to exclude nodes that also have the label `:Person`, filtering out `Mandy` and `Joe` so we have three results.
+* Run a _Lucene_ query on the full-text index to produce results containing `ndy` in either property, leading to five results.
+* Filter the results to exclude nodes that also have the label `:Person`, filtering out `Mandy` and `Joe`, leading to three results.
 
-This difference in results is due to the `OR` relationship between the two properties in the index creation.
+This difference in results is caused by the `OR` relationship between the two properties in the index creation.
 
 === Denying properties
 
 Now consider denying access on properties, like the `surname` property:
 
-[source, cypher, indent=0]
+[source, cypher]
 ----
 DENY READ {surname} ON GRAPH * TO users
 ----
 
-Now we run the same queries again:
+For that, run the same queries again:
 
-[source, cypher, indent=0]
+[source, cypher]
 ----
 MATCH (n:User)
 WHERE n.name CONTAINS 'ndy'
 RETURN n.name
 ----
 
-This query operates exactly as before, returning the same two results, because nothing in this query relates to the denied property.
+This query operates exactly as before, returning the same two results, because nothing in it relates to the denied property.
 
-However, for the query targeting the composite index, things have changed.
+However, this is not the same for the query targeting the composite index:
 
-[source, cypher, indent=0]
+[source, cypher]
 ----
 MATCH (n:User)
 WHERE n.name CONTAINS 'ndy' AND n.surname IS NOT NULL
@@ -152,23 +153,24 @@ Since the `surname` property is denied, it will appear to always be `null` and t
 
 Now consider the full-text index query:
 
-[source, cypher, indent=0]
+[source, cypher]
 ----
 CALL db.index.fulltext.queryNodes("userNames", "ndy") YIELD node, score
 RETURN node.name
 ----
 
-The problem remains, we do not know if the results provided by the index were because of a match on the `name` or the `surname` property.
-Results from the surname now need to be excluded by the security rules, because they require that the user cannot see any `surname` properties.
-However, the security model is not able to introspect the _Lucene_ query to know what it will actually do, whether it works only on the allowed `name` property, or also on the disallowed `surname` property.
-We know that the earlier query returned a match for `Joe Andy` which should now be filtered out.
-So, in order to never return results the user should not be able to see, we have to block all results.
+The problem remains, since it is not certain whether the results provided by the index were returned due to a match on the `name` or the `surname` property.
+Results from the `surname` property now need to be excluded by the security rules, because they require that the user is unable to see any `surname` properties.
+However, the security model is not able to introspect the _Lucene_ query in order to know what it will actually do, whether it works only on the allowed `name` property, or also on the disallowed `surname` property.
+What is known is that the earlier query returned a match for `Joe Andy` which should now be filtered out.
+Therefore, in order to never return results the user should not be able to see, all results need to be blocked.
 The steps taken by the query engine would be:
 
-* Determine if the full-text index includes denied properties
-* If yes, return an empty results stream, otherwise process as before
+* Determine if the full-text index includes denied properties.
+* If yes, return an empty results stream.
+Otherwise, it will process as described before.
 
-The query will therefore return zero results in this case, rather than simply returning the results `Andy` and `Sandy` which might be expected.
+In this case, the query will return zero results rather than simply returning the results `Andy` and `Sandy`, which might have been expected.
 
 
 [[access-control-limitations-labels]]
@@ -177,53 +179,55 @@ The query will therefore return zero results in this case, rather than simply re
 === Traversing the graph with multi-labeled nodes
 
 The general influence of access control privileges on graph traversal is described in detail in xref::access-control/manage-privileges.adoc[Graph and sub-graph access control].
-The following section will only focus on nodes because of their ability to have multiple labels. Relationships can only ever have one type
-and thus they do not exhibit the behavior this section aims to clarify.
+The following section will only focus on nodes due to their ability to have multiple labels.
+Relationships can only have one type of label and thus they do not exhibit the behavior this section aims to clarify.
 While this section will not mention relationships further, the general function of the traverse privilege also applies to them.
 
-For any node that is traversable, due to `GRANT TRAVERSE` or `GRANT MATCH`, the user can get information about the labels attached to the node by calling the built-in `labels()` function.
-In the case of nodes with multiple labels, this can seemingly result in labels being returned to which the user was not directly granted access to.
+For any node that is traversable, due to `GRANT TRAVERSE` or `GRANT MATCH`,
+the user can get information about the attached labels by calling the built-in `labels()` function.
+In the case of nodes with multiple labels, they can be returned to users that weren't directly granted access to.
 
-To give an illustrative example, imagine a graph with three nodes: one labeled `:A`, one labeled `:B` and one with `:A :B`.
-We also have a user with a role `custom` as defined by:
+To give an illustrative example, imagine a graph with three nodes: one labeled `:A`, another labeled `:B` and one with the labels `:A` and `:B`.
+In this case, there is a user with the role `custom` defined by:
 
-[source, cypher, indent=0]
+[source, cypher]
 ----
 GRANT TRAVERSE ON GRAPH * NODES A TO custom
 ----
 
 If that user were to execute
 
-[source, cypher, indent=0]
+[source, cypher]
 ----
 MATCH (n:A)
 RETURN n, labels(n)
 ----
 
-they would be returned two nodes: the node that was labeled with `:A` and the node with labels `:A :B`.
+They would get a result with two nodes: the node that was labeled with `:A` and the node with labels `:A :B`.
 
 In contrast, executing
 
-[source, cypher, indent=0]
+[source, cypher]
 ----
 MATCH (n:B)
 RETURN n, labels(n)
 ----
 
-will return only the one node that has both labels: `:A :B`. Even though `:B` was not allowed access for traversal, there is one
-node with that label accessible in the data because of the allowlisted label `:A` that is attached to the same node.
+This will return only the one node that has both labels: `:A` and `:B`.
+Even though `:B` did not have access to traversals, there is one node with that label accessible in the dataset due to the allow-listed label `:A` that is attached to the same node.
 
-If a user is denied traverse on a label they will never get results from any node that has this label
-attached to it. Thus, the label name will never show up for them. For our example this can be done by executing:
+If a user is denied to traverse on a label they will never get results from any node that has this label attached to it.
+Thus, the label name will never show up for them.
+As an example, this can be done by executing:
 
-[source, cypher, indent=0]
+[source, cypher]
 ----
 DENY TRAVERSE ON GRAPH * NODES B TO custom
 ----
 
 The query
 
-[source, cypher, indent=0]
+[source, cypher]
 ----
 MATCH (n:A)
 RETURN n, labels(n)
@@ -231,7 +235,7 @@ RETURN n, labels(n)
 
 will now return the node only labeled with `:A`, while the query
 
-[source, cypher, indent=0]
+[source, cypher]
 ----
 MATCH (n:B)
 RETURN n, labels(n)
@@ -241,39 +245,39 @@ will now return no nodes.
 
 === The db.labels() procedure
 
-In contrast to the normal graph traversal described in the previous section, the built-in `db.labels()` procedure is not processing the data graph itself but the security rules defined on the system graph.
+In contrast to the normal graph traversal described in the previous section, the built-in `db.labels()` procedure is not processing the data graph itself, but the security rules defined on the system graph.
 That means:
 
-* if a label is explicitly whitelisted (granted), it will be returned by this procedure.
-* if a label is denied or isn't explicitly allowed it will not be returned by this procedure.
+* If a label is explicitly whitelisted (granted), it will be returned by this procedure.
+* If a label is denied or isn't explicitly allowed, it will not be returned by this procedure.
 
-To reuse the example of the previous section: imagine a graph with three nodes: one labeled `:A`, one labeled `:B` and one with `:A :B`.
-We also have a user with a role `custom` as defined by:
+Reusing the previous example, imagine a graph with three nodes: one labeled `:A`, another labeled `:B` and one with the labels `:A` and `:B`.
+In this case, there is a user with the role `custom` defined by:
 
-[source, cypher, indent=0]
+[source, cypher]
 ----
 GRANT TRAVERSE ON GRAPH * NODES A TO custom
 ----
 
-This means that only label `:A` is explicitly allowlisted.
+This means that only label `:A` is explicitly allow-listed.
 Thus, executing
 
-[source, cypher, indent=0]
+[source, cypher]
 ----
 CALL db.labels()
 ----
 
-will only return label `:A` because that is the only label for which traversal was granted.
+will only return label `:A`, because that is the only label for which traversal was granted.
 
 
 [[access-control-limitations-db-operations]]
 == Security and count store operations
 
 The rules of a security model may impact some of the database operations.
-This comes down to necessary additional security checks that incur additional data accesses.
-Especially in regards to count store operations, as they are usually very fast lookups, the difference might be noticeable.
+This means extra security checks are necessary to incur additional data accesses, especially in the case of count store operations.
+These are, however, usually very fast lookups and the difference might be noticeable.
 
-Let's look at the following security rules that set up a `restricted` and a `free` role as an example:
+See the following security rules that set up a `restricted` and a `free` role as an example:
 
 ----
 GRANT TRAVERSE ON GRAPH * NODES Person TO restricted
@@ -300,23 +304,21 @@ For both roles the execution plan will look like this:
 +--------------------------+
 ----
 
-Internally however, very different operations need to be executed.
-The following table illustrates the difference.
+Internally, however, very different operations need to be executed.
+The following table illustrates the difference:
 
 [%header,cols=2*]
 |===
-| User with `free` role | User with `restricted` role
+|User with `free` role
+|User with `restricted` role
 
-a|
-The database can access the count store and retrieve the total number of nodes with the label `:Person`.
+|The database can access the count store and retrieve the total number of nodes with the label `:Person`.
 
 This is a very quick operation.
 
-a|
-The database cannot just access the count store because it must make sure that only traversable nodes with the desired label `:Person` are counted.
-Due to this, each node with the `:Person` label needs to be accessed and examined to make sure that it does not also have a denylisted label, such as `:Customer`.
+|The database cannot access the count store because it must make sure that only traversable nodes with the desired label `:Person` are counted.
+Due to this, each node with the `:Person` label needs to be accessed and examined to make sure that they do not have a deny-listed label, such as `:Customer`.
 
 Due to the additional data accesses that the security checks need to do, this operation will be slower compared to executing the query as an unrestricted user.
 
 |===
-

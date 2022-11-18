@@ -30,10 +30,6 @@
  ** xref::clauses/where.adoc#filter-on-patterns-using-not[Filter on patterns using `NOT`]
  ** xref::clauses/where.adoc#filter-on-patterns-with-properties[Filter on patterns with properties]
  ** xref::clauses/where.adoc#filter-on-relationship-type[Filter on relationship type]
- * xref::clauses/where.adoc#existential-subqueries[Using existential subqueries in `WHERE`]
- ** xref::clauses/where.adoc#existential-subquery-simple-case[Simple existential subquery]
- ** xref::clauses/where.adoc#existential-subquery-with-where[Existential subquery with `WHERE` clause]
- ** xref::clauses/where.adoc#existential-subquery-nesting[Nesting existential subqueries]
 * xref::clauses/where.adoc#query-where-lists[Lists]
  ** xref::clauses/where.adoc#where-in-operator[`IN` operator]
 * xref::clauses/where.adoc#missing-properties-and-values[Missing properties and values]
@@ -235,6 +231,34 @@ The name and belt for the *'Andy'* node are returned because he is the only one 
 | +"Andy"+ | +"white"+
 2+d|Rows: 1
 |===
+
+
+[[usage-with-with-clause]]
+=== Usage with `WITH`
+
+As `WHERE` is not considered a clause in its own right, its scope is not limited by a `WITH` directly before it.
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n:Person)
+WITH n.name as name
+WHERE n.age = 25
+RETURN name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Timothy"+
+1+d|Rows: 1
+|===
+
+
+The name for the *'Timothy'* node is returned because the `WHERE` clause still acts as a filter on the `MATCH`.
+The `WITH` reduces the scope for the rest of the query moving forward.
+In this case 'name' is now the only variable in scope for the `RETURN` clause.
 
 
 [[query-where-string]]
@@ -548,107 +572,6 @@ This returns all relationships having a type whose name starts with `'K'`.
 | +"KNOWS"+ | +1999+
 | +"KNOWS"+ | +2012+
 2+d|Rows: 2
-|===
-
-An existential subquery can be used to find out if a specified pattern exists at least once in the data.
-It can be used in the same way as a path pattern but it allows you to use `MATCH` and `WHERE` clauses internally.
-A subquery has a scope, as indicated by the opening and closing braces, `{` and `}`.
-Any variable that is defined in the outside scope can be referenced inside the subquery's own scope.
-Variables introduced inside the subquery are not part of the outside scope and therefore can't be accessed on the outside.
-If the subquery evaluates even once to anything that is not null, the whole expression will become true.
-This also means that the system only needs to calculate the first occurrence where the subquery evaluates to something that is not null and can skip the rest of the work.
-
-.Syntax
-[source, cypher, role="noheader"]
-EXISTS {
-  MATCH [Pattern]
-  WHERE [Expression]
-}
-
-It is worth noting that the `MATCH` keyword can be omitted in subqueries and that the `WHERE` clause is optional.
-
-
-[[existential-subqueries]]
-== Using existential subqueries in `WHERE`
-
-[[existential-subquery-simple-case]]
-=== Simple existential subquery
-
-Variables introduced by the outside scope can be used in the inner `MATCH` clause. The following example shows this:
-
-.Query
-[source, cypher, indent=0]
-----
-MATCH (person:Person)
-WHERE EXISTS {
-  MATCH (person)-[:HAS_DOG]->(:Dog)
-}
-RETURN person.name AS name
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| +name+
-| +"Andy"+
-| +"Peter"+
-1+d|Rows: 2
-|===
-
-
-[[existential-subquery-with-where]]
-=== Existential subquery with `WHERE` clause
-
-A `WHERE` clause can be used in conjunction to the `MATCH`.
-Variables introduced by the `MATCH` clause and the outside scope can be used in this scope.
-
-.Query
-[source, cypher, indent=0]
-----
-MATCH (person:Person)
-WHERE EXISTS {
-  MATCH (person)-[:HAS_DOG]->(dog:Dog)
-  WHERE person.name = dog.name
-}
-RETURN person.name AS name
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| +name+
-| +"Andy"+
-1+d|Rows: 1
-|===
-
-
-[[existential-subquery-nesting]]
-=== Nesting existential subqueries
-
-Existential subqueries can be nested like the following example shows.
-The nesting also affects the scopes.
-That means that it is possible to access all variables from inside the subquery which are either on the outside scope or defined in the very same subquery.
-
-.Query
-[source, cypher, indent=0]
-----
-MATCH (person:Person)
-WHERE EXISTS {
-  MATCH (person)-[:HAS_DOG]->(dog:Dog)
-  WHERE EXISTS {
-    MATCH (dog)-[:HAS_TOY]->(toy:Toy)
-    WHERE toy.name = 'Banana'
-  }
-}
-RETURN person.name AS name
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| +name+
-| +"Peter"+
-1+d|Rows: 1
 |===
 
 

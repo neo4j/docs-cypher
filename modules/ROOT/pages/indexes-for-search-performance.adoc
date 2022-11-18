@@ -12,7 +12,7 @@ For query performance purposes, it is important to also understand how the index
 Refer to xref::query-tuning/index.adoc[] for examples and in-depth discussions on how query plans result from different index and query scenarios.
 See specifically xref::query-tuning/indexes.adoc[The use of indexes] for examples of how various index scenarios result in different query plans.
 
-For information on index configuration and limitations, refer to xref:5.0@operations-manual:ROOT:performance/index-configuration/index.adoc[Operations Manual -> Index configuration].
+For information on index configuration and limitations, refer to link:{neo4j-docs-base-uri}/operations-manual/{page-version}/performance/index-configuration[Operations Manual -> Index configuration].
 
 
 [[administration-indexes-types]]
@@ -35,7 +35,7 @@ There are multiple index types available:
 // The BTREE index type was replaced in 5.0 by more specific index types (RANGE, POINT, and TEXT).
 // RANGE is now the default index type for CREATE INDEX.
 
-See xref::indexes-for-full-text-search.adoc[Full-text search index] for more information about fulltext indexes.
+See xref::indexes-for-full-text-search.adoc[Full-text search index] for more information about full-text indexes.
 Lookup indexes contain nodes with one or more labels or relationship types, without regard for any properties.
 
 Cypher enables the creation of range indexes on one or more properties for all nodes or relationships with a given label or relationship type:
@@ -73,7 +73,7 @@ If the index is not explicitly named, it gets an auto-generated name.
 
 [NOTE]
 ====
-The `+CREATE ... INDEX ...+` command is optionally idempotent, with the default behavior to throw an error if you attempt to create the same index twice.
+The `+CREATE ... INDEX ...+` command is optionally idempotent. This mean that its default behavior is to throw an error if an attempt is made to create the same index twice.
 With `IF NOT EXISTS`, no error is thrown and nothing happens should an index with the same name or same schema and index type already exist.
 It may still throw an error if conflicting constraints exist, such as constraints with the same name or schema and backing index type.
 ====
@@ -285,7 +285,7 @@ DROP INDEX index_name [IF EXISTS]
 
 | Note
 |
-The command is optionally idempotent, with the default behavior to throw an error if you attempt to drop the same index twice.
+The command is optionally idempotent. This means that its default behavior is to throw an error if an attempt is made to drop the same index twice.
 With `IF EXISTS`, no error is thrown and nothing happens should the index not exist.
 
 |===
@@ -330,8 +330,6 @@ Like single-property range indexes, composite range indexes support all predicat
 * existence check: `n.prop IS NOT NULL`
 * range search: `n.prop > value`
 * prefix search: `STARTS WITH`
-* suffix search: `ENDS WITH`
-* substring search: `CONTAINS`
 
 [NOTE]
 ====
@@ -347,8 +345,11 @@ they need to be for the first properties defined by the index.
 * There can be any number of `existence check` predicates.
 * Any predicate after a `range search`, `prefix search` or `existence check` predicate has to be an `existence check` predicate.
 
-However, the `suffix search` and `substring search` predicates are always planned as existence check and a filter and
-any predicates following after will therefore also be planned as such.
+[NOTE]
+====
+The `suffix search` (`ENDS WITH`) and `substring search` (`CONTAINS`) predicates can utilize the index as well.
+However, they are always planned as an existence check and a filter and any predicates following after will therefore also be planned as such.
+====
 
 For example, an index on nodes with `:Label(prop1,prop2,prop3,prop4,prop5,prop6)` and predicates:
 
@@ -569,8 +570,6 @@ OPTIONS {
 }
 ----
 
-There is no supported index configuration for range indexes.
-
 .Result
 [queryresult]
 ----
@@ -581,6 +580,8 @@ Indexes added: 1
 ----
 
 ======
+
+There is no supported index configuration for range indexes.
 
 
 [discrete]
@@ -685,7 +686,7 @@ Indexes added: 1
 [[administration-indexes-create-a-node-label-lookup-index]]
 === Create a node label lookup index
 
-A named lookup index for all nodes with one or more labels can be created with:
+A named node label lookup index for all nodes with one or more labels can be created with:
 
 [source, syntax, role="noheader"]
 ----
@@ -713,7 +714,10 @@ CREATE (n2:Label1 {prop1: 7, prop2: 'Blue')
 CREATE LOOKUP INDEX node_label_lookup_index FOR (n) ON EACH labels(n)
 ----
 
-Note that it can only be created once and that the index name must be unique.
+[NOTE]
+====
+Note that a node label lookup index can only be created once and that the index name must be unique.
+====
 
 .Result
 [queryresult]
@@ -726,12 +730,16 @@ Indexes added: 1
 
 ======
 
+[NOTE]
+====
+Only one node label lookup index can exist at the time.
+====
 
 [discrete]
 [[administration-indexes-create-a-relationship-type-lookup-index]]
 === Create a relationship type lookup index
 
-A named lookup index for all relationships with any relationship type can be created with:
+A named relationship type lookup index for all relationships with any relationship type can be created with:
 
 [source, syntax, role="noheader"]
 ----
@@ -760,7 +768,10 @@ CREATE (n0)-[TYPE2]->(n2)
 CREATE LOOKUP INDEX rel_type_lookup_index FOR ()-[r]-() ON EACH type(r)
 ----
 
-Note that it can only be created once and that the index name must be unique.
+[NOTE]
+====
+Note that a relationship type lookup index can only be created once and that the index name must be unique.
+====
 
 .Result
 [queryresult]
@@ -773,15 +784,25 @@ Indexes added: 1
 
 ======
 
+[NOTE]
+====
+Only one relationship type lookup index can exist at the time.
+====
+
+// do we want an IF NOT EXISTS example for LOOKUP indexes?
 
 [discrete]
 [[administration-indexes-create-a-token-lookup-index-specifying-the-index-provider]]
-=== Create a lookup index specifying the index provider
+=== Create a token lookup index specifying the index provider
 
-Lookup indexes allow setting the index provider using the `OPTIONS` clause.
+Token lookup indexes (node label and relationship type lookup indexes) allow setting the index provider using the `OPTIONS` clause.
 Only one valid value exists for the index provider, `token-lookup-1.0`, which is the default value.
 
 // Cypher only has the keyword LOOKUP why is the option named `token-lookup` ???
+// -> the name `token-lookup` came from kernel but wasn't added as part of the cypher commands,
+//    because there is currently only one type of lookup indexes which are token lookup ones.
+//    The name `token` is a collective word for both node label and relationship type,
+//    hence the `node label lookup index` and `relationship type lookup index` variations above.
 
 ////
 CREATE (n0:Label1:Label2 {prop1: 3, prop2: 'Green')
@@ -800,7 +821,10 @@ CREATE LOOKUP INDEX node_label_lookup_index_2 FOR (n) ON EACH labels(n)
 OPTIONS {indexProvider: 'token-lookup-1.0'}
 ----
 
-There is no supported index configuration for lookup indexes.
+[NOTE]
+====
+Note that the above command will fail if any node label lookup index already exists.
+====
 
 .Result
 [queryresult]
@@ -812,6 +836,8 @@ Indexes added: 1
 ----
 
 ======
+
+There is no supported index configuration for token lookup indexes.
 
 
 [discrete]
@@ -837,7 +863,10 @@ Note that the index is not immediately available, but is created in the backgrou
 CREATE POINT INDEX node_index_name FOR (n:Person) ON (n.sublocation)
 ----
 
-Note that point indexes only recognize point values, do not support multiple properties, and that the index name must be unique.
+[NOTE]
+====
+The index name must be unique.
+====
 
 .Result
 [queryresult]
@@ -850,6 +879,10 @@ Indexes added: 1
 
 ======
 
+[NOTE]
+====
+Note that point indexes only recognize point values and do not support multiple properties.
+====
 
 [discrete]
 [[administration-indexes-create-a-relationship-point-index]]
@@ -874,7 +907,10 @@ Note that the index is not immediately available, but is created in the backgrou
 CREATE POINT INDEX rel_index_name FOR ()-[r:STREET]-() ON (r.intersection)
 ----
 
-Note that point indexes only recognize point values, do not support multiple properties, and that the index name must be unique.
+[NOTE]
+====
+The index name must be unique.
+====
 
 .Result
 [queryresult]
@@ -887,6 +923,10 @@ Indexes added: 1
 
 ======
 
+[NOTE]
+====
+Note that point indexes only recognize point values and do not support multiple properties.
+====
 
 [[administration-indexes-create-a-point-index-only-if-it-does-not-already-exist]]
 === Create a point index only if it does not already exist
@@ -898,7 +938,7 @@ If it is not known whether an index exists or not, add `IF NOT EXISTS` to ensure
 ======
 
 ////
-CREATE POINT index `node_index_name` for (n:`Person`) ON (n.`sublocation`)
+CREATE POINT index for (n:`Person`) ON (n.`sublocation`)
 ////
 
 .Query
@@ -908,7 +948,10 @@ CREATE POINT INDEX node_index_name IF NOT EXISTS
 FOR (n:Person) ON (n.sublocation)
 ----
 
+[NOTE]
+====
 Note that the index will not be created if there already exists an index with the same schema and type, same name or both.
+====
 
 .Result
 [queryresult]
@@ -941,8 +984,6 @@ OPTIONS {
 }
 ----
 
-Can be combined with specifying index configuration.
-
 .Result
 [queryresult]
 ----
@@ -953,6 +994,8 @@ Indexes added: 1
 ----
 
 ======
+
+Specifying the index provider can be combined with specifying index configuration.
 
 
 [discrete]
@@ -991,8 +1034,6 @@ OPTIONS {
 }
 ----
 
-Can be combined with specifying index provider.
-
 .Result
 [queryresult]
 ----
@@ -1003,6 +1044,8 @@ Indexes added: 1
 ----
 
 ======
+
+Specifying the index configuration can be combined with specifying index provider.
 
 
 [discrete]
@@ -1042,8 +1085,6 @@ OPTIONS {
 }
 ----
 
-Index provider can be specified without configuration.
-
 .Result
 [queryresult]
 ----
@@ -1055,13 +1096,14 @@ Indexes added: 1
 
 ======
 
+Index provider and configuration can also be specified separately.
+
 
 [discrete]
 [[administration-indexes-create-a-node-text-index]]
 === Create a node text index
 
 A named text index on a single property for all nodes with a particular label can be created with:
-Text indexes only recognize string values, do not support multiple properties, and that the index name must be unique.
 
 [source, syntax, role="noheader"]
 ----
@@ -1088,6 +1130,11 @@ CREATE (n2:Label1 {prop1: 7, prop2: 'Blue')
 CREATE TEXT INDEX node_index_name FOR (n:Person) ON (n.nickname)
 ----
 
+[NOTE]
+====
+The index name must be unique.
+====
+
 .Result
 [queryresult]
 ----
@@ -1099,6 +1146,10 @@ Indexes added: 1
 
 ======
 
+[NOTE]
+====
+Text indexes only recognize string values and do not support multiple properties.
+====
 
 [discrete]
 [[administration-indexes-create-a-relationship-text-index]]
@@ -1132,7 +1183,10 @@ CREATE (n0)-[:KNOWS {interest: 'tennis'}]->(n1)
 CREATE TEXT INDEX rel_index_name FOR ()-[r:KNOWS]-() ON (r.interest)
 ----
 
-Note that text indexes only recognize string values, do not support multiple properties, and that the index name must be unique.
+[NOTE]
+====
+The index name must be unique.
+====
 
 .Result
 [queryresult]
@@ -1145,6 +1199,10 @@ Indexes added: 1
 
 ======
 
+[NOTE]
+====
+Note that text indexes only recognize string values and do not support multiple properties.
+====
 
 [discrete]
 [[administration-indexes-create-a-text-index-only-if-it-does-not-already-exist]]
@@ -1160,6 +1218,8 @@ If it is not known whether an index exists or not, add `IF NOT EXISTS` to ensure
 CREATE (n0:Label1:Label2 {prop1: 3, prop2: 'Green')
 CREATE (n1:Label1:Label3 {prop1: 5, prop2: 'Pink')
 CREATE (n2:Label1 {prop1: 7, prop2: 'Blue')
+
+CREATE TEXT INDEX node_index_name IF NOT EXISTS FOR (n:Person) ON (n.name)
 ////
 
 .Query
@@ -1168,7 +1228,10 @@ CREATE (n2:Label1 {prop1: 7, prop2: 'Blue')
 CREATE TEXT INDEX node_index_name IF NOT EXISTS FOR (n:Person) ON (n.nickname)
 ----
 
+[NOTE]
+====
 Note that the index will not be created if there already exists an index with the same schema and type, same name or both.
+====
 
 .Result
 [queryresult]
@@ -1186,7 +1249,7 @@ Note that the index will not be created if there already exists an index with th
 === Create a text index specifying the index provider
 
 To create a text index with a specific index provider, the `OPTIONS` clause is used.
-Only one valid value exists for the index provider, `text-1.0`, which is the default value.
+The valid values for the index provider are `text-2.0` and `text-1.0` (deprecated). The default provider is `text-2.0`.
 
 .+CREATE TEXT INDEX+
 ======
@@ -1202,10 +1265,8 @@ CREATE (n0)-[:TYPE1 {prop1: 'tennis'}]->(n1)
 [source, cypher, indent=0]
 ----
 CREATE TEXT INDEX index_with_provider FOR ()-[r:TYPE]-() ON (r.prop1)
-OPTIONS {indexProvider: 'text-1.0'}
+OPTIONS {indexProvider: 'text-2.0'}
 ----
-
-There is no supported index configuration for text indexes.
 
 .Result
 [queryresult]
@@ -1218,6 +1279,7 @@ Indexes added: 1
 
 ======
 
+There is no supported index configuration for text indexes.
 
 [discrete]
 [[administration-indexes-failure-to-create-an-already-existing-index]]
@@ -1232,6 +1294,7 @@ Create an index on the property `title` on nodes with the `Book` label, when tha
 CREATE (n0:Label1:Label2 {prop1: 3, prop2: 'Green')
 CREATE (n1:Label1:Label3 {prop1: 5, prop2: 'Pink')
 CREATE (n2:Label1 {prop1: 7, prop2: 'Blue')
+
 CREATE INDEX example_index FOR (n:Book) ON (n.title)
 ////
 
@@ -1256,7 +1319,7 @@ There already exists an index (:Book {title}).
 [[administration-indexes-failure-to-create-an-index-with-the-same-name-as-an-already-existing-index]]
 === Failure to create an index with the same name as an already existing index
 
-Create a named index on the property `numberOfPages` on nodes with the `Book` label, when an index with that name already exists.
+Create a named index on the property `numberOfPages` on nodes with the `Book` label, when an index with the given name already exists.
 
 
 .+CREATE RANGE INDEX+
@@ -1266,7 +1329,8 @@ Create a named index on the property `numberOfPages` on nodes with the `Book` la
 CREATE (n0:Label1:Label2 {prop1: 3, prop2: 'Green')
 CREATE (n1:Label1:Label3 {prop1: 5, prop2: 'Pink')
 CREATE (n2:Label1 {prop1: 7, prop2: 'Blue')
-CREATE INDEX bookTitleIndex FOR (n:Label1) ON (b.prop1)
+
+CREATE INDEX indexOnBooks FOR (n:Label1) ON (b.prop1)
 ////
 
 .Query
@@ -1275,7 +1339,7 @@ CREATE INDEX bookTitleIndex FOR (n:Label1) ON (b.prop1)
 CREATE INDEX indexOnBooks FOR (book:Book) ON (book.numberOfPages)
 ----
 
-In this case the index can't be created because there already exists an index with that name.
+In this case the index can't be created because there already exists an index with the given name.
 
 .Error message
 [source, role=nocopy, indent=0]
@@ -1297,7 +1361,7 @@ Create an index on the property `isbn` on nodes with the `Book` label, when an i
 ======
 
 ////
-CREATE CONSTRAINT ....
+CREATE CONSTRAINT FOR (book:Book) REQUIRE (book.isbn) IS UNIQUE
 ////
 
 .Query
@@ -1321,14 +1385,14 @@ There is a uniqueness constraint on (:Book {isbn}), so an index is already creat
 [[administration-indexes-failure-to-create-an-index-with-the-same-name-as-an-already-existing-constraint]]
 === Failure to create an index with the same name as an already existing constraint
 
-Create a named index on the property `numberOfPages` on nodes with the `Book` label, when a constraint with that name already exists.
+Create a named index on the property `numberOfPages` on nodes with the `Book` label, when a constraint with the given name already exists.
 
 
 .+CREATE RANGE INDEX+
 ======
 
 ////
-CREATE CONSTRAINT ....
+CREATE CONSTRAINT bookRecommendations FOR (book:Book) REQUIRE (book.recommend) IS NOT NULL
 ////
 
 .Query
@@ -1337,7 +1401,7 @@ CREATE CONSTRAINT ....
 CREATE INDEX bookRecommendations FOR (book:Book) ON (book.recommendations)
 ----
 
-In this case the index can not be created because there already exists a constraint with that name.
+In this case the index can not be created because there already exists a constraint with the given name.
 
 .Error message
 [source, role=nocopy, indent=0]
@@ -1352,13 +1416,6 @@ There already exists a constraint called 'bookRecommendations'.
 == +SHOW INDEXES+
 
 Listing indexes can be done with `SHOW INDEXES`, which will produce a table with the following columns:
-
-[NOTE]
-====
-The command `SHOW INDEXES` returns only the default output.
-For a full output use the optional `YIELD` command.
-Full output: `+SHOW INDEXES YIELD *+`.
-====
 
 .List indexes output
 [options="header", cols="4,6"]
@@ -1407,12 +1464,14 @@ Full output: `+SHOW INDEXES YIELD *+`.
 
 |===
 
-Listing indexes also allows for `WHERE` and `YIELD` clauses to filter the returned rows and columns.
-
 [NOTE]
 ====
-While the command for listing indexes require the xref::access-control/database-administration.adoc#access-control-database-administration-index[`SHOW INDEX` privilege], the deprecated built-in procedures for listing indexes, such as `db.indexes`, work as before and are not affected by the privilege.
+The command `SHOW INDEXES` returns only the default output.
+For a full output use the optional `YIELD` command.
+Full output: `+SHOW INDEXES YIELD *+`.
 ====
+
+Listing indexes also allows for `WHERE` and `YIELD` clauses to filter the returned rows and columns.
 
 
 == +SHOW INDEXES+
@@ -1435,12 +1494,14 @@ If all columns are required, use `SHOW INDEXES YIELD *`.
 ======
 
 ////
-CREATE RANGE INDEX `index_44d2128f` for (n:`Person`) ON (n.`middlename`);
+CREATE RANGE INDEX `index_664b28a2` for (n:`Person`) ON (n.`middlename`);
 CREATE RANGE INDEX `index_58a1c03e` for (n:`Person`) ON (n.`location`);
-CREATE RANGE INDEX `index_d7c12ba3` for (n:`Person`) ON (n.`highScore`);
-CREATE RANGE INDEX `index_deeafdb2` for (n:`Person`) ON (n.`firstname`);
+CREATE RANGE INDEX `index_8a688dca` for (n:`Person`) ON (n.`highScore`);
+CREATE RANGE INDEX `index_b87724c3` for (n:`Person`) ON (n.`firstname`);
 CREATE TEXT INDEX `index_763f72db` for (n:`Person`) ON (n.`middlename`);
 CREATE TEXT INDEX `index_eadb868e` for (n:`Person`) ON (n.`surname`);
+CREATE POINT INDEX `index_c3493fe4` for (n:`Person`) ON (n.`location`);
+CREATE CONSTRAINT `constraint_1bc95fcb` for (n:`Person`) require (n.`name`) is unique;
 ////
 
 .Query
@@ -1459,17 +1520,20 @@ This can be used to drop the index with the xref::indexes-for-search-performance
 .Result
 [queryresult]
 ----
-+-------------------------------------------------------------------------------------------------------------------------------------------------+
-| id | name             | state    | populationPercent | type    | entityType | labelsOrTypes | properties     | indexProvider | owningConstraint |
-+-------------------------------------------------------------------------------------------------------------------------------------------------+
-| 4  | "index_664b28a2" | "ONLINE" | 100.0             | "RANGE" | "NODE"     | ["Person"]    | ["middlename"] | "range-1.0"   | <null>           |
-| 6  | "index_763f72db" | "ONLINE" | 100.0             | "TEXT"  | "NODE"     | ["Person"]    | ["middlename"] | "text-1.0"    | <null>           |
-| 8  | "index_8a688dca" | "ONLINE" | 100.0             | "RANGE" | "NODE"     | ["Person"]    | ["highScore"]  | "range-1.0"   | <null>           |
-| 3  | "index_b87724c3" | "ONLINE" | 100.0             | "RANGE" | "NODE"     | ["Person"]    | ["firstname"]  | "range-1.0"   | <null>           |
-| 9  | "index_c3493fe4" | "ONLINE" | 100.0             | "POINT" | "NODE"     | ["Person"]    | ["location"]   | "point-1.0"   | <null>           |
-| 5  | "index_d1ed0a92" | "ONLINE" | 100.0             | "TEXT"  | "NODE"     | ["Person"]    | ["firstname"]  | "text-1.0"    | <null>           |
-| 7  | "index_eadb868e" | "ONLINE" | 100.0             | "TEXT"  | "NODE"     | ["Person"]    | ["surname"]    | "text-1.0"    | <null>           |
-+-------------------------------------------------------------------------------------------------------------------------------------------------+
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| id | name                  | state    | populationPercent | type     | entityType     | labelsOrTypes | properties     | indexProvider      | owningConstraint      |
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 10 | "constraint_1bc95fcb" | "ONLINE" | 100.0             | "RANGE"  | "NODE"         | ["Person"]    | ["name"]       | "range-1.0"        | "constraint_1bc95fcb" |
+| 4  | "index_58a1c03e"      | "ONLINE" | 100.0             | "RANGE"  | "NODE"         | ["Person"]    | ["location"]   | "point-1.0"        | <null>                |
+| 3  | "index_664b28a2"      | "ONLINE" | 100.0             | "RANGE"  | "NODE"         | ["Person"]    | ["middlename"] | "range-1.0"        | <null>                |
+| 7  | "index_763f72db"      | "ONLINE" | 100.0             | "TEXT"   | "NODE"         | ["Person"]    | ["middlename"] | "text-1.0"         | <null>                |
+| 5  | "index_8a688dca"      | "ONLINE" | 100.0             | "RANGE"  | "NODE"         | ["Person"]    | ["highScore"]  | "range-1.0"        | <null>                |
+| 6  | "index_b87724c3"      | "ONLINE" | 100.0             | "RANGE"  | "NODE"         | ["Person"]    | ["firstname"]  | "range-1.0"        | <null>                |
+| 9  | "index_c3493fe4"      | "ONLINE" | 100.0             | "POINT"  | "NODE"         | ["Person"]    | ["location"]   | "point-1.0"        | <null>                |
+| 1  | "index_d7c12ba3"      | "ONLINE" | 100.0             | "LOOKUP" | "NODE"         | <null>        | <null>         | "token-lookup-1.0" | <null>                |
+| 2  | "index_deeafdb2"      | "ONLINE" | 100.0             | "LOOKUP" | "RELATIONSHIP" | <null>        | <null>         | "token-lookup-1.0" | <null>                |
+| 8  | "index_eadb868e"      | "ONLINE" | 100.0             | "TEXT"   | "NODE"         | ["Person"]    | ["surname"]    | "text-1.0"         | <null>                |
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 7 rows
 ----
 
@@ -1492,10 +1556,11 @@ An example is to only show indexes not belonging to constraints.
 ======
 
 ////
-CREATE RANGE INDEX `index_44d2128f` for (n:`Person`) ON (n.`middlename`);
-CREATE RANGE INDEX `index_58a1c03e` for (n:`Person`) ON (n.`location`);
-CREATE RANGE INDEX `index_d7c12ba3` for (n:`Person`) ON (n.`highScore`);
-CREATE RANGE INDEX `index_deeafdb2` for (n:`Person`) ON (n.`firstname`);
+CREATE RANGE INDEX `index_664b28a2` for (n:`Person`) ON (n.`middlename`);
+CREATE RANGE INDEX `index_8a688dca` for (n:`Person`) ON (n.`highScore`);
+CREATE RANGE INDEX `index_b87724c3` for (n:`Person`) ON (n.`firstname`);
+CREATE RANGE INDEX `index_6e62c571` for ()-[r:`KNOWS`]-() ON (r.`since`);
+CREATE CONSTRAINT `constraint_1bc95fcb` for (n:`Person`) require (n.`name`) is unique;
 CREATE TEXT INDEX `index_763f72db` for (n:`Person`) ON (n.`middlename`);
 CREATE TEXT INDEX `index_eadb868e` for (n:`Person`) ON (n.`surname`);
 ////
@@ -1521,10 +1586,10 @@ SHOW INDEXES YIELD * WHERE ...
 +-----------------------------------------------------------------------------------------------------------------------------------------------------+
 | id | name             | state    | populationPercent | type    | entityType     | labelsOrTypes | properties     | indexProvider | owningConstraint |
 +-----------------------------------------------------------------------------------------------------------------------------------------------------+
-| 4  | "index_664b28a2" | "ONLINE" | 100.0             | "RANGE" | "NODE"         | ["Person"]    | ["middlename"] | "range-1.0"   | <null>           |
-| 1  | "index_6e62c571" | "ONLINE" | 100.0             | "RANGE" | "RELATIONSHIP" | ["KNOWS"]     | ["since"]      | "range-1.0"   | <null>           |
-| 8  | "index_8a688dca" | "ONLINE" | 100.0             | "RANGE" | "NODE"         | ["Person"]    | ["highScore"]  | "range-1.0"   | <null>           |
-| 3  | "index_b87724c3" | "ONLINE" | 100.0             | "RANGE" | "NODE"         | ["Person"]    | ["firstname"]  | "range-1.0"   | <null>           |
+| 3  | "index_664b28a2" | "ONLINE" | 100.0             | "RANGE" | "NODE"         | ["Person"]    | ["middlename"] | "range-1.0"   | <null>           |
+| 6  | "index_6e62c571" | "ONLINE" | 100.0             | "RANGE" | "RELATIONSHIP" | ["KNOWS"]     | ["since"]      | "range-1.0"   | <null>           |
+| 4  | "index_8a688dca" | "ONLINE" | 100.0             | "RANGE" | "NODE"         | ["Person"]    | ["highScore"]  | "range-1.0"   | <null>           |
+| 5  | "index_b87724c3" | "ONLINE" | 100.0             | "RANGE" | "NODE"         | ["Person"]    | ["firstname"]  | "range-1.0"   | <null>           |
 +-----------------------------------------------------------------------------------------------------------------------------------------------------+
 4 rows
 ----
