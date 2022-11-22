@@ -134,11 +134,20 @@ CALL db.awaitIndexes
 ----
 
 
+[source,cypher]
+----
+CALL db.indexes
+----
+
+
 [source, role="queryresult noheader"]
 ----
-+--------------------------------------------+
-| No data returned, and nothing was changed. |
-+--------------------------------------------+
++---------------------------------------------------------------------------------------------------------------------------------------------+
+| id | name             | state    | populationPercent | uniqueness  | type    | entityType | labelsOrTypes | properties | provider           |
++---------------------------------------------------------------------------------------------------------------------------------------------+
+| 1  | "index_5c0607ad" | "ONLINE" | 100.0             | "NONUNIQUE" | "BTREE" | "NODE"     | ["Person"]    | ["name"]   | "native-btree-1.0" |
++---------------------------------------------------------------------------------------------------------------------------------------------+
+1 row
 ----
 
 
@@ -178,9 +187,9 @@ In this case, it means that the names can be looked up directly from the index.
 This allows Cypher to avoid the second call to the database to find the property, which can save time on very large queries.
 
 
-If we profile the above query, we see that the `NodeIndexSeekByRange` in the `Details` column contains `cache[p.name]`,
+If we profile the above query, we see that the `NodeIndexScan` in the `Variables` column contains `cache[p.name]`,
 which means that `p.name` is retrieved from the index.
-We can also see that the `OrderedAggregation` has no `DB Hits`, which means it does not have to access the database again.
+We can also see that the `Projection` has no `DB Hits`, which means it does not have to access the database again.
 
 
 [source,cypher]
@@ -194,27 +203,27 @@ RETURN p.name, count(m)
 
 [source]
 ----
-Compiler CYPHER 4.2
+Compiler CYPHER 4.1
 
 Planner COST
 
 Runtime INTERPRETED
 
-Runtime version 4.2
+Runtime version 4.1
 
-+-----------------------+--------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+------------+
-| Operator              | Details                                                            | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Ordered by |
-+-----------------------+--------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+------------+
-| +ProduceResults       | `p.name`, `count(m)`                                               |              1 |    3 |       0 |                |                    0/0 | p.name ASC |
-| |                     +--------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+------------+
-| +OrderedAggregation   | cache[p.name] AS `p.name`, count(m) AS `count(m)`                  |              1 |    3 |       0 |              0 |                    0/0 | p.name ASC |
-| |                     +--------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+------------+
-| +Filter               | m:Movie                                                            |              1 |   16 |      16 |                |                    0/0 | p.name ASC |
-| |                     +--------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+------------+
-| +Expand(All)          | (p)-[anon_17:ACTED_IN]->(m)                                        |              1 |   16 |      20 |                |                    0/0 | p.name ASC |
-| |                     +--------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+------------+
-| +NodeIndexSeekByRange | p:Person(name) WHERE name STARTS WITH $autostring_0, cache[p.name] |              1 |    4 |       5 |                |                    0/0 | p.name ASC |
-+-----------------------+--------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+------------+
++-----------------------+--------------------------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+------------+
+| Operator              | Details                                                            | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits | Page Cache Misses | Page Cache Hit Ratio | Order      |
++-----------------------+--------------------------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+------------+
+| +ProduceResults       | `p.name`, `count(m)`                                               |              1 |    3 |       0 |                |               0 |                 0 |               0.0000 | p.name ASC |
+| |                     +--------------------------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+------------+
+| +OrderedAggregation   | cache[p.name] AS `p.name`, count(m) AS `count(m)`                  |              1 |    3 |       0 |              0 |               0 |                 0 |               0.0000 | p.name ASC |
+| |                     +--------------------------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+------------+
+| +Filter               | m:Movie                                                            |              1 |   16 |      16 |                |               0 |                 0 |               0.0000 | p.name ASC |
+| |                     +--------------------------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+------------+
+| +Expand(All)          | (p)-[anon_17:ACTED_IN]->(m)                                        |              1 |   16 |      20 |                |               0 |                 0 |               0.0000 | p.name ASC |
+| |                     +--------------------------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+------------+
+| +NodeIndexSeekByRange | p:Person(name) WHERE name STARTS WITH $autostring_0, cache[p.name] |              1 |    4 |       5 |                |               0 |                 0 |               0.0000 | p.name ASC |
++-----------------------+--------------------------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+------------+
 
 Total database accesses: 41, total allocated memory: 0
 
@@ -222,7 +231,7 @@ Total database accesses: 41, total allocated memory: 0
 
 
 If we change the query, such that it can no longer use an index, we will see that there will be no `cache[p.name]` in the Variables, and that the
-`EagerAggregation` now has `DB Hits`, since it accesses the database again to retrieve the name.
+`Projection` now has `DB Hits`, since it accesses the database again to retrieve the name.
 
 
 [source,cypher]
@@ -235,46 +244,49 @@ RETURN p.name, count(m)
 
 [source]
 ----
-Compiler CYPHER 4.2
+Compiler CYPHER 4.1
 
 Planner COST
 
 Runtime INTERPRETED
 
-Runtime version 4.2
+Runtime version 4.1
 
-+-------------------+--------------------------------------------+----------------+------+---------+----------------+------------------------+
-| Operator          | Details                                    | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses |
-+-------------------+--------------------------------------------+----------------+------+---------+----------------+------------------------+
-| +ProduceResults   | `p.name`, `count(m)`                       |             13 |  102 |       0 |                |                    0/0 |
-| |                 +--------------------------------------------+----------------+------+---------+----------------+------------------------+
-| +EagerAggregation | p.name AS `p.name`, count(m) AS `count(m)` |             13 |  102 |     172 |          13280 |                    0/0 |
-| |                 +--------------------------------------------+----------------+------+---------+----------------+------------------------+
-| +Filter           | p:Person                                   |            172 |  172 |     172 |                |                    0/0 |
-| |                 +--------------------------------------------+----------------+------+---------+----------------+------------------------+
-| +Expand(All)      | (m)<-[anon_17:ACTED_IN]-(p)                |            172 |  172 |     210 |                |                    0/0 |
-| |                 +--------------------------------------------+----------------+------+---------+----------------+------------------------+
-| +NodeByLabelScan  | m:Movie                                    |             38 |   38 |      39 |                |                    0/0 |
-+-------------------+--------------------------------------------+----------------+------+---------+----------------+------------------------+
++-------------------+--------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+
+| Operator          | Details                                    | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits | Page Cache Misses | Page Cache Hit Ratio |
++-------------------+--------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+
+| +ProduceResults   | `p.name`, `count(m)`                       |             13 |  102 |       0 |                |               0 |                 0 |               0.0000 |
+| |                 +--------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+
+| +EagerAggregation | p.name AS `p.name`, count(m) AS `count(m)` |             13 |  102 |     172 |          13264 |               0 |                 0 |               0.0000 |
+| |                 +--------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+
+| +Filter           | p:Person                                   |            172 |  172 |     172 |                |               0 |                 0 |               0.0000 |
+| |                 +--------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+
+| +Expand(All)      | (m)<-[anon_17:ACTED_IN]-(p)                |            172 |  172 |     210 |                |               0 |                 0 |               0.0000 |
+| |                 +--------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+
+| +NodeByLabelScan  | m:Movie                                    |             38 |   38 |      39 |                |               0 |                 0 |               0.0000 |
++-------------------+--------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+
 
-Total database accesses: 593, total allocated memory: 13280
+Total database accesses: 593, total allocated memory: 13264
 
 ----
 
 
-For non-native indexes there will still be a second database access to retrieve those values.
+It is important to note that not all property types are supported, because not all are supported by native indexes.
+Additionally, some property types such as the spatial type `Point`, are indexed in an index that is designed to be approximate and cannot return the values.
+For non-native indexes and the spatial type `Point`, there will still be a second database access to retrieve those values.
+In indexes with mixed values, only those values that cannot be looked up from the index will trigger another database access action.
 
 
 Predicates that can be used to enable this optimization are:
 
 
-* Existence (e.g. `WHERE exists(n.name)`)
+* Existence (`WHERE exists(n.name)`)
 * Equality (e.g. `WHERE n.name = 'Tom Hanks'`)
-* Range (e.g. `WHERE n.uid > 1000 AND n.uid < 2000`)
-* Prefix (e.g. `WHERE n.name STARTS WITH 'Tom'`)
-* Suffix (e.g. `WHERE n.name ENDS WITH 'Hanks'`)
-* Substring (e.g. `WHERE n.name CONTAINS 'a'`)
-* Several predicates of the above types combined using `OR`, given that all of them are on the same property (e.g. `WHERE n.prop < 10 OR n.prop = 'infinity'` )
+* Range (eg. `WHERE n.uid > 1000 AND n.uid < 2000`)
+* Prefix (eg. `WHERE n.name STARTS WITH 'Tom'`)
+* Suffix (eg. `WHERE n.name ENDS WITH 'Hanks'`)
+* Substring (eg. `WHERE n.name CONTAINS 'a'`)
+* Several predicates of the above types combined using `OR`, given that all of them are on the same property (eg. `WHERE n.prop < 10 OR n.prop = 'infinity'` )
 
 
 [NOTE]
@@ -299,31 +311,31 @@ RETURN count(DISTINCT p.name) AS numberOfNames
 
 [source]
 ----
-Compiler CYPHER 4.2
+Compiler CYPHER 4.1
 
 Planner COST
 
 Runtime INTERPRETED
 
-Runtime version 4.2
+Runtime version 4.1
 
-+-------------------+--------------------------------------------------+----------------+------+---------+----------------+------------------------+
-| Operator          | Details                                          | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses |
-+-------------------+--------------------------------------------------+----------------+------+---------+----------------+------------------------+
-| +ProduceResults   | numberOfNames                                    |              1 |    1 |       0 |                |                    0/0 |
-| |                 +--------------------------------------------------+----------------+------+---------+----------------+------------------------+
-| +EagerAggregation | count(DISTINCT cache[p.name]) AS numberOfNames   |              1 |    1 |       0 |           9856 |                    0/0 |
-| |                 +--------------------------------------------------+----------------+------+---------+----------------+------------------------+
-| +NodeIndexScan    | p:Person(name) WHERE exists(name), cache[p.name] |            125 |  125 |     126 |                |                    0/0 |
-+-------------------+--------------------------------------------------+----------------+------+---------+----------------+------------------------+
++-------------------+--------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+
+| Operator          | Details                                          | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits | Page Cache Misses | Page Cache Hit Ratio |
++-------------------+--------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+
+| +ProduceResults   | numberOfNames                                    |              1 |    1 |       0 |                |               0 |                 0 |               0.0000 |
+| |                 +--------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+
+| +EagerAggregation | count(DISTINCT cache[p.name]) AS numberOfNames   |              1 |    1 |       0 |           9840 |               0 |                 0 |               0.0000 |
+| |                 +--------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+
+| +NodeIndexScan    | p:Person(name) WHERE exists(name), cache[p.name] |            125 |  125 |     126 |                |               0 |                 0 |               0.0000 |
++-------------------+--------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+
 
-Total database accesses: 126, total allocated memory: 9856
+Total database accesses: 126, total allocated memory: 9840
 
 ----
 
 
 Note that the `NodeIndexScan` in the `Variables` column contains `cache[p.name]` and that the `EagerAggregation` has no `DB Hits`.
-In this case, the semantics of aggregating functions works like an implicit existence predicate because `Person` nodes without the property `name` will not affect the result of an aggregation.
+In this case, the semantics of aggregating functions works like an implicit existence constraint because `Person` nodes without the property `name` will not affect the result of an aggregation.
 
 
 [[advanced-query-tuning-example-index-backed-order-by]]
@@ -331,6 +343,92 @@ In this case, the semantics of aggregating functions works like an implicit exis
 
 
 Now consider the following refinement to the query:
+
+
+[source,cypher]
+----
+MATCH (p:Person)-[:ACTED_IN]->(m:Movie)
+WHERE p.name STARTS WITH 'Tom'
+RETURN p.name, count(m)
+ORDER BY p.name
+----
+
+
+[source, role="queryresult noheader"]
+----
++---------------------------+
+| p.name         | count(m) |
++---------------------------+
+| "Tom Cruise"   | 3        |
+| "Tom Hanks"    | 12       |
+| "Tom Skerritt" | 1        |
++---------------------------+
+3 rows
+----
+
+
+We are asking for the results in ascending alphabetical order.
+The native index happens to store String properties in ascending alphabetical order, and Cypher knows this.
+In Neo4j 3.4 and earlier, Cypher would plan a `Sort` operation to sort the results, which means building a collection in memory and running a sort algorithm on it.
+For large result sets this can be expensive in terms of both memory and time.
+If you are using the native index, Cypher will recognise that the index already returns data in the correct order, and skip the `Sort` operation.
+
+
+Indexes storing values of the spatial type `Point`, and non-native indexes, cannot be relied on to return the values in the correct order.
+This means that for Cypher to enable this optimization, the query needs a predicate that limits the type of the property to some type that is guaranteed to be in the right order.
+
+
+To demonstrate this effect, let's remove the String prefix predicate so that Cypher no longer knows the type of the property, and replace it with an existence predicate.
+Now the database can no longer guarantee the order.
+If we profile the query we will see the `Sort` operation:
+
+
+[source,cypher]
+----
+PROFILE
+MATCH (p:Person)-[:ACTED_IN]->(m:Movie)
+USING INDEX p:Person(name)
+WHERE EXISTS (p.name)
+RETURN p.name, count(m)
+ORDER BY p.name
+----
+
+
+[source]
+----
+Compiler CYPHER 4.1
+
+Planner COST
+
+Runtime INTERPRETED
+
+Runtime version 4.1
+
++-------------------+---------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+------------+
+| Operator          | Details                                           | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits | Page Cache Misses | Page Cache Hit Ratio | Order      |
++-------------------+---------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+------------+
+| +ProduceResults   | `p.name`, `count(m)`                              |             13 |  102 |       0 |                |               0 |                 0 |               0.0000 | p.name ASC |
+| |                 +---------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+------------+
+| +Sort             | `p.name` ASC                                      |             13 |  102 |       0 |          22048 |               0 |                 0 |               0.0000 | p.name ASC |
+| |                 +---------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+------------+
+| +EagerAggregation | cache[p.name] AS `p.name`, count(m) AS `count(m)` |             13 |  102 |       0 |          13768 |               0 |                 0 |               0.0000 |            |
+| |                 +---------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+------------+
+| +Filter           | m:Movie                                           |            172 |  172 |     172 |                |               0 |                 0 |               0.0000 |            |
+| |                 +---------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+------------+
+| +Expand(All)      | (p)-[anon_17:ACTED_IN]->(m)                       |            172 |  172 |     297 |                |               0 |                 0 |               0.0000 |            |
+| |                 +---------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+------------+
+| +NodeIndexScan    | p:Person(name) WHERE exists(name), cache[p.name]  |            125 |  125 |     126 |                |               0 |                 0 |               0.0000 |            |
++-------------------+---------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+------------+
+
+Total database accesses: 595, total allocated memory: 32672
+
+----
+
+
+The `Order` column describes the order of rows after each operator.
+We see that the order is undefined until the `Sort` operator.
+Now if we add back the predicate that gives us the property type information,
+we will see the `Sort` operation is no longer there:
 
 
 [source,cypher]
@@ -345,49 +443,41 @@ ORDER BY p.name
 
 [source]
 ----
-Compiler CYPHER 4.2
+Compiler CYPHER 4.1
 
 Planner COST
 
 Runtime INTERPRETED
 
-Runtime version 4.2
+Runtime version 4.1
 
-+-----------------------+--------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+------------+
-| Operator              | Details                                                            | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Ordered by |
-+-----------------------+--------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+------------+
-| +ProduceResults       | `p.name`, `count(m)`                                               |              1 |    3 |       0 |                |                    0/0 | p.name ASC |
-| |                     +--------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+------------+
-| +OrderedAggregation   | cache[p.name] AS `p.name`, count(m) AS `count(m)`                  |              1 |    3 |       0 |              0 |                    0/0 | p.name ASC |
-| |                     +--------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+------------+
-| +Filter               | m:Movie                                                            |              1 |   16 |      16 |                |                    0/0 | p.name ASC |
-| |                     +--------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+------------+
-| +Expand(All)          | (p)-[anon_17:ACTED_IN]->(m)                                        |              1 |   16 |      20 |                |                    0/0 | p.name ASC |
-| |                     +--------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+------------+
-| +NodeIndexSeekByRange | p:Person(name) WHERE name STARTS WITH $autostring_0, cache[p.name] |              1 |    4 |       5 |                |                    0/0 | p.name ASC |
-+-----------------------+--------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+------------+
++-----------------------+--------------------------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+------------+
+| Operator              | Details                                                            | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits | Page Cache Misses | Page Cache Hit Ratio | Order      |
++-----------------------+--------------------------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+------------+
+| +ProduceResults       | `p.name`, `count(m)`                                               |              1 |    3 |       0 |                |               0 |                 0 |               0.0000 | p.name ASC |
+| |                     +--------------------------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+------------+
+| +OrderedAggregation   | cache[p.name] AS `p.name`, count(m) AS `count(m)`                  |              1 |    3 |       0 |              0 |               0 |                 0 |               0.0000 | p.name ASC |
+| |                     +--------------------------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+------------+
+| +Filter               | m:Movie                                                            |              1 |   16 |      16 |                |               0 |                 0 |               0.0000 | p.name ASC |
+| |                     +--------------------------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+------------+
+| +Expand(All)          | (p)-[anon_17:ACTED_IN]->(m)                                        |              1 |   16 |      20 |                |               0 |                 0 |               0.0000 | p.name ASC |
+| |                     +--------------------------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+------------+
+| +NodeIndexSeekByRange | p:Person(name) WHERE name STARTS WITH $autostring_0, cache[p.name] |              1 |    4 |       5 |                |               0 |                 0 |               0.0000 | p.name ASC |
++-----------------------+--------------------------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+------------+
 
 Total database accesses: 41, total allocated memory: 0
 
 ----
 
 
-We are asking for the results in ascending alphabetical order.
-The native index happens to store String properties in ascending alphabetical order, and Cypher knows this.
-In Neo4j 3.4 and earlier, Cypher would plan a `Sort` operation to sort the results, which means building a collection in memory and running a sort algorithm on it.
-For large result sets this can be expensive in terms of both memory and time.
-In Neo4j 3.5 and later, Cypher will recognize that the index already returns data in the correct order, and skip the `Sort` operation.
-
-
-The `Order` column describes the order of rows after each operator.
-We see that the `Order` column contains `p.name ASC` from the index seek operation, meaning that the rows are ordered by `p.name` in ascending order.
+We also see that the `Order` column contains `p.name ASC` from the index seek operation, meaning that the rows are ordered by `p.name` in ascending order.
 
 
 _Index-backed order by_ can also be used for queries that expect their results is descending order, but with slightly lower performance.
 
 
 [NOTE]
-In cases where the Cypher planner is unable to remove the `Sort` operator, the planner can utilize knowledge of the `ORDER BY` clause to plan the `Sort` operator at a point in the plan with optimal cardinality.
+In cases where the Cypher planner is unable to remove the `Sort` operator, like in the first example, the planner can utilize knowledge of _required order_ after each operator to plan the `Sort` operator at a point in the plan with optimal cardinality.
 
 
 [[advanced-query-tuning-example-indexed-backed-order-by-min-and-max]]
@@ -400,8 +490,8 @@ Consider the following query which returns the fist actor in alphabetical order:
 
 [source,cypher]
 ----
-PROFILE
 MATCH (p:Person)-[:ACTED_IN]->(m:Movie)
+WHERE p.name STARTS WITH ''
 RETURN min(p.name) AS name
 ----
 
@@ -417,41 +507,97 @@ RETURN min(p.name) AS name
 ----
 
 
-Aggregations are usually using the `EagerAggregation` operation.
-This would mean scanning all nodes in the index to find the name that is first in alphabetic order.
-Instead, the query is planned with `Projection`, followed by `Limit`, followed by `Optional`.
-This will simply pick the first value from the index.
+To demonstrate the effect of _index-backed order by_, let’s remove the String prefix predicate so that Cypher no longer knows the type of the property, and replace it with an existence predicate.
+Now the database can no longer guarantee the order. If we profile the query we will see the `EagerAggregation` operation:
+
+
+[source,cypher]
+----
+PROFILE
+MATCH (p:Person)-[:ACTED_IN]->(m:Movie)
+USING INDEX p:Person(name)
+WHERE EXISTS (p.name)
+RETURN min(p.name) AS name
+----
 
 
 [source]
 ----
-Compiler CYPHER 4.2
+Compiler CYPHER 4.1
 
 Planner COST
 
 Runtime INTERPRETED
 
-Runtime version 4.2
+Runtime version 4.1
 
-+-------------------+-----------------------------+----------------+------+---------+----------------+------------------------+
-| Operator          | Details                     | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses |
-+-------------------+-----------------------------+----------------+------+---------+----------------+------------------------+
-| +ProduceResults   | name                        |              1 |    1 |       0 |                |                    0/0 |
-| |                 +-----------------------------+----------------+------+---------+----------------+------------------------+
-| +EagerAggregation | min(p.name) AS name         |              1 |    1 |     172 |              0 |                    0/0 |
-| |                 +-----------------------------+----------------+------+---------+----------------+------------------------+
-| +Filter           | p:Person                    |            172 |  172 |     172 |                |                    0/0 |
-| |                 +-----------------------------+----------------+------+---------+----------------+------------------------+
-| +Expand(All)      | (m)<-[anon_17:ACTED_IN]-(p) |            172 |  172 |     210 |                |                    0/0 |
-| |                 +-----------------------------+----------------+------+---------+----------------+------------------------+
-| +NodeByLabelScan  | m:Movie                     |             38 |   38 |      39 |                |                    0/0 |
-+-------------------+-----------------------------+----------------+------+---------+----------------+------------------------+
++-------------------+--------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+
+| Operator          | Details                                          | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits | Page Cache Misses | Page Cache Hit Ratio |
++-------------------+--------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+
+| +ProduceResults   | name                                             |              1 |    1 |       0 |                |               0 |                 0 |               0.0000 |
+| |                 +--------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+
+| +EagerAggregation | min(cache[p.name]) AS name                       |              1 |    1 |       0 |              0 |               0 |                 0 |               0.0000 |
+| |                 +--------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+
+| +Filter           | m:Movie                                          |            172 |  172 |     172 |                |               0 |                 0 |               0.0000 |
+| |                 +--------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+
+| +Expand(All)      | (p)-[anon_17:ACTED_IN]->(m)                      |            172 |  172 |     297 |                |               0 |                 0 |               0.0000 |
+| |                 +--------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+
+| +NodeIndexScan    | p:Person(name) WHERE exists(name), cache[p.name] |            125 |  125 |     126 |                |               0 |                 0 |               0.0000 |
++-------------------+--------------------------------------------------+----------------+------+---------+----------------+-----------------+-------------------+----------------------+
 
-Total database accesses: 593, total allocated memory: 0
+Total database accesses: 595, total allocated memory: 0
 
 ----
 
 
+Now if we add back the predicate that gives us the property type information, we will see that the `EagerAggregation` operation gets replaced by `Projection` followed by `Limit` followed by `Optional`:
+
+
+[source,cypher]
+----
+PROFILE
+MATCH (p:Person)-[:ACTED_IN]->(m:Movie)
+WHERE p.name STARTS WITH ''
+RETURN min(p.name) AS name
+----
+
+
+[source]
+----
+Compiler CYPHER 4.1
+
+Planner COST
+
+Runtime INTERPRETED
+
+Runtime version 4.1
+
++-----------------------+--------------------------------------------------------------------+----------------+------+---------+-----------------+-------------------+----------------------+------------+
+| Operator              | Details                                                            | Estimated Rows | Rows | DB Hits | Page Cache Hits | Page Cache Misses | Page Cache Hit Ratio | Order      |
++-----------------------+--------------------------------------------------------------------+----------------+------+---------+-----------------+-------------------+----------------------+------------+
+| +ProduceResults       | name                                                               |              1 |    1 |       0 |               0 |                 0 |               0.0000 | name ASC   |
+| |                     +--------------------------------------------------------------------+----------------+------+---------+-----------------+-------------------+----------------------+------------+
+| +Optional             |                                                                    |              1 |    1 |       0 |               0 |                 0 |               0.0000 | name ASC   |
+| |                     +--------------------------------------------------------------------+----------------+------+---------+-----------------+-------------------+----------------------+------------+
+| +Limit                | 1                                                                  |              1 |    1 |       0 |               0 |                 0 |               0.0000 | name ASC   |
+| |                     +--------------------------------------------------------------------+----------------+------+---------+-----------------+-------------------+----------------------+------------+
+| +Projection           | cache[p.name] AS name                                              |              1 |    1 |       0 |               0 |                 0 |               0.0000 | name ASC   |
+| |                     +--------------------------------------------------------------------+----------------+------+---------+-----------------+-------------------+----------------------+------------+
+| +Filter               | m:Movie                                                            |              1 |    1 |       1 |               0 |                 0 |               0.0000 | p.name ASC |
+| |                     +--------------------------------------------------------------------+----------------+------+---------+-----------------+-------------------+----------------------+------------+
+| +Expand(All)          | (p)-[anon_17:ACTED_IN]->(m)                                        |              1 |    1 |       2 |               0 |                 0 |               0.0000 | p.name ASC |
+| |                     +--------------------------------------------------------------------+----------------+------+---------+-----------------+-------------------+----------------------+------------+
+| +NodeIndexSeekByRange | p:Person(name) WHERE name STARTS WITH $autostring_0, cache[p.name] |              1 |    1 |       2 |               0 |                 0 |               0.0000 | p.name ASC |
++-----------------------+--------------------------------------------------------------------+----------------+------+---------+-----------------+-------------------+----------------------+------------+
+
+Total database accesses: 5, total allocated memory: 0
+
+----
+
+
+In the first case, all nodes in the index are scanned to find the name that is first in alphabetic order.
+In the second case, we will simply pick the first value from the index.
+This is reflected in the fact that the `total database access` is lower, indicating a faster query.
 For large datasets, this can improve performance dramatically.
 
 
@@ -462,35 +608,31 @@ _Index-backed order by_ can also be used for corresponding queries with the `max
 === Restrictions
 
 
-The optimization can only work on native indexes.
-It does not work for predicates only querying for the spatial type `Point`.
+The optimization can only work on native indexes, and only if we query for a specific type, in order to rule out the spatial type `Point`.
 Predicates that can be used to enable this optimization are:
 
 
-* Existence (e.g.`WHERE exists(n.name)`)
 * Equality (e.g. `WHERE n.name = 'Tom Hanks'`)
-* Range (e.g. `WHERE n.uid > 1000 AND n.uid < 2000`)
-* Prefix (e.g. `WHERE n.name STARTS WITH 'Tom'`)
-* Suffix (e.g. `WHERE n.name ENDS WITH 'Hanks'`)
-* Substring (e.g. `WHERE n.name CONTAINS 'a'`)
+* Range (eg. `WHERE n.uid > 1000 AND n.uid < 2000`)
+* Prefix (eg. `WHERE n.name STARTS WITH 'Tom'`)
+* Suffix (eg. `WHERE n.name ENDS WITH 'Hanks'`)
+* Substring (eg. `WHERE n.name CONTAINS 'a'`)
 
 
 Predicates that will not work:
 
 
-* Several predicates combined using `OR`
-* Equality or range predicates querying for points (e.g. `WHERE n.place > point({ x: 1, y: 2 })`)
-* Spatial distance predicates (e.g. `WHERE distance(n.place, point({ x: 1, y: 2 })) < 2`)
+* Several predicates combined using `OR` because the property type might differ between the predicates
+* Existence (eg. `WHERE exists(n.email)`) because no property type information is given
 
 
 [NOTE]
 ====
-If there is an existence constraint on the property, no predicate is required to trigger the optimization. 
-For example, `CREATE CONSTRAINT constraint_name ON (p:Person) ASSERT exists(p.name)`
+As of Neo4j 4.1, predicates with parameters, such as `WHERE n.prop > $param`, can trigger _index-backed order by_.
+The only exception are queries with any parameters of type `Float` or `Point`.
 
 
-As of Neo4j {neo4j-version-exact}, predicates with parameters, such as `WHERE n.prop > $param`, can trigger _index-backed order by_.
-The only exception are queries with parameters of type `Point`.
+An existence constraint does not include any type information, and will thus not be enough to trigger _index-backed order by_.
 ====
 
 
