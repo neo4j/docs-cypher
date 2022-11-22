@@ -1,0 +1,391 @@
+[role=deprecated]
+[[query-create-unique]]
+= CREATE UNIQUE
+:description: The `CREATE UNIQUE` clause is a mix of `MATCH` and `CREATE` -- it will match what it can, and create what is missing. 
+
+[IMPORTANT]
+The `CREATE UNIQUE` clause was removed in Cypher 3.2.
+Using the `CREATE UNIQUE` clause will cause the query to fall back to using Cypher 3.1.
+Use `xref:clauses/merge.adoc[MERGE]` instead of `CREATE UNIQUE`; refer to the xref:clauses/create-unique.adoc#query-create-unique-introduction[Introduction] for an example of how to achieve the same level of node and relationship uniqueness.
+
+
+* xref:clauses/create-unique.adoc#query-create-unique-introduction[Introduction]
+* xref:clauses/create-unique.adoc#query-create-unique-nodes[Create unique nodes]
+ ** xref:clauses/create-unique.adoc#create-unique-create-node-if-missing[Create node if missing]
+ ** xref:clauses/create-unique.adoc#create-unique-create-nodes-with-values[Create nodes with values]
+ ** xref:clauses/create-unique.adoc#create-unique-create-labeled-node-if-missing[Create labeled node if missing]
+* xref:clauses/create-unique.adoc#query-create-unique-relationships[Create unique relationships]
+ ** xref:clauses/create-unique.adoc#create-unique-create-relationship-if-it-is-missing[Create relationship if it is missing]
+ ** xref:clauses/create-unique.adoc#create-unique-create-relationship-with-values[Create relationship with values]
+* xref:clauses/create-unique.adoc#create-unique-describe-complex-pattern[Describe complex pattern]
+
+
+[[query-create-unique-introduction]]
+== Introduction
+
+`CREATE UNIQUE` is in the middle of `MATCH` and `CREATE` -- it will match what it can, and create what is missing.
+
+We show in the following example how to express using `MERGE` the same level of uniqueness guaranteed by `CREATE UNIQUE` for nodes and relationships.
+
+Assume the original set of queries is given by:
+
+[source, cypher]
+----
+MERGE (p:Person {name: 'Joe'})
+RETURN p
+
+MATCH (a:Person {name: 'Joe'})
+CREATE UNIQUE (a)-[r:LIKES]->(b:Person {name: 'Jill'})-[r1:EATS]->(f:Food {name: 'Margarita Pizza'})
+RETURN a
+
+MATCH (a:Person {name: 'Joe'})
+CREATE UNIQUE (a)-[r:LIKES]->(b:Person {name: 'Jill'})-[r1:EATS]->(f:Food {name: 'Banana'})
+RETURN a
+----
+
+This will create two `:Person` nodes, a `:LIKES` relationship between them, and two `:EATS` relationships from one of the `:Person` nodes to two `:Food` nodes.
+No node or relationship is duplicated.
+
+The following set of queries -- using `MERGE` -- will achieve the same result:
+
+[source, cypher]
+----
+MERGE (p:Person {name: 'Joe'})
+RETURN p
+
+MATCH (a:Person {name: 'Joe'})
+MERGE (b:Person {name: 'Jill'})
+MERGE (a)-[r:LIKES]->(b)
+MERGE (b)-[r1:EATS]->(f:Food {name: 'Margarita Pizza'})
+RETURN a
+
+MATCH (a:Person {name: 'Joe'})
+MERGE (b:Person {name: 'Jill'})
+MERGE (a)-[r:LIKES]->(b)
+MERGE (b)-[r1:EATS]->(f:Food {name: 'Banana'})
+RETURN a
+
+----
+
+We note that all these queries can also be combined into a single, larger query.
+
+The `CREATE UNIQUE` examples below use the following graph:
+
+// tag::neo4j-cypher-docs/docs/dev/ql/create-unique/includes/cypher-createunique-graph.asciidoc[]
+// tag::include-neo4j-documentation[]
+["dot", "cypher-createunique-graph.svg", "neoviz", ""]
+----
+  N0 [
+    label = "name = \'A\'\l"
+  ]
+  N0 -> N2 [
+    color = "#2e3436"
+    fontcolor = "#2e3436"
+    label = "KNOWS\n"
+  ]
+  N1 [
+    label = "name = \'B\'\l"
+  ]
+  N2 [
+    label = "name = \'C\'\l"
+  ]
+  N3 [
+    label = "name = \'root\'\l"
+  ]
+  N3 -> N2 [
+    color = "#4e9a06"
+    fontcolor = "#4e9a06"
+    label = "X\n"
+  ]
+  N3 -> N1 [
+    color = "#4e9a06"
+    fontcolor = "#4e9a06"
+    label = "X\n"
+  ]
+  N3 -> N0 [
+    color = "#4e9a06"
+    fontcolor = "#4e9a06"
+    label = "X\n"
+  ]
+
+----
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/create-unique/includes/cypher-createunique-graph.asciidoc[]
+
+
+[[query-create-unique-nodes]]
+== Create unique nodes
+
+// tag::neo4j-cypher-docs/docs/dev/ql/create-unique/create-node-if-missing.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[create-unique-create-node-if-missing]]
+== Create node if missing ==
+If the pattern described needs a node, and it can't be matched, a new node will be created.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/create-unique/includes/create-unique-create-node-if-missing.query.asciidoc[]
+[source,cypher]
+----
+MATCH (root { name: 'root' })
+CREATE UNIQUE (root)-[:LOVES]-(someone)
+RETURN someone
+----
+// end::neo4j-cypher-docs/docs/dev/ql/create-unique/includes/create-unique-create-node-if-missing.query.asciidoc[]
+// end::query[]
+
+
+The root node doesn't have any `LOVES` relationships, and so a node is created, and also a relationship to that node.
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/create-unique/includes/create-unique-create-node-if-missing.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++------------+
+| someone    |
++------------+
+| Node[20]{} |
++------------+
+1 row
+Nodes created: 1
+Relationships created: 1
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/create-unique/includes/create-unique-create-node-if-missing.result.asciidoc[]
+// end::result[]
+
+
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/create-unique/create-node-if-missing.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/create-unique/create-nodes-with-values.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[create-unique-create-nodes-with-values]]
+== Create nodes with values ==
+The pattern described can also contain values on the node. These are given using the following syntax: `prop: <expression>`.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/create-unique/includes/create-unique-create-nodes-with-values.query.asciidoc[]
+[source,cypher]
+----
+MATCH (root { name: 'root' })
+CREATE UNIQUE (root)-[:X]-(leaf { name: 'D' })
+RETURN leaf
+----
+// end::neo4j-cypher-docs/docs/dev/ql/create-unique/includes/create-unique-create-nodes-with-values.query.asciidoc[]
+// end::query[]
+
+
+No node connected with the root node has the name `D`, and so a new node is created to match the pattern.
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/create-unique/includes/create-unique-create-nodes-with-values.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++--------------------+
+| leaf               |
++--------------------+
+| Node[20]{name:"D"} |
++--------------------+
+1 row
+Nodes created: 1
+Relationships created: 1
+Properties set: 1
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/create-unique/includes/create-unique-create-nodes-with-values.result.asciidoc[]
+// end::result[]
+
+
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/create-unique/create-nodes-with-values.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/create-unique/create-labeled-node-if-missing.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[create-unique-create-labeled-node-if-missing]]
+== Create labeled node if missing ==
+If the pattern described needs a labeled node and there is none with the given labels, Cypher will create a new one.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/create-unique/includes/create-unique-create-labeled-node-if-missing.query.asciidoc[]
+[source,cypher]
+----
+MATCH (a { name: 'A' })
+CREATE UNIQUE (a)-[:KNOWS]-(c:blue)
+RETURN c
+----
+// end::neo4j-cypher-docs/docs/dev/ql/create-unique/includes/create-unique-create-labeled-node-if-missing.query.asciidoc[]
+// end::query[]
+
+
+The *'A'* node is connected in a `KNOWS` relationship to the *'c'* node, but since *'C'* doesn't have the `blue` label, a new node labeled as `blue` is created along with a `KNOWS` relationship from *'A'* to it.
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/create-unique/includes/create-unique-create-labeled-node-if-missing.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++------------+
+| c          |
++------------+
+| Node[20]{} |
++------------+
+1 row
+Nodes created: 1
+Relationships created: 1
+Labels added: 1
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/create-unique/includes/create-unique-create-labeled-node-if-missing.result.asciidoc[]
+// end::result[]
+
+
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/create-unique/create-labeled-node-if-missing.asciidoc[]
+
+
+[[query-create-unique-relationships]]
+== Create unique relationships
+
+// tag::neo4j-cypher-docs/docs/dev/ql/create-unique/create-relationship-if-it-is-missing.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[create-unique-create-relationship-if-it-is-missing]]
+== Create relationship if it is missing ==
+`CREATE UNIQUE` is used to describe the pattern that should be found or created.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/create-unique/includes/create-unique-create-relationship-if-it-is-missing.query.asciidoc[]
+[source,cypher]
+----
+MATCH (lft { name: 'A' }),(rgt)
+WHERE rgt.name IN ['B', 'C']
+CREATE UNIQUE (lft)-[r:KNOWS]->(rgt)
+RETURN r
+----
+// end::neo4j-cypher-docs/docs/dev/ql/create-unique/includes/create-unique-create-relationship-if-it-is-missing.query.asciidoc[]
+// end::query[]
+
+
+The left node is matched against the two right nodes. One relationship already exists and can be matched, and the other relationship is created before it is returned.
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/create-unique/includes/create-unique-create-relationship-if-it-is-missing.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++--------------+
+| r            |
++--------------+
+| :KNOWS[20]{} |
+| :KNOWS[3]{}  |
++--------------+
+2 rows
+Relationships created: 1
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/create-unique/includes/create-unique-create-relationship-if-it-is-missing.result.asciidoc[]
+// end::result[]
+
+
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/create-unique/create-relationship-if-it-is-missing.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/create-unique/create-relationship-with-values.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[create-unique-create-relationship-with-values]]
+== Create relationship with values ==
+Relationships to be created can also be matched on values.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/create-unique/includes/create-unique-create-relationship-with-values.query.asciidoc[]
+[source,cypher]
+----
+MATCH (root { name: 'root' })
+CREATE UNIQUE (root)-[r:X { since: 'forever' }]-()
+RETURN r
+----
+// end::neo4j-cypher-docs/docs/dev/ql/create-unique/includes/create-unique-create-relationship-with-values.query.asciidoc[]
+// end::query[]
+
+
+In this example, we want the relationship to have a value, and since no such relationship can be found, a new node and relationship are created. Note that since we are not interested in the created node, we don't name it.
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/create-unique/includes/create-unique-create-relationship-with-values.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++-------------------------+
+| r                       |
++-------------------------+
+| :X[20]{since:"forever"} |
++-------------------------+
+1 row
+Nodes created: 1
+Relationships created: 1
+Properties set: 1
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/create-unique/includes/create-unique-create-relationship-with-values.result.asciidoc[]
+// end::result[]
+
+
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/create-unique/create-relationship-with-values.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/create-unique/describe-complex-pattern.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[create-unique-describe-complex-pattern]]
+== Describe complex pattern ==
+The pattern described by `CREATE UNIQUE` can be separated by commas, just like in `MATCH` and `CREATE`.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/create-unique/includes/create-unique-describe-complex-pattern.query.asciidoc[]
+[source,cypher]
+----
+MATCH (root { name: 'root' })
+CREATE UNIQUE (root)-[:FOO]->(x),(root)-[:BAR]->(x)
+RETURN x
+----
+// end::neo4j-cypher-docs/docs/dev/ql/create-unique/includes/create-unique-describe-complex-pattern.query.asciidoc[]
+// end::query[]
+
+
+This example pattern uses two paths, separated by a comma.
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/create-unique/includes/create-unique-describe-complex-pattern.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++------------+
+| x          |
++------------+
+| Node[20]{} |
++------------+
+1 row
+Nodes created: 1
+Relationships created: 2
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/create-unique/includes/create-unique-describe-complex-pattern.result.asciidoc[]
+// end::result[]
+
+
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/create-unique/describe-complex-pattern.asciidoc[]
+

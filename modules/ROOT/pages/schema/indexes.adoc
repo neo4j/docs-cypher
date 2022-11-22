@@ -1,0 +1,1330 @@
+[[query-schema-index]]
+= Indexes
+:description: This section explains how to configure indexes to enhance performance in search, and to support full-text search. 
+
+* xref:schema/indexes.adoc#query-schema-index-introduction[Managing Indexes]
+** xref:schema/indexes.adoc#schema-index-single-vs-composite-index[Composite index limitations]
+** xref:schema/indexes.adoc#schema-index-create-a-single-property-index[Create a single-property index]
+** xref:schema/indexes.adoc#schema-index-create-a-composite-index[Create a composite index]
+** xref:schema/indexes.adoc#schema-index-get-a-list-of-all-indexes-in-the-database[Get a list of all indexes in the database]
+** xref:schema/indexes.adoc#schema-index-drop-a-single-property-index[Drop a single-property index]
+** xref:schema/indexes.adoc#schema-index-drop-a-composite-index[Drop a composite index]
+* xref:schema/indexes.adoc#schema-index-using-indexes[Using indexes]
+** xref:schema/indexes.adoc#schema-index-equality-check-using-where-single-property-index[Equality check using `WHERE` (single-property index)]
+** xref:schema/indexes.adoc#schema-index-equality-check-using-where-composite-index[Equality check using `WHERE` (composite index)]
+** xref:schema/indexes.adoc#schema-index-range-comparisons-using-where-single-property-index[Range comparisons using `WHERE` (single-property index)]
+** xref:schema/indexes.adoc#schema-index-multiple-range-comparisons-using-where-single-property-index[Use index with `WHERE` using multiple range comparisons]
+** xref:schema/indexes.adoc#schema-index-list-membership-check-using-in-single-property-index[List membership check using `IN` (single-property index)]
+** xref:schema/indexes.adoc#schema-index-list-membership-check-using-in-composite-index[List membership check using `IN` (composite index)]
+** xref:schema/indexes.adoc#schema-index-prefix-search-using-starts-with-single-property-index[Prefix search using `STARTS WITH` (single-property index)]
+** xref:schema/indexes.adoc#schema-index-suffix-search-using-ends-with-single-property-index[Suffix search using `ENDS WITH` (single-property index)]
+** xref:schema/indexes.adoc#schema-index-substring-search-using-contains-single-property-index[Substring search using `CONTAINS` (single-property index)]
+** xref:schema/indexes.adoc#schema-index-existence-check-using-exists-single-property-index[Existence check using `exists` (single-property index)]
+** xref:schema/indexes.adoc#schema-index-spatial-distance-searches-single-property-index[Use index when executing a spatial distance search]
+** xref:schema/indexes.adoc#schema-index-spatial-bounding-box-searches-single-property-index[Use index when executing a spatial bounding box search]
+* xref:schema/indexes.adoc#schema-index-fulltext-search[Indexes to support full-text search]
+** xref:schema/indexes.adoc#schema-index-fulltext-search-introduction[Introduction]
+** xref:schema/indexes.adoc#schema-index-fulltext-search-manage[Procedures to manage full-text schema indexes]
+** xref:schema/indexes.adoc#schema-index-fulltext-search-create-and-configure[Create and configure full-text schema indexes]
+** xref:schema/indexes.adoc#schema-index-fulltext-search-query[Query full-text schema indexes]
+** xref:schema/indexes.adoc#schema-index-fulltext-search-drop[Drop full-text indexes]
+* xref:schema/indexes.adoc#explicit-indexes-procedures[Manage and use explicit indexes]
+
+
+[[query-schema-index-introduction]]
+== Managing Indexes
+
+A database index is a redundant copy of some of the data in the database for the purpose of making searches of related data more efficient.
+This comes at the cost of additional storage space and slower writes, so deciding what to index and what not to index is an important and often non-trivial task.
+
+Cypher enables the creation of indexes on one or more properties for all nodes that have a given label:
+
+* An index that is created on a single property for any given label is called a _single-property index_.
+* An index that is created on more than one property for any given label is called a _composite index_.
+  Differences in the usage patterns between composite and single-property indexes are described in
+  xref:schema/indexes.adoc#schema-index-single-vs-composite-index[composite index limitations] and shown in the examples below.
+
+Once an index has been created, it will automatically be managed and kept up to date by the database when the graph is changed.
+Neo4j will automatically pick up and start using the index once it has been created and brought online.
+
+[NOTE]
+xref:query-tuning/using.adoc[Planner hints and the USING keyword] describes how to make the Cypher planner use specific indexes (especially in cases where the planner would not necessarily have used them).
+
+[NOTE]
+.Index configuration and limitations
+====
+For information on index configuration and limitations, refer to link:{neo4j-docs-base-uri}/operations-manual/{page-version}/performance-configuration[Operations Manual -> Index configuration].
+====
+
+[[schema-index-single-vs-composite-index]]
+=== Composite index limitations
+
+Unlike single-property indexes, composite indexes currently only support equality check: `n.prop = value` and list membership check: `n.prop IN list`.
+Queries containing the following types of predicates on properties in the index are not supported:
+
+* existence check: `exists(n.prop)`
+* range search: `n.prop > value`
+* prefix search: `STARTS WITH`
+* suffix search: `ENDS WITH`
+* substring search: `CONTAINS`
+
+Composite indexes require predicates on all properties indexed.
+If there are predicates on only a subset of the indexed properties, it will not be possible to use the composite index.
+To get this kind of fallback behavior, it is necessary to create additional indexes on the relevant sub-set of properties or on single properties.
+
+
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/create-a-single-property-index.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[schema-index-create-a-single-property-index]]
+== Create a single-property index ==
+An index on a single property for all nodes that have a particular label can be created with `CREATE INDEX ON :Label(property)`. Note that the index is not immediately available, but will be created in the background.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-create-a-single-property-index.query.asciidoc[]
+[source,cypher]
+----
+CREATE INDEX ON :Person(firstname)
+----
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-create-a-single-property-index.query.asciidoc[]
+// end::query[]
+
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-create-a-single-property-index.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++--------------------------------------------+
+| No data returned, and nothing was changed. |
++--------------------------------------------+
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-create-a-single-property-index.result.asciidoc[]
+// end::result[]
+
+
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/create-a-single-property-index.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/create-a-composite-index.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[schema-index-create-a-composite-index]]
+== Create a composite index ==
+An index on multiple properties for all nodes that have a particular label -- i.e. a composite index -- can be created with `CREATE INDEX ON :Label(prop1, ..., propN)`. Only nodes labeled with the specified label and which contain all the properties in the index definition will be added to the index. The following statement will create a composite index on all nodes labeled with `Person` and which have both an `age` and `country` property: 
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-create-a-composite-index.query.asciidoc[]
+[source,cypher]
+----
+CREATE INDEX ON :Person(age, country)
+----
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-create-a-composite-index.query.asciidoc[]
+// end::query[]
+
+
+Assume we execute the query `CREATE (a:Person {firstname: 'Bill', age: 34, country: 'USA'}), (b:Person {firstname: 'Sue', age: 39})`. Node `a` has both an `age` and a `country` property, and so it will be added to the composite index. However, as node `b` has no `country` property, it will not be added to the composite index. Note that the composite index is not immediately available, but will be created in the background. 
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-create-a-composite-index.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes added: 1
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-create-a-composite-index.result.asciidoc[]
+// end::result[]
+
+
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/create-a-composite-index.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/get-a-list-of-all-indexes-in-the-database.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[schema-index-get-a-list-of-all-indexes-in-the-database]]
+== Get a list of all indexes in the database ==
+Calling the built-in procedure `db.indexes` will list all the indexes in the database.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-get-a-list-of-all-indexes-in-the-database.query.asciidoc[]
+[source,cypher]
+----
+CALL db.indexes
+----
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-get-a-list-of-all-indexes-in-the-database.query.asciidoc[]
+// end::query[]
+
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-get-a-list-of-all-indexes-in-the-database.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| description                   | indexName       | tokenNames | properties    | state    | type                  | progress | provider                                  | id | failureMessage |
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "INDEX ON :Person(firstname)" | "Unnamed index" | ["Person"] | ["firstname"] | "ONLINE" | "node_label_property" | 100.0    | {version -> "1.0", key -> "native-btree"} | 3  | ""             |
+| "INDEX ON :Person(highScore)" | "Unnamed index" | ["Person"] | ["highScore"] | "ONLINE" | "node_label_property" | 100.0    | {version -> "1.0", key -> "native-btree"} | 1  | ""             |
+| "INDEX ON :Person(location)"  | "Unnamed index" | ["Person"] | ["location"]  | "ONLINE" | "node_label_property" | 100.0    | {version -> "1.0", key -> "native-btree"} | 5  | ""             |
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+3 rows
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-get-a-list-of-all-indexes-in-the-database.result.asciidoc[]
+// end::result[]
+
+
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/get-a-list-of-all-indexes-in-the-database.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/drop-a-single-property-index.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[schema-index-drop-a-single-property-index]]
+== Drop a single-property index ==
+An index on all nodes that have a label and single property combination can be dropped with `DROP INDEX ON :Label(property)`.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-drop-a-single-property-index.query.asciidoc[]
+[source,cypher]
+----
+DROP INDEX ON :Person(firstname)
+----
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-drop-a-single-property-index.query.asciidoc[]
+// end::query[]
+
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-drop-a-single-property-index.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes removed: 1
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-drop-a-single-property-index.result.asciidoc[]
+// end::result[]
+
+
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/drop-a-single-property-index.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/drop-a-composite-index.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[schema-index-drop-a-composite-index]]
+== Drop a composite index ==
+A composite index on all nodes that have a label and multiple property combination can be dropped with `DROP INDEX ON :Label(prop1, ..., propN)`. The following statement will drop a composite index on all nodes labeled with `Person` and which have both an `age` and `country` property: 
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-drop-a-composite-index.query.asciidoc[]
+[source,cypher]
+----
+DROP INDEX ON :Person(age, country)
+----
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-drop-a-composite-index.query.asciidoc[]
+// end::query[]
+
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-drop-a-composite-index.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes removed: 1
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-drop-a-composite-index.result.asciidoc[]
+// end::result[]
+
+
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/drop-a-composite-index.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/using-indexes.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[schema-index-using-indexes]]
+== Using indexes ==
+There is usually no need to specify which indexes to use in a query, Cypher will figure that out by itself. For example the query below will use the `Person(firstname)` index, if it exists. 
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-using-indexes.query.asciidoc[]
+[source,cypher]
+----
+MATCH (person:Person { firstname: 'Andy' })
+RETURN person
+----
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-using-indexes.query.asciidoc[]
+// end::query[]
+
+
+
+.Query Plan
+[source]
+----
+Compiler CYPHER 3.5
+
+Planner COST
+
+Runtime INTERPRETED
+
+Runtime version 3.5
+
++-----------------+----------------+------+---------+-----------------+-------------------+----------------------+----------------------+-----------+--------------------+
+| Operator        | Estimated Rows | Rows | DB Hits | Page Cache Hits | Page Cache Misses | Page Cache Hit Ratio | Order                | Variables | Other              |
++-----------------+----------------+------+---------+-----------------+-------------------+----------------------+----------------------+-----------+--------------------+
+| +ProduceResults |              1 |    1 |       0 |               2 |                 1 |               0.6667 | person.firstname ASC | person    |                    |
+| |               +----------------+------+---------+-----------------+-------------------+----------------------+----------------------+-----------+--------------------+
+| +NodeIndexSeek  |              1 |    1 |       3 |               2 |                 1 |               0.6667 | person.firstname ASC | person    | :Person(firstname) |
++-----------------+----------------+------+---------+-----------------+-------------------+----------------------+----------------------+-----------+--------------------+
+
+Total database accesses: 3
+
+----
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/using-indexes.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/equality-check-using-where-single-property-index.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[schema-index-equality-check-using-where-single-property-index]]
+== Equality check using `WHERE` (single-property index) ==
+A query containing equality comparisons of a single indexed property in the `WHERE` clause is backed automatically by the index. It is also possible for a query with multiple `OR` predicates to use multiple indexes, if indexes exist on the properties. For example, if indexes exist on both `:Label(p1)` and `:Label(p2)`, `MATCH (n:Label) WHERE n.p1 = 1 OR n.p2 = 2 RETURN n` will use both indexes. 
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-equality-check-using-where-single-property-index.query.asciidoc[]
+[source,cypher]
+----
+MATCH (person:Person)
+WHERE person.firstname = 'Andy'
+RETURN person
+----
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-equality-check-using-where-single-property-index.query.asciidoc[]
+// end::query[]
+
+
+
+.Query Plan
+[source]
+----
+Compiler CYPHER 3.5
+
+Planner COST
+
+Runtime INTERPRETED
+
+Runtime version 3.5
+
++-----------------+----------------+------+---------+-----------------+-------------------+----------------------+----------------------+-----------+--------------------+
+| Operator        | Estimated Rows | Rows | DB Hits | Page Cache Hits | Page Cache Misses | Page Cache Hit Ratio | Order                | Variables | Other              |
++-----------------+----------------+------+---------+-----------------+-------------------+----------------------+----------------------+-----------+--------------------+
+| +ProduceResults |              1 |    1 |       0 |               2 |                 1 |               0.6667 | person.firstname ASC | person    |                    |
+| |               +----------------+------+---------+-----------------+-------------------+----------------------+----------------------+-----------+--------------------+
+| +NodeIndexSeek  |              1 |    1 |       3 |               2 |                 1 |               0.6667 | person.firstname ASC | person    | :Person(firstname) |
++-----------------+----------------+------+---------+-----------------+-------------------+----------------------+----------------------+-----------+--------------------+
+
+Total database accesses: 3
+
+----
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/equality-check-using-where-single-property-index.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/equality-check-using-where-composite-index.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[schema-index-equality-check-using-where-composite-index]]
+== Equality check using `WHERE` (composite index) ==
+A query containing equality comparisons for all the properties of a composite index will automatically be backed by the same index. The following query will use the composite index defined xref:schema/indexes.adoc#schema-index-create-a-composite-index[earlier]: 
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-equality-check-using-where-composite-index.query.asciidoc[]
+[source,cypher]
+----
+MATCH (n:Person)
+WHERE n.age = 35 AND n.country = 'UK'
+RETURN n
+----
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-equality-check-using-where-composite-index.query.asciidoc[]
+// end::query[]
+
+
+However, the query `MATCH (n:Person) WHERE n.age = 35 RETURN n` will not be backed by the composite index, as the query does not contain an equality predicate on the `country` property. It will only be backed by an index on the `Person` label and `age` property defined thus: `:Person(age)`; i.e. a single-property index. 
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-equality-check-using-where-composite-index.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++-------------------------------------------------------------------------------------------+
+| n                                                                                         |
++-------------------------------------------------------------------------------------------+
+| Node[0]{country:"UK",highScore:54321,firstname:"John",surname:"Smith",name:"john",age:35} |
++-------------------------------------------------------------------------------------------+
+1 row
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-equality-check-using-where-composite-index.result.asciidoc[]
+// end::result[]
+
+
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/equality-check-using-where-composite-index.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/range-comparisons-using-where-single-property-index.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[schema-index-range-comparisons-using-where-single-property-index]]
+== Range comparisons using `WHERE` (single-property index) ==
+Single-property indexes are also automatically used for inequality (range) comparisons of an indexed property in the `WHERE` clause. Composite indexes are currently not able to support range comparisons.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-range-comparisons-using-where-single-property-index.query.asciidoc[]
+[source,cypher]
+----
+MATCH (person:Person)
+WHERE person.firstname > 'B'
+RETURN person
+----
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-range-comparisons-using-where-single-property-index.query.asciidoc[]
+// end::query[]
+
+
+
+.Query Plan
+[source]
+----
+Compiler CYPHER 3.5
+
+Planner COST
+
+Runtime INTERPRETED
+
+Runtime version 3.5
+
++-----------------------+----------------+------+---------+-----------------+-------------------+----------------------+----------------------+-----------+-------------------------------------+
+| Operator              | Estimated Rows | Rows | DB Hits | Page Cache Hits | Page Cache Misses | Page Cache Hit Ratio | Order                | Variables | Other                               |
++-----------------------+----------------+------+---------+-----------------+-------------------+----------------------+----------------------+-----------+-------------------------------------+
+| +ProduceResults       |              1 |    1 |       0 |               2 |                 1 |               0.6667 | person.firstname ASC | person    |                                     |
+| |                     +----------------+------+---------+-----------------+-------------------+----------------------+----------------------+-----------+-------------------------------------+
+| +NodeIndexSeekByRange |              1 |    1 |       3 |               2 |                 1 |               0.6667 | person.firstname ASC | person    | :Person(firstname) > $  AUTOSTRING0 |
++-----------------------+----------------+------+---------+-----------------+-------------------+----------------------+----------------------+-----------+-------------------------------------+
+
+Total database accesses: 3
+
+----
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/range-comparisons-using-where-single-property-index.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/multiple-range-comparisons-using-where-single-property-index.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[schema-index-multiple-range-comparisons-using-where-single-property-index]]
+== Multiple range comparisons using `WHERE` (single-property index) ==
+When the `WHERE` clause contains multiple inequality (range) comparisons for the same property, these can be combined in a single index range seek.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-multiple-range-comparisons-using-where-single-property-index.query.asciidoc[]
+[source,cypher]
+----
+MATCH (person:Person)
+WHERE 10000 < person.highScore < 20000
+RETURN person
+----
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-multiple-range-comparisons-using-where-single-property-index.query.asciidoc[]
+// end::query[]
+
+
+
+.Query Plan
+[source]
+----
+Compiler CYPHER 3.5
+
+Planner COST
+
+Runtime INTERPRETED
+
+Runtime version 3.5
+
++-----------------------+----------------+------+---------+-----------------+-------------------+----------------------+----------------------+-----------+-----------------------------------------------------------------------+
+| Operator              | Estimated Rows | Rows | DB Hits | Page Cache Hits | Page Cache Misses | Page Cache Hit Ratio | Order                | Variables | Other                                                                 |
++-----------------------+----------------+------+---------+-----------------+-------------------+----------------------+----------------------+-----------+-----------------------------------------------------------------------+
+| +ProduceResults       |              1 |    1 |       0 |               2 |                 1 |               0.6667 | person.highScore ASC | person    |                                                                       |
+| |                     +----------------+------+---------+-----------------+-------------------+----------------------+----------------------+-----------+-----------------------------------------------------------------------+
+| +NodeIndexSeekByRange |              1 |    1 |       3 |               2 |                 1 |               0.6667 | person.highScore ASC | person    | :Person(highScore) > $  AUTOINT1 AND :Person(highScore) < $  AUTOINT0 |
++-----------------------+----------------+------+---------+-----------------+-------------------+----------------------+----------------------+-----------+-----------------------------------------------------------------------+
+
+Total database accesses: 3
+
+----
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/multiple-range-comparisons-using-where-single-property-index.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/list-membership-check-using-in-single-property-index.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[schema-index-list-membership-check-using-in-single-property-index]]
+== List membership check using `IN` (single-property index) ==
+The `IN` predicate on `person.firstname` in the following query will use the single-property index `Person(firstname)` if it exists. 
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-list-membership-check-using-in-single-property-index.query.asciidoc[]
+[source,cypher]
+----
+MATCH (person:Person)
+WHERE person.firstname IN ['Andy', 'John']
+RETURN person
+----
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-list-membership-check-using-in-single-property-index.query.asciidoc[]
+// end::query[]
+
+
+
+.Query Plan
+[source]
+----
+Compiler CYPHER 3.5
+
+Planner COST
+
+Runtime INTERPRETED
+
+Runtime version 3.5
+
++-----------------+----------------+------+---------+-----------------+-------------------+----------------------+-----------+--------------------+
+| Operator        | Estimated Rows | Rows | DB Hits | Page Cache Hits | Page Cache Misses | Page Cache Hit Ratio | Variables | Other              |
++-----------------+----------------+------+---------+-----------------+-------------------+----------------------+-----------+--------------------+
+| +ProduceResults |             24 |    2 |       0 |               6 |                 0 |               1.0000 | person    |                    |
+| |               +----------------+------+---------+-----------------+-------------------+----------------------+-----------+--------------------+
+| +NodeIndexSeek  |             24 |    2 |       5 |               6 |                 0 |               1.0000 | person    | :Person(firstname) |
++-----------------+----------------+------+---------+-----------------+-------------------+----------------------+-----------+--------------------+
+
+Total database accesses: 5
+
+----
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/list-membership-check-using-in-single-property-index.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/list-membership-check-using-in-composite-index.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[schema-index-list-membership-check-using-in-composite-index]]
+== List membership check using `IN` (composite index) ==
+The `IN` predicates on `person.age` and `person.country` in the following query will use the composite index `Person(age, country)` if it exists. 
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-list-membership-check-using-in-composite-index.query.asciidoc[]
+[source,cypher]
+----
+MATCH (person:Person)
+WHERE person.age IN [10, 20, 35] AND person.country IN ['Sweden', 'USA', 'UK']
+RETURN person
+----
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-list-membership-check-using-in-composite-index.query.asciidoc[]
+// end::query[]
+
+
+
+.Query Plan
+[source]
+----
+Compiler CYPHER 3.5
+
+Planner COST
+
+Runtime INTERPRETED
+
+Runtime version 3.5
+
++-----------------+----------------+------+---------+-----------------+-------------------+----------------------+-----------+----------------------+
+| Operator        | Estimated Rows | Rows | DB Hits | Page Cache Hits | Page Cache Misses | Page Cache Hit Ratio | Variables | Other                |
++-----------------+----------------+------+---------+-----------------+-------------------+----------------------+-----------+----------------------+
+| +ProduceResults |            451 |    1 |       0 |              20 |                 0 |               1.0000 | person    |                      |
+| |               +----------------+------+---------+-----------------+-------------------+----------------------+-----------+----------------------+
+| +NodeIndexSeek  |            451 |    1 |      11 |              20 |                 0 |               1.0000 | person    | :Person(age,country) |
++-----------------+----------------+------+---------+-----------------+-------------------+----------------------+-----------+----------------------+
+
+Total database accesses: 11
+
+----
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/list-membership-check-using-in-composite-index.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/prefix-search-using-starts-with-single-property-index.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[schema-index-prefix-search-using-starts-with-single-property-index]]
+== Prefix search using `STARTS WITH` (single-property index) ==
+The `STARTS WITH` predicate on `person.firstname` in the following query will use the `Person(firstname)` index, if it exists. Composite indexes are currently not able to support `STARTS WITH`.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-prefix-search-using-starts-with-single-property-index.query.asciidoc[]
+[source,cypher]
+----
+MATCH (person:Person)
+WHERE person.firstname STARTS WITH 'And'
+RETURN person
+----
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-prefix-search-using-starts-with-single-property-index.query.asciidoc[]
+// end::query[]
+
+
+
+.Query Plan
+[source]
+----
+Compiler CYPHER 3.5
+
+Planner COST
+
+Runtime INTERPRETED
+
+Runtime version 3.5
+
++-----------------------+----------------+------+---------+-----------------+-------------------+----------------------+----------------------+-----------+-------------------------------------------------+
+| Operator              | Estimated Rows | Rows | DB Hits | Page Cache Hits | Page Cache Misses | Page Cache Hit Ratio | Order                | Variables | Other                                           |
++-----------------------+----------------+------+---------+-----------------+-------------------+----------------------+----------------------+-----------+-------------------------------------------------+
+| +ProduceResults       |              2 |    1 |       0 |               3 |                 0 |               1.0000 | person.firstname ASC | person    |                                                 |
+| |                     +----------------+------+---------+-----------------+-------------------+----------------------+----------------------+-----------+-------------------------------------------------+
+| +NodeIndexSeekByRange |              2 |    1 |       3 |               3 |                 0 |               1.0000 | person.firstname ASC | person    | :Person(firstname STARTS WITH $`  AUTOSTRING0`) |
++-----------------------+----------------+------+---------+-----------------+-------------------+----------------------+----------------------+-----------+-------------------------------------------------+
+
+Total database accesses: 3
+
+----
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/prefix-search-using-starts-with-single-property-index.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/suffix-search-using-ends-with-single-property-index.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[schema-index-suffix-search-using-ends-with-single-property-index]]
+== Suffix search using `ENDS WITH` (single-property index) ==
+The `ENDS WITH` predicate on `person.firstname` in the following query will use the `Person(firstname)` index, if it exists. All values stored in the `Person(firstname)` index will be searched, and entries ending with `'hn'` will be returned. This means that although the search will not be optimized to the extent of queries using `=`, `IN`, `>`, `<` or `STARTS WITH`, it is still faster than not using an index in the first place. Composite indexes are currently not able to support `ENDS WITH`. 
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-suffix-search-using-ends-with-single-property-index.query.asciidoc[]
+[source,cypher]
+----
+MATCH (person:Person)
+WHERE person.firstname ENDS WITH 'hn'
+RETURN person
+----
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-suffix-search-using-ends-with-single-property-index.query.asciidoc[]
+// end::query[]
+
+
+
+.Query Plan
+[source]
+----
+Compiler CYPHER 3.5
+
+Planner COST
+
+Runtime INTERPRETED
+
+Runtime version 3.5
+
++------------------------+----------------+------+---------+-----------------+-------------------+----------------------+----------------------+-----------+--------------------------------------+
+| Operator               | Estimated Rows | Rows | DB Hits | Page Cache Hits | Page Cache Misses | Page Cache Hit Ratio | Order                | Variables | Other                                |
++------------------------+----------------+------+---------+-----------------+-------------------+----------------------+----------------------+-----------+--------------------------------------+
+| +ProduceResults        |              2 |    1 |       0 |               2 |                 0 |               1.0000 | person.firstname ASC | person    |                                      |
+| |                      +----------------+------+---------+-----------------+-------------------+----------------------+----------------------+-----------+--------------------------------------+
+| +NodeIndexEndsWithScan |              2 |    1 |       3 |               3 |                 0 |               1.0000 | person.firstname ASC | person    | :Person(firstname); $`  AUTOSTRING0` |
++------------------------+----------------+------+---------+-----------------+-------------------+----------------------+----------------------+-----------+--------------------------------------+
+
+Total database accesses: 3
+
+----
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/suffix-search-using-ends-with-single-property-index.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/substring-search-using-contains-single-property-index.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[schema-index-substring-search-using-contains-single-property-index]]
+== Substring search using `CONTAINS` (single-property index) ==
+The `CONTAINS` predicate on `person.firstname` in the following query will use the `Person(firstname)` index, if it exists. All values stored in the `Person(firstname)` index will be searched, and entries containing `'h'` will be returned. This means that although the search will not be optimized to the extent of queries using `=`, `IN`, `>`, `<` or `STARTS WITH`, it is still faster than not using an index in the first place. Composite indexes are currently not able to support `CONTAINS`. 
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-substring-search-using-contains-single-property-index.query.asciidoc[]
+[source,cypher]
+----
+MATCH (person:Person)
+WHERE person.firstname CONTAINS 'h'
+RETURN person
+----
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-substring-search-using-contains-single-property-index.query.asciidoc[]
+// end::query[]
+
+
+
+.Query Plan
+[source]
+----
+Compiler CYPHER 3.5
+
+Planner COST
+
+Runtime INTERPRETED
+
+Runtime version 3.5
+
++------------------------+----------------+------+---------+-----------------+-------------------+----------------------+----------------------+-----------+--------------------------------------+
+| Operator               | Estimated Rows | Rows | DB Hits | Page Cache Hits | Page Cache Misses | Page Cache Hit Ratio | Order                | Variables | Other                                |
++------------------------+----------------+------+---------+-----------------+-------------------+----------------------+----------------------+-----------+--------------------------------------+
+| +ProduceResults        |              2 |    1 |       0 |               2 |                 0 |               1.0000 | person.firstname ASC | person    |                                      |
+| |                      +----------------+------+---------+-----------------+-------------------+----------------------+----------------------+-----------+--------------------------------------+
+| +NodeIndexContainsScan |              2 |    1 |       3 |               3 |                 0 |               1.0000 | person.firstname ASC | person    | :Person(firstname); $`  AUTOSTRING0` |
++------------------------+----------------+------+---------+-----------------+-------------------+----------------------+----------------------+-----------+--------------------------------------+
+
+Total database accesses: 3
+
+----
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/substring-search-using-contains-single-property-index.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/existence-check-using-exists-single-property-index.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[schema-index-existence-check-using-exists-single-property-index]]
+== Existence check using `exists` (single-property index) ==
+The `exists(p.firstname)` predicate in the following query will use the `Person(firstname)` index, if it exists. Composite indexes are currently not able to support the `exists` predicate. 
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-existence-check-using-exists-single-property-index.query.asciidoc[]
+[source,cypher]
+----
+MATCH (p:Person)
+WHERE exists(p.firstname)
+RETURN p
+----
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-existence-check-using-exists-single-property-index.query.asciidoc[]
+// end::query[]
+
+
+
+.Query Plan
+[source]
+----
+Compiler CYPHER 3.5
+
+Planner COST
+
+Runtime INTERPRETED
+
+Runtime version 3.5
+
++-----------------+----------------+------+---------+-----------------+-------------------+----------------------+-----------+--------------------+
+| Operator        | Estimated Rows | Rows | DB Hits | Page Cache Hits | Page Cache Misses | Page Cache Hit Ratio | Variables | Other              |
++-----------------+----------------+------+---------+-----------------+-------------------+----------------------+-----------+--------------------+
+| +ProduceResults |              2 |    2 |       0 |               2 |                 0 |               1.0000 | p         |                    |
+| |               +----------------+------+---------+-----------------+-------------------+----------------------+-----------+--------------------+
+| +NodeIndexScan  |              2 |    2 |       4 |               2 |                 1 |               0.6667 | p         | :Person(firstname) |
++-----------------+----------------+------+---------+-----------------+-------------------+----------------------+-----------+--------------------+
+
+Total database accesses: 4
+
+----
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/existence-check-using-exists-single-property-index.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/spatial-distance-searches-single-property-index.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[schema-index-spatial-distance-searches-single-property-index]]
+== Spatial distance searches (single-property index) ==
+If a property with point values is indexed, the index is used for spatial distance searches as well as for range queries.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-spatial-distance-searches-single-property-index.query.asciidoc[]
+[source,cypher]
+----
+MATCH (p:Person)
+WHERE distance(p.location, point({ x: 1, y: 2 }))< 2
+RETURN p.location
+----
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-spatial-distance-searches-single-property-index.query.asciidoc[]
+// end::query[]
+
+
+
+.Query Plan
+[source]
+----
+Compiler CYPHER 3.5
+
+Planner COST
+
+Runtime INTERPRETED
+
+Runtime version 3.5
+
++-----------------------+----------------+------+---------+-----------------+-------------------+----------------------+-----------------------+-------------------------------------------------------------------------------------------+
+| Operator              | Estimated Rows | Rows | DB Hits | Page Cache Hits | Page Cache Misses | Page Cache Hit Ratio | Variables             | Other                                                                                     |
++-----------------------+----------------+------+---------+-----------------+-------------------+----------------------+-----------------------+-------------------------------------------------------------------------------------------+
+| +ProduceResults       |              0 |    9 |       0 |               7 |                 0 |               1.0000 | p, p.location         |                                                                                           |
+| |                     +----------------+------+---------+-----------------+-------------------+----------------------+-----------------------+-------------------------------------------------------------------------------------------+
+| +Projection           |              0 |    9 |       0 |               7 |                 0 |               1.0000 | p.location -- p       | {p.location : cached[p.location]}                                                         |
+| |                     +----------------+------+---------+-----------------+-------------------+----------------------+-----------------------+-------------------------------------------------------------------------------------------+
+| +Filter               |              0 |    9 |       0 |               7 |                 0 |               1.0000 | cached[p.location], p | distance(cached[p.location], point({x: $`  AUTOINT0`, y: $`  AUTOINT1`})) < $`  AUTOINT2` |
+| |                     +----------------+------+---------+-----------------+-------------------+----------------------+-----------------------+-------------------------------------------------------------------------------------------+
+| +NodeIndexSeekByRange |              0 |    9 |      11 |               7 |                 0 |               1.0000 | cached[p.location], p | :Person(location) WHERE distance(_,point(x,y)) < Parameter(  AUTOINT2,Integer)            |
++-----------------------+----------------+------+---------+-----------------+-------------------+----------------------+-----------------------+-------------------------------------------------------------------------------------------+
+
+Total database accesses: 11
+
+----
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/spatial-distance-searches-single-property-index.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/spatial-bounding-box-searches-single-property-index.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[schema-index-spatial-bounding-box-searches-single-property-index]]
+== Spatial bounding box searches (single-property index) ==
+The ability to do index seeks on bounded ranges works even with the 2D and 3D spatial `Point` types.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-spatial-bounding-box-searches-single-property-index.query.asciidoc[]
+[source,cypher]
+----
+MATCH (person:Person)
+WHERE point({ x: 1, y: 5 })< person.location < point({ x: 2, y: 6 })
+RETURN person
+----
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/includes/schema-index-spatial-bounding-box-searches-single-property-index.query.asciidoc[]
+// end::query[]
+
+
+
+.Query Plan
+[source]
+----
+Compiler CYPHER 3.5
+
+Planner COST
+
+Runtime INTERPRETED
+
+Runtime version 3.5
+
++-----------------------+----------------+------+---------+-----------------+-------------------+----------------------+-----------+-----------------------------------------------------------------------------------------------------------------------------+
+| Operator              | Estimated Rows | Rows | DB Hits | Page Cache Hits | Page Cache Misses | Page Cache Hit Ratio | Variables | Other                                                                                                                       |
++-----------------------+----------------+------+---------+-----------------+-------------------+----------------------+-----------+-----------------------------------------------------------------------------------------------------------------------------+
+| +ProduceResults       |              0 |    1 |       0 |               8 |                 0 |               1.0000 | person    |                                                                                                                             |
+| |                     +----------------+------+---------+-----------------+-------------------+----------------------+-----------+-----------------------------------------------------------------------------------------------------------------------------+
+| +NodeIndexSeekByRange |              0 |    1 |       3 |               8 |                 0 |               1.0000 | person    | :Person(location) > point({x: $  AUTOINT2, y: $  AUTOINT3}) AND :Person(location) < point({x: $  AUTOINT0, y: $  AUTOINT1}) |
++-----------------------+----------------+------+---------+-----------------+-------------------+----------------------+-----------+-----------------------------------------------------------------------------------------------------------------------------+
+
+Total database accesses: 3
+
+----
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/spatial-bounding-box-searches-single-property-index.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/fulltext-schema-index.adoc[]
+// tag::include-neo4j-documentation[]
+[[schema-index-fulltext-search]]
+== Indexes to support full-text search
+
+[abstract]
+--
+This section describes how to use full-text schema indexes, to enable full-text search.
+--
+
+
+[[schema-index-fulltext-search-introduction]]
+== Introduction
+
+Full-text schema indexes are powered by the http://lucene.apache.org/[Apache Lucene] indexing and search library, and can be used to index nodes and relationships by string properties.
+A full-text schema index allows you to write queries that match within the _contents_ of indexed string properties.
+For instance, the regular schema indexes described in previous sections can only do exact matching or prefix matches on strings.
+A full-text index will instead tokenize the indexed string values, so it can match _terms_ anywhere within the strings.
+How the indexed strings are tokenized and broken into terms, is determined by what analyzer the full-text schema index is configured with.
+For instance, the _swedish_ analyzer knows how to tokenize and stem Swedish words, and will avoid indexing Swedish stop words.
+
+Full-text schema indexes:
+
+* support the indexing of both nodes and relationships.
+* support configuring custom analyzers, including analyzers that are not included with Lucene itself.
+* can be queried using the Lucene query language.
+* can return the _score_ for each result from a query.
+* are kept up to date automatically, as nodes and relationships are added, removed, and modified.
+* will automatically populate newly created indexes with the existing data in a store.
+* can be checked by the consistency checker, and they can be rebuilt if there is a problem with them.
+* are a projection of the store, and can only index nodes and relationships by the contents of their properties.
+* can support any number of documents in a single index.
+* are created, dropped, and updated transactionally, and is automatically replicated throughout a cluster.
+* can be accessed via Cypher procedures.
+* can be configured to be _eventually consistent_, in which index updating is moved from the commit path to a background thread.
+Using this feature, it is possible to work around the slow Lucene writes from the performance critical commit process, thus removing the main bottlenecks for Neo4j write performance.
+
+At first sight, the construction of full-text indexes can seem similar to regular indexes.
+However there are some things that are interesting to note.
+In contrast to xref:schema/indexes.adoc#query-schema-index-introduction[regular indexes], a full-text index:
+
+* can be applied to more than one label.
+* can be applied to relationship types (one or more).
+* can be applied to more than one property at a time (similar to a xref:schema/indexes.adoc#schema-index-create-a-composite-index[_composite index_]), but with an important difference:
+While a composite index applies only to entities that match the indexed label and _all_ of the indexed properties, full-text index will index entities that have at least one of the indexed labels or relationship types, and at least one of the indexed properties.
+
+For information on how to configure full-text schema indexes, refer to link:{neo4j-docs-base-uri}/operations-manual/{page-version}/performance-configuration/fulltext-search[Operations Manual -> Indexes to support full-text search].
+
+[NOTE]
+--
+Full-text schema indexes replace the _explicit_ indexes, which are deprecated and will be discontinued in the next major release.
+It is therefore recommended migrate to full-text schema indexes.
+A full description of the differences between full-text schema indexes and explicit indexes is available in link:{neo4j-docs-base-uri}/operations-manual/{page-version}/performance-configuration/fulltext-search#index-configuration-fulltext-search-deprecation-of-explicit[Operations Manual -> Deprecation of explicit indexes].
+--
+
+
+[[schema-index-fulltext-search-manage]]
+== Procedures to manage full-text schema indexes
+
+Full-text scema indexes are managed through built-in procedures.
+The most common procedures are listed in the table below:
+
+[options="header"]
+|===
+| Usage                               | Procedure                                                 | Description
+| Create full-text node index         | `db.index.fulltext.createNodeIndex`                       | Create a node full-text index for the given labels and properties. The optional 'config' map parameter can be used to supply settings to the index. Note: index specific settings are currently experimental, and might not replicated correctly in a cluster, or during backup. Supported settings are 'analyzer', for specifying what analyzer to use when indexing and querying. Use the `db.index.fulltext.listAvailableAnalyzers` procedure to see what options are available. And 'eventually_consistent' which can be set to 'true' to make this index eventually consistent, such that updates from committing transactions are applied in a background thread.
+| Create full-text relationship index | `db.index.fulltext.createRelationshipIndex`               | Create a relationship full-text index for the given relationship types and properties. The optional 'config' map parameter can be used to supply settings to the index. Note: index specific settings are currently experimental, and might not replicated correctly in a cluster, or during backup. Supported settings are 'analyzer', for specifying what analyzer to use when indexing and querying. Use the `db.index.fulltext.listAvailableAnalyzers` procedure to see what options are available. And 'eventually_consistent' which can be set to 'true' to make this index eventually consistent, such that updates from committing transactions are applied in a background thread.
+| List available analyzers            | `db.index.fulltext.listAvailableAnalyzers`                | List the available analyzers that the full-text indexes can be configured with.
+| Use full-text node index            | `db.index.fulltext.queryNodes`                            | Query the given full-text index. Returns the matching nodes and their Lucene query score, ordered by score.
+| Use full-text relationship index    | `db.index.fulltext.queryRelationships`                    | Query the given full-text index. Returns the matching relationships and their Lucene query score, ordered by score.
+| Drop full-text index                | `db.index.fulltext.drop`                                  | Drop the specified index.
+|===
+
+
+[[schema-index-fulltext-search-create-and-configure]]
+== Create and configure full-text schema indexes
+
+Full-text schema indexes are created with the `db.index.fulltext.createNodeIndex` and `db.index.fulltext.createRelationshipIndex`.
+The indexes must each be given a unique name when created, which is used to reference the specific index in question, when querying or dropping an index.
+A full-text schema index then applies to a list of labels or a list of relationship types, for node and relationship indexes respectively, and then a list of property names.
+
+For instance, if we have a movie with a title.
+
+.Query
+[source, cypher]
+----
+CREATE (m:Movie { title: "The Matrix" })
+RETURN m.title
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +m.title+
+| +"The Matrix"+
+1+d|1 row +
+Nodes created: 1 +
+Properties set: 1 +
+Labels added: 1
+|===
+
+And we have a full-text schema index on the `title` and `description` properties of movies and books.
+
+.Query
+[source, cypher]
+----
+CALL db.index.fulltext.createNodeIndex("titlesAndDescriptions",["Movie", "Book"],["title", "description"])
+----
+
+Then our movie node from above will be included in the index, even though it only have one of the indexed labels, and only one of the indexed properties:
+
+.Query
+[source, cypher]
+----
+CALL db.index.fulltext.queryNodes("titlesAndDescriptions", "matrix") YIELD node, score
+RETURN node.title, node.description, score
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| +node.title+ | +node.description+ | +score+
+| +"The Matrix"+ | +<null>+ | +1.261009693145752+
+3+d|1 row
+|===
+
+The same is true for full-text schema indexes on relationships.
+Though a relationship can only have one type, a relationship full-text schema index can index multiple types, and all relationships will be included that match one of the relationship types, and at least one of the indexed properties.
+
+The `db.index.fulltext.createNodeIndex` and `db.index.fulltext.createRelationshipIndex` takes an optional fourth argument, called `config`.
+The `config` parameter is a map from string to string, and can be used to set index-specific configuration settings.
+The `analyzer` setting can be used to configure an index-specific analyzer.
+The possible values for the `analyzer` setting can be listed with the `db.index.fulltext.listAvailableAnalyzers` procedure.
+The `eventually_consistent` setting, if set to `"true"`, will put the index in an _eventually consistent_ update mode.
+this means that updates will be applied in a background thread "as soon as possible", instead of during transaction commit like other indexes.
+
+[NOTE]
+====
+Using index-specific settings via the `config` parameter is to be considered as experimental, because these settings are currently not replicated in a clustered environment.
+See link:{neo4j-docs-base-uri}/operations-manual/{page-version}/performance-configuration/fulltext-search[Operations Manual -> Indexes to support full-text search] for instructions on how to configure full-text indexes in link:{neo4j-docs-base-uri}/operations-manual/{page-version}/configuration/file-locations[neo4j.conf].
+====
+
+.Query
+[source, cypher]
+----
+CALL db.index.fulltext.createRelationshipIndex("taggedByRelationshipIndex",["TAGGED_AS"],["taggedByUser"], { analyzer: "url_or_email", eventually_consistent: "true" })
+----
+
+In this example, an eventually consistent relationship full-text schema index is created for the `TAGGED_AS` relationship type, and the `taggedByUser` property, and the index uses the `url_or_email` analyzer.
+This could, for instance, be a system where people are assigning tags to documents, and where the index on the `taggedByUser` property will allow them to quickly find all of the documents they have tagged.
+Had it not been for the relationship index, one would have had to add artificial connective nodes between the tags and the documents in the data model, just so these nodes could be indexed.
+
+
+[[schema-index-fulltext-search-query]]
+== Query full-text schema indexes
+
+Full-text indexes will, in addition to any exact matches, also return _approximate_ matches to a given query.
+Both the property values that are indexed, and the queries to the index, are processed through the analyzer such that the index can find that don't _exactly_ matches.
+The `score` that is returned alongside each result entry, represents how well the index thinks that entry matches the given query.
+The results are always returned in _descending score order_, where the best matching result entry is put first.
+To illustrate, in the example below, we search our movie database for "Full Metal Jacket", and even though there is an exact match as the first result, we also get three other less interesting results:
+
+.Query
+[source, cypher]
+----
+CALL db.index.fulltext.queryNodes("titlesAndDescriptions", "Full Metal Jacket") YIELD node, score
+RETURN node.title, score
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +node.title+ | +score+
+| +"Full Metal Jacket"+ | +0.8093575239181519+
+| +"The Jacket"+ | +0.1152719184756279+
+| +"Full Moon High"+ | +0.0836455449461937+
+| +"Yellow Jacket"+ | +0.07204495370388031+
+2+d|4 rows
+|===
+
+Full-text schema indexes are powered by the http://lucene.apache.org/[Apache Lucene] indexing and search library.
+This means that we can use Lucene's full-text query language to express what we wish to search for.
+For instance, if we are only interested in exact matches, then we can quote the string we are searching for.
+
+.Query
+[source, cypher]
+----
+CALL db.index.fulltext.queryNodes("titlesAndDescriptions", "\"Full Metal Jacket\"") YIELD node, score
+RETURN node.title, score
+----
+
+When we put "Full Metal Jacket" in quotes, Lucene only gives us exact matches.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +node.title+ | +score+
+| +"Full Metal Jacket"+ | +1.3701786994934082+
+2+d|1 row
+|===
+
+Lucene also allows us to use logical operators, such as `AND` and `OR`, to search for terms:
+
+.Query
+[source, cypher]
+----
+CALL db.index.fulltext.queryNodes("titlesAndDescriptions", 'full AND metal') YIELD node, score
+RETURN node.title, score
+----
+
+Only the "Full Metal Jacket" movie in our database has both the words "full" and "metal".
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +node.title+ | +score+
+| +"Full Metal Jacket"+ | +0.7603841423988342+
+2+d|1 row
+|===
+
+It is also possible to search for only specific properties, by putting the property name and a colon in front of the text being searched for.
+
+.Query
+[source, cypher]
+----
+CALL db.index.fulltext.queryNodes("titlesAndDescriptions", 'description:"surreal adventure"') YIELD node, score
+RETURN node.title, node.description, score
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| +node.title+ | +node.description+ | +score+
+| +"Metallica Through The Never"+ | +"The movie follows the young roadie Trip through his surreal adventure with the band."+ | +1.311632513999939+
+3+d|1 row
+|===
+
+A complete description of the Lucene query syntax can be found in the http://lucene.apache.org/core/5_5_0/queryparser/org/apache/lucene/queryparser/classic/package-summary.html#package.description[Lucene documentation].
+
+
+[[schema-index-fulltext-search-drop]]
+== Drop full-text indexes
+
+A full-text node index is dropped by using the procedure  `db.index.fulltext.drop`.
+
+In the following example, we will drop the `taggedByRelationshipIndex` that we created previously:
+
+.Query
+[source, cypher]
+----
+CALL db.index.fulltext.drop("taggedByRelationshipIndex")
+----
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/fulltext-schema-index.adoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/schema-index/explicit-index-procedures.adoc[]
+// tag::include-neo4j-documentation[]
+[role=deprecated]
+[[explicit-indexes-procedures]]
+== Manage and use explicit indexes
+
+Explicit indexes are alternative data structures, in which a user can explicitly maintain search and seek data for nodes and relationships.
+These data structures are special-purpose and the procedures are primarily provided for users who have legacy deployments depending on such structures.
+
+[DEPRECATED]
+--
+The explicit indexing features in Neo4j are deprecated for removal in the next major release.
+Consider using xref:schema/indexes.adoc[schema indexes], or the xref:schema/indexes.adoc#schema-index-fulltext-search[full-text schema indexes], instead.
+--
+
+[options="header"]
+|===
+| Signature                                                                                      | Description
+| xref:schema/indexes.adoc#db.index.explicit.addNode[db.index.explicit.addNode]                                       | Add a node to an explicit index based on a specified key and value
+| xref:schema/indexes.adoc#db.index.explicit.addRelationship[db.index.explicit.addRelationship]                       | Add a relationship to an explicit index based on a specified key and value
+| xref:schema/indexes.adoc#db.index.explicit.auto.searchNodes[db.index.explicit.auto.searchNodes]                     | Search nodes from explicit automatic index. Replaces `START n=node:node_auto_index('key:foo*')`
+| xref:schema/indexes.adoc#db.index.explicit.auto.searchRelationships[db.index.explicit.auto.searchRelationships]     | Search relationship from explicit automatic index. Replaces `START r=relationship:relationship_auto_index('key:foo*')`
+| xref:schema/indexes.adoc#db.index.explicit.auto.seekNodes[db.index.explicit.auto.seekNodes]                         | Get node from explicit automatic index. Replaces `START n=node:node_auto_index(key = 'A')`
+| xref:schema/indexes.adoc#db.index.explicit.auto.seekRelationships[db.index.explicit.auto.seekRelationships]         | Get relationship from explicit automatic index. Replaces `START r=relationship:relationship_auto_index(key = 'A')`
+| xref:schema/indexes.adoc#db.index.explicit.drop[db.index.explicit.drop]                                             | Remove an explicit index - YIELD type, name, config
+| xref:schema/indexes.adoc#db.index.explicit.existsForNodes[db.index.explicit.existsForNodes]                         | Check if a node explicit index exists
+| xref:schema/indexes.adoc#db.index.explicit.existsForRelationships[db.index.explicit.existsForRelationships]         | Check if a relationship explicit index exists
+| xref:schema/indexes.adoc#db.index.explicit.forNodes[db.index.explicit.forNodes]                                     | Get or create a node explicit index - YIELD type, name, config
+| xref:schema/indexes.adoc#db.index.explicit.forRelationships[db.index.explicit.forRelationships]                     | Get or create a relationship explicit index - YIELD type, name, config
+| xref:schema/indexes.adoc#db.index.explicit.list[db.index.explicit.list]                                             | List all explicit indexes - YIELD type, name, config
+| xref:schema/indexes.adoc#db.index.explicit.removeNode[db.index.explicit.removeNode(indexName]                       | Remove a node from an explicit index with an optional key
+| xref:schema/indexes.adoc#db.index.explicit.removeRelationship[db.index.explicit.removeRelationship]                 | Remove a relationship from an explicit index with an optional key
+| xref:schema/indexes.adoc#db.index.explicit.searchNodes[db.index.explicit.searchNodes]                               | Search nodes from explicit index. Replaces `START n=node:nodes('key:foo*')`
+| xref:schema/indexes.adoc#db.index.explicit.searchRelationships[db.index.explicit.searchRelationships]               | Search relationship from explicit index. Replaces `START r=relationship:relIndex('key:foo*')`
+| xref:schema/indexes.adoc#db.index.explicit.searchRelationshipsBetween[db.index.explicit.searchRelationshipsBetween] | Search relationship in explicit index, starting at the node 'in' and ending at 'out'
+| xref:schema/indexes.adoc#db.index.explicit.searchRelationshipsIn[db.index.explicit.searchRelationshipsIn]           | Search relationship in explicit index, starting at the node 'in'
+| xref:schema/indexes.adoc#db.index.explicit.searchRelationshipsOut[db.index.explicit.searchRelationshipsOut]         | Search relationship in explicit index, ending at the node 'out'
+| xref:schema/indexes.adoc#db.index.explicit.seekNodes[db.index.explicit.seekNodes]                                   | Get node from explicit index. Replaces `START n=node:nodes(key = 'A')`
+| xref:schema/indexes.adoc#db.index.explicit.seekRelationships[db.index.explicit.seekRelationships]                   | Get relationship from explicit index. Replaces `START r=relationship:relIndex(key = 'A')`
+|===
+
+[[db.index.explicit.addNode]]
+.db.index.explicit.addNode
+[options="header"]
+|===
+| Signature                                                                                                                | Description
+| `db.index.explicit.addNode(indexName :: STRING?, node :: NODE?, key :: STRING?, value :: ANY?) :: (success :: BOOLEAN?)` | Add a node to an explicit index based on a specified key and value
+|===
+
+
+[[db.index.explicit.addRelationship]]
+.db.index.explicit.addRelationship
+[options="header"]
+|===
+| Signature                                                                                                                                        | Description
+| `db.index.explicit.addRelationship(indexName :: STRING?, relationship :: RELATIONSHIP?, key :: STRING?, value :: ANY?) :: (success :: BOOLEAN?)` | Add a relationship to an explicit index based on a specified key and value
+|===
+
+
+[[db.index.explicit.auto.searchNodes]]
+.db.index.explicit.auto.searchNodes
+[options="header"]
+|===
+| Signature                                                                                | Description
+| `db.index.explicit.auto.searchNodes(query :: ANY?) :: (node :: NODE?, weight :: FLOAT?)` | Search nodes from explicit automatic index. Replaces `START n=node:node_auto_index('key:foo*')`
+|===
+
+
+[[db.index.explicit.auto.searchRelationships]]
+.db.index.explicit.auto.searchRelationships
+[options="header"]
+|===
+| Signature                                                                                                        | Description
+| `db.index.explicit.auto.searchRelationships(query :: ANY?) :: (relationship :: RELATIONSHIP?, weight :: FLOAT?)` | Search relationship from explicit automatic index. Replaces `START r=relationship:relationship_auto_index('key:foo*')`
+|===
+
+
+[[db.index.explicit.auto.seekNodes]]
+.db.index.explicit.auto.seekNodes
+[options="header"]
+|===
+| Signature                                                                            | Description
+| `db.index.explicit.auto.seekNodes(key :: STRING?, value :: ANY?) :: (node :: NODE?)` | Get node from explicit automatic index. Replaces `START n=node:node_auto_index(key = 'A')`
+|===
+
+
+[[db.index.explicit.auto.seekRelationships]]
+.db.index.explicit.auto.seekRelationships
+[options="header"]
+|===
+| Signature                                                                                                    | Description
+| `db.index.explicit.auto.seekRelationships(key :: STRING?, value :: ANY?) :: (relationship :: RELATIONSHIP?)` | Get relationship from explicit automatic index. Replaces `START r=relationship:relationship_auto_index(key = 'A')`
+|===
+
+
+[[db.index.explicit.drop]]
+.db.index.explicit.drop
+[options="header"]
+|===
+| Signature                                                                                            | Description
+| `db.index.explicit.drop(indexName :: STRING?) :: (type :: STRING?, name :: STRING?, config :: MAP?)` | Remove an explicit index - YIELD type, name, config
+|===
+
+
+[[db.index.explicit.existsForNodes]]
+.db.index.explicit.existsForNodes
+[options="header"]
+|===
+| Signature                                                                         | Description
+| `db.index.explicit.existsForNodes(indexName :: STRING?) :: (success :: BOOLEAN?)` | Check if a node explicit index exists
+|===
+
+
+[[db.index.explicit.existsForRelationships]]
+.db.index.explicit.existsForRelationships
+[options="header"]
+|===
+| Signature                                                                                 | Description
+| `db.index.explicit.existsForRelationships(indexName :: STRING?) :: (success :: BOOLEAN?)` | Check if a relationship explicit index exists
+|===
+
+
+[[db.index.explicit.forNodes]]
+.db.index.explicit.forNodes
+[options="header"]
+|===
+| Signature                                                                                                | Description
+| `db.index.explicit.forNodes(indexName :: STRING?) :: (type :: STRING?, name :: STRING?, config :: MAP?)` | Get or create a node explicit index - YIELD type, name, config
+|===
+
+
+[[db.index.explicit.forRelationships]]
+.db.index.explicit.forRelationships
+[options="header"]
+|===
+| Signature                                                                                                        | Description
+| `db.index.explicit.forRelationships(indexName :: STRING?) :: (type :: STRING?, name :: STRING?, config :: MAP?)` | Get or create a relationship explicit index - YIELD type, name, config
+|===
+
+
+[[db.index.explicit.list]]
+.db.index.explicit.list
+[options="header"]
+|===
+| Signature                                                                        | Description
+| `db.index.explicit.list() :: (type :: STRING?, name :: STRING?, config :: MAP?)` | List all explicit indexes - YIELD type, name, config
+|===
+
+
+[[db.index.explicit.removeNode]]
+.db.index.explicit.removeNode
+[options="header"]
+|===
+| Signature                                                                                                    | Description
+| `db.index.explicit.removeNode(indexName :: STRING?, node :: NODE?, key :: STRING?) :: (success :: BOOLEAN?)` | Remove a node from an explicit index with an optional key
+|===
+
+
+[[db.index.explicit.removeRelationship]]
+.db.index.explicit.removeRelationship
+[options="header"]
+|===
+| Signature                                                                                                                            | Description
+| `db.index.explicit.removeRelationship(indexName :: STRING?, relationship :: RELATIONSHIP?, key :: STRING?) :: (success :: BOOLEAN?)` | Remove a relationship from an explicit index with an optional key
+|===
+
+
+[[db.index.explicit.searchNodes]]
+.db.index.explicit.searchNodes
+[options="header"]
+|===
+| Signature                                                                                                 | Description
+| `db.index.explicit.searchNodes(indexName :: STRING?, query :: ANY?) :: (node :: NODE?, weight :: FLOAT?)` | Search nodes from explicit index. Replaces `START n=node:nodes('key:foo*')`
+|===
+
+
+[[db.index.explicit.searchRelationships]]
+.db.index.explicit.searchRelationships
+[options="header"]
+|===
+| Signature                                                                                                                         | Description
+| `db.index.explicit.searchRelationships(indexName :: STRING?, query :: ANY?) :: (relationship :: RELATIONSHIP?, weight :: FLOAT?)` | Search relationship from explicit index. Replaces `START r=relationship:relIndex('key:foo*')`
+|===
+
+
+[[db.index.explicit.searchRelationshipsBetween]]
+.db.index.explicit.searchRelationshipsBetween
+[options="header"]
+|===
+| Signature                                                                                                                                                           | Description
+| `db.index.explicit.searchRelationshipsBetween(indexName :: STRING?, in :: NODE?, out :: NODE?, query :: ANY?) :: (relationship :: RELATIONSHIP?, weight :: FLOAT?)` | Search relationship in explicit index, starting at the node 'in' and ending at 'out'
+|===
+
+
+[[db.index.explicit.searchRelationshipsIn]]
+.db.index.explicit.searchRelationshipsIn
+[options="header"]
+|===
+| Signature                                                                                                                                        | Description
+| `db.index.explicit.searchRelationshipsIn(indexName :: STRING?, in :: NODE?, query :: ANY?) :: (relationship :: RELATIONSHIP?, weight :: FLOAT?)` | Search relationship in explicit index, starting at the node 'in'
+|===
+
+
+[[db.index.explicit.searchRelationshipsOut]]
+.db.index.explicit.searchRelationshipsOut
+[options="header"]
+|===
+| Signature                                                                                                                                          | Description
+| `db.index.explicit.searchRelationshipsOut(indexName :: STRING?, out :: NODE?, query :: ANY?) :: (relationship :: RELATIONSHIP?, weight :: FLOAT?)` | Search relationship in explicit index, ending at the node 'out'
+|===
+
+
+[[db.index.explicit.seekNodes]]
+.db.index.explicit.seekNodes
+[options="header"]
+|===
+| Signature                                                                                             | Description
+| `db.index.explicit.seekNodes(indexName :: STRING?, key :: STRING?, value :: ANY?) :: (node :: NODE?)` | Get node from explicit index. Replaces `START n=node:nodes(key = 'A')`
+|===
+
+
+[[db.index.explicit.seekRelationships]]
+.db.index.explicit.seekRelationships
+[options="header"]
+|===
+| Signature                                                                                                                     | Description
+| `db.index.explicit.seekRelationships(indexName :: STRING?, key :: STRING?, value :: ANY?) :: (relationship :: RELATIONSHIP?)` | Get relationship from explicit index. Replaces `START r=relationship:relIndex(key = 'A')`
+|===
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/schema-index/explicit-index-procedures.adoc[]

@@ -1,19 +1,23 @@
 [[query-call]]
-= CALL procedure
+= CALL[...YIELD]
 :description: The `CALL` clause is used to call a procedure deployed in the database. 
+
+* xref:clauses/call.adoc#query-call-introduction[Introduction]
+* xref:clauses/call.adoc#call-call-a-procedure-using-call[Call a procedure using `CALL`]
+* xref:clauses/call.adoc#call-view-the-signature-for-a-procedure[View the signature for a procedure]
+* xref:clauses/call.adoc#call-call-a-procedure-using-a-quoted-namespace-and-name[Call a procedure using a quoted namespace and name]
+* xref:clauses/call.adoc#call-call-a-procedure-with-literal-arguments[Call a procedure with literal arguments]
+* xref:clauses/call.adoc#call-call-a-procedure-with-parameter-arguments[Call a procedure with parameter arguments]
+* xref:clauses/call.adoc#call-call-a-procedure-with-mixed-literal-and-parameter-arguments[Call a procedure with mixed literal and parameter arguments]
+* xref:clauses/call.adoc#call-call-a-procedure-with-literal-and-default-arguments[Call a procedure with literal and default arguments]
+* xref:clauses/call.adoc#call-call-a-procedure-within-a-complex-query-using-call-yield[Call a procedure within a complex query using `CALL...YIELD`]
+* xref:clauses/call.adoc#call-call-a-procedure-and-filter-its-results[Call a procedure and filter its results]
+* xref:clauses/call.adoc#call-call-a-procedure-within-a-complex-query-and-rename-its-outputs[Call a procedure within a complex query and rename its outputs]
 
 [[query-call-introduction]]
 == Introduction
 
 Procedures are called using the `CALL` clause.
-
-[TIP]
-====
-The `CALL` clause is also used to evaluate a subquery.
-For descriptions of the `CALL` clause in this context, refer to xref:clauses/call-subquery.adoc[CALL {} (subquery)].
-
-
-====
 
 Each procedure call needs to specify all required procedure arguments.
 This may be done either explicitly, by using a comma-separated list wrapped in parentheses after the procedure name, or implicitly by using available query parameters as procedure call arguments.
@@ -22,13 +26,13 @@ The latter form is available only in a so-called standalone procedure call, when
 Most procedures return a stream of records with a fixed set of result fields, similar to how running a Cypher query returns a stream of records.
 The `YIELD` sub-clause is used to explicitly select which of the available result fields are returned as newly-bound variables from the procedure call to the user or for further processing by the remaining query.
 Thus, in order to be able to use `YIELD`, the names (and types) of the output parameters need be known in advance.
-Each yielded result field may optionally be renamed using aliasing (i.e., `resultFieldName AS newName`).
+Each yielded result field may optionally be renamed using aliasing (i.e. `resultFieldName AS newName`).
 All new variables bound by a procedure call are added to the set of variables already bound in the current scope.
-It is an error if a procedure call tries to rebind a previously bound variable (i.e., a procedure call cannot shadow a variable that was previously bound in the current scope).
+It is an error if a procedure call tries to rebind a previously bound variable (i.e. a procedure call cannot shadow a variable that was previously bound in the current scope).
 
-For more information on how to determine the input parameters for the `CALL` procedure and the output parameters for the `YIELD` procedure, see xref:clauses/call.adoc#call-view-the-signature-for-a-procedure[View the signature for a procedure].
+xref:clauses/call.adoc#call-view-the-signature-for-a-procedure[This section] explains how to determine a procedure's input parameters (needed for `CALL`) and output parameters (needed for `YIELD`).
 
-Inside a larger query, the records returned from a procedure call with an explicit `YIELD` may be further filtered using a `WHERE` sub-clause followed by a predicate (similar to `+WITH ... WHERE ...+`).
+Inside a larger query, the records returned from a procedure call with an explicit `YIELD` may be further filtered using a `WHERE` sub-clause followed by a predicate (similar to `WITH ... WHERE ...`).
 
 If the called procedure declares at least one result field, `YIELD` may generally not be omitted.
 However `YIELD` may always be omitted in a standalone procedure call.
@@ -37,18 +41,26 @@ In this case, all result fields are yielded as newly-bound variables from the pr
 Neo4j supports the notion of `VOID` procedures.
 A `VOID` procedure is a procedure that does not declare any result fields and returns no result records and that has explicitly been declared as `VOID`.
 Calling a `VOID` procedure may only have a side effect and thus does neither allow nor require the use of `YIELD`.
-Calling a `VOID` procedure in the middle of a larger query will simply pass on each input record (i.e., it acts like `WITH *` in terms of the record stream).
+Calling a `VOID` procedure in the middle of a larger query will simply pass on each input record (i.e. it acts like `WITH *` in terms of the record stream).
 
 [NOTE]
 ====
 Neo4j comes with a number of built-in procedures.
-For a list of these, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures[Operations Manual -> Procedures].
+For a list of these, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures[Operations Manual -> Built-in procedures].
 
 Users can also develop custom procedures and deploy to the database.
-See link:{neo4j-docs-base-uri}/java-reference/{page-version}/extending-neo4j/procedures#extending-neo4j-procedures[Java Reference -> User-defined procedures] for details.
+See link:{neo4j-docs-base-uri}/java-reference/{page-version}/extending-neo4j/procedures#extending-neo4j-procedures[User-defined procedures] for details.
 
 
 ====
+
+The following examples show how to pass arguments to and yield result fields from a procedure call.
+All examples use the following procedure:
+
+[source, java]
+----
+include::partial$IndexingProcedure.java[tags=indexingProcedure]
+----
 
 [[call-call-a-procedure-using-call]]
 == Call a procedure using `CALL`
@@ -59,7 +71,7 @@ This calls the built-in procedure `db.labels`, which lists all labels used in th
 .Query
 [source, cypher]
 ----
-CALL db.labels()
+CALL `db`.`labels`
 ----
 
 .Result
@@ -68,7 +80,7 @@ CALL db.labels()
 | +label+
 | +"User"+
 | +"Administrator"+
-1+d|Rows: 2
+1+d|2 rows
 |===
 
 ifndef::nonhtmloutput[]
@@ -80,46 +92,7 @@ ifndef::nonhtmloutput[]
 CREATE (a:User:Administrator {name: 'Adrian'})
 
 ]]></database><command><![CDATA[
-CALL db.labels()
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-Cypher allows the omission of parentheses on procedures of arity-0 (no arguments).
-
-[NOTE]
-====
-Best practice is to use parentheses for procedures.
-
-
-====
-
-
-.Query
-[source, cypher]
-----
-CALL db.labels
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| +label+
-| +"User"+
-| +"Administrator"+
-1+d|Rows: 2
-|===
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE (a:User:Administrator {name: 'Adrian'})
-
-]]></database><command><![CDATA[
-CALL db.labels
+CALL `db`.`labels`
 ]]></command></para></formalpara>
 ++++
 endif::nonhtmloutput[]
@@ -147,7 +120,7 @@ We can see that the `dbms.listConfig` has one input parameter, `searchString`, a
 |===
 | +signature+
 | +"dbms.listConfig(searchString =  :: STRING?) :: (name :: STRING?, description :: STRING?, value :: STRING?, dynamic :: BOOLEAN?)"+
-1+d|Rows: 1
+1+d|1 row
 |===
 
 ifndef::nonhtmloutput[]
@@ -175,27 +148,6 @@ This calls the built-in procedure `db.labels`, which lists all labels used in th
 .Query
 [source, cypher]
 ----
-CALL `db`.`labels()`
-----
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE (a:User:Administrator {name: 'Adrian'})
-
-]]></database><command><![CDATA[
-CALL `db`.`labels()`
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-
-.Query
-[source, cypher]
-----
 CALL `db`.`labels`
 ----
 
@@ -216,14 +168,14 @@ endif::nonhtmloutput[]
 [[call-call-a-procedure-with-literal-arguments]]
 == Call a procedure with literal arguments
 
-This calls the example procedure `dbms.security.createUser` using literal arguments.
+This calls the example procedure `org.neo4j.procedure.example.addNodeToIndex` using literal arguments.
 The arguments are written out directly in the statement text.
 
 
 .Query
 [source, cypher]
 ----
-CALL dbms.security.createUser('example_username', 'example_password', false)
+CALL org.neo4j.procedure.example.addNodeToIndex('users', 0, 'name')
 ----
 
 Since our example procedure does not return any result, the result is empty.
@@ -237,7 +189,7 @@ ifndef::nonhtmloutput[]
 CREATE (a:User:Administrator {name: 'Adrian'})
 
 ]]></database><command><![CDATA[
-CALL dbms.security.createUser('example_username', 'example_password', false)
+CALL org.neo4j.procedure.example.addNodeToIndex('users', 0, 'name')
 ]]></command></para></formalpara>
 ++++
 endif::nonhtmloutput[]
@@ -245,25 +197,17 @@ endif::nonhtmloutput[]
 [[call-call-a-procedure-with-parameter-arguments]]
 == Call a procedure with parameter arguments
 
-This calls the example procedure `dbms.security.createUser` using parameters as arguments.
+This calls the example procedure `org.neo4j.procedure.example.addNodeToIndex` using parameters as arguments.
 Each procedure argument is taken to be the value of a corresponding statement parameter with the same name (or null if no such parameter has been given).
 
-[NOTE]
-====
-Examples that use parameter arguments shows the given parameters in JSON format; the exact manner in which they are to be submitted depends upon the driver being used.
-See xref:syntax/parameters.adoc[], for more about querying with parameters
-
-
-====
-
 
 .Parameters
 [source,javascript]
 ----
 {
-  "username" : "example_username",
-  "password" : "example_password",
-  "requirePasswordChange" : false
+  "indexName" : "users",
+  "node" : 0,
+  "propKey" : "name"
 }
 ----
 
@@ -271,7 +215,7 @@ See xref:syntax/parameters.adoc[], for more about querying with parameters
 .Query
 [source, cypher]
 ----
-CALL dbms.security.createUser($username, $password, $requirePasswordChange)
+CALL org.neo4j.procedure.example.addNodeToIndex
 ----
 
 Since our example procedure does not return any result, the result is empty.
@@ -285,51 +229,7 @@ ifndef::nonhtmloutput[]
 CREATE (a:User:Administrator {name: 'Adrian'})
 
 ]]></database><command><![CDATA[
-CALL dbms.security.createUser($username, $password, $requirePasswordChange)
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-Cypher allows the omission of parentheses for procedures with arity-n (n arguments), Cypher implicitly passes the parameter arguments.
-
-[NOTE]
-====
-Best practice is to use parentheses for procedures.
-Omission of parantheses is available only in a so-called standalone procedure call, when the whole query consists of a single `CALL` clause.
-
-
-====
-
-
-.Parameters
-[source,javascript]
-----
-{
-  "username" : "example_username",
-  "password" : "example_password",
-  "requirePasswordChange" : false
-}
-----
-
-
-.Query
-[source, cypher]
-----
-CALL dbms.security.createUser
-----
-
-Since our example procedure does not return any result, the result is empty.
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE (a:User:Administrator {name: 'Adrian'})
-
-]]></database><command><![CDATA[
-CALL dbms.security.createUser
+CALL org.neo4j.procedure.example.addNodeToIndex
 ]]></command></para></formalpara>
 ++++
 endif::nonhtmloutput[]
@@ -337,14 +237,14 @@ endif::nonhtmloutput[]
 [[call-call-a-procedure-with-mixed-literal-and-parameter-arguments]]
 == Call a procedure with mixed literal and parameter arguments
 
-This calls the example procedure `dbms.security.createUser` using both literal and parameter arguments.
+This calls the example procedure `org.neo4j.procedure.example.addNodeToIndex` using both literal and parameter arguments.
 
 
 .Parameters
 [source,javascript]
 ----
 {
-  "password" : "example_password"
+  "node" : 0
 }
 ----
 
@@ -352,7 +252,7 @@ This calls the example procedure `dbms.security.createUser` using both literal a
 .Query
 [source, cypher]
 ----
-CALL dbms.security.createUser('example_username', $password, false)
+CALL org.neo4j.procedure.example.addNodeToIndex('users', $node, 'name')
 ----
 
 Since our example procedure does not return any result, the result is empty.
@@ -366,7 +266,7 @@ ifndef::nonhtmloutput[]
 CREATE (a:User:Administrator {name: 'Adrian'})
 
 ]]></database><command><![CDATA[
-CALL dbms.security.createUser('example_username', $password, false)
+CALL org.neo4j.procedure.example.addNodeToIndex('users', $node, 'name')
 ]]></command></para></formalpara>
 ++++
 endif::nonhtmloutput[]
@@ -374,14 +274,14 @@ endif::nonhtmloutput[]
 [[call-call-a-procedure-with-literal-and-default-arguments]]
 == Call a procedure with literal and default arguments
 
-This calls the example procedure `dbms.security.createUser` using literal arguments.
+This calls the example procedure `org.neo4j.procedure.example.addNodeToIndex` using literal arguments.
 That is, arguments that are written out directly in the statement text, and a trailing default argument that is provided by the procedure itself.
 
 
 .Query
 [source, cypher]
 ----
-CALL dbms.security.createUser('example_username', 'example_password')
+CALL org.neo4j.procedure.example.addNodeToIndex('users', 0)
 ----
 
 Since our example procedure does not return any result, the result is empty.
@@ -395,7 +295,7 @@ ifndef::nonhtmloutput[]
 CREATE (a:User:Administrator {name: 'Adrian'})
 
 ]]></database><command><![CDATA[
-CALL dbms.security.createUser('example_username', 'example_password')
+CALL org.neo4j.procedure.example.addNodeToIndex('users', 0)
 ]]></command></para></formalpara>
 ++++
 endif::nonhtmloutput[]
@@ -424,8 +324,7 @@ ifndef::nonhtmloutput[]
 CREATE (a:User:Administrator {name: 'Adrian'})
 
 ]]></database><command><![CDATA[
-CALL db.labels() YIELD label
-RETURN count(label) AS numLabels
+CALL db.labels() YIELD label RETURN count(label) AS numLabels
 ]]></command></para></formalpara>
 ++++
 endif::nonhtmloutput[]
@@ -473,8 +372,7 @@ This calls the built-in procedure `db.propertyKeys` as part of counting the numb
 ----
 CALL db.propertyKeys() YIELD propertyKey AS prop
 MATCH (n)
-WHERE n[prop] IS NOT NULL
-RETURN prop, count(n) AS numNodes
+WHERE n[prop] IS NOT NULL RETURN prop, count(n) AS numNodes
 ----
 
 Since the procedure call is part of a larger query, all outputs must be named explicitly.
@@ -490,8 +388,7 @@ CREATE (a:User:Administrator {name: 'Adrian'})
 ]]></database><command><![CDATA[
 CALL db.propertyKeys() YIELD propertyKey AS prop
 MATCH (n)
-WHERE n[prop] IS NOT NULL
-RETURN prop, count(n) AS numNodes
+WHERE n[prop] IS NOT NULL RETURN prop, count(n) AS numNodes
 ]]></command></para></formalpara>
 ++++
 endif::nonhtmloutput[]
