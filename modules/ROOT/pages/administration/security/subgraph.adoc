@@ -1,0 +1,999 @@
+[[administration-security-subgraph]]
+= Graph and sub-graph access control
+:description: This section explains how to use Cypher to manage privileges for Neo4j role-based access control and fine-grained security. 
+
+
+* xref:administration/security/subgraph.adoc#administration-security-subgraph-introduction[The `GRANT`, `DENY` and `REVOKE` commands]
+* xref:administration/security/subgraph.adoc#administration-security-subgraph-show[Listing privileges]
+** xref:administration/security/subgraph.adoc#administration-security-subgraph-show-all[Examples for listing all privileges]
+** xref:administration/security/subgraph.adoc#administration-security-subgraph-show-roles[Examples for listing privileges for specific roles]
+** xref:administration/security/subgraph.adoc#administration-security-subgraph-show-users[Examples for listing privileges for specific users]
+* xref:administration/security/subgraph.adoc#administration-security-subgraph-revoke[The `REVOKE` command]
+
+
+Privileges control the access rights to graph elements using a combined whitelist/blacklist mechanism.
+It is possible to grant access, or deny access, or a combination of the two.
+The user will be able to access the resource if they have a grant (whitelist) and do not have a deny (blacklist) relevant to that resource.
+All other combinations of `GRANT` and `DENY` will result in the matching path being inaccessible.
+What this means in practice depends on whether we are talking about a xref:administration/security/reads.adoc[read privilege] or a xref:administration/security/writes.adoc[write privilege].
+
+* If a entity is not accessible due to xref:administration/security/reads.adoc[read privileges], the data will become invisible to attempts to read it.
+  It will appear to the user as if they have a smaller database (smaller graph).
+* If an entity is not accessible due to xref:administration/security/writes.adoc[write privileges], an error will occur on any attempt to write that data.
+
+
+[NOTE]
+====
+In this document we will often use the terms _'allows'_ and _'enables'_ in seemingly identical ways. However, there is a subtle difference.
+We will use _'enables'_ to refer to the consequences of xref:administration/security/reads.adoc[read privileges] where a restriction will not cause an error,
+only a reduction in the apparent graph size. We will use _'allows'_ to refer to the consequence of xref:administration/security/writes.adoc[write privileges]
+where a restriction can result in an error.
+
+
+====
+
+[NOTE]
+====
+If a user was not also provided with the database `ACCESS` privilege then access to the entire database will be denied.
+Information about the database access privilege can be found in xref:administration/security/administration.adoc#administration-security-administration-database-access[The ACCESS privilege].
+
+
+====
+
+[role=enterprise-edition]
+[[administration-security-subgraph-introduction]]
+== The `GRANT`, `DENY` and `REVOKE` commands
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/security/grant-deny-syntax.asciidoc[]
+// tag::include-neo4j-documentation[]
+The administrators can use Cypher commands to manage Neo4j graph administrative rights.
+The components of the graph privilege commands are:
+
+* the command:
+** `GRANT` – gives privileges to roles.
+** `DENY` – denies privileges to roles.
+** `REVOKE` – removes granted or denied privilege from roles.
+
+* _graph-privilege_
+** Can be either a xref:administration/security/reads.adoc[read privilege] or xref:administration/security/writes.adoc[write privilege].
+
+* _name_
+** The graph or graphs to associate the privilege with.
+Because in Neo4j {neo4j-version} you can have only one graph per database, this command uses the database name to refer to that graph.
++
+[NOTE]
+====
+If you delete a database and create a new one with the same name, the new one will _NOT_ have the privileges assigned to the deleted graph.
+====
+** It can be `+*+` which means all graphs.
+Graphs created after this command execution will also be associated with these privileges.
+
+* _entity_
+** The graph elements this privilege applies to:
+*** `NODES` label (nodes with the specified label(s)).
+*** `RELATIONSHIPS` type (relationships of the specific type(s)).
+*** `ELEMENTS` label (both nodes and relationships).
+** The label or type can be `+*+` which means all labels or types.
+** Multiple labels or types can be specified, comma-separated.
+** Defaults to `ELEMENTS` `+*+` if omitted.
+** Some of the commands for write privileges do not allow an _entity_ part, see  xref:administration/security/writes.adoc[Write privileges] for details.
+
+* _role[, ...]_
+** The role or roles to associate the privilege with, comma-separated.
+
+.General graph privilege command syntax
+[options="header", width="100%", cols="3a,2"]
+|===
+| Command | Description
+
+| [source, cypher, role=noplay]
+GRANT graph-privilege ON {DEFAULT GRAPH \| GRAPH[S] {* \| name[, ...]}} [entity] TO role[, ...]
+| Grant a privilege to one or multiple roles.
+
+| [source, cypher, role=noplay]
+DENY graph-privilege ON {DEFAULT GRAPH \| GRAPH[S] {* \| name[, ...]}} [entity] TO role[, ...]
+| Deny a privilege to one or multiple roles.
+
+| [source, cypher, role=noplay]
+REVOKE GRANT graph-privilege ON {DEFAULT GRAPH \| GRAPH[S] {* \| name[, ...]}} [entity] FROM role[, ...]
+| Revoke a granted privilege from one or multiple roles.
+
+| [source, cypher, role=noplay]
+REVOKE DENY graph-privilege ON {DEFAULT GRAPH \| GRAPH[S] {* \| name[, ...]}} [entity] FROM role[, ...]
+| Revoke a denied privilege from one or multiple roles.
+
+| [source, cypher, role=noplay]
+REVOKE graph-privilege ON {DEFAULT GRAPH \| GRAPH[S] {* \| name[, ...]}} [entity] FROM role[, ...]
+| Revoke a granted or denied privilege from one or multiple roles.
+|===
+
+
+[NOTE]
+====
+`DENY` does NOT erase a granted privilege; they both exist.
+Use `REVOKE` if you want to remove a privilege.
+====
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/security/grant-deny-syntax.asciidoc[]
+
+The general grant and deny syntax is illustrated in the image below.
+
+image::grant-privileges-overview.png[title="GRANT and DENY Syntax"]
+
+A more detailed syntax illustration would be the image below for graph privileges.
+
+image::grant-privileges-graph.png[title="Syntax of GRANT and DENY Graph Privileges. The `{` and `}` are part of the syntax and not used for grouping."]
+
+The below image shows the hierarchy between the different graph privileges.
+
+image::privilege-hierarchy-graph.png[title="Graph privileges hierarchy"]
+
+[role=enterprise-edition]
+[[administration-security-subgraph-show]]
+== Listing privileges
+
+Available privileges can be displayed using the different `SHOW PRIVILEGES` commands.
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/security/show-privileges-syntax.asciidoc[]
+// tag::include-neo4j-documentation[]
+.Show privileges command syntax
+[options="header", width="100%", cols="3a,2"]
+|===
+| Command | Description
+
+| [source, cypher, role=noplay]
+SHOW [ALL] PRIVILEGE[S] [AS [REVOKE] COMMAND[S]]
+    [YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+    [WHERE expression]
+    [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+| List all privileges.
+
+| [source, cypher, role=noplay]
+SHOW ROLE[S] name[, ...] PRIVILEGE[S] [AS [REVOKE] COMMAND[S]]
+    [YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+    [WHERE expression]
+    [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+| List privileges for a specific role.
+
+| [source, cypher, role=noplay]
+SHOW USER[S] [name[, ...]] PRIVILEGE[S] [AS [REVOKE] COMMAND[S]]
+    [YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+    [WHERE expression]
+    [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+| List privileges for a specific user, or the current user.
+
+|===
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/security/show-privileges-syntax.asciidoc[]
+
+When using the `RETURN` clause, the `YIELD` clause is mandatory and may not be omitted.
+
+[[administration-security-subgraph-show-all]]
+=== Examples for listing all privileges
+
+Available privileges for all roles can be displayed using `SHOW PRIVILEGES`.
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/security/show-all-privileges-syntax.asciidoc[]
+// tag::include-neo4j-documentation[]
+.Command syntax
+[source, cypher, role=noplay]
+-----
+SHOW [ALL] PRIVILEGE[S] [AS [REVOKE] COMMAND[S]]
+    [WHERE expression]
+
+SHOW [ALL] PRIVILEGE[S] [AS [REVOKE] COMMAND[S]]
+    YIELD { * | field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]
+    [WHERE expression]
+    [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+-----
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/security/show-all-privileges-syntax.asciidoc[]
+
+
+.Query
+[source, cypher]
+----
+SHOW PRIVILEGES
+----
+
+Lists all privileges for all roles.
+The table contains columns describing the privilege:
+
+* `access`: whether the privilege is granted or denied
+* `action`: which type of privilege this is: traverse, read, match, write, a database privilege, a dbms privilege or admin
+* `resource`: what type of scope this privilege applies to: the entire dbms, a database, a graph or sub-graph access
+* `graph`: the specific database or graph this privilege applies to
+* `segment`: for sub-graph access control, this describes the scope in terms of labels or relationship types
+* `role`: the role the privilege is granted to
+
+
+.Result
+[role="queryresult",options="header,footer",cols="6*<m"]
+|===
+| +access+ | +action+ | +resource+ | +graph+ | +segment+ | +role+
+| +"GRANTED"+ | +"execute"+ | +"database"+ | +"*"+ | +"FUNCTION(*)"+ | +"PUBLIC"+
+| +"GRANTED"+ | +"execute"+ | +"database"+ | +"*"+ | +"PROCEDURE(*)"+ | +"PUBLIC"+
+| +"GRANTED"+ | +"access"+ | +"database"+ | +"DEFAULT"+ | +"database"+ | +"PUBLIC"+
+| +"GRANTED"+ | +"match"+ | +"all_properties"+ | +"*"+ | +"NODE(*)"+ | +"admin"+
+| +"GRANTED"+ | +"write"+ | +"graph"+ | +"*"+ | +"NODE(*)"+ | +"admin"+
+| +"GRANTED"+ | +"match"+ | +"all_properties"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"admin"+
+| +"GRANTED"+ | +"write"+ | +"graph"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"admin"+
+| +"GRANTED"+ | +"access"+ | +"database"+ | +"*"+ | +"database"+ | +"admin"+
+| +"GRANTED"+ | +"admin"+ | +"database"+ | +"*"+ | +"database"+ | +"admin"+
+| +"GRANTED"+ | +"constraint"+ | +"database"+ | +"*"+ | +"database"+ | +"admin"+
+| +"GRANTED"+ | +"index"+ | +"database"+ | +"*"+ | +"database"+ | +"admin"+
+| +"GRANTED"+ | +"token"+ | +"database"+ | +"*"+ | +"database"+ | +"admin"+
+| +"GRANTED"+ | +"match"+ | +"all_properties"+ | +"*"+ | +"NODE(*)"+ | +"architect"+
+| +"GRANTED"+ | +"write"+ | +"graph"+ | +"*"+ | +"NODE(*)"+ | +"architect"+
+| +"GRANTED"+ | +"match"+ | +"all_properties"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"architect"+
+| +"GRANTED"+ | +"write"+ | +"graph"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"architect"+
+| +"GRANTED"+ | +"access"+ | +"database"+ | +"*"+ | +"database"+ | +"architect"+
+| +"GRANTED"+ | +"constraint"+ | +"database"+ | +"*"+ | +"database"+ | +"architect"+
+| +"GRANTED"+ | +"index"+ | +"database"+ | +"*"+ | +"database"+ | +"architect"+
+| +"GRANTED"+ | +"token"+ | +"database"+ | +"*"+ | +"database"+ | +"architect"+
+| +"GRANTED"+ | +"match"+ | +"all_properties"+ | +"*"+ | +"NODE(*)"+ | +"editor"+
+| +"GRANTED"+ | +"write"+ | +"graph"+ | +"*"+ | +"NODE(*)"+ | +"editor"+
+| +"GRANTED"+ | +"match"+ | +"all_properties"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"editor"+
+| +"GRANTED"+ | +"write"+ | +"graph"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"editor"+
+| +"GRANTED"+ | +"access"+ | +"database"+ | +"*"+ | +"database"+ | +"editor"+
+| +"DENIED"+ | +"access"+ | +"database"+ | +"neo4j"+ | +"database"+ | +"noAccessUsers"+
+| +"GRANTED"+ | +"match"+ | +"all_properties"+ | +"*"+ | +"NODE(*)"+ | +"publisher"+
+| +"GRANTED"+ | +"write"+ | +"graph"+ | +"*"+ | +"NODE(*)"+ | +"publisher"+
+| +"GRANTED"+ | +"match"+ | +"all_properties"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"publisher"+
+| +"GRANTED"+ | +"write"+ | +"graph"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"publisher"+
+| +"GRANTED"+ | +"access"+ | +"database"+ | +"*"+ | +"database"+ | +"publisher"+
+| +"GRANTED"+ | +"token"+ | +"database"+ | +"*"+ | +"database"+ | +"publisher"+
+| +"GRANTED"+ | +"match"+ | +"all_properties"+ | +"*"+ | +"NODE(*)"+ | +"reader"+
+| +"GRANTED"+ | +"match"+ | +"all_properties"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"reader"+
+| +"GRANTED"+ | +"access"+ | +"database"+ | +"*"+ | +"database"+ | +"reader"+
+| +"GRANTED"+ | +"access"+ | +"database"+ | +"neo4j"+ | +"database"+ | +"regularUsers"+
+6+d|Rows: 36
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE USER joe SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE ROLE regularUsers
+CREATE ROLE noAccessUsers
+GRANT ROLE regularUsers TO jake
+GRANT ROLE noAccessUsers TO joe
+GRANT ACCESS ON DATABASE neo4j TO regularUsers
+DENY ACCESS ON DATABASE neo4j TO noAccessUsers
+
+]]></database><command><![CDATA[
+SHOW PRIVILEGES
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+It is also possible to filter and sort the results by using `YIELD`, `ORDER BY` and `WHERE`.
+
+
+.Query
+[source, cypher]
+----
+SHOW PRIVILEGES YIELD role, access, action, segment ORDER BY action WHERE role = 'admin' 
+----
+
+In this example:
+
+* The number of columns returned has been reduced with the `YIELD` clause.
+* The order of the returned columns has been changed.
+* The results have been filtered to only return the `admin` role using a `WHERE` clause.
+* The results are ordered by the `action` column using `ORDER BY`.
+
+`SKIP` and `LIMIT` can also be used to paginate the results.
+
+
+.Result
+[role="queryresult",options="header,footer",cols="4*<m"]
+|===
+| +role+ | +access+ | +action+ | +segment+
+| +"admin"+ | +"GRANTED"+ | +"access"+ | +"database"+
+| +"admin"+ | +"GRANTED"+ | +"admin"+ | +"database"+
+| +"admin"+ | +"GRANTED"+ | +"constraint"+ | +"database"+
+| +"admin"+ | +"GRANTED"+ | +"index"+ | +"database"+
+| +"admin"+ | +"GRANTED"+ | +"match"+ | +"NODE(*)"+
+| +"admin"+ | +"GRANTED"+ | +"match"+ | +"RELATIONSHIP(*)"+
+| +"admin"+ | +"GRANTED"+ | +"token"+ | +"database"+
+| +"admin"+ | +"GRANTED"+ | +"write"+ | +"NODE(*)"+
+| +"admin"+ | +"GRANTED"+ | +"write"+ | +"RELATIONSHIP(*)"+
+4+d|Rows: 9
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE USER joe SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE ROLE regularUsers
+CREATE ROLE noAccessUsers
+GRANT ROLE regularUsers TO jake
+GRANT ROLE noAccessUsers TO joe
+GRANT ACCESS ON DATABASE neo4j TO regularUsers
+DENY ACCESS ON DATABASE neo4j TO noAccessUsers
+
+]]></database><command><![CDATA[
+SHOW PRIVILEGES YIELD role, access, action, segment ORDER BY action WHERE role = 'admin' 
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+`WHERE` can be used without `YIELD`
+
+
+.Query
+[source, cypher]
+----
+SHOW PRIVILEGES WHERE graph <> '*' 
+----
+
+In this example, the `WHERE` clause is used to filter privileges down to those that target specific graphs only.
+
+.Result
+[role="queryresult",options="header,footer",cols="6*<m"]
+|===
+| +access+ | +action+ | +graph+ | +resource+ | +role+ | +segment+
+| +"GRANTED"+ | +"access"+ | +"DEFAULT"+ | +"database"+ | +"PUBLIC"+ | +"database"+
+| +"DENIED"+ | +"access"+ | +"neo4j"+ | +"database"+ | +"noAccessUsers"+ | +"database"+
+| +"GRANTED"+ | +"access"+ | +"neo4j"+ | +"database"+ | +"regularUsers"+ | +"database"+
+6+d|Rows: 3
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE USER joe SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE ROLE regularUsers
+CREATE ROLE noAccessUsers
+GRANT ROLE regularUsers TO jake
+GRANT ROLE noAccessUsers TO joe
+GRANT ACCESS ON DATABASE neo4j TO regularUsers
+DENY ACCESS ON DATABASE neo4j TO noAccessUsers
+
+]]></database><command><![CDATA[
+SHOW PRIVILEGES WHERE graph <> '*' 
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+Aggregations in the `RETURN` clause can be used to group privileges. In this case, by user and granted / denied.
+
+
+.Query
+[source, cypher]
+----
+SHOW PRIVILEGES YIELD * RETURN role, access, collect([graph, resource, segment, action]) as privileges
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| +role+ | +access+ | +privileges+
+| +"PUBLIC"+ | +"GRANTED"+ | +[["*","database","FUNCTION(*)","execute"],["*","database","PROCEDURE(*)","execute"],["DEFAULT","database","database","access"]]+
+| +"admin"+ | +"GRANTED"+ | +[["*","all_properties","NODE(*)","match"],["*","graph","NODE(*)","write"],["*","all_properties","RELATIONSHIP(*)","match"],["*","graph","RELATIONSHIP(*)","write"],["*","database","database","access"],["*","database","database","admin"],["*","database","database","constraint"],["*","database","database","index"],["*","database","database","token"]]+
+| +"architect"+ | +"GRANTED"+ | +[["*","all_properties","NODE(*)","match"],["*","graph","NODE(*)","write"],["*","all_properties","RELATIONSHIP(*)","match"],["*","graph","RELATIONSHIP(*)","write"],["*","database","database","access"],["*","database","database","constraint"],["*","database","database","index"],["*","database","database","token"]]+
+| +"editor"+ | +"GRANTED"+ | +[["*","all_properties","NODE(*)","match"],["*","graph","NODE(*)","write"],["*","all_properties","RELATIONSHIP(*)","match"],["*","graph","RELATIONSHIP(*)","write"],["*","database","database","access"]]+
+| +"noAccessUsers"+ | +"DENIED"+ | +[["neo4j","database","database","access"]]+
+| +"publisher"+ | +"GRANTED"+ | +[["*","all_properties","NODE(*)","match"],["*","graph","NODE(*)","write"],["*","all_properties","RELATIONSHIP(*)","match"],["*","graph","RELATIONSHIP(*)","write"],["*","database","database","access"],["*","database","database","token"]]+
+| +"reader"+ | +"GRANTED"+ | +[["*","all_properties","NODE(*)","match"],["*","all_properties","RELATIONSHIP(*)","match"],["*","database","database","access"]]+
+| +"regularUsers"+ | +"GRANTED"+ | +[["neo4j","database","database","access"]]+
+3+d|Rows: 8
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE USER joe SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE ROLE regularUsers
+CREATE ROLE noAccessUsers
+GRANT ROLE regularUsers TO jake
+GRANT ROLE noAccessUsers TO joe
+GRANT ACCESS ON DATABASE neo4j TO regularUsers
+DENY ACCESS ON DATABASE neo4j TO noAccessUsers
+
+]]></database><command><![CDATA[
+SHOW PRIVILEGES YIELD * RETURN role, access, collect([graph, resource, segment, action]) as privileges
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+The `RETURN` clause can also be used to order and paginate the results, which is useful when combined with `YIELD` and `WHERE`. In this example the query returns privileges for display five-per-page, and skips the first five to display the second page.
+
+
+.Query
+[source, cypher]
+----
+SHOW PRIVILEGES YIELD * RETURN * ORDER BY role SKIP 5 LIMIT 5
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="6*<m"]
+|===
+| +access+ | +action+ | +graph+ | +resource+ | +role+ | +segment+
+| +"GRANTED"+ | +"match"+ | +"*"+ | +"all_properties"+ | +"admin"+ | +"RELATIONSHIP(*)"+
+| +"GRANTED"+ | +"write"+ | +"*"+ | +"graph"+ | +"admin"+ | +"RELATIONSHIP(*)"+
+| +"GRANTED"+ | +"access"+ | +"*"+ | +"database"+ | +"admin"+ | +"database"+
+| +"GRANTED"+ | +"admin"+ | +"*"+ | +"database"+ | +"admin"+ | +"database"+
+| +"GRANTED"+ | +"constraint"+ | +"*"+ | +"database"+ | +"admin"+ | +"database"+
+6+d|Rows: 5
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE USER joe SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE ROLE regularUsers
+CREATE ROLE noAccessUsers
+GRANT ROLE regularUsers TO jake
+GRANT ROLE noAccessUsers TO joe
+GRANT ACCESS ON DATABASE neo4j TO regularUsers
+DENY ACCESS ON DATABASE neo4j TO noAccessUsers
+
+]]></database><command><![CDATA[
+SHOW PRIVILEGES YIELD * RETURN * ORDER BY role SKIP 5 LIMIT 5
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[[administration-security-subgraph-show-roles]]
+=== Examples for listing privileges for specific roles
+
+Available privileges for specific roles can be displayed using `SHOW ROLE name PRIVILEGES`.
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/security/show-role-privileges-syntax.asciidoc[]
+// tag::include-neo4j-documentation[]
+.Command syntax
+[source, cypher, role=noplay]
+-----
+SHOW ROLE[S] name[, ...] PRIVILEGE[S] [AS [REVOKE] COMMAND[S]]
+    [WHERE expression]
+
+SHOW ROLE[S] name[, ...] PRIVILEGE[S] [AS [REVOKE] COMMAND[S]]
+    YIELD { * | field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]
+    [WHERE expression]
+    [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+-----
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/security/show-role-privileges-syntax.asciidoc[]
+
+
+.Query
+[source, cypher]
+----
+SHOW ROLE regularUsers PRIVILEGES
+----
+
+Lists all privileges for role `regularUsers`.
+
+.Result
+[role="queryresult",options="header,footer",cols="6*<m"]
+|===
+| +access+ | +action+ | +resource+ | +graph+ | +segment+ | +role+
+| +"GRANTED"+ | +"access"+ | +"database"+ | +"neo4j"+ | +"database"+ | +"regularUsers"+
+6+d|Rows: 1
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE USER joe SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE ROLE regularUsers
+CREATE ROLE noAccessUsers
+GRANT ROLE regularUsers TO jake
+GRANT ROLE noAccessUsers TO joe
+GRANT ACCESS ON DATABASE neo4j TO regularUsers
+DENY ACCESS ON DATABASE neo4j TO noAccessUsers
+
+]]></database><command><![CDATA[
+SHOW ROLE regularUsers PRIVILEGES
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+
+.Query
+[source, cypher]
+----
+SHOW ROLES regularUsers, noAccessUsers PRIVILEGES
+----
+
+Lists all privileges for roles `regularUsers` and `noAccessUsers`.
+
+.Result
+[role="queryresult",options="header,footer",cols="6*<m"]
+|===
+| +access+ | +action+ | +resource+ | +graph+ | +segment+ | +role+
+| +"DENIED"+ | +"access"+ | +"database"+ | +"neo4j"+ | +"database"+ | +"noAccessUsers"+
+| +"GRANTED"+ | +"access"+ | +"database"+ | +"neo4j"+ | +"database"+ | +"regularUsers"+
+6+d|Rows: 2
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE USER joe SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE ROLE regularUsers
+CREATE ROLE noAccessUsers
+GRANT ROLE regularUsers TO jake
+GRANT ROLE noAccessUsers TO joe
+GRANT ACCESS ON DATABASE neo4j TO regularUsers
+DENY ACCESS ON DATABASE neo4j TO noAccessUsers
+
+]]></database><command><![CDATA[
+SHOW ROLES regularUsers, noAccessUsers PRIVILEGES
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+Available privileges for roles can also be output as Cypher commands with the optional `AS COMMAND[S]`.
+
+
+.Query
+[source, cypher]
+----
+SHOW ROLE admin PRIVILEGES AS COMMANDS
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +command+
+| +"GRANT ACCESS ON DATABASE * TO `admin`"+
+| +"GRANT ALL DBMS PRIVILEGES ON DBMS TO `admin`"+
+| +"GRANT CONSTRAINT MANAGEMENT ON DATABASE * TO `admin`"+
+| +"GRANT INDEX MANAGEMENT ON DATABASE * TO `admin`"+
+| +"GRANT MATCH {*} ON GRAPH * NODE * TO `admin`"+
+| +"GRANT MATCH {*} ON GRAPH * RELATIONSHIP * TO `admin`"+
+| +"GRANT NAME MANAGEMENT ON DATABASE * TO `admin`"+
+| +"GRANT START ON DATABASE * TO `admin`"+
+| +"GRANT STOP ON DATABASE * TO `admin`"+
+| +"GRANT TRANSACTION MANAGEMENT (*) ON DATABASE * TO `admin`"+
+| +"GRANT WRITE ON GRAPH * TO `admin`"+
+1+d|Rows: 11
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE USER joe SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE ROLE regularUsers
+CREATE ROLE noAccessUsers
+GRANT ROLE regularUsers TO jake
+GRANT ROLE noAccessUsers TO joe
+GRANT ACCESS ON DATABASE neo4j TO regularUsers
+DENY ACCESS ON DATABASE neo4j TO noAccessUsers
+
+]]></database><command><![CDATA[
+SHOW ROLE admin PRIVILEGES AS COMMANDS
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+Like other `SHOW` commands, the output can also be processed using `YIELD` / `WHERE` / `RETURN`.
+
+
+.Query
+[source, cypher]
+----
+SHOW ROLE architect PRIVILEGES AS COMMANDS WHERE command CONTAINS 'MATCH'
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +command+
+| +"GRANT MATCH {*} ON GRAPH * NODE * TO `architect`"+
+| +"GRANT MATCH {*} ON GRAPH * RELATIONSHIP * TO `architect`"+
+1+d|Rows: 2
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE USER joe SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE ROLE regularUsers
+CREATE ROLE noAccessUsers
+GRANT ROLE regularUsers TO jake
+GRANT ROLE noAccessUsers TO joe
+GRANT ACCESS ON DATABASE neo4j TO regularUsers
+DENY ACCESS ON DATABASE neo4j TO noAccessUsers
+
+]]></database><command><![CDATA[
+SHOW ROLE architect PRIVILEGES AS COMMANDS WHERE command CONTAINS 'MATCH'
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+It is also possible to have privileges output as revoke commands. For more on revoke commands, please see xref:administration/security/subgraph.adoc#administration-security-subgraph-revoke[The REVOKE command].
+
+
+.Query
+[source, cypher]
+----
+SHOW ROLE reader PRIVILEGES AS REVOKE COMMANDS
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +command+
+| +"REVOKE GRANT ACCESS ON DATABASE * FROM `reader`"+
+| +"REVOKE GRANT MATCH {*} ON GRAPH * NODE * FROM `reader`"+
+| +"REVOKE GRANT MATCH {*} ON GRAPH * RELATIONSHIP * FROM `reader`"+
+1+d|Rows: 3
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE USER joe SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE ROLE regularUsers
+CREATE ROLE noAccessUsers
+GRANT ROLE regularUsers TO jake
+GRANT ROLE noAccessUsers TO joe
+GRANT ACCESS ON DATABASE neo4j TO regularUsers
+DENY ACCESS ON DATABASE neo4j TO noAccessUsers
+
+]]></database><command><![CDATA[
+SHOW ROLE reader PRIVILEGES AS REVOKE COMMANDS
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[[administration-security-subgraph-show-users]]
+=== Examples for listing privileges for specific users
+
+Available privileges for specific users can be displayed using `SHOW USER name PRIVILEGES`.
+
+[NOTE]
+====
+Please note that if a non-native auth provider like LDAP is in use, `SHOW USER PRIVILEGES` will only work in a limited capacity; It is only possible for a user to show their own privileges. Other users' privileges cannot be listed when using a non-native auth provider.
+
+
+====
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/security/show-user-privileges-syntax.asciidoc[]
+// tag::include-neo4j-documentation[]
+.Command syntax
+[source, cypher, role=noplay]
+-----
+SHOW USER[S] [name[, ...]] PRIVILEGE[S] [AS [REVOKE] COMMAND[S]]
+    [WHERE expression]
+
+SHOW USER[S] [name[, ...]] PRIVILEGE[S] [AS [REVOKE] COMMAND[S]]
+    YIELD { * | field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]
+    [WHERE expression]
+    [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+-----
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/security/show-user-privileges-syntax.asciidoc[]
+
+
+.Query
+[source, cypher]
+----
+SHOW USER jake PRIVILEGES
+----
+
+Lists all privileges for user `jake`.
+
+.Result
+[role="queryresult",options="header,footer",cols="7*<m"]
+|===
+| +access+ | +action+ | +resource+ | +graph+ | +segment+ | +role+ | +user+
+| +"GRANTED"+ | +"execute"+ | +"database"+ | +"*"+ | +"FUNCTION(*)"+ | +"PUBLIC"+ | +"jake"+
+| +"GRANTED"+ | +"execute"+ | +"database"+ | +"*"+ | +"PROCEDURE(*)"+ | +"PUBLIC"+ | +"jake"+
+| +"GRANTED"+ | +"access"+ | +"database"+ | +"DEFAULT"+ | +"database"+ | +"PUBLIC"+ | +"jake"+
+| +"GRANTED"+ | +"access"+ | +"database"+ | +"neo4j"+ | +"database"+ | +"regularUsers"+ | +"jake"+
+7+d|Rows: 4
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE USER joe SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE ROLE regularUsers
+CREATE ROLE noAccessUsers
+GRANT ROLE regularUsers TO jake
+GRANT ROLE noAccessUsers TO joe
+GRANT ACCESS ON DATABASE neo4j TO regularUsers
+DENY ACCESS ON DATABASE neo4j TO noAccessUsers
+
+]]></database><command><![CDATA[
+SHOW USER jake PRIVILEGES
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+
+.Query
+[source, cypher]
+----
+SHOW USERS jake, joe PRIVILEGES
+----
+
+Lists all privileges for users `jake` and `joe`.
+
+.Result
+[role="queryresult",options="header,footer",cols="7*<m"]
+|===
+| +access+ | +action+ | +resource+ | +graph+ | +segment+ | +role+ | +user+
+| +"GRANTED"+ | +"execute"+ | +"database"+ | +"*"+ | +"FUNCTION(*)"+ | +"PUBLIC"+ | +"jake"+
+| +"GRANTED"+ | +"execute"+ | +"database"+ | +"*"+ | +"PROCEDURE(*)"+ | +"PUBLIC"+ | +"jake"+
+| +"GRANTED"+ | +"access"+ | +"database"+ | +"DEFAULT"+ | +"database"+ | +"PUBLIC"+ | +"jake"+
+| +"GRANTED"+ | +"access"+ | +"database"+ | +"neo4j"+ | +"database"+ | +"regularUsers"+ | +"jake"+
+| +"GRANTED"+ | +"execute"+ | +"database"+ | +"*"+ | +"FUNCTION(*)"+ | +"PUBLIC"+ | +"joe"+
+| +"GRANTED"+ | +"execute"+ | +"database"+ | +"*"+ | +"PROCEDURE(*)"+ | +"PUBLIC"+ | +"joe"+
+| +"GRANTED"+ | +"access"+ | +"database"+ | +"DEFAULT"+ | +"database"+ | +"PUBLIC"+ | +"joe"+
+| +"DENIED"+ | +"access"+ | +"database"+ | +"neo4j"+ | +"database"+ | +"noAccessUsers"+ | +"joe"+
+7+d|Rows: 8
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE USER joe SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE ROLE regularUsers
+CREATE ROLE noAccessUsers
+GRANT ROLE regularUsers TO jake
+GRANT ROLE noAccessUsers TO joe
+GRANT ACCESS ON DATABASE neo4j TO regularUsers
+DENY ACCESS ON DATABASE neo4j TO noAccessUsers
+
+]]></database><command><![CDATA[
+SHOW USERS jake, joe PRIVILEGES
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+The same command can be used at all times to review available privileges for the current user. For this purpose, a shorter form of the the command also exists: SHOW USER PRIVILEGES.
+
+
+.Query
+[source, cypher]
+----
+SHOW USER PRIVILEGES
+----
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE USER joe SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE ROLE regularUsers
+CREATE ROLE noAccessUsers
+GRANT ROLE regularUsers TO jake
+GRANT ROLE noAccessUsers TO joe
+GRANT ACCESS ON DATABASE neo4j TO regularUsers
+DENY ACCESS ON DATABASE neo4j TO noAccessUsers
+
+]]></database><command><![CDATA[
+SHOW USER PRIVILEGES
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+Available privileges for users can also be output as Cypher commands with the optional `AS COMMAND[S]`.
+
+[NOTE]
+====
+When showing _user_ privileges as commands, the roles in the Cypher commands are replaced with a parameter. This can be used to quickly create new roles based on the privileges of specific users.
+
+
+====
+
+
+.Query
+[source, cypher]
+----
+SHOW USER jake PRIVILEGES AS COMMANDS
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +command+
+| +"GRANT ACCESS ON DATABASE `neo4j` TO $role"+
+| +"GRANT ACCESS ON DEFAULT DATABASE TO $role"+
+| +"GRANT EXECUTE FUNCTION * ON DBMS TO $role"+
+| +"GRANT EXECUTE PROCEDURE * ON DBMS TO $role"+
+1+d|Rows: 4
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE USER joe SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE ROLE regularUsers
+CREATE ROLE noAccessUsers
+GRANT ROLE regularUsers TO jake
+GRANT ROLE noAccessUsers TO joe
+GRANT ACCESS ON DATABASE neo4j TO regularUsers
+DENY ACCESS ON DATABASE neo4j TO noAccessUsers
+
+]]></database><command><![CDATA[
+SHOW USER jake PRIVILEGES AS COMMANDS
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+Like other `SHOW` commands, the output can also be processed using `YIELD` / `WHERE` / `RETURN`. Additionally, just as with role privileges, it is also possible to show user privileges as revoke commands.
+
+
+.Query
+[source, cypher]
+----
+SHOW USER jake PRIVILEGES AS REVOKE COMMANDS WHERE command CONTAINS 'EXECUTE'
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +command+
+| +"REVOKE GRANT EXECUTE FUNCTION * ON DBMS FROM $role"+
+| +"REVOKE GRANT EXECUTE PROCEDURE * ON DBMS FROM $role"+
+1+d|Rows: 2
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE USER joe SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE ROLE regularUsers
+CREATE ROLE noAccessUsers
+GRANT ROLE regularUsers TO jake
+GRANT ROLE noAccessUsers TO joe
+GRANT ACCESS ON DATABASE neo4j TO regularUsers
+DENY ACCESS ON DATABASE neo4j TO noAccessUsers
+
+]]></database><command><![CDATA[
+SHOW USER jake PRIVILEGES AS REVOKE COMMANDS WHERE command CONTAINS 'EXECUTE'
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[role=enterprise-edition]
+[[administration-security-subgraph-revoke]]
+== The `REVOKE` command
+
+Privileges that were granted or denied earlier can be revoked using the `REVOKE` command. 
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/security/revoke-syntax.asciidoc[]
+// tag::include-neo4j-documentation[]
+.Command syntax
+[source, cypher, role=noplay]
+-----
+REVOKE
+    [ GRANT | DENY ] graph-privilege
+    FROM role[, ...]
+-----
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/security/revoke-syntax.asciidoc[]
+
+An example usage of the `REVOKE` command is given here:
+
+
+.Query
+[source, cypher]
+----
+REVOKE GRANT TRAVERSE ON DEFAULT GRAPH NODES Post FROM regularUsers
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 1
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE USER joe SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE ROLE regularUsers
+CREATE ROLE noAccessUsers
+GRANT ROLE regularUsers TO jake
+GRANT ROLE noAccessUsers TO joe
+GRANT ACCESS ON DATABASE neo4j TO regularUsers
+DENY ACCESS ON DATABASE neo4j TO noAccessUsers
+
+]]></database><command><![CDATA[
+REVOKE GRANT TRAVERSE ON DEFAULT GRAPH NODES Post FROM regularUsers
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+While it can be explicitly specified that revoke should remove a `GRANT` or `DENY`, it is also possible to revoke either one by not specifying at all as the next example demonstrates.
+Because of this, if there happen to be a `GRANT` and a `DENY` on the same privilege, it would remove both.
+
+
+.Query
+[source, cypher]
+----
+REVOKE TRAVERSE ON DEFAULT GRAPH NODES Payments FROM regularUsers
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 2
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE USER joe SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE ROLE regularUsers
+CREATE ROLE noAccessUsers
+GRANT ROLE regularUsers TO jake
+GRANT ROLE noAccessUsers TO joe
+GRANT ACCESS ON DATABASE neo4j TO regularUsers
+DENY ACCESS ON DATABASE neo4j TO noAccessUsers
+
+]]></database><command><![CDATA[
+REVOKE TRAVERSE ON DEFAULT GRAPH NODES Payments FROM regularUsers
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+

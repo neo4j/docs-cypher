@@ -1,11 +1,186 @@
+[[administration-constraints]]
+= Constraints
+:description: This section explains how to manage constraints used for ensuring data integrity. 
+
+* xref:administration/constraints.adoc#administration-constraints-introduction[Introduction]
+* xref:administration/constraints.adoc#administration-constraints-syntax[Syntax]
+* xref:administration/constraints.adoc#administration-constraints-examples[Examples]
+** xref:administration/constraints.adoc#administration-constraints-unique-nodes[Unique node property constraints]
+** xref:administration/constraints.adoc#administration-constraints-prop-exist-nodes[Node property existence constraints]
+** xref:administration/constraints.adoc#administration-constraints-prop-exist-rels[Relationship property existence constraints]
+** xref:administration/constraints.adoc#administration-constraints-node-key[Node key constraints]
+** xref:administration/constraints.adoc#administration-constraints-drop-constraint[Drop a constraint by name]
+** xref:administration/constraints.adoc#administration-constraints-list-constraint[List constraints]
+** xref:administration/constraints.adoc#administration-constraints-deprecated-syntax[Deprecated syntax]
+
+[[administration-constraints-introduction]]
+== Introduction
+
+The following constraint types are available:
+
+*Unique node property constraints*::
+Unique property constraints ensure that property values are unique for all nodes with a specific label.
+Unique constraints do not mean that all nodes have to have a unique value for the properties -- nodes without the property are not subject to this rule.
+
+*[enterprise-edition]#Node property existence constraints#*::
+Node property existence constraints ensure that a property exists for all nodes with a specific label.
+Queries that try to create new nodes of the specified label, but without this property, will fail.
+The same is true for queries that try to remove the mandatory property.
+
+*[enterprise-edition]#Relationship property existence constraints#*::
+Property existence constraints ensure that a property exists for all relationships with a specific type.
+All queries that try to create relationships of the specified type, but without this property, will fail.
+The same is true for queries that try to remove the mandatory property.
+
+*[enterprise-edition]#Node key constraints#*::
+Node key constraints ensure that, for a given label and set of properties:
++
+[lowerroman]
+. All the properties exist on all the nodes with that label.
+. The combination of the property values is unique.
+
++
+Queries attempting to do any of the following will fail:
+
+* Create new nodes without all the properties or where the combination of property values is not unique.
+* Remove one of the mandatory properties.
+* Update the properties so that the combination of property values is no longer unique.
+
+
+[NOTE]
+Node key constraints, node property existence constraints and relationship property existence constraints are only available in Neo4j Enterprise Edition.
+Databases containing one of these constraint types cannot be opened using Neo4j Community Edition.
+
+Creating a constraint has the following implications on indexes:
+
+* Adding a unique property constraint on a property will also add a xref:administration/indexes-for-search-performance.adoc#administration-indexes-create-a-single-property-index[single-property index] on that property, so such an index cannot be added separately.
+* Adding a node key constraint for a set of properties will also add a xref:administration/indexes-for-search-performance.adoc#administration-indexes-create-a-composite-index[composite index] on those properties, so such an index cannot be added separately.
+* Cypher will use these indexes for lookups just like other indexes.
+  Refer to xref:administration/indexes-for-search-performance.adoc[] for more details on indexes.
+* If a unique property constraint is dropped and the single-property index on the property is still required, the index will need to be created explicitly.
+* If a node key constraint is dropped and the composite-property index on the properties is still required, the index will need to be created explicitly.
+
+Additionally, the following is true for constraints:
+
+* A given label can have multiple constraints, and unique and property existence constraints can be combined on the same property.
+* Adding constraints is an atomic operation that can take a while -- all existing data has to be scanned before Neo4j can turn the constraint 'on'.
+* Best practice is to give the constraint a name when it is created.
+If the constraint is not explicitly named, it will get an auto-generated name.
+* The constraint name must be unique among both indexes and constraints.
+* Constraint creation is by default not idempotent, and an error will be thrown if you attempt to create the same constraint twice.
+Using the keyword `IF NOT EXISTS` makes the command idempotent, and no error will be thrown if you attempt to create the same constraint twice.
+
+[[administration-constraints-syntax]]
+== Syntax
+
+.Syntax for managing indexes
+[options="header", width="100%", cols="5a,3, 3a"]
+|===
+| Command | Description | Comment
+
+| [source, cypher, role=noplay]
+----
+CREATE CONSTRAINT [constraint_name] [IF NOT EXISTS]
+ON (n:LabelName)
+ASSERT n.propertyName IS UNIQUE
+[OPTIONS "{" option: value[, ...] "}"]
+----
+| Create a unique node property constraint.
+.4+.^| Best practice is to give the constraint a name when it is created.
+If the constraint is not explicitly named, it will get an auto-generated name.
+
+The constraint name must be unique among both indexes and constraints.
+
+The command is optionally idempotent, with the default behavior to throw an error if you attempt to create the same constraint twice.
+With `IF NOT EXISTS`, no error is thrown and nothing happens should a constraint with the same name or same schema and constraint type already exist.
+It may still throw an error if conflicting data, indexes, or constraints exist.
+Examples of this would be nodes with missing properties, indexes with the same name, or constraints with same schema but a different constraint type.
+
+Index provider and configuration for the backing index can be specified using the `OPTIONS` clause.
+| [source, cypher, role=noplay]
+----
+CREATE CONSTRAINT [constraint_name] [IF NOT EXISTS]
+ON (n:LabelName)
+ASSERT EXISTS (n.propertyName)
+----
+| [enterprise-edition]#Create a node property existence constraint.#
+| [source, cypher, role=noplay]
+----
+CREATE CONSTRAINT [constraint_name] [IF NOT EXISTS]
+ON ()-"["R:RELATIONSHIP_TYPE"]"-()
+ASSERT EXISTS (R.propertyName)
+----
+| [enterprise-edition]#Create a relationship property existence constraint.#
+| [source, cypher, role=noplay]
+----
+CREATE CONSTRAINT [constraint_name] [IF NOT EXISTS]
+ON (n:LabelName)
+ASSERT (n.propertyName_1,
+n.propertyName_2,
+…
+n.propertyName_n)
+IS NODE KEY
+[OPTIONS "{" option: value[, ...] "}"]
+----
+| [enterprise-edition]#Create a node key constraint.#
+| [source, cypher, role=noplay]
+----
+DROP CONSTRAINT constraint_name [IF EXISTS]
+----
+| Drop a constraint.
+| The command is optionally idempotent, with the default behavior to throw an error if you attempt to drop the same constraint twice.
+With `IF EXISTS`, no error is thrown and nothing happens should the constraint not exist.
+| [source, cypher, role=noplay]
+----
+SHOW [ALL\|UNIQUE\|NODE EXIST[S]\|RELATIONSHIP EXIST[S]\|EXIST[S]\|NODE KEY] CONSTRAINT[S] [BRIEF\|VERBOSE [OUTPUT]]
+----
+| List constraints in the database, either all or filtered on type.
+|
+| [source, cypher, role=noplay]
+----
+DROP CONSTRAINT
+ON (n:LabelName)
+ASSERT n.propertyName IS UNIQUE
+----
+| Drop a unique constraint without specifying a name.
+.4+.^| [deprecated]#This syntax is deprecated.#
+| [source, cypher, role=noplay]
+----
+DROP CONSTRAINT
+ON (n:LabelName)
+ASSERT EXISTS (n.propertyName)
+----
+| Drop an exists constraint without specifying a name.
+| [source, cypher, role=noplay]
+----
+DROP CONSTRAINT
+ON ()-"["R:RELATIONSHIP_TYPE"]"-()
+ASSERT EXISTS (R.propertyName)
+----
+| Drop a relationship property existence constraint without specifying a name.
+| [source, cypher, role=noplay]
+----
+DROP CONSTRAINT
+ON (n:LabelName)
+ASSERT (n.propertyName_1,
+n.propertyName_2,
+…
+n.propertyName_n)
+IS NODE KEY
+----
+| Drop a node key constraint without specifying a name.
+|===
+
+Creating a constraint requires xref:administration/security/administration.adoc#administration-security-administration-database-constraints[the `CREATE CONSTRAINT` privilege],
+while dropping a constraint requires xref:administration/security/administration.adoc#administration-security-administration-database-constraints[the `DROP CONSTRAINT` privilege] and
+listing constraints require xref:administration/security/administration.adoc#administration-security-administration-database-constraints[the `SHOW CONSTRAINT` privilege].
+
 [[administration-constraints-examples]]
-= Examples
-:description: Examples of how to manage constraints used for ensuring data integrity. 
+== Examples
 
 [[administration-constraints-unique-nodes]]
-== Unique node property constraints
+=== Unique node property constraints
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-unique-constraint.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-create-a-unique-constraint]]
@@ -42,7 +217,6 @@ Unique constraints added: 1
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-unique-constraint.asciidoc[]
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-unique-constraint-only-if-it-does-not-already-exist.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-create-a-unique-constraint-only-if-it-does-not-already-exist]]
@@ -81,7 +255,6 @@ Unique constraints added: 1
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-unique-constraint-only-if-it-does-not-already-exist.asciidoc[]
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-unique-constraint-with-specified-index-provider-and-configuration.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-create-a-unique-constraint-with-specified-index-provider-and-configuration]]
@@ -128,7 +301,6 @@ Unique constraints added: 1
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-unique-constraint-with-specified-index-provider-and-configuration.asciidoc[]
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-node-that-complies-with-unique-property-constraints.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-create-a-node-that-complies-with-unique-property-constraints]]
@@ -165,7 +337,6 @@ Labels added: 1
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-node-that-complies-with-unique-property-constraints.asciidoc[]
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-node-that-violates-a-unique-property-constraint.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-create-a-node-that-violates-a-unique-property-constraint]]
@@ -199,7 +370,6 @@ Node(0) already exists with label `Book` and property `isbn` = '1449356265'
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-node-that-violates-a-unique-property-constraint.asciidoc[]
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/failure-to-create-a-unique-property-constraint-due-to-conflicting-nodes.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-failure-to-create-a-unique-property-constraint-due-to-conflicting-nodes]]
@@ -217,7 +387,7 @@ CREATE CONSTRAINT ON (book:Book) ASSERT book.isbn IS UNIQUE
 // end::query[]
 
 
-In this case the constraint can't be created because it is violated by existing data. We may choose to use xref:indexes-for-search-performance.adoc[] instead or remove the offending nodes and then re-apply the constraint.
+In this case the constraint can't be created because it is violated by existing data. We may choose to use xref:administration/indexes-for-search-performance.adoc[] instead or remove the offending nodes and then re-apply the constraint.
 
 .Error message
 // tag::result[]
@@ -238,9 +408,8 @@ Both Node(0) and Node(1) have the label `Book` and property `isbn` = '1449356265
 
 [role=enterprise-edition]
 [[administration-constraints-prop-exist-nodes]]
-== Node property existence constraints
+=== Node property existence constraints
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-node-property-existence-constraint.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-create-a-node-property-existence-constraint]]
@@ -252,7 +421,7 @@ When creating a node property existence constraint, a name can be provided. The 
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/includes/administration-constraints-create-a-node-property-existence-constraint.query.asciidoc[]
 [source,cypher]
 ----
-CREATE CONSTRAINT constraint_name ON (book:Book) ASSERT book.isbn IS NOT NULL
+CREATE CONSTRAINT constraint_name ON (book:Book) ASSERT exists(book.isbn)
 ----
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/includes/administration-constraints-create-a-node-property-existence-constraint.query.asciidoc[]
 // end::query[]
@@ -277,7 +446,6 @@ Property existence constraints added: 1
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-node-property-existence-constraint.asciidoc[]
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-node-property-existence-constraint-only-if-it-does-not-already-exist.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-create-a-node-property-existence-constraint-only-if-it-does-not-already-exist]]
@@ -289,7 +457,7 @@ If it is unknown if a constraint exists or not but we want to make sure it does,
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/includes/administration-constraints-create-a-node-property-existence-constraint-only-if-it-does-not-already-exist.query.asciidoc[]
 [source,cypher]
 ----
-CREATE CONSTRAINT constraint_name IF NOT EXISTS ON (book:Book) ASSERT book.isbn IS NOT NULL
+CREATE CONSTRAINT constraint_name IF NOT EXISTS ON (book:Book) ASSERT exists(book.isbn)
 ----
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/includes/administration-constraints-create-a-node-property-existence-constraint-only-if-it-does-not-already-exist.query.asciidoc[]
 // end::query[]
@@ -315,7 +483,6 @@ Note no constraint will be created if any other constraint with that name or ano
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-node-property-existence-constraint-only-if-it-does-not-already-exist.asciidoc[]
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-node-that-complies-with-property-existence-constraints.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-create-a-node-that-complies-with-property-existence-constraints]]
@@ -352,7 +519,6 @@ Labels added: 1
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-node-that-complies-with-property-existence-constraints.asciidoc[]
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-node-that-violates-a-property-existence-constraint.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-create-a-node-that-violates-a-property-existence-constraint]]
@@ -386,7 +552,6 @@ Node(0) with label `Book` must have the property `isbn`
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-node-that-violates-a-property-existence-constraint.asciidoc[]
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/removing-an-existence-constrained-node-property.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-removing-an-existence-constrained-node-property]]
@@ -420,7 +585,6 @@ Node(0) with label `Book` must have the property `isbn`
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/removing-an-existence-constrained-node-property.asciidoc[]
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/failure-to-create-a-node-property-existence-constraint-due-to-existing-node.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-failure-to-create-a-node-property-existence-constraint-due-to-existing-node]]
@@ -432,7 +596,7 @@ Create a constraint on the property `isbn` on nodes with the `Book` label when t
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/includes/administration-constraints-failure-to-create-a-node-property-existence-constraint-due-to-existing-node.query.asciidoc[]
 [source,cypher]
 ----
-CREATE CONSTRAINT ON (book:Book) ASSERT book.isbn IS NOT NULL
+CREATE CONSTRAINT ON (book:Book) ASSERT exists(book.isbn)
 ----
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/includes/administration-constraints-failure-to-create-a-node-property-existence-constraint-due-to-existing-node.query.asciidoc[]
 // end::query[]
@@ -459,9 +623,8 @@ Node(0) with label `Book` must have the property `isbn`
 
 [role=enterprise-edition]
 [[administration-constraints-prop-exist-rels]]
-== Relationship property existence constraints
+=== Relationship property existence constraints
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-relationship-property-existence-constraint.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-create-a-relationship-property-existence-constraint]]
@@ -473,7 +636,7 @@ When creating a relationship property existence constraint, a name can be provid
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/includes/administration-constraints-create-a-relationship-property-existence-constraint.query.asciidoc[]
 [source,cypher]
 ----
-CREATE CONSTRAINT constraint_name ON ()-[like:LIKED]-() ASSERT like.day IS NOT NULL
+CREATE CONSTRAINT constraint_name ON ()-[like:LIKED]-() ASSERT exists(like.day)
 ----
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/includes/administration-constraints-create-a-relationship-property-existence-constraint.query.asciidoc[]
 // end::query[]
@@ -498,7 +661,6 @@ Property existence constraints added: 1
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-relationship-property-existence-constraint.asciidoc[]
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-relationship-property-existence-constraint-only-if-it-does-not-already-exist.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-create-a-relationship-property-existence-constraint-only-if-it-does-not-already-exist]]
@@ -510,7 +672,7 @@ If it is unknown if a constraint exists or not but we want to make sure it does,
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/includes/administration-constraints-create-a-relationship-property-existence-constraint-only-if-it-does-not-already-exist.query.asciidoc[]
 [source,cypher]
 ----
-CREATE CONSTRAINT constraint_name IF NOT EXISTS ON ()-[like:LIKED]-() ASSERT like.day IS NOT NULL
+CREATE CONSTRAINT constraint_name IF NOT EXISTS ON ()-[like:LIKED]-() ASSERT exists(like.day)
 ----
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/includes/administration-constraints-create-a-relationship-property-existence-constraint-only-if-it-does-not-already-exist.query.asciidoc[]
 // end::query[]
@@ -536,7 +698,6 @@ Note no constraint will be created if any other constraint with that name or ano
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-relationship-property-existence-constraint-only-if-it-does-not-already-exist.asciidoc[]
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-relationship-that-complies-with-property-existence-constraints.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-create-a-relationship-that-complies-with-property-existence-constraints]]
@@ -574,7 +735,6 @@ Labels added: 2
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-relationship-that-complies-with-property-existence-constraints.asciidoc[]
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-relationship-that-violates-a-property-existence-constraint.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-create-a-relationship-that-violates-a-property-existence-constraint]]
@@ -608,7 +768,6 @@ Relationship(0) with type `LIKED` must have the property `day`
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-relationship-that-violates-a-property-existence-constraint.asciidoc[]
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/removing-an-existence-constrained-relationship-property.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-removing-an-existence-constrained-relationship-property]]
@@ -642,7 +801,6 @@ Relationship(0) with type `LIKED` must have the property `day`
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/removing-an-existence-constrained-relationship-property.asciidoc[]
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/failure-to-create-a-relationship-property-existence-constraint-due-to-existing-relationship.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-failure-to-create-a-relationship-property-existence-constraint-due-to-existing-relationship]]
@@ -654,7 +812,7 @@ Create a constraint on the property `day` on relationships with the `LIKED` type
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/includes/administration-constraints-failure-to-create-a-relationship-property-existence-constraint-due-to-existing-relationship.query.asciidoc[]
 [source,cypher]
 ----
-CREATE CONSTRAINT ON ()-[like:LIKED]-() ASSERT like.day IS NOT NULL
+CREATE CONSTRAINT ON ()-[like:LIKED]-() ASSERT exists(like.day)
 ----
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/includes/administration-constraints-failure-to-create-a-relationship-property-existence-constraint-due-to-existing-relationship.query.asciidoc[]
 // end::query[]
@@ -681,9 +839,8 @@ Relationship(0) with type `LIKED` must have the property `day`
 
 [role=enterprise-edition]
 [[administration-constraints-node-key]]
-== Node key constraints
+=== Node key constraints
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-node-key-constraint.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-create-a-node-key-constraint]]
@@ -720,7 +877,6 @@ Node key constraints added: 1
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-node-key-constraint.asciidoc[]
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-node-key-constraint-only-if-it-does-not-already-exist.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-create-a-node-key-constraint-only-if-it-does-not-already-exist]]
@@ -759,7 +915,6 @@ Note no constraint will be created if any other constraint with that name or ano
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-node-key-constraint-only-if-it-does-not-already-exist.asciidoc[]
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-node-key-constraint-with-specified-index-provider.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-create-a-node-key-constraint-with-specified-index-provider]]
@@ -800,7 +955,6 @@ Node key constraints added: 1
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-node-key-constraint-with-specified-index-provider.asciidoc[]
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-node-key-constraint-with-specified-index-configuration.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-create-a-node-key-constraint-with-specified-index-configuration]]
@@ -844,7 +998,6 @@ Node key constraints added: 1
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-node-key-constraint-with-specified-index-configuration.asciidoc[]
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-node-that-complies-with-node-key-constraints.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-create-a-node-that-complies-with-node-key-constraints]]
@@ -881,7 +1034,6 @@ Labels added: 1
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-node-that-complies-with-node-key-constraints.asciidoc[]
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-node-that-violates-a-node-key-constraint.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-create-a-node-that-violates-a-node-key-constraint]]
@@ -915,7 +1067,6 @@ Node(0) with label `Person` must have the properties (firstname, surname)
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/create-a-node-that-violates-a-node-key-constraint.asciidoc[]
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/removing-a-node-key-constrained-property.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-removing-a-node-key-constrained-property]]
@@ -949,7 +1100,6 @@ Node(0) with label `Person` must have the properties (firstname, surname)
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/removing-a-node-key-constrained-property.asciidoc[]
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/failure-to-create-a-node-key-constraint-due-to-existing-node.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-failure-to-create-a-node-key-constraint-due-to-existing-node]]
@@ -974,12 +1124,9 @@ In this case the node key constraint can't be created because it is violated by 
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/includes/administration-constraints-failure-to-create-a-node-key-constraint-due-to-existing-node.result.asciidoc[]
 [source]
 ----
-Unable to create Constraint( name='constraint_c57fc9b0', type='NODE KEY',
-schema=(:Person {firstname, surname}) ):
-Failed during property existence validation: Unable to create constraint
-org.neo4j.internal.schema.constraints.ConstraintDescriptorImplementation@12000642:
-Node(0) does not satisfy Constraint( type='NODE PROPERTY EXISTENCE',
-schema=(:Person {firstname, surname}) ).
+Unable to create Constraint( type='NODE PROPERTY EXISTENCE', schema=(:Person
+{firstname, surname}) ):
+Node(0) with label `Person` must have the properties (firstname, surname)
 ----
 
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/includes/administration-constraints-failure-to-create-a-node-key-constraint-due-to-existing-node.result.asciidoc[]
@@ -988,18 +1135,15 @@ schema=(:Person {firstname, surname}) ).
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/failure-to-create-a-node-key-constraint-due-to-existing-node.asciidoc[]
 
-
 [[administration-constraints-drop-constraint]]
-== Drop a constraint by name
-
-[discrete]
+=== Drop a constraint by name
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/drop-a-constraint.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-drop-a-constraint]]
 == Drop a constraint ==
 A constraint can be dropped using the name with the `DROP CONSTRAINT constraint_name` command.
 It is the same command for unique property, property existence and node key constraints.
-The name of the constraint can be found using the xref:constraints/syntax.adoc#administration-constraints-syntax-list[`SHOW CONSTRAINTS` command], given in the output column `name`.
+The name of the constraint can be found using the xref:administration/constraints.adoc#administration-constraints-list-constraint[`SHOW CONSTRAINTS` command], given in the output column `name`.
 
 .Query
 // tag::query[]
@@ -1029,7 +1173,6 @@ Named constraints removed: 1
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/drop-a-constraint.asciidoc[]
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/drop-a-non-existing-constraint.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-drop-a-non-existing-constraint]]
@@ -1063,103 +1206,116 @@ DROP CONSTRAINT missing_constraint_name IF EXISTS
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/drop-a-non-existing-constraint.asciidoc[]
 
-
 [[administration-constraints-list-constraint]]
-== Listing constraints
+=== List constraints
 
-[discrete]
-// tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/listing-all-constraints.asciidoc[]
+Listing constraints can be done with `SHOW CONSTRAINTS`, which will produce a table with the following columns:
+
+.List constraints output
+[options="header", width="100%", cols="1a,4,^.^,^"]
+|===
+| Column
+| Description
+| Brief output
+| Verbose output
+
+| `id`
+| The id of the constraint.
+| `+`
+| `+`
+
+| `name`
+| Name of the constraint (explicitly set by the user or automatically assigned).
+| `+`
+| `+`
+
+| `type`
+| The ConstraintType of this constraint (`UNIQUENESS`, `NODE_PROPERTY_EXISTENCE`, `NODE_KEY`, or `RELATIONSHIP_PROPERTY_EXISTENCE`).
+| `+`
+| `+`
+
+| `entityType`
+| Type of entities this constraint represents (nodes or relationship).
+| `+`
+| `+`
+
+| `labelsOrTypes`
+| The labels or relationship types of this constraint.
+| `+`
+| `+`
+
+| `properties`
+| The properties of this constraint.
+| `+`
+| `+`
+
+| `ownedIndexId`
+| The id of the index associated to the constraint, or `null` if no index is associated with the constraint.
+| `+`
+| `+`
+
+| `options`
+| The options passed to `CREATE` command, for the index associated to the constraint, or `null` if no index is associated with the constraint.
+|
+| `+`
+
+| `createStatement`
+| Statement used to create the constraint.
+|
+| `+`
+|===
+
+[NOTE]
+The deprecated built-in procedures for listing constraints, such as `db.constraints`, work as before and are not affected by the xref:administration/security/administration.adoc#administration-security-administration-database-constraints[`SHOW CONSTRAINTS` privilege].
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/example-of-listing-constraints.asciidoc[]
 // tag::include-neo4j-documentation[]
-[[administration-constraints-listing-all-constraints]]
-== Listing all constraints ==
+[[administration-constraints-example-of-listing-constraints]]
+== Example of listing constraints ==
 
-To list all constraints with the default output columns, the `SHOW CONSTRAINTS` command can be used.
-If all columns are required, use `SHOW CONSTRAINTS YIELD *`.
+To list all constraints with the brief output columns, the `SHOW CONSTRAINTS` command can be used.
+If all columns are wanted, use `SHOW CONSTRAINTS VERBOSE`.
+Filtering the output on constraint type is available for all types, the filtering keywords are listed in the xref:administration/constraints.adoc#administration-constraints-syntax[syntax table].
+As an example, to show only unique constraints, use `SHOW UNIQUE CONSTRAINTS`.
 
 .Query
 // tag::query[]
-// tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/includes/administration-constraints-listing-all-constraints.query.asciidoc[]
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/includes/administration-constraints-example-of-listing-constraints.query.asciidoc[]
 [source,cypher]
 ----
 SHOW CONSTRAINTS
 ----
-// end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/includes/administration-constraints-listing-all-constraints.query.asciidoc[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/includes/administration-constraints-example-of-listing-constraints.query.asciidoc[]
 // end::query[]
 
 
 One of the output columns from `SHOW CONSTRAINTS` is the name of the constraint.
-This can be used to drop the constraint with the xref:constraints/syntax.adoc#administration-constraints-syntax-drop[`DROP CONSTRAINT` command].
+This can be used to drop the constraint with the xref:administration/constraints.adoc#administration-constraints-drop-constraint[`DROP CONSTRAINT` command].
 
 .Result
 // tag::result[]
-// tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/includes/administration-constraints-listing-all-constraints.result.asciidoc[]
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/includes/administration-constraints-example-of-listing-constraints.result.asciidoc[]
 [source, role="queryresult noheader"]
 ----
 +----------------------------------------------------------------------------------------------------+
 | id | name                  | type         | entityType | labelsOrTypes | properties | ownedIndexId |
 +----------------------------------------------------------------------------------------------------+
-| 4  | "constraint_ca412c3d" | "UNIQUENESS" | "NODE"     | ["Book"]      | ["isbn"]   | 3            |
+| 2  | "constraint_ca412c3d" | "UNIQUENESS" | "NODE"     | ["Book"]      | ["isbn"]   | 1            |
 +----------------------------------------------------------------------------------------------------+
 1 row
 ----
 
-// end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/includes/administration-constraints-listing-all-constraints.result.asciidoc[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/includes/administration-constraints-example-of-listing-constraints.result.asciidoc[]
 // end::result[]
 
 // end::include-neo4j-documentation[]
-// end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/listing-all-constraints.asciidoc[]
-
-[discrete]
-// tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/listing-constraints-with-filtering.asciidoc[]
-// tag::include-neo4j-documentation[]
-[[administration-constraints-listing-constraints-with-filtering]]
-== Listing constraints with filtering ==
-
-One way of filtering the output from `SHOW CONSTRAINTS` by constraint type is the use of type keywords,
-listed in xref:constraints/syntax.adoc#administration-constraints-syntax-list[Syntax for listing constraints].
-For example, to show only unique node property constraints, use `SHOW UNIQUE CONSTRAINTS`.
-Another more flexible way of filtering the output is to use the `WHERE` clause.
-An example is to only show constraints on relationships.
-
-.Query
-// tag::query[]
-// tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/includes/administration-constraints-listing-constraints-with-filtering.query.asciidoc[]
-[source,cypher]
-----
-SHOW EXISTENCE CONSTRAINTS WHERE entityType = 'RELATIONSHIP'
-----
-// end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/includes/administration-constraints-listing-constraints-with-filtering.query.asciidoc[]
-// end::query[]
-
-
-This will only return the default output columns.
-To get all columns, use `SHOW INDEXES YIELD * WHERE ...`.
-
-.Result
-// tag::result[]
-// tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/includes/administration-constraints-listing-constraints-with-filtering.result.asciidoc[]
-[source, role="queryresult noheader"]
-----
-+-----------------------------------------------------------------------------------------------------------------------------+
-| id | name                  | type                              | entityType     | labelsOrTypes | properties | ownedIndexId |
-+-----------------------------------------------------------------------------------------------------------------------------+
-| 7  | "constraint_f076a74d" | "RELATIONSHIP_PROPERTY_EXISTENCE" | "RELATIONSHIP" | ["KNOWS"]     | ["since"]  | <null>       |
-+-----------------------------------------------------------------------------------------------------------------------------+
-1 row
-----
-
-// end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/includes/administration-constraints-listing-constraints-with-filtering.result.asciidoc[]
-// end::result[]
-
-// end::include-neo4j-documentation[]
-// end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/listing-constraints-with-filtering.asciidoc[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/example-of-listing-constraints.asciidoc[]
 
 
 [role=deprecated]
 [[administration-constraints-deprecated-syntax]]
-== Deprecated syntax
+=== Deprecated syntax
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/drop-a-unique-constraint.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-drop-a-unique-constraint]]
@@ -1194,7 +1350,6 @@ Unique constraints removed: 1
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/drop-a-unique-constraint.asciidoc[]
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/drop-a-node-property-existence-constraint.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-drop-a-node-property-existence-constraint]]
@@ -1229,7 +1384,6 @@ Property existence constraints removed: 1
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/drop-a-node-property-existence-constraint.asciidoc[]
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/drop-a-relationship-property-existence-constraint.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-drop-a-relationship-property-existence-constraint]]
@@ -1264,7 +1418,6 @@ Property existence constraints removed: 1
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/constraints/drop-a-relationship-property-existence-constraint.asciidoc[]
 
-[discrete]
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/constraints/drop-a-node-key-constraint.asciidoc[]
 // tag::include-neo4j-documentation[]
 [[administration-constraints-drop-a-node-key-constraint]]

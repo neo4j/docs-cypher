@@ -28,52 +28,143 @@ Moreover, in some circumstances (albeit rarely) it is better not to use an index
 Neo4j can be forced to use a specific starting point through the `USING` keyword. This is called giving a planner hint.
 There are four types of planner hints: index hints, scan hints, join hints, and the `PERIODIC COMMIT` query hint.
 
+The following graph is used for the examples below:
+
+.Graph
+["dot", "Planner hints and the USING keyword-1.svg", "neoviz", ""]
+----
+  N0 [
+    label = "{Scientist|name = \'Liskov\'\lborn = 1939\l}"
+  ]
+  N0 -> N2 [
+    color = "#2e3436"
+    fontcolor = "#2e3436"
+    label = "RESEARCHED\n"
+  ]
+  N0 -> N1 [
+    color = "#4e9a06"
+    fontcolor = "#4e9a06"
+    label = "KNOWS\n"
+  ]
+  N1 [
+    label = "{Scientist|name = \'Wing\'\lborn = 1956\l}"
+  ]
+  N1 -> N4 [
+    color = "#2e3436"
+    fontcolor = "#2e3436"
+    label = "RESEARCHED\n"
+  ]
+  N1 -> N2 [
+    color = "#2e3436"
+    fontcolor = "#2e3436"
+    label = "RESEARCHED\n"
+  ]
+  N2 [
+    label = "{Science|name = \'Computer Science\'\l}"
+  ]
+  N3 [
+    label = "{Scientist|name = \'Conway\'\lborn = 1938\l}"
+  ]
+  N3 -> N2 [
+    color = "#2e3436"
+    fontcolor = "#2e3436"
+    label = "RESEARCHED\n"
+  ]
+  N4 [
+    label = "{Science|name = \'Engineering\'\l}"
+  ]
+  N5 [
+    label = "{Science|name = \'Chemistry\'\l}"
+  ]
+  N6 [
+    label = "{Scientist|name = \'Curie\'\lborn = 1867\l}"
+  ]
+  N6 -> N5 [
+    color = "#2e3436"
+    fontcolor = "#2e3436"
+    label = "RESEARCHED\n"
+  ]
+  N7 [
+    label = "{Scientist|name = \'Arden\'\l}"
+  ]
+  N7 -> N5 [
+    color = "#2e3436"
+    fontcolor = "#2e3436"
+    label = "RESEARCHED\n"
+  ]
+  N8 [
+    label = "{Scientist|name = \'Franklin\'\l}"
+  ]
+  N8 -> N5 [
+    color = "#2e3436"
+    fontcolor = "#2e3436"
+    label = "RESEARCHED\n"
+  ]
+  N9 [
+    label = "{Scientist|name = \'Harrison\'\l}"
+  ]
+  N9 -> N5 [
+    color = "#2e3436"
+    fontcolor = "#2e3436"
+    label = "RESEARCHED\n"
+  ]
+
+----
+ 
+
 
 .Query
 [source, cypher]
 ----
-MATCH (s:Scientist {born: 1850})-[:RESEARCHED]->(sc:Science)<-[i:INVENTED_BY {year: 560}]-(p:Pioneer {born: 525})-[:LIVES_IN]->(c:City)-[:PART_OF]->(cc:Country {formed: 411}) RETURN *
+MATCH (liskov:Scientist {name:'Liskov'})-[:KNOWS]->(wing:Scientist)-[:RESEARCHED]->(cs:Science {name:'Computer Science'})<-[:RESEARCHED]-(conway:Scientist {name: 'Conway'}) RETURN 1 AS column
 ----
 
-The query above will be used in some of the examples on this page.
-Without any hints, one index and no join is used.
+The following query will be used in some of the examples on this page. It has intentionally been constructed in
+such a way that the statistical information will be inaccurate for the particular path that this query
+matches. For this reason, it can be improved by supplying planner hints.
 
 .Query plan
 [source]
 ----
-Compiler CYPHER 4.3
+Compiler CYPHER 4.2
 
 Planner COST
 
 Runtime PIPELINED
 
-Runtime version 4.3
+Runtime version 4.2
 
-+-----------------+----------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator        | Details                                      | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Other               |
-+-----------------+----------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults | c, cc, i, p, s, sc                           |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |               +----------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Filter         | s.born = $autoint_0 AND s:Scientist          |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |               +----------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Expand(All)    | (sc)<-[anon_0:RESEARCHED]-(s)                |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |               +----------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Filter         | i.year = $autoint_1 AND sc:Science           |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |               +----------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Expand(All)    | (p)-[i:INVENTED_BY]->(sc)                    |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |               +----------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Filter         | p.born = $autoint_2 AND p:Pioneer            |              0 |    0 |       2 |                |                        |           | Fused in Pipeline 0 |
-| |               +----------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Expand(All)    | (c)<-[anon_1:LIVES_IN]-(p)                   |              1 |    1 |       3 |                |                        |           | Fused in Pipeline 0 |
-| |               +----------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Filter         | c:City                                       |              1 |    1 |       1 |                |                        |           | Fused in Pipeline 0 |
-| |               +----------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Expand(All)    | (cc)<-[anon_2:PART_OF]-(c)                   |              1 |    1 |       2 |                |                        |           | Fused in Pipeline 0 |
-| |               +----------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +NodeIndexSeek  | cc:Country(formed) WHERE formed = $autoint_3 |              1 |    1 |       2 |             72 |                    6/1 |     0.718 | Fused in Pipeline 0 |
-+-----------------+----------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++-------------------------+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                | Details                                                                                        | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Other               |
++-------------------------+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults         | column                                                                                         |              0 |    1 |       0 |                |                    0/0 |     0.056 | In Pipeline 5       |
+| |                       +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Projection             | $autoint_3 AS column                                                                           |              0 |    1 |       0 |                |                    0/0 |     0.031 | In Pipeline 5       |
+| |                       +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +NodeHashJoin           | wing                                                                                           |              0 |    1 |       0 |            640 |                        |     0.600 | In Pipeline 5       |
+| |\                      +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Filter               | not anon_122 = anon_68                                                                         |              0 |    2 |       0 |                |                    0/0 |     0.081 | In Pipeline 4       |
+| | |                     +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +NodeHashJoin         | cs                                                                                             |              0 |    3 |       0 |            768 |                    0/0 |     0.900 | In Pipeline 4       |
+| | |\                    +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | | +Expand(Into)       | (cs)<-[anon_122:RESEARCHED]-(conway)                                                           |              0 |    1 |       5 |            992 |                    0/0 |     0.257 | In Pipeline 3       |
+| | | |                   +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | | +MultiNodeIndexSeek | cs:Science(name) WHERE name = $autostring_1, conway:Scientist(name) WHERE name = $autostring_2 |              0 |    1 |       4 |             72 |                    2/0 |     0.216 | In Pipeline 2       |
+| | |                     +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Filter               | wing:Scientist                                                                                 |              0 |    3 |       3 |                |                        |           | Fused in Pipeline 1 |
+| | |                     +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Expand(All)          | (cs)<-[anon_68:RESEARCHED]-(wing)                                                              |              0 |    3 |       4 |                |                        |           | Fused in Pipeline 1 |
+| | |                     +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +NodeIndexSeek        | cs:Science(name) WHERE name = $autostring_1                                                    |              0 |    1 |       2 |             72 |                        |           | Fused in Pipeline 1 |
+| |                       +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Filter                 | wing:Scientist                                                                                 |              0 |    1 |       1 |                |                        |           | Fused in Pipeline 0 |
+| |                       +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Expand(All)            | (liskov)-[anon_41:KNOWS]->(wing)                                                               |              0 |    1 |       3 |                |                        |           | Fused in Pipeline 0 |
+| |                       +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +NodeIndexSeek          | liskov:Scientist(name) WHERE name = $autostring_0                                              |              0 |    1 |       2 |             72 |                        |           | Fused in Pipeline 0 |
++-------------------------+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
-Total database accesses: 10, total allocated memory: 160
+Total database accesses: 24, total allocated memory: 2168
 
 ----
 
@@ -83,18 +174,21 @@ ifndef::nonhtmloutput[]
 <formalpara role="cypherconsole">
 <title>Try this query live</title>
 <para><database><![CDATA[
-FOREACH(i IN range(1, 100) |
-  CREATE (:Scientist {born: 1800 + i})-[:RESEARCHED]->(:Science)<-[:INVENTED_BY {year: 530 + (i % 50)}]-(:Pioneer {born: 500 + (i % 50)})-[:LIVES_IN]->(:City)-[:PART_OF]->(:Country {formed: 400 + i})
-)
-
-CREATE INDEX FOR (s:Scientist) ON (s.born)
-CREATE INDEX FOR (p:Pioneer) ON (p.born)
-CREATE INDEX FOR (c:Country) ON (c.formed)
-CREATE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.year)
+CREATE INDEX FOR (n:Scientist) ON (n.name)
+CREATE INDEX FOR (n:Science) ON (n.name)
 CALL db.awaitIndexes
+CREATE
+(liskov:Scientist {name: 'Liskov', born: 1939})-[:KNOWS]->(wing:Scientist {name: 'Wing', born: 1956})-[:RESEARCHED]->(cs:Science {name: 'Computer Science'})<-[:RESEARCHED]-(conway:Scientist {name: 'Conway', born: 1938}),
+(liskov)-[:RESEARCHED]->(cs),
+(wing)-[:RESEARCHED]->(:Science {name: 'Engineering'}),
+(chemistry:Science {name: 'Chemistry'})<-[:RESEARCHED]-(:Scientist {name: 'Curie', born: 1867}),
+(chemistry)<-[:RESEARCHED]-(:Scientist {name: 'Arden'}),
+(chemistry)<-[:RESEARCHED]-(:Scientist {name: 'Franklin'}),
+(chemistry)<-[:RESEARCHED]-(:Scientist {name: 'Harrison'})
+      
 
 ]]></database><command><![CDATA[
-MATCH (s:Scientist {born: 1850})-[:RESEARCHED]->(sc:Science)<-[i:INVENTED_BY {year: 560}]-(p:Pioneer {born: 525})-[:LIVES_IN]->(c:City)-[:PART_OF]->(cc:Country {formed: 411}) RETURN *
+MATCH (liskov:Scientist {name:'Liskov'})-[:KNOWS]->(wing:Scientist)-[:RESEARCHED]->(cs:Science {name:'Computer Science'})<-[:RESEARCHED]-(conway:Scientist {name: 'Conway'}) RETURN 1 AS column
 ]]></command></para></formalpara>
 ++++
 endif::nonhtmloutput[]
@@ -102,68 +196,72 @@ endif::nonhtmloutput[]
 [[query-using-index-hint]]
 == Index hints
 
-Index hints are used to specify which index, the planner should use as a starting point.
+Index hints are used to specify which index, if any, the planner should use as a starting point.
 This can be beneficial in cases where the index statistics are not accurate for the specific values that
 the query at hand is known to use, which would result in the planner picking a non-optimal index.
-To supply an index hint, use `USING INDEX variable:Label(property)` or `USING INDEX SEEK variable:Label(property)` after the applicable `MATCH` clause for node indexes,
-and `USING INDEX variable:RELATIONSHIP_TYPE(property)` or `USING INDEX SEEK variable:RELATIONSHIP_TYPE(property)` for relationship indexes.
-
-`USING INDEX` can be fulfilled by any of the following plans:
-`NodeIndexScan`, `DirectedRelationshipIndexScan`, `UndirectedRelationshipIndexScan`, `NodeIndexSeek`, `DirectedRelationshipIndexSeek`, `UndirectedRelationshipIndexSeek`.
-`USING INDEX SEEK` can only be fulfilled by `NodeIndexSeek`, `DirectedRelationshipIndexSeek` or `UndirectedRelationshipIndexSeek`.
+To supply an index hint, use `USING INDEX variable:Label(property)` or `USING INDEX SEEK variable:Label(property)` after the applicable `MATCH` clause.
 
 It is possible to supply several index hints, but keep in mind that several starting points
 will require the use of a potentially expensive join later in the query plan.
 
-=== Query using a node index hint
+=== Query using an index hint
 
-The query above can be tuned to pick a different index as the starting point.
+The query above will not naturally pick an index to solve the plan.
+This is because the graph is very small, and label scans are faster for small databases.
+In general, however, query performance is ranked by the dbhit metric, and we see that using an index is
+slightly better for this query.
 
 
 .Query
 [source, cypher]
 ----
-MATCH (s:Scientist {born: 1850})-[:RESEARCHED]->(sc:Science)<-[i:INVENTED_BY {year: 560}]-(p:Pioneer {born: 525})-[:LIVES_IN]->(c:City)-[:PART_OF]->(cc:Country {formed: 411})
-USING INDEX p:Pioneer(born)
-RETURN *
+MATCH (liskov:Scientist {name:'Liskov'})-[:KNOWS]->(wing:Scientist)-[:RESEARCHED]->(cs:Science {name:'Computer Science'})<-[:RESEARCHED]-(conway:Scientist {name: 'Conway'}) USING INDEX liskov:Scientist(name) RETURN liskov.born AS column
 ----
+
+Returns the year *'Barbara Liskov'* was born.
 
 .Query plan
 [source]
 ----
-Compiler CYPHER 4.3
+Compiler CYPHER 4.2
 
 Planner COST
 
 Runtime PIPELINED
 
-Runtime version 4.3
+Runtime version 4.2
 
-+-----------------+-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator        | Details                                 | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Other               |
-+-----------------+-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults | c, cc, i, p, s, sc                      |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |               +-----------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Filter         | cc.formed = $autoint_3 AND cc:Country   |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |               +-----------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Expand(All)    | (c)-[anon_2:PART_OF]->(cc)              |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |               +-----------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Filter         | c:City                                  |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |               +-----------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Expand(All)    | (p)-[anon_1:LIVES_IN]->(c)              |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |               +-----------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Filter         | s.born = $autoint_0 AND s:Scientist     |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |               +-----------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Expand(All)    | (sc)<-[anon_0:RESEARCHED]-(s)           |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |               +-----------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Filter         | i.year = $autoint_1 AND sc:Science      |              0 |    0 |       2 |                |                        |           | Fused in Pipeline 0 |
-| |               +-----------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Expand(All)    | (p)-[i:INVENTED_BY]->(sc)               |              2 |    2 |       6 |                |                        |           | Fused in Pipeline 0 |
-| |               +-----------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +NodeIndexSeek  | p:Pioneer(born) WHERE born = $autoint_2 |              2 |    2 |       3 |             72 |                    4/1 |     0.665 | Fused in Pipeline 0 |
-+-----------------+-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++-------------------------+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                | Details                                                                                        | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Other               |
++-------------------------+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults         | column                                                                                         |              0 |    1 |       0 |                |                    0/0 |     0.055 | In Pipeline 5       |
+| |                       +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Projection             | liskov.born AS column                                                                          |              0 |    1 |       3 |                |                    1/0 |     0.097 | In Pipeline 5       |
+| |                       +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +NodeHashJoin           | wing                                                                                           |              0 |    1 |       0 |            640 |                        |     0.036 | In Pipeline 5       |
+| |\                      +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Filter               | not anon_122 = anon_68                                                                         |              0 |    2 |       0 |                |                    0/0 |     0.042 | In Pipeline 4       |
+| | |                     +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +NodeHashJoin         | cs                                                                                             |              0 |    3 |       0 |            768 |                    0/0 |     0.073 | In Pipeline 4       |
+| | |\                    +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | | +Expand(Into)       | (cs)<-[anon_122:RESEARCHED]-(conway)                                                           |              0 |    1 |       5 |            992 |                    0/0 |     0.182 | In Pipeline 3       |
+| | | |                   +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | | +MultiNodeIndexSeek | cs:Science(name) WHERE name = $autostring_1, conway:Scientist(name) WHERE name = $autostring_2 |              0 |    1 |       4 |             72 |                    2/0 |     0.198 | In Pipeline 2       |
+| | |                     +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Filter               | wing:Scientist                                                                                 |              0 |    3 |       3 |                |                        |           | Fused in Pipeline 1 |
+| | |                     +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Expand(All)          | (cs)<-[anon_68:RESEARCHED]-(wing)                                                              |              0 |    3 |       4 |                |                        |           | Fused in Pipeline 1 |
+| | |                     +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +NodeIndexSeek        | cs:Science(name) WHERE name = $autostring_1                                                    |              0 |    1 |       2 |             72 |                        |           | Fused in Pipeline 1 |
+| |                       +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Filter                 | wing:Scientist                                                                                 |              0 |    1 |       1 |                |                        |           | Fused in Pipeline 0 |
+| |                       +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Expand(All)            | (liskov)-[anon_41:KNOWS]->(wing)                                                               |              0 |    1 |       3 |                |                        |           | Fused in Pipeline 0 |
+| |                       +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +NodeIndexSeek          | liskov:Scientist(name) WHERE name = $autostring_0                                              |              0 |    1 |       2 |             72 |                        |           | Fused in Pipeline 0 |
++-------------------------+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
-Total database accesses: 11, total allocated memory: 160
+Total database accesses: 27, total allocated memory: 2168
 
 ----
 
@@ -173,71 +271,81 @@ ifndef::nonhtmloutput[]
 <formalpara role="cypherconsole">
 <title>Try this query live</title>
 <para><database><![CDATA[
-FOREACH(i IN range(1, 100) |
-  CREATE (:Scientist {born: 1800 + i})-[:RESEARCHED]->(:Science)<-[:INVENTED_BY {year: 530 + (i % 50)}]-(:Pioneer {born: 500 + (i % 50)})-[:LIVES_IN]->(:City)-[:PART_OF]->(:Country {formed: 400 + i})
-)
-
-CREATE INDEX FOR (s:Scientist) ON (s.born)
-CREATE INDEX FOR (p:Pioneer) ON (p.born)
-CREATE INDEX FOR (c:Country) ON (c.formed)
-CREATE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.year)
+CREATE INDEX FOR (n:Scientist) ON (n.name)
+CREATE INDEX FOR (n:Science) ON (n.name)
 CALL db.awaitIndexes
+CREATE
+(liskov:Scientist {name: 'Liskov', born: 1939})-[:KNOWS]->(wing:Scientist {name: 'Wing', born: 1956})-[:RESEARCHED]->(cs:Science {name: 'Computer Science'})<-[:RESEARCHED]-(conway:Scientist {name: 'Conway', born: 1938}),
+(liskov)-[:RESEARCHED]->(cs),
+(wing)-[:RESEARCHED]->(:Science {name: 'Engineering'}),
+(chemistry:Science {name: 'Chemistry'})<-[:RESEARCHED]-(:Scientist {name: 'Curie', born: 1867}),
+(chemistry)<-[:RESEARCHED]-(:Scientist {name: 'Arden'}),
+(chemistry)<-[:RESEARCHED]-(:Scientist {name: 'Franklin'}),
+(chemistry)<-[:RESEARCHED]-(:Scientist {name: 'Harrison'})
+      
 
 ]]></database><command><![CDATA[
-MATCH (s:Scientist {born: 1850})-[:RESEARCHED]->(sc:Science)<-[i:INVENTED_BY {year: 560}]-(p:Pioneer {born: 525})-[:LIVES_IN]->(c:City)-[:PART_OF]->(cc:Country {formed: 411})
-USING INDEX p:Pioneer(born)
-RETURN *
+MATCH (liskov:Scientist {name:'Liskov'})-[:KNOWS]->(wing:Scientist)-[:RESEARCHED]->(cs:Science {name:'Computer Science'})<-[:RESEARCHED]-(conway:Scientist {name: 'Conway'}) USING INDEX liskov:Scientist(name) RETURN liskov.born AS column
 ]]></command></para></formalpara>
 ++++
 endif::nonhtmloutput[]
 
-=== Query using a relationship index hint
+=== Query using an index seek hint
 
-The query above can be tuned to pick a relationship index as the starting point.
+Similar to the index (scan) hint, but an index seek will be used rather than an index scan.
+Index seeks require no post filtering, they are most efficient when a relatively small number of nodes have the specified value on the queried property.
 
 
 .Query
 [source, cypher]
 ----
-MATCH (s:Scientist {born: 1850})-[:RESEARCHED]->(sc:Science)<-[i:INVENTED_BY {year: 560}]-(p:Pioneer {born: 525})-[:LIVES_IN]->(c:City)-[:PART_OF]->(cc:Country {formed: 411})
-USING INDEX i:INVENTED_BY(year)
-RETURN *
+MATCH (liskov:Scientist {name:'Liskov'})-[:KNOWS]->(wing:Scientist)-[:RESEARCHED]->(cs:Science {name:'Computer Science'})<-[:RESEARCHED]-(conway:Scientist {name: 'Conway'}) USING INDEX SEEK liskov:Scientist(name) RETURN liskov.born AS column
 ----
+
+Returns the year *'Barbara Liskov'* was born.
 
 .Query plan
 [source]
 ----
-Compiler CYPHER 4.3
+Compiler CYPHER 4.2
 
 Planner COST
 
 Runtime PIPELINED
 
-Runtime version 4.3
+Runtime version 4.2
 
-+--------------------------------+---------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator                       | Details                                                 | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Other               |
-+--------------------------------+---------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults                | c, cc, i, p, s, sc                                      |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |                              +---------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Filter                        | cc.formed = $autoint_3 AND cc:Country                   |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |                              +---------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Expand(All)                   | (c)-[anon_2:PART_OF]->(cc)                              |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |                              +---------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Filter                        | c:City                                                  |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |                              +---------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Expand(All)                   | (p)-[anon_1:LIVES_IN]->(c)                              |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |                              +---------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Filter                        | s.born = $autoint_0 AND s:Scientist                     |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |                              +---------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Expand(All)                   | (sc)<-[anon_0:RESEARCHED]-(s)                           |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |                              +---------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Filter                        | p.born = $autoint_2 AND sc:Science AND p:Pioneer        |              0 |    0 |       4 |                |                        |           | Fused in Pipeline 0 |
-| |                              +---------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +DirectedRelationshipIndexSeek | (p)-[i:INVENTED_BY(year)]->(sc) WHERE year = $autoint_1 |              2 |    2 |       5 |             72 |                    5/1 |     0.517 | Fused in Pipeline 0 |
-+--------------------------------+---------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++-------------------------+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                | Details                                                                                        | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Other               |
++-------------------------+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults         | column                                                                                         |              0 |    1 |       0 |                |                    0/0 |     0.050 | In Pipeline 5       |
+| |                       +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Projection             | liskov.born AS column                                                                          |              0 |    1 |       3 |                |                    1/0 |     0.105 | In Pipeline 5       |
+| |                       +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +NodeHashJoin           | wing                                                                                           |              0 |    1 |       0 |            640 |                        |     0.044 | In Pipeline 5       |
+| |\                      +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Filter               | not anon_122 = anon_68                                                                         |              0 |    2 |       0 |                |                    0/0 |     0.041 | In Pipeline 4       |
+| | |                     +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +NodeHashJoin         | cs                                                                                             |              0 |    3 |       0 |            768 |                    0/0 |     0.113 | In Pipeline 4       |
+| | |\                    +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | | +Expand(Into)       | (cs)<-[anon_122:RESEARCHED]-(conway)                                                           |              0 |    1 |       5 |            992 |                    0/0 |     0.101 | In Pipeline 3       |
+| | | |                   +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | | +MultiNodeIndexSeek | cs:Science(name) WHERE name = $autostring_1, conway:Scientist(name) WHERE name = $autostring_2 |              0 |    1 |       4 |             72 |                    2/0 |     0.153 | In Pipeline 2       |
+| | |                     +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Filter               | wing:Scientist                                                                                 |              0 |    3 |       3 |                |                        |           | Fused in Pipeline 1 |
+| | |                     +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Expand(All)          | (cs)<-[anon_68:RESEARCHED]-(wing)                                                              |              0 |    3 |       4 |                |                        |           | Fused in Pipeline 1 |
+| | |                     +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +NodeIndexSeek        | cs:Science(name) WHERE name = $autostring_1                                                    |              0 |    1 |       2 |             72 |                        |           | Fused in Pipeline 1 |
+| |                       +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Filter                 | wing:Scientist                                                                                 |              0 |    1 |       1 |                |                        |           | Fused in Pipeline 0 |
+| |                       +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Expand(All)            | (liskov)-[anon_41:KNOWS]->(wing)                                                               |              0 |    1 |       3 |                |                        |           | Fused in Pipeline 0 |
+| |                       +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +NodeIndexSeek          | liskov:Scientist(name) WHERE name = $autostring_0                                              |              0 |    1 |       2 |             72 |                        |           | Fused in Pipeline 0 |
++-------------------------+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
-Total database accesses: 9, total allocated memory: 160
+Total database accesses: 27, total allocated memory: 2168
 
 ----
 
@@ -247,20 +355,21 @@ ifndef::nonhtmloutput[]
 <formalpara role="cypherconsole">
 <title>Try this query live</title>
 <para><database><![CDATA[
-FOREACH(i IN range(1, 100) |
-  CREATE (:Scientist {born: 1800 + i})-[:RESEARCHED]->(:Science)<-[:INVENTED_BY {year: 530 + (i % 50)}]-(:Pioneer {born: 500 + (i % 50)})-[:LIVES_IN]->(:City)-[:PART_OF]->(:Country {formed: 400 + i})
-)
-
-CREATE INDEX FOR (s:Scientist) ON (s.born)
-CREATE INDEX FOR (p:Pioneer) ON (p.born)
-CREATE INDEX FOR (c:Country) ON (c.formed)
-CREATE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.year)
+CREATE INDEX FOR (n:Scientist) ON (n.name)
+CREATE INDEX FOR (n:Science) ON (n.name)
 CALL db.awaitIndexes
+CREATE
+(liskov:Scientist {name: 'Liskov', born: 1939})-[:KNOWS]->(wing:Scientist {name: 'Wing', born: 1956})-[:RESEARCHED]->(cs:Science {name: 'Computer Science'})<-[:RESEARCHED]-(conway:Scientist {name: 'Conway', born: 1938}),
+(liskov)-[:RESEARCHED]->(cs),
+(wing)-[:RESEARCHED]->(:Science {name: 'Engineering'}),
+(chemistry:Science {name: 'Chemistry'})<-[:RESEARCHED]-(:Scientist {name: 'Curie', born: 1867}),
+(chemistry)<-[:RESEARCHED]-(:Scientist {name: 'Arden'}),
+(chemistry)<-[:RESEARCHED]-(:Scientist {name: 'Franklin'}),
+(chemistry)<-[:RESEARCHED]-(:Scientist {name: 'Harrison'})
+      
 
 ]]></database><command><![CDATA[
-MATCH (s:Scientist {born: 1850})-[:RESEARCHED]->(sc:Science)<-[i:INVENTED_BY {year: 560}]-(p:Pioneer {born: 525})-[:LIVES_IN]->(c:City)-[:PART_OF]->(cc:Country {formed: 411})
-USING INDEX i:INVENTED_BY(year)
-RETURN *
+MATCH (liskov:Scientist {name:'Liskov'})-[:KNOWS]->(wing:Scientist)-[:RESEARCHED]->(cs:Science {name:'Computer Science'})<-[:RESEARCHED]-(conway:Scientist {name: 'Conway'}) USING INDEX SEEK liskov:Scientist(name) RETURN liskov.born AS column
 ]]></command></para></formalpara>
 ++++
 endif::nonhtmloutput[]
@@ -269,56 +378,59 @@ endif::nonhtmloutput[]
 
 Supplying one index hint changed the starting point of the query, but the plan is still linear, meaning it
 only has one starting point. If we give the planner yet another index hint, we force it to use two starting points,
-one at each end of the match. It will then join these two branches using a join operator.
+one at each end of the match. It will then join these two branches using a join operator. 
 
 
 .Query
 [source, cypher]
 ----
-MATCH (s:Scientist {born: 1850})-[:RESEARCHED]->(sc:Science)<-[i:INVENTED_BY {year: 560}]-(p:Pioneer {born: 525})-[:LIVES_IN]->(c:City)-[:PART_OF]->(cc:Country {formed: 411})
-USING INDEX s:Scientist(born)
-USING INDEX cc:Country(formed)
-RETURN *
+MATCH (liskov:Scientist {name:'Liskov'})-[:KNOWS]->(wing:Scientist)-[:RESEARCHED]->(cs:Science {name:'Computer Science'})<-[:RESEARCHED]-(conway:Scientist {name: 'Conway'}) USING INDEX liskov:Scientist(name) USING INDEX conway:Scientist(name) RETURN liskov.born AS column
 ----
+
+Returns the year *'Barbara Liskov'* was born, using a slightly better plan.
 
 .Query plan
 [source]
 ----
-Compiler CYPHER 4.3
+Compiler CYPHER 4.2
 
 Planner COST
 
 Runtime PIPELINED
 
-Runtime version 4.3
+Runtime version 4.2
 
-+------------------+----------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator         | Details                                      | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Other               |
-+------------------+----------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults  | c, cc, i, p, s, sc                           |              0 |    0 |       0 |                |                    0/0 |     0.000 | In Pipeline 2       |
-| |                +----------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +NodeHashJoin    | sc                                           |              0 |    0 |       0 |            432 |                        |           | In Pipeline 2       |
-| |\               +----------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| | +Expand(All)   | (s)-[anon_0:RESEARCHED]->(sc)                |              1 |    0 |       0 |                |                        |           | Fused in Pipeline 1 |
-| | |              +----------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| | +NodeIndexSeek | s:Scientist(born) WHERE born = $autoint_0    |              1 |    0 |       0 |             72 |                    0/0 |     0.000 | Fused in Pipeline 1 |
-| |                +----------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +Filter          | i.year = $autoint_1 AND sc:Science           |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |                +----------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Expand(All)     | (p)-[i:INVENTED_BY]->(sc)                    |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |                +----------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Filter          | p.born = $autoint_2 AND p:Pioneer            |              0 |    0 |       2 |                |                        |           | Fused in Pipeline 0 |
-| |                +----------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Expand(All)     | (c)<-[anon_1:LIVES_IN]-(p)                   |              1 |    1 |       3 |                |                        |           | Fused in Pipeline 0 |
-| |                +----------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Filter          | c:City                                       |              1 |    1 |       1 |                |                        |           | Fused in Pipeline 0 |
-| |                +----------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Expand(All)     | (cc)<-[anon_2:PART_OF]-(c)                   |              1 |    1 |       2 |                |                        |           | Fused in Pipeline 0 |
-| |                +----------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +NodeIndexSeek   | cc:Country(formed) WHERE formed = $autoint_3 |              1 |    1 |       2 |             72 |                    7/0 |     0.553 | Fused in Pipeline 0 |
-+------------------+----------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++-------------------------+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                | Details                                                                                        | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Other               |
++-------------------------+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults         | column                                                                                         |              0 |    1 |       0 |                |                    0/0 |     0.050 | In Pipeline 5       |
+| |                       +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Projection             | liskov.born AS column                                                                          |              0 |    1 |       3 |                |                    1/0 |     0.051 | In Pipeline 5       |
+| |                       +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +NodeHashJoin           | wing                                                                                           |              0 |    1 |       0 |            640 |                        |     0.039 | In Pipeline 5       |
+| |\                      +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Filter               | not anon_122 = anon_68                                                                         |              0 |    2 |       0 |                |                    0/0 |     0.044 | In Pipeline 4       |
+| | |                     +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +NodeHashJoin         | cs                                                                                             |              0 |    3 |       0 |            768 |                    0/0 |     0.113 | In Pipeline 4       |
+| | |\                    +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | | +Expand(Into)       | (cs)<-[anon_122:RESEARCHED]-(conway)                                                           |              0 |    1 |       5 |            992 |                    0/0 |     0.252 | In Pipeline 3       |
+| | | |                   +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | | +MultiNodeIndexSeek | cs:Science(name) WHERE name = $autostring_1, conway:Scientist(name) WHERE name = $autostring_2 |              0 |    1 |       4 |             72 |                    2/0 |     0.181 | In Pipeline 2       |
+| | |                     +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Filter               | wing:Scientist                                                                                 |              0 |    3 |       3 |                |                        |           | Fused in Pipeline 1 |
+| | |                     +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Expand(All)          | (cs)<-[anon_68:RESEARCHED]-(wing)                                                              |              0 |    3 |       4 |                |                        |           | Fused in Pipeline 1 |
+| | |                     +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +NodeIndexSeek        | cs:Science(name) WHERE name = $autostring_1                                                    |              0 |    1 |       2 |             72 |                        |           | Fused in Pipeline 1 |
+| |                       +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Filter                 | wing:Scientist                                                                                 |              0 |    1 |       1 |                |                        |           | Fused in Pipeline 0 |
+| |                       +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Expand(All)            | (liskov)-[anon_41:KNOWS]->(wing)                                                               |              0 |    1 |       3 |                |                        |           | Fused in Pipeline 0 |
+| |                       +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +NodeIndexSeek          | liskov:Scientist(name) WHERE name = $autostring_0                                              |              0 |    1 |       2 |             72 |                        |           | Fused in Pipeline 0 |
++-------------------------+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
-Total database accesses: 10, total allocated memory: 672
+Total database accesses: 27, total allocated memory: 2168
 
 ----
 
@@ -328,21 +440,21 @@ ifndef::nonhtmloutput[]
 <formalpara role="cypherconsole">
 <title>Try this query live</title>
 <para><database><![CDATA[
-FOREACH(i IN range(1, 100) |
-  CREATE (:Scientist {born: 1800 + i})-[:RESEARCHED]->(:Science)<-[:INVENTED_BY {year: 530 + (i % 50)}]-(:Pioneer {born: 500 + (i % 50)})-[:LIVES_IN]->(:City)-[:PART_OF]->(:Country {formed: 400 + i})
-)
-
-CREATE INDEX FOR (s:Scientist) ON (s.born)
-CREATE INDEX FOR (p:Pioneer) ON (p.born)
-CREATE INDEX FOR (c:Country) ON (c.formed)
-CREATE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.year)
+CREATE INDEX FOR (n:Scientist) ON (n.name)
+CREATE INDEX FOR (n:Science) ON (n.name)
 CALL db.awaitIndexes
+CREATE
+(liskov:Scientist {name: 'Liskov', born: 1939})-[:KNOWS]->(wing:Scientist {name: 'Wing', born: 1956})-[:RESEARCHED]->(cs:Science {name: 'Computer Science'})<-[:RESEARCHED]-(conway:Scientist {name: 'Conway', born: 1938}),
+(liskov)-[:RESEARCHED]->(cs),
+(wing)-[:RESEARCHED]->(:Science {name: 'Engineering'}),
+(chemistry:Science {name: 'Chemistry'})<-[:RESEARCHED]-(:Scientist {name: 'Curie', born: 1867}),
+(chemistry)<-[:RESEARCHED]-(:Scientist {name: 'Arden'}),
+(chemistry)<-[:RESEARCHED]-(:Scientist {name: 'Franklin'}),
+(chemistry)<-[:RESEARCHED]-(:Scientist {name: 'Harrison'})
+      
 
 ]]></database><command><![CDATA[
-MATCH (s:Scientist {born: 1850})-[:RESEARCHED]->(sc:Science)<-[i:INVENTED_BY {year: 560}]-(p:Pioneer {born: 525})-[:LIVES_IN]->(c:City)-[:PART_OF]->(cc:Country {formed: 411})
-USING INDEX s:Scientist(born)
-USING INDEX cc:Country(formed)
-RETURN *
+MATCH (liskov:Scientist {name:'Liskov'})-[:KNOWS]->(wing:Scientist)-[:RESEARCHED]->(cs:Science {name:'Computer Science'})<-[:RESEARCHED]-(conway:Scientist {name: 'Conway'}) USING INDEX liskov:Scientist(name) USING INDEX conway:Scientist(name) RETURN liskov.born AS column
 ]]></command></para></formalpara>
 ++++
 endif::nonhtmloutput[]
@@ -350,61 +462,50 @@ endif::nonhtmloutput[]
 [[query-using-scan-hint]]
 == Scan hints
 
-If your query matches large parts of an index, it might be faster to scan the label or relationship type and filter out rows that do not match.
-To do this, you can use `USING SCAN variable:Label` after the applicable `MATCH` clause for node indexes,
-and `USING SCAN variable:RELATIONSHIP_TYPE` for relationship indexes.
-This will force Cypher to not use an index that could have been used, and instead do a label scan/relationship type scan.
-You can use the same hint to enforce a starting point where no index is applicable.
+If your query matches large parts of an index, it might be faster to scan the label and filter out nodes that do not match.
+To do this, you can use `USING SCAN variable:Label` after the applicable `MATCH` clause.
+This will force Cypher to not use an index that could have been used, and instead do a label scan.
 
 === Hinting a label scan
 
+If the best performance is to be had by scanning all nodes in a label and then filtering on that set, use `USING SCAN`.
+
 
 .Query
 [source, cypher]
 ----
-MATCH (s:Scientist {born: 1850})-[:RESEARCHED]->(sc:Science)<-[i:INVENTED_BY {year: 560}]-(p:Pioneer {born: 525})-[:LIVES_IN]->(c:City)-[:PART_OF]->(cc:Country {formed: 411})
+MATCH (s:Scientist)
 USING SCAN s:Scientist
-RETURN *
+WHERE s.born < 1939
+RETURN s.born AS column
 ----
+
+Returns all scientists born before *'1939'*.
 
 .Query plan
 [source]
 ----
-Compiler CYPHER 4.3
+Compiler CYPHER 4.2
 
 Planner COST
 
 Runtime PIPELINED
 
-Runtime version 4.3
+Runtime version 4.2
 
-+------------------+-----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator         | Details                                                   | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Other               |
-+------------------+-----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults  | c, cc, i, p, s, sc                                        |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |                +-----------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Filter          | cc.formed = $autoint_3 AND cc:Country                     |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |                +-----------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Expand(All)     | (c)-[anon_2:PART_OF]->(cc)                                |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |                +-----------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Filter          | c:City                                                    |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |                +-----------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Expand(All)     | (p)-[anon_1:LIVES_IN]->(c)                                |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |                +-----------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Filter          | i.year = $autoint_1 AND p.born = $autoint_2 AND p:Pioneer |              0 |    0 |       1 |                |                        |           | Fused in Pipeline 0 |
-| |                +-----------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Expand(All)     | (sc)<-[i:INVENTED_BY]-(p)                                 |              1 |    1 |       3 |                |                        |           | Fused in Pipeline 0 |
-| |                +-----------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Filter          | sc:Science                                                |              1 |    1 |       1 |                |                        |           | Fused in Pipeline 0 |
-| |                +-----------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Expand(All)     | (s)-[anon_0:RESEARCHED]->(sc)                             |              1 |    1 |       2 |                |                        |           | Fused in Pipeline 0 |
-| |                +-----------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Filter          | s.born = $autoint_0                                       |              1 |    1 |     200 |                |                        |           | Fused in Pipeline 0 |
-| |                +-----------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +NodeByLabelScan | s:Scientist                                               |            100 |  100 |     101 |             72 |                   10/0 |     0.988 | Fused in Pipeline 0 |
-+------------------+-----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++------------------+----------------------------+----------------+------+---------+----------------+---------------------+
+| Operator         | Details                    | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Other               |
++------------------+----------------------------+----------------+------+---------+----------------+---------------------+
+| +ProduceResults  | column                     |              3 |    2 |       0 |                | Fused in Pipeline 0 |
+| |                +----------------------------+----------------+------+---------+----------------+---------------------+
+| +Projection      | cache[s.born] AS column    |              3 |    2 |       0 |                | Fused in Pipeline 0 |
+| |                +----------------------------+----------------+------+---------+----------------+---------------------+
+| +Filter          | cache[s.born] < $autoint_0 |              3 |    2 |      18 |                | Fused in Pipeline 0 |
+| |                +----------------------------+----------------+------+---------+----------------+---------------------+
+| +NodeByLabelScan | s:Scientist                |             10 |    7 |       8 |             72 | Fused in Pipeline 0 |
++------------------+----------------------------+----------------+------+---------+----------------+---------------------+
 
-Total database accesses: 308, total allocated memory: 168
+Total database accesses: 26, total allocated memory: 72
 
 ----
 
@@ -414,92 +515,24 @@ ifndef::nonhtmloutput[]
 <formalpara role="cypherconsole">
 <title>Try this query live</title>
 <para><database><![CDATA[
-FOREACH(i IN range(1, 100) |
-  CREATE (:Scientist {born: 1800 + i})-[:RESEARCHED]->(:Science)<-[:INVENTED_BY {year: 530 + (i % 50)}]-(:Pioneer {born: 500 + (i % 50)})-[:LIVES_IN]->(:City)-[:PART_OF]->(:Country {formed: 400 + i})
-)
-
-CREATE INDEX FOR (s:Scientist) ON (s.born)
-CREATE INDEX FOR (p:Pioneer) ON (p.born)
-CREATE INDEX FOR (c:Country) ON (c.formed)
-CREATE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.year)
+CREATE INDEX FOR (n:Scientist) ON (n.name)
+CREATE INDEX FOR (n:Science) ON (n.name)
 CALL db.awaitIndexes
+CREATE
+(liskov:Scientist {name: 'Liskov', born: 1939})-[:KNOWS]->(wing:Scientist {name: 'Wing', born: 1956})-[:RESEARCHED]->(cs:Science {name: 'Computer Science'})<-[:RESEARCHED]-(conway:Scientist {name: 'Conway', born: 1938}),
+(liskov)-[:RESEARCHED]->(cs),
+(wing)-[:RESEARCHED]->(:Science {name: 'Engineering'}),
+(chemistry:Science {name: 'Chemistry'})<-[:RESEARCHED]-(:Scientist {name: 'Curie', born: 1867}),
+(chemistry)<-[:RESEARCHED]-(:Scientist {name: 'Arden'}),
+(chemistry)<-[:RESEARCHED]-(:Scientist {name: 'Franklin'}),
+(chemistry)<-[:RESEARCHED]-(:Scientist {name: 'Harrison'})
+      
 
 ]]></database><command><![CDATA[
-MATCH (s:Scientist {born: 1850})-[:RESEARCHED]->(sc:Science)<-[i:INVENTED_BY {year: 560}]-(p:Pioneer {born: 525})-[:LIVES_IN]->(c:City)-[:PART_OF]->(cc:Country {formed: 411})
+MATCH (s:Scientist)
 USING SCAN s:Scientist
-RETURN *
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-=== Hinting a relationship type scan
-
-
-.Query
-[source, cypher]
-----
-MATCH (s:Scientist {born: 1850})-[:RESEARCHED]->(sc:Science)<-[i:INVENTED_BY {year: 560}]-(p:Pioneer {born: 525})-[:LIVES_IN]->(c:City)-[:PART_OF]->(cc:Country {formed: 411})
-USING SCAN i:INVENTED_BY
-RETURN *
-----
-
-.Query plan
-[source]
-----
-Compiler CYPHER 4.3
-
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version 4.3
-
-+-------------------------------+--------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator                      | Details                                                                  | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Other               |
-+-------------------------------+--------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults               | c, cc, i, p, s, sc                                                       |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |                             +--------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Filter                       | cc.formed = $autoint_3 AND cc:Country                                    |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |                             +--------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Expand(All)                  | (c)-[anon_2:PART_OF]->(cc)                                               |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |                             +--------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Filter                       | c:City                                                                   |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |                             +--------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Expand(All)                  | (p)-[anon_1:LIVES_IN]->(c)                                               |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |                             +--------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Filter                       | s.born = $autoint_0 AND s:Scientist                                      |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |                             +--------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Expand(All)                  | (sc)<-[anon_0:RESEARCHED]-(s)                                            |              0 |    0 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |                             +--------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Filter                       | i.year = $autoint_1 AND p.born = $autoint_2 AND sc:Science AND p:Pioneer |              0 |    0 |     204 |                |                        |           | Fused in Pipeline 0 |
-| |                             +--------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +DirectedRelationshipTypeScan | (p)-[i:INVENTED_BY]->(sc)                                                |            100 |  100 |     201 |             72 |                   10/0 |     1.417 | Fused in Pipeline 0 |
-+-------------------------------+--------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-Total database accesses: 405, total allocated memory: 160
-
-----
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-FOREACH(i IN range(1, 100) |
-  CREATE (:Scientist {born: 1800 + i})-[:RESEARCHED]->(:Science)<-[:INVENTED_BY {year: 530 + (i % 50)}]-(:Pioneer {born: 500 + (i % 50)})-[:LIVES_IN]->(:City)-[:PART_OF]->(:Country {formed: 400 + i})
-)
-
-CREATE INDEX FOR (s:Scientist) ON (s.born)
-CREATE INDEX FOR (p:Pioneer) ON (p.born)
-CREATE INDEX FOR (c:Country) ON (c.formed)
-CREATE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.year)
-CALL db.awaitIndexes
-
-]]></database><command><![CDATA[
-MATCH (s:Scientist {born: 1850})-[:RESEARCHED]->(sc:Science)<-[i:INVENTED_BY {year: 560}]-(p:Pioneer {born: 525})-[:LIVES_IN]->(c:City)-[:PART_OF]->(cc:Country {formed: 411})
-USING SCAN i:INVENTED_BY
-RETURN *
+WHERE s.born < 1939
+RETURN s.born AS column
 ]]></command></para></formalpara>
 ++++
 endif::nonhtmloutput[]
@@ -517,60 +550,67 @@ the hint might force the planner to pick a _seemingly_ bad starting point, which
 
 === Hinting a join on a single node
 
-In the example above using multiple index hints, we saw that the planner chose to do a join, but not on the `p` node.
-By supplying a join hint in addition to the index hints, we can enforce the join to happen on the `p` node.
+In the example above using multiple index hints, we saw that the planner chose to do a join on the `cs` node.
+This means that the relationship between `wing` and `cs` was traversed in the outgoing direction, which is better
+statistically because the pattern `()-[:RESEARCHED]->(:Science)` is more common than the pattern `(:Scientist)-[:RESEARCHED]->()`.
+However, in the actual graph, the `cs` node only has two such relationships, so expanding from it will be beneficial
+to expanding from the `wing` node. We can force the join to happen on `wing` instead with a join hint.
 
 
 .Query
 [source, cypher]
 ----
-MATCH (s:Scientist {born: 1850})-[:RESEARCHED]->(sc:Science)<-[i:INVENTED_BY {year: 560}]-(p:Pioneer {born: 525})-[:LIVES_IN]->(c:City)-[:PART_OF]->(cc:Country {formed: 411})
-USING INDEX s:Scientist(born)
-USING INDEX cc:Country(formed)
-USING JOIN ON p
-RETURN *
+MATCH (liskov:Scientist {name:'Liskov'})-[:KNOWS]->(wing:Scientist)-[:RESEARCHED]->(cs:Science {name:'Computer Science'})<-[:RESEARCHED]-(conway:Scientist {name: 'Conway'})
+USING INDEX liskov:Scientist(name)
+USING INDEX conway:Scientist(name)
+USING JOIN ON wing
+RETURN wing.born AS column
 ----
+
+Returns the birth date of *'Jeanette Wing'*, using a slightly better plan.
 
 .Query plan
 [source]
 ----
-Compiler CYPHER 4.3
+Compiler CYPHER 4.2
 
 Planner COST
 
 Runtime PIPELINED
 
-Runtime version 4.3
+Runtime version 4.2
 
-+------------------+------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator         | Details                                                          | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Other               |
-+------------------+------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults  | c, cc, i, p, s, sc                                               |              0 |    0 |       0 |                |                    0/0 |     0.000 | In Pipeline 2       |
-| |                +------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +NodeHashJoin    | p                                                                |              0 |    0 |       0 |            432 |                        |           | In Pipeline 2       |
-| |\               +------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| | +Filter        | cache[p.born] = $autoint_2                                       |              1 |    0 |       0 |                |                        |           | Fused in Pipeline 1 |
-| | |              +------------------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| | +Expand(All)   | (c)<-[anon_1:LIVES_IN]-(p)                                       |              1 |    0 |       0 |                |                        |           | Fused in Pipeline 1 |
-| | |              +------------------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| | +Filter        | c:City                                                           |              1 |    0 |       0 |                |                        |           | Fused in Pipeline 1 |
-| | |              +------------------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| | +Expand(All)   | (cc)<-[anon_2:PART_OF]-(c)                                       |              1 |    0 |       0 |                |                        |           | Fused in Pipeline 1 |
-| | |              +------------------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| | +NodeIndexSeek | cc:Country(formed) WHERE formed = $autoint_3                     |              1 |    0 |       0 |             72 |                    0/0 |     0.000 | Fused in Pipeline 1 |
-| |                +------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +Filter          | i.year = $autoint_1 AND cache[p.born] = $autoint_2 AND p:Pioneer |              0 |    0 |       1 |                |                        |           | Fused in Pipeline 0 |
-| |                +------------------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Expand(All)     | (sc)<-[i:INVENTED_BY]-(p)                                        |              1 |    1 |       3 |                |                        |           | Fused in Pipeline 0 |
-| |                +------------------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Filter          | sc:Science                                                       |              1 |    1 |       1 |                |                        |           | Fused in Pipeline 0 |
-| |                +------------------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +Expand(All)     | (s)-[anon_0:RESEARCHED]->(sc)                                    |              1 |    1 |       2 |                |                        |           | Fused in Pipeline 0 |
-| |                +------------------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +NodeIndexSeek   | s:Scientist(born) WHERE born = $autoint_0                        |              1 |    1 |       2 |             72 |                    6/1 |     0.753 | Fused in Pipeline 0 |
-+------------------+------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++-------------------------+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                | Details                                                                                        | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Other               |
++-------------------------+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults         | column                                                                                         |              0 |    1 |       0 |                |                    0/0 |     0.051 | In Pipeline 5       |
+| |                       +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Projection             | wing.born AS column                                                                            |              0 |    1 |       3 |                |                    1/0 |     0.063 | In Pipeline 5       |
+| |                       +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +NodeHashJoin           | wing                                                                                           |              0 |    1 |       0 |            640 |                        |     0.045 | In Pipeline 5       |
+| |\                      +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Filter               | not anon_122 = anon_68                                                                         |              0 |    2 |       0 |                |                    0/0 |     0.044 | In Pipeline 4       |
+| | |                     +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +NodeHashJoin         | cs                                                                                             |              0 |    3 |       0 |            768 |                    0/0 |     0.071 | In Pipeline 4       |
+| | |\                    +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | | +Expand(Into)       | (cs)<-[anon_122:RESEARCHED]-(conway)                                                           |              0 |    1 |       5 |            992 |                    0/0 |     0.080 | In Pipeline 3       |
+| | | |                   +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | | +MultiNodeIndexSeek | cs:Science(name) WHERE name = $autostring_1, conway:Scientist(name) WHERE name = $autostring_2 |              0 |    1 |       4 |             72 |                    2/0 |     0.172 | In Pipeline 2       |
+| | |                     +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Filter               | wing:Scientist                                                                                 |              0 |    3 |       3 |                |                        |           | Fused in Pipeline 1 |
+| | |                     +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Expand(All)          | (cs)<-[anon_68:RESEARCHED]-(wing)                                                              |              0 |    3 |       4 |                |                        |           | Fused in Pipeline 1 |
+| | |                     +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +NodeIndexSeek        | cs:Science(name) WHERE name = $autostring_1                                                    |              0 |    1 |       2 |             72 |                        |           | Fused in Pipeline 1 |
+| |                       +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Filter                 | wing:Scientist                                                                                 |              0 |    1 |       1 |                |                        |           | Fused in Pipeline 0 |
+| |                       +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Expand(All)            | (liskov)-[anon_41:KNOWS]->(wing)                                                               |              0 |    1 |       3 |                |                        |           | Fused in Pipeline 0 |
+| |                       +------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +NodeIndexSeek          | liskov:Scientist(name) WHERE name = $autostring_0                                              |              0 |    1 |       2 |             72 |                        |           | Fused in Pipeline 0 |
++-------------------------+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
-Total database accesses: 9, total allocated memory: 672
+Total database accesses: 27, total allocated memory: 2168
 
 ----
 
@@ -580,64 +620,86 @@ ifndef::nonhtmloutput[]
 <formalpara role="cypherconsole">
 <title>Try this query live</title>
 <para><database><![CDATA[
-FOREACH(i IN range(1, 100) |
-  CREATE (:Scientist {born: 1800 + i})-[:RESEARCHED]->(:Science)<-[:INVENTED_BY {year: 530 + (i % 50)}]-(:Pioneer {born: 500 + (i % 50)})-[:LIVES_IN]->(:City)-[:PART_OF]->(:Country {formed: 400 + i})
-)
-
-CREATE INDEX FOR (s:Scientist) ON (s.born)
-CREATE INDEX FOR (p:Pioneer) ON (p.born)
-CREATE INDEX FOR (c:Country) ON (c.formed)
-CREATE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.year)
+CREATE INDEX FOR (n:Scientist) ON (n.name)
+CREATE INDEX FOR (n:Science) ON (n.name)
 CALL db.awaitIndexes
+CREATE
+(liskov:Scientist {name: 'Liskov', born: 1939})-[:KNOWS]->(wing:Scientist {name: 'Wing', born: 1956})-[:RESEARCHED]->(cs:Science {name: 'Computer Science'})<-[:RESEARCHED]-(conway:Scientist {name: 'Conway', born: 1938}),
+(liskov)-[:RESEARCHED]->(cs),
+(wing)-[:RESEARCHED]->(:Science {name: 'Engineering'}),
+(chemistry:Science {name: 'Chemistry'})<-[:RESEARCHED]-(:Scientist {name: 'Curie', born: 1867}),
+(chemistry)<-[:RESEARCHED]-(:Scientist {name: 'Arden'}),
+(chemistry)<-[:RESEARCHED]-(:Scientist {name: 'Franklin'}),
+(chemistry)<-[:RESEARCHED]-(:Scientist {name: 'Harrison'})
+      
 
 ]]></database><command><![CDATA[
-MATCH (s:Scientist {born: 1850})-[:RESEARCHED]->(sc:Science)<-[i:INVENTED_BY {year: 560}]-(p:Pioneer {born: 525})-[:LIVES_IN]->(c:City)-[:PART_OF]->(cc:Country {formed: 411})
-USING INDEX s:Scientist(born)
-USING INDEX cc:Country(formed)
-USING JOIN ON p
-RETURN *
+MATCH (liskov:Scientist {name:'Liskov'})-[:KNOWS]->(wing:Scientist)-[:RESEARCHED]->(cs:Science {name:'Computer Science'})<-[:RESEARCHED]-(conway:Scientist {name: 'Conway'})
+USING INDEX liskov:Scientist(name)
+USING INDEX conway:Scientist(name)
+USING JOIN ON wing
+RETURN wing.born AS column
 ]]></command></para></formalpara>
 ++++
 endif::nonhtmloutput[]
 
-=== Hinting a join for an OPTIONAL MATCH
+=== Hinting a join on multiple nodes
 
-A join hint can also be used to force the planner to pick a `NodeLeftOuterHashJoin` or `NodeRightOuterHashJoin` to solve an `OPTIONAL MATCH`.
-In most cases, the planner will rather use an `OptionalExpand`.
+The query planner can be made to produce a join between several specific points. This requires the query to expand from the same node from several directions.
 
 
 .Query
 [source, cypher]
 ----
-MATCH (s:Scientist {born: 1850})
-OPTIONAL MATCH (s)-[:RESEARCHED]->(sc:Science)
-RETURN *
+MATCH (liskov:Scientist {name:'Liskov'})-[:KNOWS]->(wing:Scientist {name:'Wing'})-[:RESEARCHED]->(cs:Science {name:'Computer Science'})<-[:RESEARCHED]-(liskov)
+USING INDEX liskov:Scientist(name)
+USING JOIN ON liskov, cs
+RETURN wing.born AS column
 ----
 
-Without any hint, the planner did not use a join to solve the `OPTIONAL MATCH`.
+Returns the birth date of *'Jeanette Wing'*.
 
 .Query plan
 [source]
 ----
-Compiler CYPHER 4.3
+Compiler CYPHER 4.2
 
 Planner COST
 
 Runtime PIPELINED
 
-Runtime version 4.3
+Runtime version 4.2
 
-+----------------------+------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator             | Details                                        | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Other               |
-+----------------------+------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults      | s, sc                                          |              1 |    1 |       0 |                |                        |           | Fused in Pipeline 0 |
-| |                    +------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +OptionalExpand(All) | (s)-[anon_0:RESEARCHED]->(sc) WHERE sc:Science |              1 |    1 |       3 |                |                        |           | Fused in Pipeline 0 |
-| |                    +------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| +NodeIndexSeek       | s:Scientist(born) WHERE born = $autoint_0      |              1 |    1 |       2 |             72 |                    6/0 |     0.630 | Fused in Pipeline 0 |
-+----------------------+------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++-----------------------+----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator              | Details                                                                                            | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Other               |
++-----------------------+----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults       | column                                                                                             |              0 |    1 |       0 |                |                    0/0 |     0.060 | In Pipeline 6       |
+| |                     +----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Projection           | wing.born AS column                                                                                |              0 |    1 |       3 |                |                    0/0 |     0.030 | In Pipeline 6       |
+| |                     +----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Filter               | not anon_136 = anon_82                                                                             |              0 |    1 |       0 |                |                    0/0 |     0.042 | In Pipeline 6       |
+| |                     +----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +NodeHashJoin         | cs, liskov                                                                                         |              0 |    1 |       0 |            720 |                    0/0 |     0.146 | In Pipeline 6       |
+| |\                    +----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +NodeHashJoin       | wing                                                                                               |              0 |    1 |       0 |            652 |                        |     0.080 | In Pipeline 5       |
+| | |\                  +----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | | +Filter           | cache[cs.name] = $autostring_2 AND cs:Science                                                      |              0 |    1 |       5 |                |                        |           | Fused in Pipeline 4 |
+| | | |                 +----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | | +Expand(All)      | (wing)-[anon_82:RESEARCHED]->(cs)                                                                  |              0 |    2 |       4 |                |                        |           | Fused in Pipeline 4 |
+| | | |                 +----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | | +NodeIndexSeek    | wing:Scientist(name) WHERE name = $autostring_1                                                    |              0 |    1 |       2 |             72 |                        |           | Fused in Pipeline 4 |
+| | |                   +----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Expand(Into)       | (liskov)-[anon_41:KNOWS]->(wing)                                                                   |              0 |    1 |       4 |            992 |                    0/0 |     0.089 | In Pipeline 3       |
+| | |                   +----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +MultiNodeIndexSeek | liskov:Scientist(name) WHERE name = $autostring_0, wing:Scientist(name) WHERE name = $autostring_1 |              0 |    1 |       4 |             72 |                    2/0 |     0.156 | In Pipeline 2       |
+| |                     +----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Expand(Into)         | (cs)<-[anon_136:RESEARCHED]-(liskov)                                                               |              0 |    1 |       5 |            992 |                    2/0 |     0.125 | In Pipeline 1       |
+| |                     +----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +MultiNodeIndexSeek   | cs:Science(name) WHERE name = $autostring_2, cache[cs.name],                                       |              0 |    1 |       4 |             72 |                    2/0 |     1.135 | In Pipeline 0       |
+|                       | liskov:Scientist(name) WHERE name = $autostring_0, cache[cs.name]                                  |                |      |         |                |                        |           |                     |
++-----------------------+----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
-Total database accesses: 5, total allocated memory: 136
+Total database accesses: 31, total allocated memory: 1956
 
 ----
 
@@ -647,86 +709,24 @@ ifndef::nonhtmloutput[]
 <formalpara role="cypherconsole">
 <title>Try this query live</title>
 <para><database><![CDATA[
-FOREACH(i IN range(1, 100) |
-  CREATE (:Scientist {born: 1800 + i})-[:RESEARCHED]->(:Science)<-[:INVENTED_BY {year: 530 + (i % 50)}]-(:Pioneer {born: 500 + (i % 50)})-[:LIVES_IN]->(:City)-[:PART_OF]->(:Country {formed: 400 + i})
-)
-
-CREATE INDEX FOR (s:Scientist) ON (s.born)
-CREATE INDEX FOR (p:Pioneer) ON (p.born)
-CREATE INDEX FOR (c:Country) ON (c.formed)
-CREATE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.year)
+CREATE INDEX FOR (n:Scientist) ON (n.name)
+CREATE INDEX FOR (n:Science) ON (n.name)
 CALL db.awaitIndexes
+CREATE
+(liskov:Scientist {name: 'Liskov', born: 1939})-[:KNOWS]->(wing:Scientist {name: 'Wing', born: 1956})-[:RESEARCHED]->(cs:Science {name: 'Computer Science'})<-[:RESEARCHED]-(conway:Scientist {name: 'Conway', born: 1938}),
+(liskov)-[:RESEARCHED]->(cs),
+(wing)-[:RESEARCHED]->(:Science {name: 'Engineering'}),
+(chemistry:Science {name: 'Chemistry'})<-[:RESEARCHED]-(:Scientist {name: 'Curie', born: 1867}),
+(chemistry)<-[:RESEARCHED]-(:Scientist {name: 'Arden'}),
+(chemistry)<-[:RESEARCHED]-(:Scientist {name: 'Franklin'}),
+(chemistry)<-[:RESEARCHED]-(:Scientist {name: 'Harrison'})
+      
 
 ]]></database><command><![CDATA[
-MATCH (s:Scientist {born: 1850})
-OPTIONAL MATCH (s)-[:RESEARCHED]->(sc:Science)
-RETURN *
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-
-.Query
-[source, cypher]
-----
-MATCH (s:Scientist {born: 1850})
-OPTIONAL MATCH (s)-[:RESEARCHED]->(sc:Science)
-USING JOIN ON s
-RETURN *
-----
-
-Now the planner uses a join to solve the `OPTIONAL MATCH`.
-
-.Query plan
-[source]
-----
-Compiler CYPHER 4.3
-
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version 4.3
-
-+------------------------+-------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator               | Details                                   | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Other               |
-+------------------------+-------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults        | s, sc                                     |              1 |    1 |       0 |                |                    2/0 |     0.123 | In Pipeline 2       |
-| |                      +-------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +NodeLeftOuterHashJoin | s                                         |              1 |    1 |       0 |           3096 |                        |     7.145 | In Pipeline 2       |
-| |\                     +-------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| | +Expand(All)         | (sc)<-[anon_0:RESEARCHED]-(s)             |            100 |  100 |     300 |                |                        |           | Fused in Pipeline 1 |
-| | |                    +-------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
-| | +NodeByLabelScan     | sc:Science                                |            100 |  100 |     101 |             72 |                    4/0 |     0.812 | Fused in Pipeline 1 |
-| |                      +-------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +NodeIndexSeek         | s:Scientist(born) WHERE born = $autoint_0 |              1 |    1 |       2 |             72 |                    1/0 |     0.926 | In Pipeline 0       |
-+------------------------+-------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-Total database accesses: 403, total allocated memory: 3176
-
-----
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-FOREACH(i IN range(1, 100) |
-  CREATE (:Scientist {born: 1800 + i})-[:RESEARCHED]->(:Science)<-[:INVENTED_BY {year: 530 + (i % 50)}]-(:Pioneer {born: 500 + (i % 50)})-[:LIVES_IN]->(:City)-[:PART_OF]->(:Country {formed: 400 + i})
-)
-
-CREATE INDEX FOR (s:Scientist) ON (s.born)
-CREATE INDEX FOR (p:Pioneer) ON (p.born)
-CREATE INDEX FOR (c:Country) ON (c.formed)
-CREATE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.year)
-CALL db.awaitIndexes
-
-]]></database><command><![CDATA[
-MATCH (s:Scientist {born: 1850})
-OPTIONAL MATCH (s)-[:RESEARCHED]->(sc:Science)
-USING JOIN ON s
-RETURN *
+MATCH (liskov:Scientist {name:'Liskov'})-[:KNOWS]->(wing:Scientist {name:'Wing'})-[:RESEARCHED]->(cs:Science {name:'Computer Science'})<-[:RESEARCHED]-(liskov)
+USING INDEX liskov:Scientist(name)
+USING JOIN ON liskov, cs
+RETURN wing.born AS column
 ]]></command></para></formalpara>
 ++++
 endif::nonhtmloutput[]

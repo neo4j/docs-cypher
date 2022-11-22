@@ -1,0 +1,1396 @@
+[[administration-security-users-and-roles]]
+= User and role management
+:description: This section explains how to use Cypher to manage Neo4j role-based access control through users and roles. 
+
+
+* xref:administration/security/users-and-roles.adoc#administration-security-users[User Management]
+** xref:administration/security/users-and-roles.adoc#administration-security-users-show-current[Listing current user]
+** xref:administration/security/users-and-roles.adoc#administration-security-users-show[Listing users]
+** xref:administration/security/users-and-roles.adoc#administration-security-users-create[Creating users]
+** xref:administration/security/users-and-roles.adoc#administration-security-users-alter[Modifying users]
+** xref:administration/security/users-and-roles.adoc#administration-security-users-alter-password[Changing the current user's password]
+** xref:administration/security/users-and-roles.adoc#administration-security-users-drop[Deleting users]
+* xref:administration/security/users-and-roles.adoc#administration-security-roles[Role management]
+** xref:administration/security/users-and-roles.adoc#administration-security-roles-public[The `PUBLIC` role]
+** xref:administration/security/users-and-roles.adoc#administration-security-roles-show[Listing roles]
+** xref:administration/security/users-and-roles.adoc#administration-security-roles-create[Creating roles]
+** xref:administration/security/users-and-roles.adoc#administration-security-roles-drop[Deleting roles]
+** xref:administration/security/users-and-roles.adoc#administration-security-roles-grant[Assigning roles]
+** xref:administration/security/users-and-roles.adoc#administration-security-roles-revoke[Revoking roles]
+
+
+[[administration-security-users]]
+== User Management
+
+Users can be created and managed using a set of Cypher administration commands executed against the `system` database.
+
+When connected to the DBMS over bolt, administration commands are automatically routed to the `system` database.
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/security/user-management-syntax.asciidoc[]
+// tag::include-neo4j-documentation[]
+.User management command syntax
+[options="header", width="100%", cols="5a,3,2,^,^."]
+|===
+| Command | Description | Required privilege | Community Edition | Enterprise Edition
+
+| [source, cypher, role=noplay]
+----
+SHOW CURRENT USER
+    [YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+    [WHERE expression]
+    [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+----
+| List the current user.
+
+When using the `RETURN` clause, the `YIELD` clause is mandatory and may not be omitted.
+| None
+| `+`
+| `+`
+
+| [source, cypher, role=noplay]
+----
+SHOW USERS
+    [YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+    [WHERE expression]
+    [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+----
+| List all users.
+
+When using the `RETURN` clause, the `YIELD` clause is mandatory and may not be omitted.
+| xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-user-management[SHOW USER]
+| `+`
+| `+`
+
+| [source, cypher, role=noplay]
+----
+SHOW USER[S] [name[, ...]] PRIVILEGE[S] [AS [REVOKE] COMMAND[S]]
+    [YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+    [WHERE expression]
+    [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+----
+| List the privileges granted to the specified users or the current user, if no user is specified.
+
+When using the `RETURN` clause, the `YIELD` clause is mandatory and may not be omitted.
+| xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-privilege-management[SHOW PRIVILEGE] and
+xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-user-management[SHOW USER]
+| `-`
+| `+`
+
+| [source, cypher, role=noplay]
+----
+CREATE USER name [IF NOT EXISTS]
+  SET [PLAINTEXT \| ENCRYPTED] PASSWORD 'password'
+  [[SET PASSWORD] CHANGE [NOT] REQUIRED]
+  [SET STATUS {ACTIVE \| SUSPENDED}]
+----
+| Create a new user.
+| xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-user-management[CREATE USER]
+| `+`
+| `+`
+
+| [source, cypher, role=noplay]
+----
+CREATE OR REPLACE USER name
+  SET [PLAINTEXT \| ENCRYPTED] PASSWORD 'password'
+  [[SET PASSWORD] CHANGE [NOT] REQUIRED]
+  [SET STATUS {ACTIVE \| SUSPENDED}]
+----
+| Create a new user, or if a user with the same name exists, replace it.
+| xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-user-management[CREATE USER] and
+xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-user-management[DROP USER]
+| `+`
+| `+`
+
+| [source, cypher, role=noplay]
+----
+ALTER USER name SET {
+[PLAINTEXT \| ENCRYPTED] PASSWORD 'password'
+            [[SET PASSWORD] CHANGE [NOT] REQUIRED]
+            [SET STATUS {ACTIVE \| SUSPENDED} ] \|
+PASSWORD CHANGE [NOT] REQUIRED
+            [SET STATUS {ACTIVE \| SUSPENDED}] \|
+STATUS {ACTIVE \| SUSPENDED}
+}
+----
+| Modify the settings for an existing user.
+| xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-user-management[SET PASSWORD] and/or
+xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-user-management[SET USER STATUS]
+| `+`
+| `+`
+
+| [source, cypher, role=noplay]
+----
+ALTER CURRENT USER SET PASSWORD FROM 'oldPassword' TO 'newPassword'
+----
+| Change the current user's password.
+| None
+| `+`
+| `+`
+
+|
+[source, cypher, role=noplay]
+----
+DROP USER name [IF EXISTS]
+----
+| Remove an existing user.
+| xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-user-management[DROP USER]
+| `+`
+| `+`
+|===
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/security/user-management-syntax.asciidoc[]
+
+[[administration-security-users-show-current]]
+=== Listing current user
+
+The currently logged-in user can be seen using `SHOW CURRENT USER` which will produce a table with four columns:
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/security/list-users-table-columns.asciidoc[]
+// tag::include-neo4j-documentation[]
+.List users output
+[options="header", width="100%", cols="1a,4,^.^,^"]
+|===
+| Column
+| Description
+| Community Edition
+| Enterprise Edition
+
+| user
+| User name
+| `+`
+| `+`
+
+| roles
+| Roles granted to the user.
+| `-`
+| `+`
+
+| passwordChangeRequired
+| If `true`, the user must change their password at the next login.
+| `+`
+| `+`
+
+| suspended
+| If `true`, the user is currently suspended (cannot log in).
+| `-`
+|`+`
+|===
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/security/list-users-table-columns.asciidoc[]
+
+
+.Query
+[source, cypher]
+----
+SHOW CURRENT USER
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="4*<m"]
+|===
+| +user+ | +roles+ | +passwordChangeRequired+ | +suspended+
+| +"jake"+ | +["PUBLIC"]+ | +false+ | +false+
+4+d|Rows: 1
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+SHOW CURRENT USER
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[NOTE]
+====
+This command is only supported for a logged-in user and will return an empty result if authorization has been disabled.
+
+
+====
+
+[[administration-security-users-show]]
+=== Listing users
+
+Available users can be seen using `SHOW USERS` which will produce a table of users with four columns:
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/security/list-users-table-columns.asciidoc[]
+// tag::include-neo4j-documentation[]
+.List users output
+[options="header", width="100%", cols="1a,4,^.^,^"]
+|===
+| Column
+| Description
+| Community Edition
+| Enterprise Edition
+
+| user
+| User name
+| `+`
+| `+`
+
+| roles
+| Roles granted to the user.
+| `-`
+| `+`
+
+| passwordChangeRequired
+| If `true`, the user must change their password at the next login.
+| `+`
+| `+`
+
+| suspended
+| If `true`, the user is currently suspended (cannot log in).
+| `-`
+|`+`
+|===
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/security/list-users-table-columns.asciidoc[]
+
+
+.Query
+[source, cypher]
+----
+SHOW USERS
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="4*<m"]
+|===
+| +user+ | +roles+ | +passwordChangeRequired+ | +suspended+
+| +"neo4j"+ | +["admin","PUBLIC"]+ | +true+ | +false+
+4+d|Rows: 1
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+SHOW USERS
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+When first starting a Neo4j DBMS, there is always a single default user `neo4j` with administrative privileges.
+It is possible to set the initial password using link:{neo4j-docs-base-uri}/operations-manual/{page-version}/configuration/set-initial-password[neo4j-admin set-initial-password],
+otherwise it is necessary to change the password after first login.
+
+
+[NOTE]
+====
+The `SHOW USER name PRIVILEGES` command is described in xref:administration/security/subgraph.adoc#administration-security-subgraph-show[Listing privileges].
+
+
+====
+
+[[administration-security-users-create]]
+=== Creating users
+
+Users can be created using `CREATE USER`.
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/security/user-management-syntax-create-user.asciidoc[]
+// tag::include-neo4j-documentation[]
+.Command syntax
+[source, cypher, role=noplay]
+-----
+CREATE [OR REPLACE] USER name [IF NOT EXISTS]
+      SET [PLAINTEXT | ENCRYPTED] PASSWORD 'password'
+      [[SET PASSWORD] CHANGE [NOT] REQUIRED]
+      [SET STATUS {ACTIVE | SUSPENDED}]
+-----
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/security/user-management-syntax-create-user.asciidoc[]
+
+If the optional `SET PASSWORD CHANGE [NOT] REQUIRED` is omitted then the default is `CHANGE REQUIRED`. The default for `SET STATUS` is `ACTIVE`. The `password` can either be a string value or a string parameter. The optional `PLAINTEXT` in `SET PLAINTEXT PASSWORD` has the same behaviour as `SET PASSWORD`. The optional `ENCRYPTED` can be used to create a user when the plaintext password is unknown but the encrypted password is available (e.g. from a database backup). With `ENCRYPTED`, the password string is expected to be on the format `<encryption-version>,<hash>,<salt>`.
+
+For example, we can create the user `jake` in a suspended state and the requirement to change his password.
+
+
+.Query
+[source, cypher]
+----
+CREATE USER jake SET PASSWORD 'abc' CHANGE REQUIRED SET STATUS SUSPENDED
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 1
+
+[NOTE]
+====
+[enterprise-edition]#The `SET STATUS {ACTIVE | SUSPENDED}` part of the command is only available in Enterprise Edition.#
+
+
+====
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+CREATE USER jake SET PASSWORD 'abc' CHANGE REQUIRED SET STATUS SUSPENDED
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+The created user will appear on the list provided by `SHOW USERS`.
+
+
+.Query
+[source, cypher]
+----
+SHOW USERS YIELD user, suspended, passwordChangeRequired, roles WHERE user = 'jake'
+----
+
+In this example we also:
+
+* Reorder the columns using a `YIELD` clause
+* Filter the results using a `WHERE` clause to show only the new user
+
+
+.Result
+[role="queryresult",options="header,footer",cols="4*<m"]
+|===
+| +user+ | +suspended+ | +passwordChangeRequired+ | +roles+
+| +"jake"+ | +true+ | +true+ | +["PUBLIC"]+
+4+d|Rows: 1
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+SHOW USERS YIELD user, suspended, passwordChangeRequired, roles WHERE user = 'jake'
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+
+.Query
+[source, cypher]
+----
+SHOW USERS YIELD roles, user WHERE "PUBLIC" IN roles RETURN user as publicUsers
+----
+
+It is also possible to add a `RETURN` clause to further manipulate the results after filtering. In this
+case it is used to filter out the roles column and rename the users column to `publicUsers`.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +publicUsers+
+| +"jake"+
+| +"neo4j"+
+1+d|Rows: 2
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+SHOW USERS YIELD roles, user WHERE "PUBLIC" IN roles RETURN user as publicUsers
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[NOTE]
+====
+In Neo4j Community Edition there are no roles, but all users have implied administrator privileges.
+In Neo4j Enterprise Edition all users are automatically assigned the xref:administration/security/users-and-roles.adoc#administration-security-roles-public[`PUBLIC`] role, giving them a base set of privileges.
+
+
+====
+
+The `CREATE USER` command is optionally idempotent, with the default behavior to throw an exception if the user already exists. Appending `IF NOT EXISTS` to the command will ensure that no exception is thrown and nothing happens should the user already exist. Adding `OR REPLACE` to the command will result in any existing user being deleted and a new one created.
+
+
+.Query
+[source, cypher]
+----
+CREATE USER jake IF NOT EXISTS SET PASSWORD 'xyz'
+----
+
+[role="statsonlyqueryresult"]
+0 rows
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+CREATE USER jake IF NOT EXISTS SET PASSWORD 'xyz'
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+
+.Query
+[source, cypher]
+----
+CREATE OR REPLACE USER jake SET PLAINTEXT PASSWORD 'xyz'
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 2
+
+This is equivalent to running `DROP USER jake IF EXISTS` followed by `CREATE USER jake SET PASSWORD 'xyz'`.
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+CREATE OR REPLACE USER jake SET PLAINTEXT PASSWORD 'xyz'
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[NOTE]
+====
+The `IF NOT EXISTS` and `OR REPLACE` parts of this command cannot be used together.
+
+
+====
+
+[[administration-security-users-alter]]
+=== Modifying users
+
+Users can be modified using `ALTER USER`.
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/security/user-management-syntax-alter-user.asciidoc[]
+// tag::include-neo4j-documentation[]
+.Command syntax
+[source, cypher, role=noplay]
+-----
+ALTER USER name SET {
+      [PLAINTEXT | ENCRYPTED] PASSWORD 'password'
+            [[SET PASSWORD] CHANGE [NOT] REQUIRED]
+            [SET STATUS {ACTIVE | SUSPENDED} ] |
+      PASSWORD CHANGE [NOT] REQUIRED
+            [SET STATUS {ACTIVE | SUSPENDED}] |
+      STATUS {ACTIVE | SUSPENDED}
+}
+-----
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/security/user-management-syntax-alter-user.asciidoc[]
+
+The `password` can either be a string value or a string parameter, and must not be identical to the old password. The optional `PLAINTEXT` in `SET PLAINTEXT PASSWORD` has the same behaviour as `SET PASSWORD`. The optional `ENCRYPTED` can be used to update a user's password when the plaintext password is unknown but the encrypted password is available (e.g. from a database backup). With `ENCRYPTED`, the password string is expected to be on the format `<encryption-version>,<hash>,<salt>`.
+
+For example, we can modify the user `jake` with a new password and active status as well as remove the requirement to change his password.
+
+
+.Query
+[source, cypher]
+----
+ALTER USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 1
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+ALTER USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[NOTE]
+====
+When altering a user it is only necessary to specify the changes required.
+For example, leaving out the `CHANGE [NOT] REQUIRED` part of the query will leave that unchanged.
+
+
+====
+
+[NOTE]
+====
+[enterprise-edition]#The `SET STATUS {ACTIVE | SUSPENDED}` part of the command is only available in Enterprise Edition.#
+
+
+====
+
+The changes to the user will appear on the list provided by `SHOW USERS`.
+
+
+.Query
+[source, cypher]
+----
+SHOW USERS
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="4*<m"]
+|===
+| +user+ | +roles+ | +passwordChangeRequired+ | +suspended+
+| +"jake"+ | +["PUBLIC"]+ | +false+ | +false+
+| +"neo4j"+ | +["admin","PUBLIC"]+ | +true+ | +false+
+4+d|Rows: 2
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+SHOW USERS
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[[administration-security-users-alter-password]]
+=== Changing the current user's password
+
+Users can change their own password using `ALTER CURRENT USER SET PASSWORD`.
+The old password is required in addition to the new one, and either or both can be a string value or a string parameter.
+When a user executes this command it will change their password as well as set the `CHANGE NOT REQUIRED` flag.
+
+
+.Query
+[source, cypher]
+----
+ALTER CURRENT USER SET PASSWORD FROM 'abc123' TO '123xyz'
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 1
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+ALTER CURRENT USER SET PASSWORD FROM 'abc123' TO '123xyz'
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[NOTE]
+====
+This command only works for a logged in user and cannot be run with auth disabled.
+
+
+====
+
+[[administration-security-users-drop]]
+=== Deleting users
+
+Users can be deleted using `DROP USER`.
+
+
+.Query
+[source, cypher]
+----
+DROP USER jake
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 1
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+DROP USER jake
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[NOTE]
+====
+Deleting a user will not automatically terminate associated connections, sessions, transactions, or queries.
+
+
+====
+
+When a user has been deleted, it will no longer appear on the list provided by `SHOW USERS`.
+
+
+.Query
+[source, cypher]
+----
+SHOW USERS
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="4*<m"]
+|===
+| +user+ | +roles+ | +passwordChangeRequired+ | +suspended+
+| +"neo4j"+ | +["admin","PUBLIC"]+ | +true+ | +false+
+4+d|Rows: 1
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+SHOW USERS
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+This command is optionally idempotent, with the default behavior to throw an exception if the user does not exists. Appending `IF EXISTS` to the command will ensure that no exception is thrown and nothing happens should the user not exist.
+
+
+.Query
+[source, cypher]
+----
+DROP USER jake IF EXISTS
+----
+
+[role="statsonlyqueryresult"]
+0 rows
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+DROP USER jake IF EXISTS
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[role=enterprise-edition]
+[[administration-security-roles]]
+== Role Management
+
+Roles can be created and managed using a set of Cypher administration commands executed against the `system` database.
+
+When connected to the DBMS over bolt, administration commands are automatically routed to the `system` database.
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/security/role-management-syntax.asciidoc[]
+// tag::include-neo4j-documentation[]
+.Role management command syntax
+[options="header", width="100%", cols="3a,2,2"]
+|===
+| Command | Description | Required privilege
+
+| [source, cypher, role=noplay]
+----
+SHOW [ALL\|POPULATED] ROLES
+    [YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+    [WHERE expression]
+    [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+----
+| List roles.
+
+When using the `RETURN` clause, the `YIELD` clause is mandatory and may not be omitted.
+| xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-role-management[SHOW ROLE]
+
+| [source, cypher, role=noplay]
+----
+SHOW [ALL\|POPULATED] ROLES WITH USERS
+    [YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+    [WHERE expression]
+    [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+----
+| List roles and users assigned to them.
+
+When using the `RETURN` clause, the `YIELD` clause is mandatory and may not be omitted.
+| xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-role-management[SHOW ROLE] and
+xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-user-management[SHOW USER]
+
+| [source, cypher, role=noplay]
+----
+SHOW ROLE[S] name[, ...] PRIVILEGE[S] [AS [REVOKE] COMMAND[S]]
+    [YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+    [WHERE expression]
+    [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+----
+| List the privileges granted to the specified roles.
+
+When using the `RETURN` clause, the `YIELD` clause is mandatory and may not be omitted.
+| xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-privilege-management[SHOW PRIVILEGE]
+
+| [source, cypher, role=noplay]
+----
+CREATE ROLE name [IF NOT EXISTS] [AS COPY OF name]
+----
+| Create a new role.
+| xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-role-management[CREATE ROLE]
+
+| [source, cypher, role=noplay]
+----
+CREATE OR REPLACE ROLE name [AS COPY OF name]
+----
+| Create a new role, or if a role with the same name exists, replace it.
+| xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-role-management[CREATE ROLE] and
+xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-role-management[DROP ROLE]
+
+| [source, cypher, role=noplay]
+----
+DROP ROLE name [IF EXISTS]
+----
+| Remove a role.
+| xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-role-management[DROP ROLE]
+
+| [source, cypher, role=noplay]
+----
+GRANT ROLE[S] name[, ...] TO user[, ...]
+----
+| Assign roles to users.
+| xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-role-management[ASSIGN ROLE]
+
+| [source, cypher, role=noplay]
+----
+REVOKE ROLE[S] name[, ...] FROM user[, ...]
+----
+| Remove roles from users.
+| xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-role-management[REMOVE ROLE]
+|===
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/security/role-management-syntax.asciidoc[]
+
+[role=enterprise-edition]
+[[administration-security-roles-public]]
+=== The `PUBLIC` role
+
+There exists a special built-in role, `PUBLIC`, which is assigned to all users.
+This role cannot be dropped or revoked from any user, but its privileges may be modified.
+By default, it is assigned the xref:administration/security/administration.adoc#administration-security-administration-database-access[ACCESS] privilege on the default database and
+the xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-execute[EXECUTE] privilege for both procedures and functions.
+
+
+In contrast to the `PUBLIC` role, the other built-in roles can be granted, revoked, dropped and re-created.
+
+[role=enterprise-edition]
+[[administration-security-roles-show]]
+=== Listing roles
+
+Available roles can be seen using `SHOW ROLES`.
+
+
+.Query
+[source, cypher]
+----
+SHOW ROLES
+----
+
+This is the same command as `SHOW ALL ROLES`.
+When first starting a Neo4j DBMS there are a number of built-in roles:
+
+* `PUBLIC` - a role that all users have granted, and by default, it gives access to the default database and execute privileges for procedures and functions.
+* `reader` - can perform traverse and read operations on all databases except `system`.
+* `editor` - can perform traverse, read, and write operations on all databases except `system`, but cannot make new labels or relationship types.
+* `publisher` - can do the same as `editor`, but also create new labels and relationship types.
+* `architect` - can do the same as `publisher` as well as create and manage indexes and constraints.
+* `admin` - can do the same as all the above, as well as manage databases, users, roles, and privileges.
+
+More information about the built-in roles can be found in link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/built-in-roles[Operations Manual -> Built-in roles]
+
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +role+
+| +"PUBLIC"+
+| +"admin"+
+| +"architect"+
+| +"editor"+
+| +"publisher"+
+| +"reader"+
+1+d|Rows: 6
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+SHOW ROLES
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+There are multiple versions of this command, the default being `SHOW ALL ROLES`. To only show roles that are assigned to users, the command is `SHOW POPULATED ROLES`. To see which users are assigned to roles `WITH USERS` can be appended to the commands. This will give one result row for each user, so if a role is assigned to two users then it will show up twice in the result. 
+
+
+.Query
+[source, cypher]
+----
+SHOW POPULATED ROLES WITH USERS
+----
+
+The table of results will show information about the role and what database it belongs to. 
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +role+ | +member+
+| +"PUBLIC"+ | +"neo4j"+
+| +"PUBLIC"+ | +"jake"+
+| +"PUBLIC"+ | +"user1"+
+| +"PUBLIC"+ | +"user2"+
+| +"PUBLIC"+ | +"user3"+
+| +"admin"+ | +"neo4j"+
+2+d|Rows: 6
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+SHOW POPULATED ROLES WITH USERS
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+It is also possible to filter and sort the results by using `YIELD`, `ORDER BY` and `WHERE`.
+
+
+.Query
+[source, cypher]
+----
+SHOW ROLES YIELD role ORDER BY role WHERE role ENDS WITH 'r' 
+----
+
+In this example:
+
+* The results have been filtered to only return the roles ending in 'r'.
+* The results are ordered by the 'action' column using `ORDER BY`.
+
+It is also possible to use `SKIP` and `LIMIT` to paginate the results.
+
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +role+
+| +"editor"+
+| +"publisher"+
+| +"reader"+
+1+d|Rows: 3
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+SHOW ROLES YIELD role ORDER BY role WHERE role ENDS WITH 'r' 
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[NOTE]
+====
+The `SHOW ROLE name PRIVILEGES` command is found in xref:administration/security/subgraph.adoc#administration-security-subgraph-show[Listing privileges].
+
+
+====
+
+[role=enterprise-edition]
+[[administration-security-roles-create]]
+=== Creating roles
+
+Roles can be created using `CREATE ROLE`.
+
+
+.Query
+[source, cypher]
+----
+CREATE ROLE myrole
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 1
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+CREATE ROLE myrole
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[NOTE]
+====
+The following naming rules apply:
+
+
+* The first character must be an ASCII alphabetic character.
+* Subsequent characters can be ASCII alphabetic, numeric characters, and underscore.
+          
+
+
+====
+
+A role can also be copied, keeping its privileges, using `CREATE ROLE AS COPY OF`.
+
+
+.Query
+[source, cypher]
+----
+CREATE ROLE mysecondrole AS COPY OF myrole
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 1
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+CREATE ROLE mysecondrole AS COPY OF myrole
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+The created roles will appear on the list provided by `SHOW ROLES`.
+
+
+.Query
+[source, cypher]
+----
+SHOW ROLES
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +role+
+| +"PUBLIC"+
+| +"admin"+
+| +"architect"+
+| +"editor"+
+| +"myrole"+
+| +"mysecondrole"+
+| +"publisher"+
+| +"reader"+
+1+d|Rows: 8
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+SHOW ROLES
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+These command versions are optionally idempotent, with the default behavior to throw an exception if the role already exists. Appending `IF NOT EXISTS` to the command will ensure that no exception is thrown and nothing happens should the role already exist. Adding `OR REPLACE` to the command will result in any existing role being deleted and a new one created.
+
+
+.Query
+[source, cypher]
+----
+CREATE ROLE myrole IF NOT EXISTS
+----
+
+[role="statsonlyqueryresult"]
+0 rows
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+CREATE ROLE myrole IF NOT EXISTS
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+
+.Query
+[source, cypher]
+----
+CREATE OR REPLACE ROLE myrole
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 2
+
+This is equivalent to running `DROP ROLE myrole IF EXISTS` followed by `CREATE ROLE myrole`.
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+CREATE OR REPLACE ROLE myrole
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[NOTE]
+====
+The `IF NOT EXISTS` and `OR REPLACE` parts of this command cannot be used together.
+
+
+====
+
+[role=enterprise-edition]
+[[administration-security-roles-drop]]
+=== Deleting roles
+
+Roles can be deleted using `DROP ROLE` command.
+
+
+.Query
+[source, cypher]
+----
+DROP ROLE mysecondrole
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 1
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+DROP ROLE mysecondrole
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+When a role has been deleted, it will no longer appear on the list provided by `SHOW ROLES`.
+
+
+.Query
+[source, cypher]
+----
+SHOW ROLES
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +role+
+| +"PUBLIC"+
+| +"admin"+
+| +"architect"+
+| +"editor"+
+| +"publisher"+
+| +"reader"+
+1+d|Rows: 6
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+SHOW ROLES
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+This command is optionally idempotent, with the default behavior to throw an exception if the role does not exists. Appending `IF EXISTS` to the command will ensure that no exception is thrown and nothing happens should the role not exist.
+
+
+.Query
+[source, cypher]
+----
+DROP ROLE mysecondrole IF EXISTS
+----
+
+[role="statsonlyqueryresult"]
+0 rows
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+DROP ROLE mysecondrole IF EXISTS
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[role=enterprise-edition]
+[[administration-security-roles-grant]]
+=== Assigning roles to users
+
+Users can be given access rights by assigning them roles using `GRANT ROLE`.
+
+
+.Query
+[source, cypher]
+----
+GRANT ROLE myrole TO jake
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 1
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+GRANT ROLE myrole TO jake
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+The roles assigned to each user can be seen in the list provided by `SHOW USERS`.
+
+
+.Query
+[source, cypher]
+----
+SHOW USERS
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="4*<m"]
+|===
+| +user+ | +roles+ | +passwordChangeRequired+ | +suspended+
+| +"jake"+ | +["myrole","PUBLIC"]+ | +false+ | +false+
+| +"neo4j"+ | +["admin","PUBLIC"]+ | +true+ | +false+
+| +"user1"+ | +["PUBLIC"]+ | +true+ | +false+
+| +"user2"+ | +["PUBLIC"]+ | +true+ | +false+
+| +"user3"+ | +["PUBLIC"]+ | +true+ | +false+
+4+d|Rows: 5
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+SHOW USERS
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+It is possible to assign multiple roles to multiple users in one command.
+
+
+.Query
+[source, cypher]
+----
+GRANT ROLES role1, role2 TO user1, user2, user3
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 6
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+GRANT ROLES role1, role2 TO user1, user2, user3
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+
+.Query
+[source, cypher]
+----
+SHOW USERS
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="4*<m"]
+|===
+| +user+ | +roles+ | +passwordChangeRequired+ | +suspended+
+| +"jake"+ | +["myrole","PUBLIC"]+ | +false+ | +false+
+| +"neo4j"+ | +["admin","PUBLIC"]+ | +true+ | +false+
+| +"user1"+ | +["role1","role2","PUBLIC"]+ | +true+ | +false+
+| +"user2"+ | +["role1","role2","PUBLIC"]+ | +true+ | +false+
+| +"user3"+ | +["role1","role2","PUBLIC"]+ | +true+ | +false+
+4+d|Rows: 5
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+SHOW USERS
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[role=enterprise-edition]
+[[administration-security-roles-revoke]]
+=== Revoking roles from users
+
+Users can lose access rights by revoking roles from them using `REVOKE ROLE`.
+
+
+.Query
+[source, cypher]
+----
+REVOKE ROLE myrole FROM jake
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 1
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+REVOKE ROLE myrole FROM jake
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+The roles revoked from users can no longer be seen in the list provided by `SHOW USERS`.
+
+
+.Query
+[source, cypher]
+----
+SHOW USERS
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="4*<m"]
+|===
+| +user+ | +roles+ | +passwordChangeRequired+ | +suspended+
+| +"jake"+ | +["PUBLIC"]+ | +false+ | +false+
+| +"neo4j"+ | +["admin","PUBLIC"]+ | +true+ | +false+
+| +"user1"+ | +["role1","role2","PUBLIC"]+ | +true+ | +false+
+| +"user2"+ | +["role1","role2","PUBLIC"]+ | +true+ | +false+
+| +"user3"+ | +["role1","role2","PUBLIC"]+ | +true+ | +false+
+4+d|Rows: 5
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+SHOW USERS
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+It is possible to revoke multiple roles from multiple users in one command.
+
+
+.Query
+[source, cypher]
+----
+REVOKE ROLES role1, role2 FROM user1, user2, user3
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 6
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+REVOKE ROLES role1, role2 FROM user1, user2, user3
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+

@@ -1,0 +1,713 @@
+[[administration-indexes-search-performance]]
+= Indexes for search performance
+:description: This section explains how to manage indexes used for search performance. 
+
+* xref:administration/indexes-for-search-performance.adoc#administration-indexes-introduction[Introduction]
+* xref:administration/indexes-for-search-performance.adoc#administration-indexes-syntax[Syntax]
+* xref:administration/indexes-for-search-performance.adoc#administration-indexes-single-vs-composite-index[Composite index limitations]
+* xref:administration/indexes-for-search-performance.adoc#administration-indexes-examples[Examples]
+** xref:administration/indexes-for-search-performance.adoc#administration-indexes-create-a-single-property-index[Create a single-property index]
+** xref:administration/indexes-for-search-performance.adoc#administration-indexes-create-a-single-property-index-only-if-it-does-not-already-exist[Create a single-property index only if it does not already exist]
+** xref:administration/indexes-for-search-performance.adoc#administration-indexes-create-a-single-property-index-with-specified-index-provider[Create a single-property index with specified index provider]
+** xref:administration/indexes-for-search-performance.adoc#administration-indexes-create-a-single-property-index-with-specified-index-configuration[Create a single-property index with specified index configuration]
+** xref:administration/indexes-for-search-performance.adoc#administration-indexes-create-a-composite-index[Create a composite index]
+** xref:administration/indexes-for-search-performance.adoc#administration-indexes-create-a-composite-index-with-specified-index-provider-and-configuration[Create a composite index with specified index provider and configuration]
+** xref:administration/indexes-for-search-performance.adoc#administration-indexes-drop-an-index[Drop an index]
+** xref:administration/indexes-for-search-performance.adoc#administration-indexes-drop-a-non-existing-index[Drop a non-existing index]
+** xref:administration/indexes-for-search-performance.adoc#administration-indexes-list-indexes[List indexes]
+** xref:administration/indexes-for-search-performance.adoc#administration-indexes-examples-deprecated-syntax[Deprecated syntax]
+
+This section describes how to manage indexes.
+For query performance purposes, it is important to also understand how the indexes are used by the Cypher planner.
+Refer to xref:query-tuning/index.adoc[] for examples and in-depth discussions on how query plans result from different index and query scenarios.
+See specifically xref:query-tuning/indexes.adoc[The use of indexes] for examples of how various index scenarios result in different query plans.
+
+For information on index configuration and limitations, refer to link:{neo4j-docs-base-uri}/operations-manual/{page-version}/performance-configuration[Operations Manual -> Index configuration].
+
+
+[[administration-indexes-introduction]]
+== Introduction
+
+A database index is a redundant copy of some of the data in the database for the purpose of making searches of related data more efficient.
+This comes at the cost of additional storage space and slower writes, so deciding what to index and what not to index is an important and often non-trivial task.
+
+Once an index has been created, it will be managed and kept up to date by the DBMS.
+Neo4j will automatically pick up and start using the index once it has been created and brought online.
+
+Cypher enables the creation of indexes on one or more properties for all nodes that have a given label:
+
+* An index that is created on a single property for any given label is called a _single-property index_.
+* An index that is created on more than one property for any given label is called a _composite index_.
+
+Differences in the usage patterns between composite and single-property indexes are described in xref:administration/indexes-for-search-performance.adoc#administration-indexes-single-vs-composite-index[].
+
+The following is true for indexes:
+
+* Best practice is to give the index a name when it is created.
+If the index is not explicitly named, it will get an auto-generated name.
+* The index name must be unique among both indexes and constraints.
+* Index creation is by default not idempotent, and an error will be thrown if you attempt to create the same index twice.
+Using the keyword `IF NOT EXISTS` makes the command idempotent, and no error will be thrown if you attempt to create the same index twice.
+
+
+[[administration-indexes-syntax]]
+== Syntax
+
+.Syntax for managing indexes
+[options="header", width="100%", cols="5a,3, 3a"]
+|===
+| Command | Description | Comment
+
+| [source, cypher, role=noplay]
+----
+CREATE [BTREE] INDEX [index_name] [IF NOT EXISTS]
+FOR (n:LabelName)
+ON (n.propertyName)
+[OPTIONS "{" option: value[, ...] "}"]
+----
+| Create a single-property index.
+.2+.^| Best practice is to give the index a name when it is created.
+If the index is not explicitly named, it will get an auto-generated name.
+
+The index name must be unique among both indexes and constraints.
+
+The command is optionally idempotent, with the default behavior to throw an error if you attempt to create the same index twice.
+With `IF NOT EXISTS`, no error is thrown and nothing happens should an index with the same name, schema or both already exist.
+It may still throw an error if conflicting constraints exist, such as constraints with the same name or schema.
+
+Index provider and configuration can be specified using the `OPTIONS` clause.
+
+| [source, cypher, role=noplay]
+----
+CREATE [BTREE] INDEX [index_name] [IF NOT EXISTS]
+FOR (n:LabelName)
+ON (n.propertyName_1,
+    n.propertyName_2,
+    …
+    n.propertyName_n)
+[OPTIONS "{" option: value[, ...] "}"]
+----
+| Create a composite index.
+
+| [source, cypher, role=noplay]
+----
+DROP INDEX index_name [IF EXISTS]
+----
+| Drop an index
+| The command is optionally idempotent, with the default behavior to throw an error if you attempt to drop the same index twice.
+With `IF EXISTS`, no error is thrown and nothing happens should the index not exist.
+
+| [source, cypher, role=noplay]
+----
+SHOW [ALL\|BTREE] INDEX[ES] [BRIEF\|VERBOSE [OUTPUT]]
+----
+| List indexes in the database, either all or B-tree only.
+|
+
+| [source, cypher, role=noplay]
+----
+DROP INDEX ON :LabelName(propertyName)
+----
+| Drop a single-property index without specifying a name.
+.2+.^| [deprecated]#This syntax is deprecated.#
+
+| [source, cypher, role=noplay]
+----
+DROP INDEX ON :LabelName (n.propertyName_1,
+n.propertyName_2,
+…
+n.propertyName_n)
+----
+| Drop a composite index without specifying a name.
+|===
+
+Creating an index requires xref:administration/security/administration.adoc#administration-security-administration-database-indexes[the `CREATE INDEX` privilege],
+while dropping an index requires xref:administration/security/administration.adoc#administration-security-administration-database-indexes[the `DROP INDEX` privilege] and
+listing indexes require xref:administration/security/administration.adoc#administration-security-administration-database-indexes[the `SHOW INDEX` privilege].
+
+xref:query-tuning/using.adoc[Planner hints and the USING keyword] describes how to make the Cypher planner use specific indexes (especially in cases where the planner would not necessarily have used them).
+
+
+[[administration-indexes-single-vs-composite-index]]
+== Composite index limitations
+
+Like single-property indexes, composite indexes support all predicates:
+
+* equality check: `n.prop = value`
+* list membership check: `n.prop IN list`
+* existence check: `exists(n.prop)`
+* range search: `n.prop > value`
+* prefix search: `STARTS WITH`
+* suffix search: `ENDS WITH`
+* substring search: `CONTAINS`
+
+[NOTE]
+====
+For details about each operator, see xref:syntax/operators.adoc[Operators].
+====
+
+However, predicates might be planned as existence check and a filter.
+For most predicates, this can be avoided by following these restrictions:
+
+* If there is any `equality check` and `list membership check` predicates,
+they need to be for the first properties defined by the index.
+* There can be up to one `range search` or `prefix search` predicate.
+* There can be any number of `existence check` predicates.
+* Any predicate after a `range search`, `prefix search` or `existence check` predicate has to be an `existence check` predicate.
+
+However, the `suffix search` and `substring search` predicates are always planned as existence check and a filter and
+any predicates following after will therefore also be planned as such.
+
+For example, an index on `:Label(prop1,prop2,prop3,prop4,prop5,prop6)` and predicates:
+
+```
+WHERE n.prop1 = 'x' AND n.prop2 = 1 AND n.prop3 > 5 AND n.prop4 < 'e' AND n.prop5 = true AND exists(n.prop6)
+```
+
+will be planned as:
+
+```
+WHERE n.prop1 = 'x' AND n.prop2 = 1 AND n.prop3 > 5 AND exists(n.prop4) AND exists(n.prop5) AND exists(n.prop6)
+```
+
+with filters on `n.prop4 < 'e'` and `n.prop5 = true`, since `n.prop3` has a `range search` predicate.
+
+And an index on `:Label(prop1,prop2)` with predicates:
+
+```
+WHERE n.prop1 ENDS WITH 'x' AND n.prop2 = false
+```
+
+will be planned as:
+
+```
+WHERE exists(n.prop1) AND exists(n.prop2)
+```
+
+with filters on `n.prop1 ENDS WITH 'x'` and `n.prop2 = false`, since `n.prop1` has a `suffix search` predicate.
+
+Composite indexes require predicates on all properties indexed.
+If there are predicates on only a subset of the indexed properties, it will not be possible to use the composite index.
+To get this kind of fallback behavior, it is necessary to create additional indexes on the relevant sub-set of properties or on single properties.
+
+
+[[administration-indexes-examples]]
+== Examples
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/create-a-single-property-index.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[administration-indexes-create-a-single-property-index]]
+== Create a single-property index ==
+A named index on a single property for all nodes that have a particular label can be created with `CREATE INDEX index_name FOR (n:Label) ON (n.property)`. Note that the index is not immediately available, but will be created in the background.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-create-a-single-property-index.query.asciidoc[]
+[source,cypher]
+----
+CREATE INDEX index_name FOR (n:Person) ON (n.surname)
+----
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-create-a-single-property-index.query.asciidoc[]
+// end::query[]
+
+
+Note that the index name needs to be unique. 
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-create-a-single-property-index.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes added: 1
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-create-a-single-property-index.result.asciidoc[]
+// end::result[]
+
+
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/create-a-single-property-index.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/create-a-single-property-index-only-if-it-does-not-already-exist.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[administration-indexes-create-a-single-property-index-only-if-it-does-not-already-exist]]
+== Create a single-property index only if it does not already exist ==
+If it is unknown if an index exists or not but we want to make sure it does, we add `IF NOT EXISTS`.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-create-a-single-property-index-only-if-it-does-not-already-exist.query.asciidoc[]
+[source,cypher]
+----
+CREATE INDEX index_name IF NOT EXISTS FOR (n:Person) ON (n.surname)
+----
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-create-a-single-property-index-only-if-it-does-not-already-exist.query.asciidoc[]
+// end::query[]
+
+
+Note that the index will not be created if there already exists an index with the same name, same schema or both.
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-create-a-single-property-index-only-if-it-does-not-already-exist.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++--------------------------------------------+
+| No data returned, and nothing was changed. |
++--------------------------------------------+
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-create-a-single-property-index-only-if-it-does-not-already-exist.result.asciidoc[]
+// end::result[]
+
+
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/create-a-single-property-index-only-if-it-does-not-already-exist.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/create-a-single-property-index-with-specified-index-provider.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[administration-indexes-create-a-single-property-index-with-specified-index-provider]]
+== Create a single-property index with specified index provider ==
+To create a single property index with a specific index provider, the `OPTIONS` clause is used.
+Valid values for the index provider is `native-btree-1.0` and `lucene+native-3.0`, default if nothing is specified is `native-btree-1.0`.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-create-a-single-property-index-with-specified-index-provider.query.asciidoc[]
+[source,cypher]
+----
+CREATE BTREE INDEX index_with_provider FOR (n:Label) ON (n.prop1) OPTIONS {indexProvider:
+  'native-btree-1.0'}
+----
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-create-a-single-property-index-with-specified-index-provider.query.asciidoc[]
+// end::query[]
+
+
+Can be combined with specifying index configuration.
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-create-a-single-property-index-with-specified-index-provider.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes added: 1
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-create-a-single-property-index-with-specified-index-provider.result.asciidoc[]
+// end::result[]
+
+
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/create-a-single-property-index-with-specified-index-provider.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/create-a-single-property-index-with-specified-index-configuration.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[administration-indexes-create-a-single-property-index-with-specified-index-configuration]]
+== Create a single-property index with specified index configuration ==
+To create a single property index with a specific index configuration, the `OPTIONS` clause is used.
+Valid configuration settings are `spatial.cartesian.min`, `spatial.cartesian.max`, `spatial.cartesian-3d.min`, `spatial.cartesian-3d.max`,
+`spatial.wgs-84.min`, `spatial.wgs-84.max`, `spatial.wgs-84-3d.min`, and `spatial.wgs-84-3d.max`.
+Non-specified settings get their respective default values.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-create-a-single-property-index-with-specified-index-configuration.query.asciidoc[]
+[source,cypher]
+----
+CREATE BTREE INDEX index_with_config FOR (n:Label) ON (n.prop2)
+OPTIONS {indexConfig: {`spatial.cartesian.min`: [-100.0, -100.0], `spatial.cartesian.max`: [100.0,
+  100.0]}}
+----
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-create-a-single-property-index-with-specified-index-configuration.query.asciidoc[]
+// end::query[]
+
+
+Can be combined with specifying index provider.
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-create-a-single-property-index-with-specified-index-configuration.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes added: 1
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-create-a-single-property-index-with-specified-index-configuration.result.asciidoc[]
+// end::result[]
+
+
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/create-a-single-property-index-with-specified-index-configuration.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/create-a-composite-index.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[administration-indexes-create-a-composite-index]]
+== Create a composite index ==
+A named index on multiple properties for all nodes that have a particular label -- i.e. a composite index -- can be created with `CREATE INDEX index_name FOR (n:Label) ON (n.prop1, ..., n.propN)`. Only nodes labeled with the specified label and which contain all the properties in the index definition will be added to the index. Note that the composite index is not immediately available, but will be created in the background. The following statement will create a named composite index on all nodes labeled with `Person` and which have both an `age` and `country` property: 
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-create-a-composite-index.query.asciidoc[]
+[source,cypher]
+----
+CREATE INDEX index_name FOR (n:Person) ON (n.age, n.country)
+----
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-create-a-composite-index.query.asciidoc[]
+// end::query[]
+
+
+Note that the index name needs to be unique. 
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-create-a-composite-index.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes added: 1
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-create-a-composite-index.result.asciidoc[]
+// end::result[]
+
+
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/create-a-composite-index.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/create-a-composite-index-with-specified-index-provider-and-configuration.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[administration-indexes-create-a-composite-index-with-specified-index-provider-and-configuration]]
+== Create a composite index with specified index provider and configuration ==
+To create a composite index with a specific index provider and configuration, the `OPTIONS` clause is used.
+Valid values for the index provider is `native-btree-1.0` and `lucene+native-3.0`, default if nothing is specified is `native-btree-1.0`.
+Valid configuration settings are `spatial.cartesian.min`, `spatial.cartesian.max`, `spatial.cartesian-3d.min`, `spatial.cartesian-3d.max`,
+`spatial.wgs-84.min`, `spatial.wgs-84.max`, `spatial.wgs-84-3d.min`, and `spatial.wgs-84-3d.max`.
+Non-specified settings get their respective default values.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-create-a-composite-index-with-specified-index-provider-and-configuration.query.asciidoc[]
+[source,cypher]
+----
+CREATE INDEX index_with_options FOR (n:Label) ON (n.prop1, n.prop2)
+OPTIONS {
+ indexProvider: 'lucene+native-3.0',
+ indexConfig: {`spatial.wgs-84.min`: [-100.0, -80.0], `spatial.wgs-84.max`: [100.0, 80.0]}
+}
+----
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-create-a-composite-index-with-specified-index-provider-and-configuration.query.asciidoc[]
+// end::query[]
+
+
+Specifying index provider and configuration can be done individually.
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-create-a-composite-index-with-specified-index-provider-and-configuration.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes added: 1
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-create-a-composite-index-with-specified-index-provider-and-configuration.result.asciidoc[]
+// end::result[]
+
+
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/create-a-composite-index-with-specified-index-provider-and-configuration.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/drop-an-index.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[administration-indexes-drop-an-index]]
+== Drop an index ==
+An index on all nodes that have a label and property/properties combination can be dropped using the name with the `DROP INDEX index_name` command.
+The name of the index can be found using the xref:administration/indexes-for-search-performance.adoc#administration-indexes-list-indexes[`SHOW INDEXES` command], given in the output column `name`.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-drop-an-index.query.asciidoc[]
+[source,cypher]
+----
+DROP INDEX index_name
+----
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-drop-an-index.query.asciidoc[]
+// end::query[]
+
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-drop-an-index.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes removed: 1
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-drop-an-index.result.asciidoc[]
+// end::result[]
+
+
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/drop-an-index.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/drop-a-non-existing-index.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[administration-indexes-drop-a-non-existing-index]]
+== Drop a non-existing index ==
+If it is uncertain if an index exists and you want to drop it if it does but not get an error should it not, use: 
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-drop-a-non-existing-index.query.asciidoc[]
+[source,cypher]
+----
+DROP INDEX missing_index_name IF EXISTS
+----
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-drop-a-non-existing-index.query.asciidoc[]
+// end::query[]
+
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-drop-a-non-existing-index.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++--------------------------------------------+
+| No data returned, and nothing was changed. |
++--------------------------------------------+
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-drop-a-non-existing-index.result.asciidoc[]
+// end::result[]
+
+
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/drop-a-non-existing-index.asciidoc[]
+
+[[administration-indexes-list-indexes]]
+=== List indexes
+
+Listing indexes can be done with `SHOW INDEXES`, which will produce a table with the following columns:
+
+.List indexes output
+[options="header", width="100%", cols="1a,4,^.^,^"]
+|===
+| Column
+| Description
+| Brief output
+| Verbose output
+
+| `id`
+| The id of the index.
+| `+`
+| `+`
+
+| `name`
+| Name of the index (explicitly set by the user or automatically assigned).
+| `+`
+| `+`
+
+| `state`
+| Current state of the index.
+| `+`
+| `+`
+
+| `populationPercent`
+| % of index population.
+| `+`
+| `+`
+
+| `uniqueness`
+| Tells if the index is only meant to allow one value per key.
+| `+`
+| `+`
+
+| `type`
+| The IndexType of this index (`BTREE` or `FULLTEXT`).
+| `+`
+| `+`
+
+| `entityType`
+| Type of entities this index represents (nodes or relationship).
+| `+`
+| `+`
+
+| `labelsOrTypes`
+| The labels or relationship types of this index.
+| `+`
+| `+`
+
+| `properties`
+| The properties of this index.
+| `+`
+| `+`
+
+| `indexProvider`
+| The index provider for this index.
+| `+`
+| `+`
+
+| `options`
+| The options passed to `CREATE` command.
+|
+| `+`
+
+| `failureMessage`
+| The failure description of a failed index.
+|
+| `+`
+
+| `createStatement`
+| Statement used to create the index.
+|
+| `+`
+|===
+
+[NOTE]
+The deprecated built-in procedures for listing indexes, such as `db.indexes`, work as before and are not affected by the xref:administration/security/administration.adoc#administration-security-administration-database-indexes[`SHOW INDEXES` privilege].
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/example-of-listing-indexes.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[administration-indexes-example-of-listing-indexes]]
+== Example of listing indexes ==
+
+To list all indexes with the brief output columns, the `SHOW INDEXES` command can be used.
+If all columns are wanted, use `SHOW INDEXES VERBOSE`.
+Filtering the output on index type is available for `BTREE` indexes, using `SHOW BTREE INDEXES`.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-example-of-listing-indexes.query.asciidoc[]
+[source,cypher]
+----
+SHOW INDEXES
+----
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-example-of-listing-indexes.query.asciidoc[]
+// end::query[]
+
+
+One of the output columns from `SHOW INDEXES` is the name of the index.
+This can be used to drop the index with the xref:administration/indexes-for-search-performance.adoc#administration-indexes-drop-an-index[`DROP INDEX` command].
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-example-of-listing-indexes.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++------------------------------------------------------------------------------------------------------------------------------------------------+
+| id | name             | state    | populationPercent | uniqueness  | type    | entityType | labelsOrTypes | properties    | indexProvider      |
++------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2  | "index_58a1c03e" | "ONLINE" | 100.0             | "NONUNIQUE" | "BTREE" | "NODE"     | ["Person"]    | ["location"]  | "native-btree-1.0" |
+| 3  | "index_d7c12ba3" | "ONLINE" | 100.0             | "NONUNIQUE" | "BTREE" | "NODE"     | ["Person"]    | ["highScore"] | "native-btree-1.0" |
+| 1  | "index_deeafdb2" | "ONLINE" | 100.0             | "NONUNIQUE" | "BTREE" | "NODE"     | ["Person"]    | ["firstname"] | "native-btree-1.0" |
++------------------------------------------------------------------------------------------------------------------------------------------------+
+3 rows
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-example-of-listing-indexes.result.asciidoc[]
+// end::result[]
+
+
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/example-of-listing-indexes.asciidoc[]
+
+[role=deprecated]
+[[administration-indexes-examples-deprecated-syntax]]
+=== Deprecated syntax
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/drop-a-single-property-index.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[administration-indexes-drop-a-single-property-index]]
+== Drop a single-property index ==
+An index on all nodes that have a label and single property combination can be dropped with `DROP INDEX ON :Label(property)`.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-drop-a-single-property-index.query.asciidoc[]
+[source,cypher]
+----
+DROP INDEX ON :Person(firstname)
+----
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-drop-a-single-property-index.query.asciidoc[]
+// end::query[]
+
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-drop-a-single-property-index.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes removed: 1
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-drop-a-single-property-index.result.asciidoc[]
+// end::result[]
+
+
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/drop-a-single-property-index.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/drop-a-composite-index.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[administration-indexes-drop-a-composite-index]]
+== Drop a composite index ==
+A composite index on all nodes that have a label and multiple property combination can be dropped with `DROP INDEX ON :Label(prop1, ..., propN)`. The following statement will drop a composite index on all nodes labeled with `Person` and which have both an `age` and `country` property: 
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-drop-a-composite-index.query.asciidoc[]
+[source,cypher]
+----
+DROP INDEX ON :Person(age, country)
+----
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-drop-a-composite-index.query.asciidoc[]
+// end::query[]
+
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-drop-a-composite-index.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Indexes removed: 1
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/includes/administration-indexes-drop-a-composite-index.result.asciidoc[]
+// end::result[]
+
+
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/indexes/drop-a-composite-index.asciidoc[]
