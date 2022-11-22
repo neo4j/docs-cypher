@@ -9,7 +9,6 @@
 * xref:administration/databases.adoc#administration-databases-stop-database[Stopping databases]
 * xref:administration/databases.adoc#administration-databases-start-database[Starting databases]
 * xref:administration/databases.adoc#administration-databases-drop-database[Deleting databases]
-* xref:administration/databases.adoc#administration-wait-nowait[Waiting for completion]
 
 
 [[administration-databases-introduction]]
@@ -20,46 +19,22 @@ The metadata for these databases, including the associated security model, is ma
 All multi-database administrative commands must be run against the `system` database.
 These administrative commands are automatically routed to the `system` database when connected to the DBMS over Bolt.
 
-// tag::neo4j-cypher-docs/docs/dev/ql/administration/databases-command-syntax.asciidoc[]
-// tag::include-neo4j-documentation[]
-The syntax of the database management commands is as follows:
-
-.Database management command syntax
-[options="header", width="100%", cols="1,5a"]
-|===
-| Command | Syntax
-| Show Database
-| [source]
-SHOW { DATABASE name \| DATABASES \| DEFAULT DATABASE }
-[WHERE expression]
-
-[source]
-SHOW { DATABASE name \| DATABASES \| DEFAULT DATABASE }
-YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]
-[WHERE expression]
-[RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
-| Create Database
-| [source]
-CREATE DATABASE name [IF NOT EXISTS] [WAIT [n [SEC[OND[S]]]]\|NOWAIT]
-CREATE [OR REPLACE] DATABASE name [WAIT [n [SEC[OND[S]]]]\|NOWAIT]
-|Stop Database
-| [source]
-STOP DATABASE name [WAIT [n [SEC[OND[S]]]]\|NOWAIT]
-|Start Database
-| [source]
-START DATABASE name [WAIT [n [SEC[OND[S]]]]\|NOWAIT]
-|Drop Database
-| [source]
-DROP DATABASE name [IF EXISTS] [{DUMP\|DESTROY} [DATA]] [WAIT [n [SEC[OND[S]]]]\|NOWAIT]
-|===
-
-// end::include-neo4j-documentation[]
-// end::neo4j-cypher-docs/docs/dev/ql/administration/databases-command-syntax.asciidoc[]
-
 [[administration-databases-show-databases]]
 == Listing databases
 
 There are three different commands for listing databases. Listing all databases, listing a particular database or listing the default database.
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/show-databases-syntax.asciidoc[]
+// tag::include-neo4j-documentation[]
+.Command syntax
+[source, cypher, role=noplay]
+-----
+SHOW { DATABASE name | DATABASES | DEFAULT DATABASE }
+    [YIELD field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+    [WHERE expression]
+-----
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/show-databases-syntax.asciidoc[]
 
 All available databases can be seen using the command `SHOW DATABASES`.
 
@@ -104,38 +79,6 @@ If a user has not been granted `ACCESS` privilege to any databases, the command 
 
 
 ====
-
-The number of databases can be seen using a `count()` aggregation with `YIELD` and `RETURN`.
-
-
-.Query
-[source, cypher]
-----
-SHOW DATABASES YIELD * RETURN count(*) as count
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| +count+
-| +4+
-1+d|Rows: 1
-|===
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE DATABASE `movies`
-CREATE DATABASE `northwind-graph`
-
-]]></database><command><![CDATA[
-SHOW DATABASES YIELD * RETURN count(*) as count
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
 
 A particular database can be seen using the command `SHOW DATABASE name`.
 
@@ -224,9 +167,9 @@ It is also possible to use `SKIP` and `LIMIT` to paginate the results.
 [role="queryresult",options="header,footer",cols="3*<m"]
 |===
 | +name+ | +currentStatus+ | +requestedStatus+
-| +"movies"+ | +"online"+ | +"online"+
 | +"neo4j"+ | +"online"+ | +"online"+
 | +"system"+ | +"online"+ | +"online"+
+| +"movies"+ | +"online"+ | +"online"+
 3+d|Rows: 3
 |===
 
@@ -657,66 +600,4 @@ DROP DATABASE customers IF EXISTS DUMP DATA
 ]]></command></para></formalpara>
 ++++
 endif::nonhtmloutput[]
-
-[role=enterprise-edition]
-[[administration-wait-nowait]]
-== Waiting for completion
-
-Aside from `SHOW DATABASES`, the database management commands all accept an optional
-`WAIT`/`NOWAIT` clause. The `WAIT`/`NOWAIT` clause allows a user to specify whether to wait
-for the command to complete before returning. The options are:
-
-* `WAIT n SECONDS` - Wait the specified number of seconds (n) for the command to complete
-before returning.
-* `WAIT` - Wait for the default period of 300 seconds for the command to complete before returning.
-* `NOWAIT` - Return immediately.
-
-A command using a `WAIT` clause will automatically commit the current transaction when it executes successfully, as the
-command needs to run immediately for it to be possible to `WAIT` for it to complete. Any subsequent commands executed will
-therefore be performed in a new transaction. This is different to the usual transactional behavior, and for this reason
-it is recommended that these commands be run in their own transaction. The default behavior is `NOWAIT`, so if no clause
-is specified the transaction will behave normally and the action is performed in the background post-commit.
-
-
-.Query
-[source, cypher]
-----
-CREATE DATABASE slow WAIT 5 SECONDS
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="4*<m"]
-|===
-| +address+ | +state+ | +message+ | +success+
-| +"localhost:7687"+ | +"CaughtUp"+ | +"caught up"+ | +true+
-4+d|Rows: 1
-|===
-
-The `success` column provides an aggregate status of whether or not the command is considered
-successful and thus every row will have the same value. The intention of this column is to make it
-easy to determine, for example in a script, whether or not the command completed successfully without
-timing out.
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE DATABASE `movies`
-CREATE DATABASE `northwind-graph`
-
-]]></database><command><![CDATA[
-CREATE DATABASE slow WAIT 5 SECONDS
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-[NOTE]
-====
-A command with a `WAIT` clause may be interrupted whilst it is waiting to complete. In this event
-the command will continue to execute in the background and will not be aborted.
-
-
-====
 
