@@ -1,6 +1,6 @@
 [[administration-security-administration]]
 = Security of administration
-:description: This section explains how to use Cypher to manage Neo4j administrative privileges. 
+:description: This section explains how to use Cypher to manage Neo4j administrative privileges.  This section explains how to use Cypher to manage privileges for Neo4j database administrative rights. 
 
 All of the commands described in the enclosing xref:administration/index.adoc[Administration] section require that the user executing the commands has the rights to do so.
 These privileges can be conferred either by granting the user the `admin` role, which enables all administrative rights, or by granting specific combinations of privileges.
@@ -13,15 +13,10 @@ These privileges can be conferred either by granting the user the `admin` role, 
 ** xref:administration/security/administration.adoc#administration-security-administration-database-indexes[The `INDEX MANAGEMENT` privileges]
 ** xref:administration/security/administration.adoc#administration-security-administration-database-constraints[The `CONSTRAINT MANAGEMENT` privileges]
 ** xref:administration/security/administration.adoc#administration-security-administration-database-tokens[The `NAME MANAGEMENT` privileges]
-** xref:administration/security/administration.adoc#administration-security-administration-database-all[Granting `ALL DATABASE PRIVILEGES`]
-** xref:administration/security/administration.adoc#administration-security-administration-database-transaction[Granting `TRANSACTION MANAGEMENT` privileges]
+** xref:administration/security/administration.adoc#administration-security-administration-database-all[Granting all database administration privileges]
 * xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges[DBMS administration]
 ** xref:administration/security/administration.adoc#administration-security-administration-dbms-custom[Using a custom role to manage DBMS privileges]
 ** xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-role-management[The dbms `ROLE MANAGEMENT` privileges]
-** xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-user-management[The dbms `USER MANAGEMENT` privileges]
-** xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-database-management[The dbms `DATABASE MANAGEMENT` privileges]
-** xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-privilege-management[The dbms `PRIVILEGE MANAGEMENT` privileges]
-** xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-all[Granting `ALL DBMS PRIVILEGES`]
 
 
 [role=enterprise-edition]
@@ -45,8 +40,8 @@ These include the rights to perform the following classes of tasks:
 ** Manage sub-graph privileges
 ** Manage procedure security
 
-These rights are conferred using privileges that can be  managed using `GRANT`, `DENY` and `REVOKE` commands, with the exception of changing configuration parameters and procedure security.
-Those are only available within the built-in `admin` role, or in the case of procedure security, through the `dbms.security.procedures.default_allowed` and `dbms.security.procedures.roles` configuration parameters.
+These rights are conferred using privileges that can be  managed using `GRANT`, `DENY` and `REVOKE` commands,
+with the exception of the _DBMS Security_ privileges which are only available within the built-in `admin` role.
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/security/admin-role-introduction.asciidoc[]
 
@@ -61,16 +56,17 @@ SHOW ROLE admin PRIVILEGES
 [role="queryresult",options="header,footer",cols="6*<m"]
 |===
 | +access+ | +action+ | +resource+ | +graph+ | +segment+ | +role+
-| +"GRANTED"+ | +"match"+ | +"all_properties"+ | +"*"+ | +"NODE(*)"+ | +"admin"+
-| +"GRANTED"+ | +"write"+ | +"graph"+ | +"*"+ | +"NODE(*)"+ | +"admin"+
-| +"GRANTED"+ | +"match"+ | +"all_properties"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"admin"+
-| +"GRANTED"+ | +"write"+ | +"graph"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"admin"+
+| +"GRANTED"+ | +"read"+ | +"all_properties"+ | +"*"+ | +"NODE(*)"+ | +"admin"+
+| +"GRANTED"+ | +"write"+ | +"all_properties"+ | +"*"+ | +"NODE(*)"+ | +"admin"+
+| +"GRANTED"+ | +"traverse"+ | +"graph"+ | +"*"+ | +"NODE(*)"+ | +"admin"+
+| +"GRANTED"+ | +"read"+ | +"all_properties"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"admin"+
+| +"GRANTED"+ | +"write"+ | +"all_properties"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"admin"+
+| +"GRANTED"+ | +"traverse"+ | +"graph"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"admin"+
 | +"GRANTED"+ | +"access"+ | +"database"+ | +"*"+ | +"database"+ | +"admin"+
 | +"GRANTED"+ | +"admin"+ | +"database"+ | +"*"+ | +"database"+ | +"admin"+
-| +"GRANTED"+ | +"constraint"+ | +"database"+ | +"*"+ | +"database"+ | +"admin"+
-| +"GRANTED"+ | +"index"+ | +"database"+ | +"*"+ | +"database"+ | +"admin"+
+| +"GRANTED"+ | +"schema"+ | +"database"+ | +"*"+ | +"database"+ | +"admin"+
 | +"GRANTED"+ | +"token"+ | +"database"+ | +"*"+ | +"database"+ | +"admin"+
-6+d|Rows: 9
+6+d|Rows: 10
 |===
 
 ifndef::nonhtmloutput[]
@@ -81,7 +77,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -89,21 +84,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -121,48 +101,10 @@ If the built-in admin role has been altered or dropped, and needs to be restored
 
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/security/database/admin-role-database.asciidoc[]
 // tag::include-neo4j-documentation[]
-The administrators can use the following Cypher commands to manage Neo4j database administrative rights.
-The components of the database privilege commands are:
-
-* the command:
-** `GRANT` – gives privileges to roles.
-** `DENY` – denies privileges to roles.
-** `REVOKE` – removes granted or denied privilege from roles.
-
-
-* _database-privilege_
-** `ACCESS` - allows access to a specific database.
-** `START` - allows the specified database to be started.
-** `STOP` - allows the specified database to be stopped.
-** `CREATE INDEX` - allows indexes to be created on the specified database.
-** `DROP INDEX` - allows indexes to be deleted on the specified database.
-** `INDEX [MANAGEMENT]` - allows indexes to be created and deleted on the specified database.
-** `CREATE CONSTRAINT` - allows constraints to be created on the specified database.
-** `DROP CONSTRAINT` - allows constraints to be deleted on the specified database.
-** `CONSTRAINT [MANAGEMENT]` - allows constraints to be created and deleted on the specified database.
-** `CREATE NEW [NODE] LABEL` - allows labels to be created so that future nodes can be assigned them.
-** `CREATE NEW [RELATIONSHIP] TYPE` - allows relationship types to be created, so that future relationships can be created with these types.
-** `CREATE NEW [PROPERTY] NAME` - allows property names to be created, so that nodes and relationships can have properties with these names assigned.
-** `NAME [MANAGEMENT]` - allows all of the name management capabilities: node labels, relationship types, and property names.
-** `ALL [[DATABASE] PRIVILEGES]` - allows access, index, constraint, and name management for the specified database.
-** `SHOW TRANSACTION` -  allows listing transactions and queries for the specified users on the specified database.
-** `TERMINATE TRANSACTION` - allows ending transactions and queries for the specified users on the specified database.
-** `TRANSACTION [MANAGEMENT]` - allows listing and ending transactions and queries for the specified users on the specified database.
-
-* _name_
-** The database to associate the privilege with.
-+
-[NOTE]
-====
-If you delete a database and create a new one with the same name, the new one will NOT have the privileges assigned to the deleted database.
-====
-** The _name_ component can be `+*+`, which means all databases.
-Databases created after this command execution will also be associated with these privileges.
-** The `DATABASE[S] _name_` part of the command can be replaced by `DEFAULT DATABASE`.
-  If you restart the server and choose a new default database after this command execution, the new one will be associated with these privileges.
-
-* _role[, ...]_
-** The role or roles to associate the privilege with, comma-separated.
+As described in the section on xref:administration/security/subgraph.adoc[sub-graph security], the `GRANT` command allows an administrator to grant a privilege to a role in order to access an entity.
+The `DENY` command allows an administrator to deny a privilege to a role in order to prevent access to an entity.
+The `REVOKE` command allows an administrator to remove a previously granted or denied privilege.
+The syntax is:
 
 .General database privilege command syntax
 [options="header", width="100%", cols="3a,2"]
@@ -170,31 +112,96 @@ Databases created after this command execution will also be associated with thes
 | Command | Description
 
 | [source, cypher, role=noplay]
-GRANT database-privilege ON {DEFAULT DATABASE \| DATABASE[S] {* \| name[, ...]}} TO role[, ...]
-| Grant a privilege to one or multiple roles.
+GRANT database-privilege ON DATABASE[S] {* \| name} TO role[, ...]
+| Grant a privilege to one or multiple roles
 
 | [source, cypher, role=noplay]
-DENY database-privilege ON {DEFAULT DATABASE \| DATABASE[S] {* \| name[, ...]}} TO role[, ...]
-| Deny a privilege to one or multiple roles.
+DENY database-privilege ON DATABASE[S] {* \| name} TO role[, ...]
+| Deny a privilege to one or multiple roles
 
 | [source, cypher, role=noplay]
-REVOKE GRANT database-privilege ON {DEFAULT DATABASE \| DATABASE[S] {* \| name[, ...]}} FROM role[, ...]
-| Revoke a granted privilege from one or multiple roles.
+REVOKE GRANT database-privilege ON DATABASE[S] {* \| name} FROM role[, ...]
+| Revoke a granted privilege from one or multiple roles
 
 | [source, cypher, role=noplay]
-REVOKE DENY database-privilege ON {DEFAULT DATABASE \| DATABASE[S] {* \| name[, ...]}} FROM role[, ...]
-| Revoke a denied privilege from one or multiple roles.
+REVOKE DENY database-privilege ON DATABASE[S] {* \| name} FROM role[, ...]
+| Revoke a denied privilege from one or multiple roles
 
 | [source, cypher, role=noplay]
-REVOKE database-privilege ON {DEFAULT DATABASE \| DATABASE[S] {* \| name[, ...]}} FROM role[, ...]
-| Revoke a granted or denied privilege from one or multiple roles.
+REVOKE database-privilege ON DATABASE[S] {* \| name} FROM role[, ...]
+| Revoke a granted or denied privilege from one or multiple roles
 |===
 
-[NOTE]
-====
-`DENY` does NOT erase a granted privilege; they both exist.
-Use `REVOKE` if you want to remove a privilege.
-====
+Where the components are:
+
+* _database-privilege_
+** `ACCESS`
++
+allows access for a specific database/graph
++
+** `START`
++
+allows the specified database to be started
++
+** `STOP`
++
+allows the specified database to be stopped
++
+** `CREATE INDEX`
++
+allows indexes to be created on the specified database.
++
+** `DROP INDEX`
++
+allows indexes to be deleted on the specified database.
++
+** `INDEX [MANAGEMENT]`
++
+allows indexes to be created and deleted on the specified database.
++
+** `CREATE CONSTRAINT`
++
+allows constraints to be created on the specified database.
++
+** `DROP CONSTRAINT`
++
+allows constraints to be deleted on the specified database.
++
+** `CONSTRAINT [MANAGEMENT]`
++
+allows constraints to be created and deleted on the specified database.
++
+** `CREATE NEW [NODE] LABEL`
++
+allows labels to be created so that future nodes can be assigned them.
++
+** `CREATE NEW [RELATIONSHIP] TYPE`
++
+allows relationship types to be created so that future relationships can be created with these types.
++
+** `CREATE NEW [PROPERTY] NAME`
++
+allows property names to be created so that nodes and relationships can have properties with these names assigned.
++
+** `NAME [MANAGEMENT]`
++
+allows all of the name management capabilities: node labels, relationship types and property names.
++
+** `ALL [[DATABASE] PRIVILEGES]`
++
+allows access, start, stop, index, constraint, and name management for the specified database.
++
+* _name_
+** The database to associate the privilege with.
+   Note that if you delete a database and create a new one with the same name, the new one will NOT have any of the privileges specifically assigned to the deleted database.
+** It can be `+*+` which means all databases.
+  Any new databases created after this command will also be associated with these privileges.
+* _role[, ...]_
+** The role or roles to associate the privilege with, comma-separated.
+
+
+NOTE: It is important to note that using DENY does NOT erase a GRANT command; they both exist.
+The only way to erase a privilege is with REVOKE.
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/security/database/admin-role-database.asciidoc[]
 
@@ -211,81 +218,69 @@ image::privilege-hierarchy-database.png[title="Database privileges hierarchy"]
 
 | [source, cypher, role=noplay]
 GRANT ACCESS
-    ON {DEFAULT DATABASE \| DATABASE[S] {* \| name[, ...]}}
+    ON DATABASE[S] {* \| name}
     TO role[, ...]
-| Grant the specified roles the privilege to access the default database, specific database(s), or all databases.
+| Allow the specified role or roles to access the database `name` or all databases.
 
 | [source, cypher, role=noplay]
 GRANT {START \| STOP}
-    ON {DEFAULT DATABASE \| DATABASE[S] {* \| name[, ...]}}
+    ON DATABASE[S] {* \| name}
     TO role[, ...]
-| Grant the specified roles the privilege to start and stop the default database, specific database(s), or all databases.
+| Enable the specified role or roles to start or stop the database `name` or all databases.
 
 | [source, cypher, role=noplay]
 GRANT {CREATE \| DROP} INDEX[ES]
-    ON {DEFAULT DATABASE \| DATABASE[S] {* \| name[, ...]}}
+    ON DATABASE[S] {* \| name}
     TO role[, ...]
-| Grant the specified roles the privilege to create and delete indexes on the default database, specific database(s), or all databases.
+| Enable the specified role or roles to create or delete indexes on the database `name` or all databases.
 
 | [source, cypher, role=noplay]
 GRANT INDEX[ES] [MANAGEMENT]
-    ON {DEFAULT DATABASE \| DATABASE[S] {* \| name[, ...]}}
+    ON DATABASE[S] {* \| name}
     TO role[, ...]
-| Grant the specified roles the privilege to manage indexes on the default database, specific database(s), or all databases.
+| Enable the specified role or roles to create and delete indexes on the database `name` or all databases.
 
 | [source, cypher, role=noplay]
 GRANT {CREATE \| DROP} CONSTRAINT[S]
-    ON {DEFAULT DATABASE \| DATABASE[S] {* \| name[, ...]}}
+    ON DATABASE[S] {* \| name}
     TO role[, ...]
-| Grant the specified roles the privilege to create and delete constraints on the default database, specific database(s), or all databases.
+| Enable the specified role or roles to create or delete indexes on the database `name` or all databases.
 
 | [source, cypher, role=noplay]
 GRANT CONSTRAINT[S] [MANAGEMENT]
-    ON {DEFAULT DATABASE \| DATABASE[S] {* \| name[, ...]}}
+    ON DATABASE[S] {* \| name}
     TO role[, ...]
-| Grant the specified roles the privilege to manage constraints on the default database, specific database(s), or all databases.
+| Enable the specified role or roles to create and delete constraints on the database `name` or all databases.
 
 | [source, cypher, role=noplay]
 GRANT CREATE NEW [NODE] LABEL[S]
-    ON {DEFAULT DATABASE \| DATABASE[S] {* \| name[, ...]}}
+    ON DATABASE[S] {* \| name}
     TO role[, ...]
-| Grant the specified roles the privilege to create new node labels in the default database, specific database(s), or all databases.
+| Enable the specified role or roles to create new labels for nodes in the database `name` or all databases.
 
 | [source, cypher, role=noplay]
 GRANT CREATE NEW [RELATIONSHIP] TYPE[S]
-    ON {DEFAULT DATABASE \| DATABASE[S] {* \| name[, ...]}}
+    ON DATABASE[S] {* \| name}
     TO role[, ...]
-| Grant the specified roles the privilege to create new relationships types in the default database, specific database(s), or all databases.
+| Enable the specified role or roles to create new types for relationships in the database `name` or all databases.
 
 | [source, cypher, role=noplay]
 GRANT CREATE NEW [PROPERTY] NAME[S]
-    ON {DEFAULT DATABASE \| DATABASE[S] {* \| name[, ...]}}
+    ON DATABASE[S] {* \| name}
     TO role[, ...]
-| Grant the specified roles the privilege to create new property names in the default database, specific database(s), or all databases.
+| Enable the specified role or roles to create new names for properties in the database `name` or all databases.
 
 | [source, cypher, role=noplay]
 GRANT NAME [MANAGEMENT]
-    ON {DEFAULT DATABASE \| DATABASE[S] {* \| name[, ...]}}
+    ON DATABASE[S] {* \| name}
     TO role[, ...]
-| Grant the specified roles the privilege to manage new labels, relationship types, and property names in the default database, specific database(s), or all databases.
+| Enable the specified role or roles to create new labels, relationship types and property names in the database `name` or all databases.
 
 | [source, cypher, role=noplay]
 GRANT ALL [[DATABASE] PRIVILEGES]
-    ON {DEFAULT DATABASE \| DATABASE[S] {* \| name[, ...]}}
+    ON DATABASE[S] {* \| name}
     TO role[, ...]
-| Grant the specified roles all privileges for the default database, specific database(s), or all databases.
-
-| [source, cypher, role=noplay]
-GRANT {SHOW \| TERMINATE} TRANSACTION[S] [( {* \| user[, ...]} )]
-ON {DEFAULT DATABASE \| DATABASE[S] {* \| name[, ...]}}
-TO role[, ...]
-| Grant the specified roles the privilege to list and end the transactions and queries of all users or a particular user(s) in the default database, specific database(s), or all databases.
-
-| [source, cypher, role=noplay]
-GRANT TRANSACTION [MANAGEMENT] [( {* \| user[, ...]} )]
-ON {DEFAULT DATABASE \| DATABASE[S] {* \| name[, ...]}}
-TO role[, ...]
-| Grant the specified roles the privilege to manage the transactions and queries of all users or a particular user(s) in the default database, specific database(s), or all databases.
+| Enable the specified role or roles to access, start, and stop, as well as perform index, constraint, and name management on the database `name` or all databases.
 
 |===
 // end::include-neo4j-documentation[]
@@ -306,7 +301,7 @@ With `ACCESS` you can run calculations, for example, `RETURN 2*5 AS answer` or c
 [source, cypher, role=noplay]
 -----
 GRANT ACCESS
-    ON {DEFAULT DATABASE | DATABASE[S] {* | name[, ...]}}
+    ON DATABASE[S] {* | name}
     TO role[, ...]
 -----
 // end::include-neo4j-documentation[]
@@ -332,7 +327,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -340,21 +334,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -372,7 +351,7 @@ The `ACCESS` privilege can also be denied.
 [source, cypher, role=noplay]
 -----
 DENY ACCESS
-    ON {DEFAULT DATABASE | DATABASE[S] {* | name[, ...]}}
+    ON DATABASE[S] {* | name}
     TO role[, ...]
 -----
 // end::include-neo4j-documentation[]
@@ -398,7 +377,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -406,21 +384,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -456,7 +419,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -464,21 +426,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -487,6 +434,13 @@ SHOW ROLE regularUsers PRIVILEGES
 ]]></command></para></formalpara>
 ++++
 endif::nonhtmloutput[]
+
+[NOTE]
+====
+Only the `admin` role has access to execute the `SHOW PRIVILEGES` command.
+
+
+====
 
 [role=enterprise-edition]
 [[administration-security-administration-database-startstop]]
@@ -500,7 +454,7 @@ The `START` privilege can be used to enable the ability to start a database.
 [source, cypher, role=noplay]
 -----
 GRANT START
-    ON {DEFAULT DATABASE | DATABASE[S] {* | name[, ...]}}
+    ON DATABASE[S] {* | name}
     TO role[, ...]
 -----
 // end::include-neo4j-documentation[]
@@ -526,7 +480,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -534,21 +487,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -566,7 +504,7 @@ The `START` privilege can also be denied.
 [source, cypher, role=noplay]
 -----
 DENY START
-    ON {DEFAULT DATABASE | DATABASE[S] {* | name[, ...]}}
+    ON DATABASE[S] {* | name}
     TO role[, ...]
 -----
 // end::include-neo4j-documentation[]
@@ -592,7 +530,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -600,21 +537,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -632,7 +554,7 @@ The `STOP` privilege can be used to enable the ability to stop a database.
 [source, cypher, role=noplay]
 -----
 GRANT STOP
-    ON {DEFAULT DATABASE | DATABASE[S] {* | name[, ...]}}
+    ON DATABASE[S] {* | name}
     TO role[, ...]
 -----
 // end::include-neo4j-documentation[]
@@ -658,7 +580,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -666,21 +587,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -698,7 +604,7 @@ The `STOP` privilege can also be denied.
 [source, cypher, role=noplay]
 -----
 DENY STOP
-    ON {DEFAULT DATABASE | DATABASE[S] {* | name[, ...]}}
+    ON DATABASE[S] {* | name}
     TO role[, ...]
 -----
 // end::include-neo4j-documentation[]
@@ -724,7 +630,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -732,21 +637,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -786,7 +676,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -794,21 +683,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -817,13 +691,6 @@ SHOW ROLE regularUsers PRIVILEGES
 ]]></command></para></formalpara>
 ++++
 endif::nonhtmloutput[]
-
-[NOTE]
-====
-Note that `START` and `STOP` privileges are not included in the xref:administration/security/administration.adoc#administration-security-administration-database-all[`ALL DATABASE PRIVILEGES`].
-
-
-====
 
 [role=enterprise-edition]
 [[administration-security-administration-database-indexes]]
@@ -841,15 +708,15 @@ The privilege to do this can be granted with `GRANT CREATE INDEX` and `GRANT DRO
 
 | [source, cypher, role=noplay]
 GRANT {CREATE \| DROP} INDEX[ES]
-    ON {DEFAULT DATABASE \| DATABASE[S] {* \| name[, ...]}}
+    ON DATABASE[S] {* \| name}
     TO role[, ...]
-| Enable the specified roles to create or delete indexes in the default database, specific database(s), or all databases.
+| Enable the specified role or roles to create or delete indexes on the database `name` or all databases
 
 | [source, cypher, role=noplay]
 GRANT INDEX[ES] [MANAGEMENT]
-    ON {DEFAULT DATABASE \| DATABASE[S] {* \| name[, ...]}}
+    ON DATABASE[S] {* \| name}
     TO role[, ...]
-| Enable the specified roles to manage indexes in the default database, specific database(s), or all databases.
+| Enable the specified role or roles to create and delete indexes on the database `name` or all databases
 
 |===
 // end::include-neo4j-documentation[]
@@ -875,7 +742,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -883,21 +749,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -923,15 +774,15 @@ The privilege to do this can be granted with `GRANT CREATE CONSTRAINT` and `GRAN
 
 | [source, cypher, role=noplay]
 GRANT {CREATE \| DROP} CONSTRAINT[S]
-    ON {DEFAULT DATABASE \| DATABASE[S] {* \| name[, ...]}}
+    ON DATABASE[S] {* \| name}
     TO role[, ...]
-| Enable the specified roles to create or delete constraints on the default database, specific database(s), or all databases.
+| Enable the specified role or roles to create or delete constraints on the database `name` or all databases
 
 | [source, cypher, role=noplay]
 GRANT CONSTRAINT[S] [MANAGEMENT]
-    ON {DEFAULT DATABASE \| DATABASE[S] {* \| name[, ...]}}
+    ON DATABASE[S] {* \| name}
     TO role[, ...]
-| Enable the specified roles to manage constraints on the default database, specific database(s), or all databases.
+| Enable the specified role or roles to create and delete constraints on the database `name` or all databases
 
 |===
 // end::include-neo4j-documentation[]
@@ -957,7 +808,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -965,21 +815,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -1005,27 +840,27 @@ The latter is managed using database `WRITE` privileges, while the former is man
 
 | [source, cypher, role=noplay]
 GRANT CREATE NEW [NODE] LABEL[S]
-    ON {DEFAULT DATABASE \| DATABASE[S] {* \| name[, ...]}}
+    ON DATABASE[S] {* \| name}
     TO role[, ...]
-| Enable the specified roles to create new node labels in the default database, specific database(s), or all databases.
+| Enable the specified role or roles to create new labels for nodes in the database `name` or all databases
 
 | [source, cypher, role=noplay]
 GRANT CREATE NEW [RELATIONSHIP] TYPE[S]
-    ON {DEFAULT DATABASE \| DATABASE[S] {* \| name[, ...]}}
+    ON DATABASE[S] {* \| name}
     TO role[, ...]
-| Enable the specified roles to create new relationship types in the default database, specific database(s), or all databases.
+| Enable the specified role or roles to create new types for relationships in the database `name` or all databases
 
 | [source, cypher, role=noplay]
 GRANT CREATE NEW [PROPERTY] NAME[S]
-    ON {DEFAULT DATABASE \| DATABASE[S] {* \| name[, ...]}}
+    ON DATABASE[S] {* \| name}
     TO role[, ...]
-| Enable the specified roles to create new property names in the default database, specific database(s), or all databases.
+| Enable the specified role or roles to create new names for properties in the database `name` or all databases
 
 | [source, cypher, role=noplay]
 GRANT NAME [MANAGEMENT]
-    ON {DEFAULT DATABASE \| DATABASE[S] {* \| name[, ...]}}
+    ON DATABASE[S] {* \| name}
     TO role[, ...]
-| Enable the specified roles to create new labels, relationship types, and property names in the default database, specific database(s), or all databases.
+| Enable the specified role or roles to create new labels, relationship types and property names in the database `name` or all databases
 
 |===
 // end::include-neo4j-documentation[]
@@ -1051,7 +886,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -1059,21 +893,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -1085,9 +904,9 @@ endif::nonhtmloutput[]
 
 [role=enterprise-edition]
 [[administration-security-administration-database-all]]
-=== Granting `ALL DATABASE PRIVILEGES`
+=== Granting all database administration privileges
 
-The right to access a database, create and drop indexes and constraints and create new labels, relationship types or property names can be achieved with a single command:
+Conferring the right to access, start, and stop, as well as perform index, constraint, and name management can be achieved with a single command:
 
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/security/database/all-management-syntax.asciidoc[]
 // tag::include-neo4j-documentation[]
@@ -1095,31 +914,23 @@ The right to access a database, create and drop indexes and constraints and crea
 [source, cypher, role=noplay]
 -----
 GRANT ALL [[DATABASE] PRIVILEGES]
-    ON {DEFAULT DATABASE | DATABASE[S] {* | name[, ...]}}
+    ON DATABASE[S] {* | name}
     TO role[, ...]
 -----
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/security/database/all-management-syntax.asciidoc[]
 
-[NOTE]
-====
-Note that the privileges for starting and stopping all databases, and transaction management, are not included in the `ALL DATABASE PRIVILEGES` grant.
-These privileges are associated with administrators while other database privileges are of use to domain and application developers.
-
-
-====
-
-For example, granting the abilities above on the database `neo4j` to the role `databaseAdminUsers` is done using the following query.
+For example, granting the ability to access, start and stop all databases and create indexes, constraints, labels, relationship types and property names on the database `neo4j` to the role `regularUsers` is done using the following query.
 
 
 .Query
 [source, cypher]
 ----
-GRANT ALL DATABASE PRIVILEGES ON DATABASE neo4j TO databaseAdminUsers
+GRANT ALL DATABASE PRIVILEGES ON DATABASE neo4j TO regularUsers
 ----
 
 [role="statsonlyqueryresult"]
-0 rows, System updates: 1
+0 rows, System updates: 4
 
 ifndef::nonhtmloutput[]
 [subs="none"]
@@ -1129,7 +940,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -1137,26 +947,11 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
 ]]></database><command><![CDATA[
-GRANT ALL DATABASE PRIVILEGES ON DATABASE neo4j TO databaseAdminUsers
+GRANT ALL DATABASE PRIVILEGES ON DATABASE neo4j TO regularUsers
 ]]></command></para></formalpara>
 ++++
 endif::nonhtmloutput[]
@@ -1167,15 +962,27 @@ The privileges granted can be seen using the `SHOW PRIVILEGES` command:
 .Query
 [source, cypher]
 ----
-SHOW ROLE databaseAdminUsers PRIVILEGES
+SHOW ROLE regularUsers PRIVILEGES
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="6*<m"]
 |===
 | +access+ | +action+ | +resource+ | +graph+ | +segment+ | +role+
-| +"GRANTED"+ | +"database_actions"+ | +"database"+ | +"neo4j"+ | +"database"+ | +"databaseAdminUsers"+
-6+d|Rows: 1
+| +"DENIED"+ | +"access"+ | +"database"+ | +"neo4j"+ | +"database"+ | +"regularUsers"+
+| +"GRANTED"+ | +"access"+ | +"database"+ | +"neo4j"+ | +"database"+ | +"regularUsers"+
+| +"GRANTED"+ | +"create_constraint"+ | +"database"+ | +"neo4j"+ | +"database"+ | +"regularUsers"+
+| +"GRANTED"+ | +"create_index"+ | +"database"+ | +"neo4j"+ | +"database"+ | +"regularUsers"+
+| +"GRANTED"+ | +"create_label"+ | +"database"+ | +"neo4j"+ | +"database"+ | +"regularUsers"+
+| +"GRANTED"+ | +"create_propertykey"+ | +"database"+ | +"neo4j"+ | +"database"+ | +"regularUsers"+
+| +"GRANTED"+ | +"create_reltype"+ | +"database"+ | +"neo4j"+ | +"database"+ | +"regularUsers"+
+| +"GRANTED"+ | +"drop_constraint"+ | +"database"+ | +"neo4j"+ | +"database"+ | +"regularUsers"+
+| +"GRANTED"+ | +"drop_index"+ | +"database"+ | +"neo4j"+ | +"database"+ | +"regularUsers"+
+| +"GRANTED"+ | +"start_database"+ | +"database"+ | +"neo4j"+ | +"database"+ | +"regularUsers"+
+| +"GRANTED"+ | +"stop_database"+ | +"database"+ | +"neo4j"+ | +"database"+ | +"regularUsers"+
+| +"DENIED"+ | +"start_database"+ | +"database"+ | +"system"+ | +"database"+ | +"regularUsers"+
+| +"DENIED"+ | +"stop_database"+ | +"database"+ | +"system"+ | +"database"+ | +"regularUsers"+
+6+d|Rows: 13
 |===
 
 ifndef::nonhtmloutput[]
@@ -1186,7 +993,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -1194,121 +1000,11 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
 ]]></database><command><![CDATA[
-SHOW ROLE databaseAdminUsers PRIVILEGES
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-[role=enterprise-edition]
-[[administration-security-administration-database-transaction]]
-=== Granting `TRANSACTION MANAGEMENT` privileges
-
-The right to run the procedures `dbms.listTransactions`, `dbms.listQueries`, `dbms.killQuery`, `dbms.killQueries`,
-`dbms.killTransaction` and `dbms.killTransactions` are managed through the `SHOW TRANSACTION` and `TERMINATE TRANSACTION` privileges.
-
-// tag::neo4j-cypher-docs/docs/dev/ql/administration/security/database/transaction-management-syntax.asciidoc[]
-// tag::include-neo4j-documentation[]
-.Transaction management command syntax
-[options="header", width="100%", cols="3a,2"]
-|===
-| Command | Description
-
-| [source, cypher, role=noplay]
-GRANT SHOW TRANSACTION[S] [( {* \| user[, ...]} )]
-    ON {DEFAULT DATABASE \| DATABASE[S] {* \| name[, ...]}}
-    TO role[, ...]
-| Enable the specified roles to list transactions and queries for user(s) or all users in the default database, specific database(s), or all databases.
-
-| [source, cypher, role=noplay]
-GRANT TERMINATE TRANSACTION[S] [( {* \| user[, ...]} )]
-    ON {DEFAULT DATABASE \| DATABASE[S] {* \| name[, ...]}}
-    TO role[, ...]
-| Enable the specified roles to end running transactions and queries for user(s) or all users in the default database, specific database(s), or all databases.
-
-| [source, cypher, role=noplay]
-GRANT TRANSACTION [MANAGEMENT] [( {* \| user[, ...]} )]
-    ON {DEFAULT DATABASE \| DATABASE[S] {* \| name[, ...]}}
-    TO role[, ...]
-| Enable the specified roles to manage transactions and queries for user(s) or all users in the default database, specific database(s), or all databases.
-
-|===
-// end::include-neo4j-documentation[]
-// end::neo4j-cypher-docs/docs/dev/ql/administration/security/database/transaction-management-syntax.asciidoc[]
-
-[NOTE]
-====
-Note that the `TRANSACTION MANAGEMENT` privileges are not included in the xref:administration/security/administration.adoc#administration-security-administration-database-all[`ALL DATABASE PRIVILEGES`].
-
-
-====
-
-For example, granting the ability to list transactions for user `jake` in the database `neo4j` to the role `regularUsers` is done using the following query.
-
-
-.Query
-[source, cypher]
-----
-GRANT SHOW TRANSACTION (jake) ON DATABASE neo4j TO regularUsers
-----
-
-[role="statsonlyqueryresult"]
-0 rows, System updates: 1
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-GRANT SHOW TRANSACTION (jake) ON DATABASE neo4j TO regularUsers
+SHOW ROLE regularUsers PRIVILEGES
 ]]></command></para></formalpara>
 ++++
 endif::nonhtmloutput[]
@@ -1320,26 +1016,21 @@ endif::nonhtmloutput[]
 All DBMS privileges are relevant system-wide. Like user management, they do not belong to one specific database or graph.
 For more details on the differences between graphs, databases and the DBMS, refer to xref:introduction/neo4j-databases-graphs.adoc[].
 
-image::grant-privileges-dbms.png[title="Syntax of GRANT and DENY DBMS Privileges"]
-
-image::privilege-hierarchy-dbms.png[title="DBMS privileges hierarchy"]
-
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/security/dbms/admin-role-dbms.asciidoc[]
 // tag::include-neo4j-documentation[]
-As xref:administration/security/administration.adoc#administration-security-administration-introduction[described above], the `admin` role has a number of built-in privileges.
+As xref:administration/security/administration.adoc#administration-security-administration-introduction[described above], the `admin` role has a number of built-in privileges that cannot be assigned using Cypher commands.
 These include:
 
-* Create and drop databases
+* Create or drop databases
 * Change configuration parameters
 * Manage transactions
-* Manage users and roles
+* Manage users and roles (role management by itself is assignable using xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-role-management[Cypher commands])
 * Manage sub-graph privileges
 * Manage procedure security
 
 The easiest way to enable a user to perform these tasks is to grant them the `admin` role.
-All of these privileges, except change configuration parameters and manage procedure security, are also assignable using Cypher commands.
-See the sections on xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-role-management[role management], xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-user-management[user management], xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-database-management[database management], xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-privilege-management[privilege management] and xref:administration/security/administration.adoc#administration-security-administration-database-transaction[transaction management] for details.
-It is possible to make a custom role with a subset of these privileges.
+The only subset of these privileges that is assignable using Cypher commands is xref:administration/security/administration.adoc#administration-security-administration-dbms-privileges-role-management[role management].
+However, it is possible to make a custom role with a subset of these privileges.
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/security/dbms/admin-role-dbms.asciidoc[]
 
@@ -1374,7 +1065,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -1382,21 +1072,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -1426,7 +1101,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -1434,21 +1108,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -1478,7 +1137,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -1486,21 +1144,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -1528,7 +1171,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -1536,21 +1178,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -1570,7 +1197,7 @@ DENY INDEX MANAGEMENT ON DATABASE * TO usermanager
 ----
 
 [role="statsonlyqueryresult"]
-0 rows, System updates: 1
+0 rows, System updates: 2
 
 ifndef::nonhtmloutput[]
 [subs="none"]
@@ -1580,7 +1207,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -1588,21 +1214,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -1620,7 +1231,7 @@ DENY CONSTRAINT MANAGEMENT ON DATABASE * TO usermanager
 ----
 
 [role="statsonlyqueryresult"]
-0 rows, System updates: 1
+0 rows, System updates: 2
 
 ifndef::nonhtmloutput[]
 [subs="none"]
@@ -1630,7 +1241,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -1638,21 +1248,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -1672,7 +1267,7 @@ DENY NAME MANAGEMENT ON DATABASE * TO usermanager
 ----
 
 [role="statsonlyqueryresult"]
-0 rows, System updates: 1
+0 rows, System updates: 3
 
 ifndef::nonhtmloutput[]
 [subs="none"]
@@ -1682,7 +1277,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -1690,21 +1284,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -1729,22 +1308,27 @@ Lists all privileges for role 'usermanager'
 [role="queryresult",options="header,footer",cols="6*<m"]
 |===
 | +access+ | +action+ | +resource+ | +graph+ | +segment+ | +role+
-| +"GRANTED"+ | +"match"+ | +"all_properties"+ | +"*"+ | +"NODE(*)"+ | +"usermanager"+
-| +"GRANTED"+ | +"write"+ | +"graph"+ | +"*"+ | +"NODE(*)"+ | +"usermanager"+
-| +"GRANTED"+ | +"match"+ | +"all_properties"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"usermanager"+
-| +"GRANTED"+ | +"write"+ | +"graph"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"usermanager"+
+| +"GRANTED"+ | +"read"+ | +"all_properties"+ | +"*"+ | +"NODE(*)"+ | +"usermanager"+
+| +"GRANTED"+ | +"write"+ | +"all_properties"+ | +"*"+ | +"NODE(*)"+ | +"usermanager"+
+| +"GRANTED"+ | +"traverse"+ | +"graph"+ | +"*"+ | +"NODE(*)"+ | +"usermanager"+
+| +"GRANTED"+ | +"read"+ | +"all_properties"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"usermanager"+
+| +"GRANTED"+ | +"write"+ | +"all_properties"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"usermanager"+
+| +"GRANTED"+ | +"traverse"+ | +"graph"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"usermanager"+
 | +"DENIED"+ | +"access"+ | +"database"+ | +"*"+ | +"database"+ | +"usermanager"+
 | +"GRANTED"+ | +"access"+ | +"database"+ | +"*"+ | +"database"+ | +"usermanager"+
 | +"GRANTED"+ | +"admin"+ | +"database"+ | +"*"+ | +"database"+ | +"usermanager"+
-| +"DENIED"+ | +"constraint"+ | +"database"+ | +"*"+ | +"database"+ | +"usermanager"+
-| +"GRANTED"+ | +"constraint"+ | +"database"+ | +"*"+ | +"database"+ | +"usermanager"+
-| +"DENIED"+ | +"index"+ | +"database"+ | +"*"+ | +"database"+ | +"usermanager"+
-| +"GRANTED"+ | +"index"+ | +"database"+ | +"*"+ | +"database"+ | +"usermanager"+
+| +"DENIED"+ | +"create_constraint"+ | +"database"+ | +"*"+ | +"database"+ | +"usermanager"+
+| +"DENIED"+ | +"create_index"+ | +"database"+ | +"*"+ | +"database"+ | +"usermanager"+
+| +"DENIED"+ | +"create_label"+ | +"database"+ | +"*"+ | +"database"+ | +"usermanager"+
+| +"DENIED"+ | +"create_propertykey"+ | +"database"+ | +"*"+ | +"database"+ | +"usermanager"+
+| +"DENIED"+ | +"create_reltype"+ | +"database"+ | +"*"+ | +"database"+ | +"usermanager"+
+| +"DENIED"+ | +"drop_constraint"+ | +"database"+ | +"*"+ | +"database"+ | +"usermanager"+
+| +"DENIED"+ | +"drop_index"+ | +"database"+ | +"*"+ | +"database"+ | +"usermanager"+
+| +"GRANTED"+ | +"schema"+ | +"database"+ | +"*"+ | +"database"+ | +"usermanager"+
 | +"DENIED"+ | +"start_database"+ | +"database"+ | +"*"+ | +"database"+ | +"usermanager"+
 | +"DENIED"+ | +"stop_database"+ | +"database"+ | +"*"+ | +"database"+ | +"usermanager"+
-| +"DENIED"+ | +"token"+ | +"database"+ | +"*"+ | +"database"+ | +"usermanager"+
 | +"GRANTED"+ | +"token"+ | +"database"+ | +"*"+ | +"database"+ | +"usermanager"+
-6+d|Rows: 15
+6+d|Rows: 20
 |===
 
 ifndef::nonhtmloutput[]
@@ -1755,7 +1339,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -1763,21 +1346,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -1793,6 +1361,8 @@ endif::nonhtmloutput[]
 
 The dbms privileges for role management are assignable using Cypher administrative commands. They can be granted, denied and revoked like other privileges.
 
+image::privilege-hierarchy-dbms.png[title="Role management privileges hierarchy"]
+
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/security/dbms/role-management-syntax.asciidoc[]
 // tag::include-neo4j-documentation[]
 .Role management privileges command syntax
@@ -1804,39 +1374,42 @@ The dbms privileges for role management are assignable using Cypher administrati
 GRANT CREATE ROLE
     ON DBMS
     TO role[, ...]
-| Enable the specified roles to create new roles.
+| Enable the specified role or roles to create new roles
 
 | [source, cypher, role=noplay]
 GRANT DROP ROLE
     ON DBMS
     TO role[, ...]
-| Enable the specified roles to delete roles.
+| Enable the specified role or roles to delete roles
 
 | [source, cypher, role=noplay]
 GRANT ASSIGN ROLE
     ON DBMS
     TO role[, ...]
-| Enable the specified roles to assign roles to users.
+| Enable the specified role or roles to assign roles to users
 
 | [source, cypher, role=noplay]
 GRANT REMOVE ROLE
     ON DBMS
     TO role[, ...]
-| Enable the specified roles to remove roles from users.
+| Enable the specified role or roles to remove roles from users
 
 | [source, cypher, role=noplay]
 GRANT SHOW ROLE
 ON DBMS
 TO role[, ...]
-| Enable the specified roles to list roles.
+| Enable the specified role or roles to list roles
 
 | [source, cypher, role=noplay]
 GRANT ROLE MANAGEMENT
     ON DBMS
     TO role[, ...]
-| Enable the specified roles to create, delete, assign, remove, and list roles.
+| Enable the specified role or roles to create, delete, assign, remove and list roles
 
 |===
+
+[NOTE]
+Only the `admin` role has access to execute the `SHOW PRIVILEGES` command.
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/security/dbms/role-management-syntax.asciidoc[]
 
@@ -1860,7 +1433,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -1868,21 +1440,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -1919,7 +1476,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -1927,21 +1483,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -1971,7 +1512,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -1979,21 +1519,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -2030,7 +1555,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -2038,21 +1562,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -2082,7 +1591,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -2090,21 +1598,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -2141,7 +1634,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -2149,21 +1641,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -2193,7 +1670,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -2201,21 +1677,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -2252,7 +1713,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -2260,21 +1720,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -2284,7 +1729,7 @@ SHOW ROLE roleRemover PRIVILEGES
 ++++
 endif::nonhtmloutput[]
 
-The ability to show roles can be granted via the `SHOW ROLE` privilege. A user with this privilege is allowed to execute the `SHOW ROLES` and `SHOW POPULATED ROLES` administration commands. For the `SHOW ROLES WITH USERS` and `SHOW POPULATED ROLES WITH USERS` administration commands, both this privilege and the `SHOW USER` privilege are required. The following query shows an example of how to grant the `SHOW ROLE` privilege:
+The ability to show roles can be granted via the `SHOW ROLE` privilege. The following query shows an example of this:
 
 
 .Query
@@ -2304,7 +1749,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -2312,21 +1756,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -2336,7 +1765,7 @@ GRANT SHOW ROLE ON DBMS TO roleShower
 ++++
 endif::nonhtmloutput[]
 
-The resulting role should have privileges that only allow showing roles:
+The resulting role should have privileges that only allow showing roles, _not privileges_:
 
 
 .Query
@@ -2363,7 +1792,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -2371,21 +1799,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -2395,8 +1808,7 @@ SHOW ROLE roleShower PRIVILEGES
 ++++
 endif::nonhtmloutput[]
 
-The privileges to create, delete, assign, remove, and list roles can be granted via the `ROLE MANAGEMENT` privilege.
-The following query shows an example of this:
+The privileges to create, delete, assign, remove, and list roles can be granted via the `ROLE MANAGEMENT` privilege. The following query shows an example of this:
 
 
 .Query
@@ -2416,7 +1828,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -2424,21 +1835,6 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
@@ -2475,7 +1871,6 @@ ifndef::nonhtmloutput[]
 <para><database><![CDATA[
 CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
 CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
 CREATE ROLE noAccessUsers
 CREATE ROLE roleAdder
 CREATE ROLE roleDropper
@@ -2483,2017 +1878,11 @@ CREATE ROLE roleAssigner
 CREATE ROLE roleRemover
 CREATE ROLE roleShower
 CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
 GRANT ROLE regularUsers TO jake
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
 ]]></database><command><![CDATA[
 SHOW ROLE roleManager PRIVILEGES
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-[role=enterprise-edition]
-[[administration-security-administration-dbms-privileges-user-management]]
-=== The dbms `USER MANAGEMENT` privileges
-
-The dbms privileges for user management are assignable using Cypher administrative commands. They can be granted, denied and revoked like other privileges.
-
-// tag::neo4j-cypher-docs/docs/dev/ql/administration/security/dbms/user-management-syntax.asciidoc[]
-// tag::include-neo4j-documentation[]
-.User management privileges command syntax
-[options="header", width="100%", cols="3a,2"]
-|===
-| Command | Description
-
-| [source, cypher, role=noplay]
-GRANT CREATE USER
-    ON DBMS
-    TO role[, ...]
-| Enable the specified roles to create new users.
-
-| [source, cypher, role=noplay]
-GRANT DROP USER
-    ON DBMS
-    TO role[, ...]
-| Enable the specified roles to delete users.
-
-| [source, cypher, role=noplay]
-GRANT ALTER USER
-    ON DBMS
-    TO role[, ...]
-| Enable the specified roles to modify users.
-
-| [source, cypher, role=noplay]
-GRANT SET PASSWORD[S]
-    ON DBMS
-    TO role[, ...]
-| Enable the specified roles to modify users' passwords and whether those passwords must be changed upon first login.
-
-| [source, cypher, role=noplay]
-GRANT SET USER STATUS
-    ON DBMS
-    TO role[, ...]
-| Enable the specified roles to modify the account status of users.
-
-| [source, cypher, role=noplay]
-GRANT SHOW USER
-ON DBMS
-TO role[, ...]
-| Enable the specified roles to list users.
-
-| [source, cypher, role=noplay]
-GRANT USER MANAGEMENT
-    ON DBMS
-    TO role[, ...]
-| Enable the specified roles to create, delete, modify, and list users.
-
-|===
-// end::include-neo4j-documentation[]
-// end::neo4j-cypher-docs/docs/dev/ql/administration/security/dbms/user-management-syntax.asciidoc[]
-
-The ability to add users can be granted via the `CREATE USER` privilege. The following query shows an example of this:
-
-
-.Query
-[source, cypher]
-----
-GRANT CREATE USER ON DBMS TO userAdder
-----
-
-[role="statsonlyqueryresult"]
-0 rows, System updates: 1
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-GRANT CREATE USER ON DBMS TO userAdder
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-The resulting role should have privileges that only allow adding users:
-
-
-.Query
-[source, cypher]
-----
-SHOW ROLE userAdder PRIVILEGES
-----
-
-Lists all privileges for role 'userAdder'
-
-.Result
-[role="queryresult",options="header,footer",cols="6*<m"]
-|===
-| +access+ | +action+ | +resource+ | +graph+ | +segment+ | +role+
-| +"GRANTED"+ | +"create_user"+ | +"database"+ | +"*"+ | +"database"+ | +"userAdder"+
-6+d|Rows: 1
-|===
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-SHOW ROLE userAdder PRIVILEGES
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-The ability to delete users can be granted via the `DROP USER` privilege. The following query shows an example of this:
-
-
-.Query
-[source, cypher]
-----
-GRANT DROP USER ON DBMS TO userDropper
-----
-
-[role="statsonlyqueryresult"]
-0 rows, System updates: 1
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-GRANT DROP USER ON DBMS TO userDropper
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-The resulting role should have privileges that only allow deleting users:
-
-
-.Query
-[source, cypher]
-----
-SHOW ROLE userDropper PRIVILEGES
-----
-
-Lists all privileges for role 'userDropper'
-
-.Result
-[role="queryresult",options="header,footer",cols="6*<m"]
-|===
-| +access+ | +action+ | +resource+ | +graph+ | +segment+ | +role+
-| +"GRANTED"+ | +"drop_user"+ | +"database"+ | +"*"+ | +"database"+ | +"userDropper"+
-6+d|Rows: 1
-|===
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-SHOW ROLE userDropper PRIVILEGES
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-The ability to modify users can be granted via the `ALTER USER` privilege. The following query shows an example of this:
-
-
-.Query
-[source, cypher]
-----
-GRANT ALTER USER ON DBMS TO userModifier
-----
-
-[role="statsonlyqueryresult"]
-0 rows, System updates: 1
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-GRANT ALTER USER ON DBMS TO userModifier
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-The resulting role should have privileges that only allow modifying users:
-
-
-.Query
-[source, cypher]
-----
-SHOW ROLE userModifier PRIVILEGES
-----
-
-Lists all privileges for role 'userModifier'
-
-.Result
-[role="queryresult",options="header,footer",cols="6*<m"]
-|===
-| +access+ | +action+ | +resource+ | +graph+ | +segment+ | +role+
-| +"GRANTED"+ | +"alter_user"+ | +"database"+ | +"*"+ | +"database"+ | +"userModifier"+
-6+d|Rows: 1
-|===
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-SHOW ROLE userModifier PRIVILEGES
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-A user that is granted `ALTER USER` is allowed to run the `ALTER USER` administration command with one or several of the `SET PASSWORD`, `SET PASSWORD CHANGE [NOT] REQUIRED` and `SET STATUS` parts:
-
-
-.Query
-[source, cypher]
-----
-ALTER USER jake SET PASSWORD 'secret' SET STATUS SUSPENDED
-----
-
-[role="statsonlyqueryresult"]
-0 rows, System updates: 1
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-ALTER USER jake SET PASSWORD 'secret' SET STATUS SUSPENDED
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-The ability to modify users' passwords and whether those passwords must be changed upon first login can be granted via the `SET PASSWORDS` privilege. The following query shows an example of this:
-
-
-.Query
-[source, cypher]
-----
-GRANT SET PASSWORDS ON DBMS TO passwordModifier
-----
-
-[role="statsonlyqueryresult"]
-0 rows, System updates: 1
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-GRANT SET PASSWORDS ON DBMS TO passwordModifier
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-The resulting role should have privileges that only allow modifying users' passwords and whether those passwords must be changed upon first login:
-
-
-.Query
-[source, cypher]
-----
-SHOW ROLE passwordModifier PRIVILEGES
-----
-
-Lists all privileges for role 'passwordModifier'
-
-.Result
-[role="queryresult",options="header,footer",cols="6*<m"]
-|===
-| +access+ | +action+ | +resource+ | +graph+ | +segment+ | +role+
-| +"GRANTED"+ | +"set_passwords"+ | +"database"+ | +"*"+ | +"database"+ | +"passwordModifier"+
-6+d|Rows: 1
-|===
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-SHOW ROLE passwordModifier PRIVILEGES
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-A user that is granted `SET PASSWORDS` is allowed to run the `ALTER USER` administration command with one or both of the `SET PASSWORD` and `SET PASSWORD CHANGE [NOT] REQUIRED` parts:
-
-
-.Query
-[source, cypher]
-----
-ALTER USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED
-----
-
-[role="statsonlyqueryresult"]
-0 rows, System updates: 1
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-ALTER USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-The ability to modify the account status of users can be granted via the `SET USER STATUS` privilege. The following query shows an example of this:
-
-
-.Query
-[source, cypher]
-----
-GRANT SET USER STATUS ON DBMS TO statusModifier
-----
-
-[role="statsonlyqueryresult"]
-0 rows, System updates: 1
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-GRANT SET USER STATUS ON DBMS TO statusModifier
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-The resulting role should have privileges that only allow modifying the account status of users:
-
-
-.Query
-[source, cypher]
-----
-SHOW ROLE statusModifier PRIVILEGES
-----
-
-Lists all privileges for role 'statusModifier'
-
-.Result
-[role="queryresult",options="header,footer",cols="6*<m"]
-|===
-| +access+ | +action+ | +resource+ | +graph+ | +segment+ | +role+
-| +"GRANTED"+ | +"set_user_status"+ | +"database"+ | +"*"+ | +"database"+ | +"statusModifier"+
-6+d|Rows: 1
-|===
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-SHOW ROLE statusModifier PRIVILEGES
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-A user that is granted `SET USER STATUS` is allowed to run the `ALTER USER` administration command with only the `SET STATUS` part:
-
-
-.Query
-[source, cypher]
-----
-ALTER USER jake SET STATUS ACTIVE
-----
-
-[role="statsonlyqueryresult"]
-0 rows, System updates: 1
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-ALTER USER jake SET STATUS ACTIVE
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-[NOTE]
-====
-Note that the combination of the `SET PASSWORDS` and the `SET USER STATUS` privilege actions is equivalent to the `ALTER USER` privilege action.
-
-
-====
-
-The ability to show users can be granted via the `SHOW USER` privilege. The following query shows an example of this:
-
-
-.Query
-[source, cypher]
-----
-GRANT SHOW USER ON DBMS TO userShower
-----
-
-[role="statsonlyqueryresult"]
-0 rows, System updates: 1
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-GRANT SHOW USER ON DBMS TO userShower
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-The resulting role should have privileges that only allow showing users:
-
-
-.Query
-[source, cypher]
-----
-SHOW ROLE userShower PRIVILEGES
-----
-
-Lists all privileges for role 'userShower'
-
-.Result
-[role="queryresult",options="header,footer",cols="6*<m"]
-|===
-| +access+ | +action+ | +resource+ | +graph+ | +segment+ | +role+
-| +"GRANTED"+ | +"show_user"+ | +"database"+ | +"*"+ | +"database"+ | +"userShower"+
-6+d|Rows: 1
-|===
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-SHOW ROLE userShower PRIVILEGES
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-The privileges to create, delete, modify, and list users can be granted via the `USER MANAGEMENT` privilege. 
-The following query shows an example of this:
-
-
-.Query
-[source, cypher]
-----
-GRANT USER MANAGEMENT ON DBMS TO userManager
-----
-
-[role="statsonlyqueryresult"]
-0 rows, System updates: 1
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-GRANT USER MANAGEMENT ON DBMS TO userManager
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-The resulting role should have all privileges to manage users:
-
-
-.Query
-[source, cypher]
-----
-SHOW ROLE userManager PRIVILEGES
-----
-
-Lists all privileges for role 'userManager'
-
-.Result
-[role="queryresult",options="header,footer",cols="6*<m"]
-|===
-| +access+ | +action+ | +resource+ | +graph+ | +segment+ | +role+
-| +"GRANTED"+ | +"user_management"+ | +"database"+ | +"*"+ | +"database"+ | +"userManager"+
-6+d|Rows: 1
-|===
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-SHOW ROLE userManager PRIVILEGES
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-[role=enterprise-edition]
-[[administration-security-administration-dbms-privileges-database-management]]
-=== The dbms `DATABASE MANAGEMENT` privileges
-
-The dbms privileges for database management are assignable using Cypher administrative commands. They can be granted, denied and revoked like other privileges.
-
-// tag::neo4j-cypher-docs/docs/dev/ql/administration/security/dbms/database-management-syntax.asciidoc[]
-// tag::include-neo4j-documentation[]
-.Database management privileges command syntax
-[options="header", width="100%", cols="3a,2"]
-|===
-| Command | Description
-
-| [source, cypher, role=noplay]
-GRANT CREATE DATABASE
-    ON DBMS
-    TO role[, ...]
-| Enable the specified roles to create new databases.
-
-| [source, cypher, role=noplay]
-GRANT DROP DATABASE
-    ON DBMS
-    TO role[, ...]
-| Enable the specified roles to delete databases.
-
-| [source, cypher, role=noplay]
-GRANT DATABASE MANAGEMENT
-    ON DBMS
-    TO role[, ...]
-| Enable the specified roles to create and delete databases.
-
-|===
-// end::include-neo4j-documentation[]
-// end::neo4j-cypher-docs/docs/dev/ql/administration/security/dbms/database-management-syntax.asciidoc[]
-
-The ability to create databases can be granted via the `CREATE DATABASE` privilege. The following query shows an example of this:
-
-
-.Query
-[source, cypher]
-----
-GRANT CREATE DATABASE ON DBMS TO databaseAdder
-----
-
-[role="statsonlyqueryresult"]
-0 rows, System updates: 1
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-GRANT CREATE DATABASE ON DBMS TO databaseAdder
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-The resulting role should have privileges that only allow creating databases:
-
-
-.Query
-[source, cypher]
-----
-SHOW ROLE databaseAdder PRIVILEGES
-----
-
-Lists all privileges for role 'databaseAdder'
-
-.Result
-[role="queryresult",options="header,footer",cols="6*<m"]
-|===
-| +access+ | +action+ | +resource+ | +graph+ | +segment+ | +role+
-| +"GRANTED"+ | +"create_database"+ | +"database"+ | +"*"+ | +"database"+ | +"databaseAdder"+
-6+d|Rows: 1
-|===
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-SHOW ROLE databaseAdder PRIVILEGES
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-The ability to delete databases can be granted via the `DROP DATABASE` privilege. The following query shows an example of this:
-
-
-.Query
-[source, cypher]
-----
-GRANT DROP DATABASE ON DBMS TO databaseDropper
-----
-
-[role="statsonlyqueryresult"]
-0 rows, System updates: 1
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-GRANT DROP DATABASE ON DBMS TO databaseDropper
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-The resulting role should have privileges that only allow deleting databases:
-
-
-.Query
-[source, cypher]
-----
-SHOW ROLE databaseDropper PRIVILEGES
-----
-
-Lists all privileges for role 'databaseDropper'
-
-.Result
-[role="queryresult",options="header,footer",cols="6*<m"]
-|===
-| +access+ | +action+ | +resource+ | +graph+ | +segment+ | +role+
-| +"GRANTED"+ | +"drop_database"+ | +"database"+ | +"*"+ | +"database"+ | +"databaseDropper"+
-6+d|Rows: 1
-|===
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-SHOW ROLE databaseDropper PRIVILEGES
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-The privileges to create and delete databases can be granted via the `DATABASE MANAGEMENT` privilege.
-The following query shows an example of this:
-
-
-.Query
-[source, cypher]
-----
-GRANT DATABASE MANAGEMENT ON DBMS TO databaseManager
-----
-
-[role="statsonlyqueryresult"]
-0 rows, System updates: 1
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-GRANT DATABASE MANAGEMENT ON DBMS TO databaseManager
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-The resulting role should have all privileges to manage databases:
-
-
-.Query
-[source, cypher]
-----
-SHOW ROLE databaseManager PRIVILEGES
-----
-
-Lists all privileges for role 'databaseManager'
-
-.Result
-[role="queryresult",options="header,footer",cols="6*<m"]
-|===
-| +access+ | +action+ | +resource+ | +graph+ | +segment+ | +role+
-| +"GRANTED"+ | +"database_management"+ | +"database"+ | +"*"+ | +"database"+ | +"databaseManager"+
-6+d|Rows: 1
-|===
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-SHOW ROLE databaseManager PRIVILEGES
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-[role=enterprise-edition]
-[[administration-security-administration-dbms-privileges-privilege-management]]
-=== The dbms `PRIVILEGE MANAGEMENT` privileges
-
-The dbms privileges for privilege management are assignable using Cypher administrative commands. They can be granted, denied and revoked like other privileges.
-
-// tag::neo4j-cypher-docs/docs/dev/ql/administration/security/dbms/privilege-management-syntax.asciidoc[]
-// tag::include-neo4j-documentation[]
-.Privilege management privileges command syntax
-[options="header", width="100%", cols="3a,2"]
-|===
-| Command | Description
-
-| [source, cypher, role=noplay]
-GRANT SHOW PRIVILEGE
-    ON DBMS
-    TO role[, ...]
-| Enable the specified roles to list privileges.
-
-| [source, cypher, role=noplay]
-GRANT ASSIGN PRIVILEGE
-    ON DBMS
-    TO role[, ...]
-| Enable the specified roles to assign privileges using the `GRANT` and `DENY` commands.
-
-| [source, cypher, role=noplay]
-GRANT REMOVE PRIVILEGE
-    ON DBMS
-    TO role[, ...]
-| Enable the specified roles to remove privileges using the `REVOKE` command.
-
-| [source, cypher, role=noplay]
-GRANT PRIVILEGE MANAGEMENT
-    ON DBMS
-    TO role[, ...]
-| Enable the specified roles to list, assign, and remove privileges.
-
-|===
-// end::include-neo4j-documentation[]
-// end::neo4j-cypher-docs/docs/dev/ql/administration/security/dbms/privilege-management-syntax.asciidoc[]
-
-The ability to list privileges can be granted via the `SHOW PRIVILEGE` privilege. A user with this privilege is allowed to execute the `SHOW PRIVILEGES` and `SHOW ROLE roleName PRIVILEGES` administration commands. For the `SHOW USER username PRIVILEGES` administration command, both this privilege and the `SHOW USER` privilege are required. The following query shows an example of how to grant the `SHOW PRIVILEGE` privilege:
-
-
-.Query
-[source, cypher]
-----
-GRANT SHOW PRIVILEGE ON DBMS TO privilegeShower
-----
-
-[role="statsonlyqueryresult"]
-0 rows, System updates: 1
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-GRANT SHOW PRIVILEGE ON DBMS TO privilegeShower
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-The resulting role should have privileges that only allow showing privileges:
-
-
-.Query
-[source, cypher]
-----
-SHOW ROLE privilegeShower PRIVILEGES
-----
-
-Lists all privileges for role 'privilegeShower'
-
-.Result
-[role="queryresult",options="header,footer",cols="6*<m"]
-|===
-| +access+ | +action+ | +resource+ | +graph+ | +segment+ | +role+
-| +"GRANTED"+ | +"show_privilege"+ | +"database"+ | +"*"+ | +"database"+ | +"privilegeShower"+
-6+d|Rows: 1
-|===
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-SHOW ROLE privilegeShower PRIVILEGES
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-[NOTE]
-====
-Note that no specific privileges are required for showing the current user's privileges using either `SHOW USER _username_ PRIVILEGES`, or `SHOW USER PRIVILEGES`.
-
-Please note that if a non-native auth provider like LDAP is in use, `SHOW USER PRIVILEGES` will only work in a limited capacity; It is only possible for a user to show their own privileges. Other users' privileges cannot be listed when using a non-native auth provider.
-
-
-====
-
-The ability to assign privileges to roles can be granted via the `ASSIGN PRIVILEGE` privilege. A user with this privilege is allowed to execute GRANT and DENY administration commands. The following query shows an example of how to grant this privilege:
-
-
-.Query
-[source, cypher]
-----
-GRANT ASSIGN PRIVILEGE ON DBMS TO privilegeAssigner
-----
-
-[role="statsonlyqueryresult"]
-0 rows, System updates: 1
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-GRANT ASSIGN PRIVILEGE ON DBMS TO privilegeAssigner
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-The resulting role should have privileges that only allow assigning privileges:
-
-
-.Query
-[source, cypher]
-----
-SHOW ROLE privilegeAssigner PRIVILEGES
-----
-
-Lists all privileges for role 'privilegeAssigner'
-
-.Result
-[role="queryresult",options="header,footer",cols="6*<m"]
-|===
-| +access+ | +action+ | +resource+ | +graph+ | +segment+ | +role+
-| +"GRANTED"+ | +"assign_privilege"+ | +"database"+ | +"*"+ | +"database"+ | +"privilegeAssigner"+
-6+d|Rows: 1
-|===
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-SHOW ROLE privilegeAssigner PRIVILEGES
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-The ability to remove privileges from roles can be granted via the `REMOVE PRIVILEGE` privilege. A user with this privilege is allowed to execute REVOKE administration commands. The following query shows an example of how to grant this privilege:
-
-
-.Query
-[source, cypher]
-----
-GRANT REMOVE PRIVILEGE ON DBMS TO privilegeRemover
-----
-
-[role="statsonlyqueryresult"]
-0 rows, System updates: 1
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-GRANT REMOVE PRIVILEGE ON DBMS TO privilegeRemover
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-The resulting role should have privileges that only allow removing privileges:
-
-
-.Query
-[source, cypher]
-----
-SHOW ROLE privilegeRemover PRIVILEGES
-----
-
-Lists all privileges for role 'privilegeRemover'
-
-.Result
-[role="queryresult",options="header,footer",cols="6*<m"]
-|===
-| +access+ | +action+ | +resource+ | +graph+ | +segment+ | +role+
-| +"GRANTED"+ | +"remove_privilege"+ | +"database"+ | +"*"+ | +"database"+ | +"privilegeRemover"+
-6+d|Rows: 1
-|===
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-SHOW ROLE privilegeRemover PRIVILEGES
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-The privileges to list, assign, and remove privileges can be granted via the `PRIVILEGE MANAGEMENT` privilege.
-The following query shows an example of this:
-
-
-.Query
-[source, cypher]
-----
-GRANT PRIVILEGE MANAGEMENT ON DBMS TO privilegeManager
-----
-
-[role="statsonlyqueryresult"]
-0 rows, System updates: 1
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-GRANT PRIVILEGE MANAGEMENT ON DBMS TO privilegeManager
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-The resulting role should have all privileges to manage privileges:
-
-
-.Query
-[source, cypher]
-----
-SHOW ROLE privilegeManager PRIVILEGES
-----
-
-Lists all privileges for role 'privilegeManager'
-
-.Result
-[role="queryresult",options="header,footer",cols="6*<m"]
-|===
-| +access+ | +action+ | +resource+ | +graph+ | +segment+ | +role+
-| +"GRANTED"+ | +"privilege_management"+ | +"database"+ | +"*"+ | +"database"+ | +"privilegeManager"+
-6+d|Rows: 1
-|===
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-SHOW ROLE privilegeManager PRIVILEGES
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-[role=enterprise-edition]
-[[administration-security-administration-dbms-privileges-all]]
-=== Granting `ALL DBMS PRIVILEGES`
-
-The right to create, drop, assign, remove and show roles, create, alter, drop and show users, create and drop databases and show, assign and remove privileges can be achieved with a single command:
-
-// tag::neo4j-cypher-docs/docs/dev/ql/administration/security/dbms/all-management-syntax.asciidoc[]
-// tag::include-neo4j-documentation[]
-.Command syntax
-[source, cypher, role=noplay]
------
-GRANT ALL [[DBMS] PRIVILEGES]
-    ON DBMS
-    TO role[, ...]
------
-// end::include-neo4j-documentation[]
-// end::neo4j-cypher-docs/docs/dev/ql/administration/security/dbms/all-management-syntax.asciidoc[]
-
-For example, granting the abilities above to the role `dbmsManager` is done using the following query.
-
-
-.Query
-[source, cypher]
-----
-GRANT ALL DBMS PRIVILEGES ON DBMS TO dbmsManager
-----
-
-[role="statsonlyqueryresult"]
-0 rows, System updates: 1
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-GRANT ALL DBMS PRIVILEGES ON DBMS TO dbmsManager
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-The privileges granted can be seen using the `SHOW PRIVILEGES` command:
-
-
-.Query
-[source, cypher]
-----
-SHOW ROLE dbmsManager PRIVILEGES
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="6*<m"]
-|===
-| +access+ | +action+ | +resource+ | +graph+ | +segment+ | +role+
-| +"GRANTED"+ | +"dbms_actions"+ | +"database"+ | +"*"+ | +"database"+ | +"dbmsManager"+
-6+d|Rows: 1
-|===
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE databaseAdminUsers
-CREATE ROLE noAccessUsers
-CREATE ROLE roleAdder
-CREATE ROLE roleDropper
-CREATE ROLE roleAssigner
-CREATE ROLE roleRemover
-CREATE ROLE roleShower
-CREATE ROLE roleManager
-CREATE ROLE userAdder
-CREATE ROLE userDropper
-CREATE ROLE userModifier
-CREATE ROLE passwordModifier
-CREATE ROLE statusModifier
-CREATE ROLE userShower
-CREATE ROLE userManager
-CREATE ROLE databaseAdder
-CREATE ROLE databaseDropper
-CREATE ROLE databaseManager
-CREATE ROLE privilegeShower
-CREATE ROLE privilegeAssigner
-CREATE ROLE privilegeRemover
-CREATE ROLE privilegeManager
-CREATE ROLE dbmsManager
-GRANT ROLE regularUsers TO jake
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-SHOW ROLE dbmsManager PRIVILEGES
 ]]></command></para></formalpara>
 ++++
 endif::nonhtmloutput[]
