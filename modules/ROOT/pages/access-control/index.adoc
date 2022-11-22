@@ -1,37 +1,32 @@
-:description: Neo4j role-based access control and fine-grained security.
-
 [[access-control]]
 = Access control
+:description: This chapter explains how to manage Neo4j role-based access control and fine-grained security. 
 
-[abstract]
---
-This section explains how to manage Neo4j role-based access control and fine-grained security.
---
+Neo4j has a complex security model stored in the system graph, maintained in a special database called the `system` database.
+All administrative commands need to be executing against the `system` database.
+When connected to the DBMS over bolt, administrative commands are automatically routed to the `system` database.
+For more information on how to manage multiple databases, refer to the section on xref:databases.adoc[administering databases].
 
-Neo4j has a complex security model stored in the system graph, which is maintained on a special database called the `system` database.
-All administrative commands need to be executed against the `system` database.
-When connected to the DBMS over `bolt`, administrative commands are automatically routed to the `system` database.
-For more information on how to manage multiple databases, refer to the section on xref::databases.adoc[administering databases].
-
-The concept of _role-based access control_ was introduced in Neo4j 3.1.
-Since then, it has been possible to create users and assign them to roles to control whether users can read, write and administer the database.
+Neo4j 3.1 introduced the concept of _role-based access control_.
+It was possible to create users and assign them to roles to control whether the users could read, write and administer the database.
 In Neo4j 4.0 this model was enhanced significantly with the addition of _privileges_, which are the underlying access-control rules by which the users rights are defined.
 
-The original built-in roles still exist with almost the exact same access rights, but they are no-longer statically defined (see xref::access-control/built-in-roles.adoc[Built-in roles]).
-Instead, they are defined in terms of their underlying _privileges_, and they can be modified by adding or removing these access rights.
+The original built-in roles still exist with almost the exact same access rights, but they are no-longer statically defined (see xref:access-control/built-in-roles.adoc[Built-in roles]).
+Instead they are defined in terms of their underlying _privileges_ and they can be modified by adding an removing these access rights.
 
-In addition, any newly created roles can be assigned to any combination of _privileges_, so that you may set specific access controls for them.
-Another new major capability is the _sub-graph_ access control, through which read access to the graph can be limited to specific combinations of labels, relationship types, and properties.
+In addition, any new roles created can by assigned any combination of _privileges_ to create the specific access control desired.
+A major additional capability is _sub-graph_ access control whereby read-access to the graph can be limited to specific combinations of label, relationship-type and property.
 
 
 [[access-control-syntax]]
 == Syntax summaries
 
-Almost all administration commands have variations.
-The most common are parts of the command that are optional or that can have multiple values.
+Almost all administration commands have variations in the commands.
+Parts of the command that are optional or can have multiple values are most common.
+To show all versions of a command, a summary of the syntax will be presented.
+These summaries will use some special characters to indicate such variations.
 
-See below a summary of the syntax to check all versions of a command.
-These summaries use some special characters to indicate such variations.
+The special characters and their meaning are as follows:
 
 .Special characters in syntax summaries
 [options="header", width="100%", cols="1a,3a,3a"]
@@ -39,59 +34,57 @@ These summaries use some special characters to indicate such variations.
 | Character | Meaning | Example
 
 | `\|`
-| 
-Used to indicate alternative parts of a command (i.e. `or`).
+| Or, used to indicate alternative parts of a command.
 Needs to be part of a grouping.
-| If the syntax needs to specify either a name or `+*+`, this can be indicated with `+* \| name+`.
+| If the syntax needs to specify either a name or `+*+`, this can be indicated with `* \| name`.
 
-| `+{+` and `+}+`
-| Used to group parts of the command. Commonly found together with `\|`.
-| In order to use the `or` in the syntax summary, it needs to be in a group: `+{* \| name}+`.
+| `{` and `}`
+| Used to group parts of the command, common together with `\|`.
+| To use the `or` in the syntax summary it needs to be in a group, `{* \| name}`.
 
 | `[` and `]`
 | Used to indicate an optional part of the command.
 It also groups alternatives together, when there can be either of the alternatives or nothing.
 | If a keyword in the syntax can either be in singular or plural, we can indicate that the `S` is optional with `GRAPH[S]`.
 
-| `+...+`
-|
-Repeated pattern.
-Related to the command part immediately before this is repeated.
-| A comma separated list of names would be `+name[, ...]+`.
+| `...`
+| Repeated pattern, the command part immediately before this is repeated.
+| A comma separated list of names would be `name[, ...]`.
 
 | `"`
 | When a special character is part of the syntax itself, we surround it with `"` to indicate this.
-|
-To include `+{+` in the syntax use `+"{" { * \| name } "}"+`.
-In this case, you will get either `+{ * }+` or `+{ name }+`.
+| To include `{` in the syntax use `"{" { * \| name } "}"`, here we get either `{*}` or `\{name}`.
 
 |===
 
 The special characters in the table above are the only ones that need to be escaped using `"` in the syntax summaries.
 
-Here is an example that uses all special characters is granting the `READ` privilege:
+An example that uses all special characters is granting the `READ` privilege:
 
-[source, syntax, role="noheader"]
+[source, cypher, role=noplay]
 ----
 GRANT READ
-  "{" { * | property[, ...] } "}"
-  ON {HOME GRAPH | GRAPH[S] { * | name[, ...] }}
-    [ ELEMENT[S] { * | label-or-rel-type[, ...] }
-    | NODE[S] { * | label[, ...] }
-    | RELATIONSHIP[S] { * | rel-type[, ...] }]
-  TO role[, ...]
+    "{" { * | property[, ...] } "}"
+    ON {HOME GRAPH | GRAPH[S] { * | name[, ...] }}
+        [
+            ELEMENT[S] { * | label-or-rel-type[, ...] }
+            | NODE[S] { * | label[, ...] }
+            | RELATIONSHIP[S] { * | rel-type[, ...] }
+        ]
+    TO role[, ...]
 ----
 
-Note that this command includes `+{+` and `+}+` in the syntax, and between them there can be a grouping of properties or the character `+*+`.
+Some things to notice about this command is that it includes `{` and `}` in the syntax, and between them has a grouping of either a list of properties or the character `*`.
 It also has multiple optional parts, including the entity part of the command which is the grouping following the graph name.
 
-However, there is no need to escape any characters when creating a constraint for a node property.
-This is because `(` and `)` are not special characters, and `[` and `]` indicate that the constraint name is optional, and therefore not part of the command.
+In difference, there is no need to escape any characters in the node property existence constraint creation command.
+This is because `(` and `)` are not special characters, and the `[` and `]` indicate that the constraint name is optional, and are not part of the command.
 
-[source, syntax, role="noheader"]
+[source, cypher, role=noplay]
 ----
 CREATE CONSTRAINT [constraint_name] [IF NOT EXISTS]
-FOR (n:LabelName)
-REQUIRE n.propertyName IS NOT NULL
+ON (n:LabelName)
+ASSERT n.propertyName IS NOT NULL
 ----
+
 

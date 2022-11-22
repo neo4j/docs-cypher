@@ -1,51 +1,67 @@
-:description: The `CALL {}` clause evaluates a subquery that returns some values.
-
 [[query-call-subquery]]
 = CALL {} (subquery)
+:description: The `CALL {}` clause evaluates a subquery that returns some values. 
 
-[abstract]
---
-The `CALL {}` clause evaluates a subquery that returns some values.
---
+* xref:clauses/call-subquery.adoc#subquery-call-introduction[Introduction]
+* xref:clauses/call-subquery.adoc#subquery-correlated-importing[Importing variables into subqueries]
+* xref:clauses/call-subquery.adoc#subquery-post-union[Post-union processing]
+* xref:clauses/call-subquery.adoc#subquery-aggregation[Aggregation and side-effects]
+* xref:clauses/call-subquery.adoc#subquery-correlated-aggregation[Aggregation on imported variables]
 
-`CALL` allows to execute subqueries, i.e. queries inside of other queries.
+[[subquery-call-introduction]]
+== Introduction
+
+CALL allows to execute subqueries, i.e. queries inside of other queries.
 Subqueries allow you to compose queries, which is especially useful when working with `UNION` or aggregations.
 
 [TIP]
 ====
 The `CALL` clause is also used for calling procedures.
-For descriptions of the `CALL` clause in this context, refer to xref::clauses/call.adoc[`CALL` procedure].
+For descriptions of the `CALL` clause in this context, refer to xref:clauses/call.adoc[CALL procedure].
 ====
 
-Subqueries which end in a `RETURN` statement are called _returning subqueries_ while subqueries without such a return statement are called _unit subqueries_.
-
-A subquery is evaluated for each incoming input row.
-Every output row of a _returning subquery_ is combined with the input row to build the result of the subquery.
-That means that a returning subquery will influence the number of rows.
+A subquery is evaluated for each incoming input row and may produce an arbitrary number of output rows.
+Every output row is then combined with the input row to build the result of the subquery.
+That means that a subquery will influence the number of rows.
 If the subquery does not return any rows, there will be no rows available after the subquery.
 
-_Unit subqueries_ on the other hand are called for their side-effects and not for their results and do therefore not influence the results of the enclosing query.
+There are restrictions on what queries are allowed as subqueries and how they interact with the enclosing query:
 
-There are restrictions on how subqueries interact with the enclosing query:
-
+* A subquery must end with a `RETURN` clause.
 * A subquery can only refer to variables from the enclosing query if they are explicitly imported.
 * A subquery cannot return variables with the same names as variables in the enclosing query.
 * All variables that are returned from a subquery are afterwards available in the enclosing query.
 
 The following graph is used for the examples below:
 
-image:graph_call_subquery_clause.svg[]
+.Graph
+["dot", "CALL {} (subquery)-1.svg", "neoviz", ""]
+----
+  N0 [
+    label = "{Person, Child|age = 20\lname = \'Alice\'\l}"
+  ]
+  N0 -> N2 [
+    color = "#2e3436"
+    fontcolor = "#2e3436"
+    label = "CHILD_OF\n"
+  ]
+  N0 -> N1 [
+    color = "#4e9a06"
+    fontcolor = "#4e9a06"
+    label = "FRIEND_OF\n"
+  ]
+  N1 [
+    label = "{Person|age = 27\lname = \'Bob\'\l}"
+  ]
+  N2 [
+    label = "{Person, Parent|age = 65\lname = \'Charlie\'\l}"
+  ]
+  N3 [
+    label = "{Person|age = 30\lname = \'Dora\'\l}"
+  ]
 
-////
-CREATE
-  (a:Person:Child {age: 20, name: 'Alice'}),
-  (b:Person {age: 27, name: 'Bob'}),
-  (c:Person:Parent {age: 65, name: 'Charlie'}),
-  (d:Person {age: 30, name: 'Dora'})
-  CREATE (a)-[:FRIEND_OF]->(b)
-  CREATE (a)-[:CHILD_OF]->(c)
-////
-
+----
+ 
 
 [[subquery-correlated-importing]]
 == Importing variables into subqueries
@@ -53,8 +69,9 @@ CREATE
 Variables are imported into a subquery using an importing `WITH` clause.
 As the subquery is evaluated for each incoming input row, the imported variables get bound to the corresponding values from the input row in each evaluation.
 
+
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 UNWIND [0, 1, 2] AS x
 CALL {
@@ -74,11 +91,35 @@ RETURN x, y
 2+d|Rows: 3
 |===
 
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE
+  (a:Person:Child {age: 20, name: 'Alice'}),
+  (b:Person {age: 27, name: 'Bob'}),
+  (c:Person:Parent {age: 65, name: 'Charlie'}),
+  (d:Person {age: 30, name: 'Dora'})
+  CREATE (a)-[:FRIEND_OF]->(b)
+  CREATE (a)-[:CHILD_OF]->(c)
+
+]]></database><command><![CDATA[
+UNWIND [0, 1, 2] AS x
+CALL {
+  WITH x
+  RETURN x * 10 AS y
+}
+RETURN x, y
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
 An importing `WITH` clause must:
 
 * Consist only of simple references to outside variables - e.g. `WITH x, y, z`. Aliasing or expressions are not supported in importing `WITH` clauses - e.g. `WITH a AS b` or `WITH a+1 AS b`.
 * Be the first clause of a subquery (or the second clause, if directly following a `USE` clause).
-
 
 [[subquery-post-union]]
 == Post-union processing
@@ -86,8 +127,9 @@ An importing `WITH` clause must:
 Subqueries can be used to process the results of a `UNION` query further.
 This example query finds the youngest and the oldest person in the database and orders them by name.
 
+
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 CALL {
   MATCH (p:Person)
@@ -113,12 +155,45 @@ ORDER BY p.name
 2+d|Rows: 2
 |===
 
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE
+  (a:Person:Child {age: 20, name: 'Alice'}),
+  (b:Person {age: 27, name: 'Bob'}),
+  (c:Person:Parent {age: 65, name: 'Charlie'}),
+  (d:Person {age: 30, name: 'Dora'})
+  CREATE (a)-[:FRIEND_OF]->(b)
+  CREATE (a)-[:CHILD_OF]->(c)
+
+]]></database><command><![CDATA[
+CALL {
+  MATCH (p:Person)
+  RETURN p
+  ORDER BY p.age ASC
+  LIMIT 1
+UNION
+  MATCH (p:Person)
+  RETURN p
+  ORDER BY p.age DESC
+  LIMIT 1
+}
+RETURN p.name, p.age
+ORDER BY p.name
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
 If different parts of a result should be matched differently, with some aggregation over the whole results, subqueries need to be used.
 This example query finds friends and/or parents for each person.
 Subsequently the number of friends and parents are counted together.
 
+
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 MATCH (p:Person)
 CALL {
@@ -144,95 +219,95 @@ RETURN DISTINCT p.name, count(other)
 2+d|Rows: 4
 |===
 
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE
+  (a:Person:Child {age: 20, name: 'Alice'}),
+  (b:Person {age: 27, name: 'Bob'}),
+  (c:Person:Parent {age: 65, name: 'Charlie'}),
+  (d:Person {age: 30, name: 'Dora'})
+  CREATE (a)-[:FRIEND_OF]->(b)
+  CREATE (a)-[:CHILD_OF]->(c)
+
+]]></database><command><![CDATA[
+MATCH (p:Person)
+CALL {
+  WITH p
+  OPTIONAL MATCH (p)-[:FRIEND_OF]->(other:Person)
+  RETURN other
+UNION
+  WITH p
+  OPTIONAL MATCH (p)-[:CHILD_OF]->(other:Parent)
+  RETURN other
+}
+RETURN DISTINCT p.name, count(other)
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
 
 [[subquery-aggregation]]
-== Aggregations
+== Aggregation and side-effects
 
-Returning subqueries change the number of results of the query: The result of the `CALL` clause is the combined result of evaluating the subquery for each input row.
+Subqueries can be useful to do aggregations for each row and to isolate side-effects.
+This example query creates five `Clone` nodes for each existing person.
+The aggregation ensures that cardinality is not changed by the subquery.
+Without this, the result would be five times as many rows.
 
-The following example finds the name of each person and the names of their friends:
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 MATCH (p:Person)
 CALL {
-  WITH p
-  MATCH (p)-[:FRIEND_OF]-(c:Person)
-  RETURN c.name AS friend
+  UNWIND range(1, 5) AS i
+  CREATE (c:Clone)
+  RETURN count(c) AS numberOfClones
 }
-RETURN p.name, friend
+RETURN p.name, numberOfClones
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| +p.name+ | +friend+
-| +"Alice"+ | +"Bob"+
-| +"Bob"+ | +"Alice"+
-2+d|Rows: 2
-|===
-
-The number of results of the subquery changed the number of results of the enclosing query: Instead of 4 rows, one for each node), there are now 2 rows which were found for Alice and Bob respectively. No rows are returned for Charlie and Dora since they have no friends in our example graph.
-
-We can also use subqueries to perform isolated aggregations. In this example we count the number of relationships each person has.
-As we get one row from each evaluation of the subquery, the number of rows is the same, before and after the `CALL` clause:
-
-.Query
-[source, cypher, indent=0]
-----
-MATCH (p:Person)
-CALL {
-  WITH p
-  MATCH (p)--(c)
-  RETURN count(c) AS numberOfConnections
-}
-RETURN p.name, numberOfConnections
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| +p.name+ | +numberOfConnections+
-| +"Alice"+ | +2+
-| +"Bob"+ | +1+
-| +"Charlie"+ | +1+
-| +"Dora"+ | +0+
-2+d|Rows: 4
-|===
-
-
-[[subquery-unit]]
-== Unit subqueries and side-effects
-
-Unit subqueries do not return any rows and are therefore used for their side effects.
-
-This example query creates five clones of each existing person.
-As the subquery is a unit subquery, it does not change the number of rows of the enclosing query.
-
-.Query
-[source, cypher, indent=0]
-----
-MATCH (p:Person)
-CALL {
-  WITH p
-  UNWIND range (1, 5) AS i
-  CREATE (:Person {name: p.name})
-}
-RETURN count(*)
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| +count(*)+
-| +4+
-1+d|Rows: 1 +
+| +p.name+ | +numberOfClones+
+| +"Alice"+ | +5+
+| +"Bob"+ | +5+
+| +"Charlie"+ | +5+
+| +"Dora"+ | +5+
+2+d|Rows: 4 +
 Nodes created: 20 +
-Properties set: 20 +
 Labels added: 20
 |===
 
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE
+  (a:Person:Child {age: 20, name: 'Alice'}),
+  (b:Person {age: 27, name: 'Bob'}),
+  (c:Person:Parent {age: 65, name: 'Charlie'}),
+  (d:Person {age: 30, name: 'Dora'})
+  CREATE (a)-[:FRIEND_OF]->(b)
+  CREATE (a)-[:CHILD_OF]->(c)
+
+]]></database><command><![CDATA[
+MATCH (p:Person)
+CALL {
+  UNWIND range(1, 5) AS i
+  CREATE (c:Clone)
+  RETURN count(c) AS numberOfClones
+}
+RETURN p.name, numberOfClones
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
 
 [[subquery-correlated-aggregation]]
 == Aggregation on imported variables
@@ -240,8 +315,9 @@ Labels added: 20
 Aggregations in subqueries are scoped to the subquery evaluation, also for imported variables.
 The following example counts the number of younger persons for each person in the graph:
 
+
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 MATCH (p:Person)
 CALL {
@@ -264,191 +340,30 @@ RETURN p.name, youngerPersonsCount
 2+d|Rows: 4
 |===
 
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE
+  (a:Person:Child {age: 20, name: 'Alice'}),
+  (b:Person {age: 27, name: 'Bob'}),
+  (c:Person:Parent {age: 65, name: 'Charlie'}),
+  (d:Person {age: 30, name: 'Dora'})
+  CREATE (a)-[:FRIEND_OF]->(b)
+  CREATE (a)-[:CHILD_OF]->(c)
 
-[[subquery-call-in-transactions]]
-== Subqueries in transactions
-
-Subqueries can be made to execute in separate, inner transactions, producing intermediate commits.
-This can come in handy when doing large write operations, like batch updates, imports, and deletes.
-To execute a subquery in separate transactions, you add the modifier `IN TRANSACTIONS` after the subquery.
-
-The following example uses a CSV file and the `LOAD CSV` clause to import more data to the example graph.
-It creates nodes in separate transactions using `CALL {} IN TRANSACTIONS`:
-
-// neo4j-manual-modeling-antora/cypherManual/build/4.4/antora/modules/ROOT/examples/neo4j-cypher-docs/docs/dev/ql/csv-files/friends.csv
-
-.friends.csv
-[source, csv, role="noheader"]
-----
-1,Bill,26
-2,Max,27
-3,Anna,22
-4,Gladys,29
-5,Summer,24
-----
-
-.Query
-[source, cypher, indent=0]
-----
-LOAD CSV FROM 'file:///friends.csv' AS line
+]]></database><command><![CDATA[
+MATCH (p:Person)
 CALL {
-  WITH line
-  CREATE (:PERSON {name: line[1], age: toInteger(line[2])})
-} IN TRANSACTIONS
-----
-
-.Result
-[role="queryresult",options="footer",cols="1*<m"]
-|===
-1+|(empty result)
-1+d|Rows: 0 +
-Nodes created: 5 +
-Properties set: 10 +
-Labels added: 5 +
-Transactions committed: 1
-|===
-
-As the size of the CSV file in this example is small, only a single separate transaction is started and committed.
-
-[NOTE]
-====
-`CALL { ... } IN TRANSACTIONS` is only allowed in xref::introduction/transactions.adoc[implicit transactions].
-====
-
-
-=== Batching
-
-The amount of work to do in each separate transaction can be specified in terms of how many input rows
-to process before committing the current transaction and starting a new one.
-The number of input rows is set with the modifier `OF n ROWS` (or `ROW`).
-If omitted, the default batch size is `1000` rows.
-The following is the same example but with one transaction every `2` input rows:
-
-.friends.csv
-[source, csv, role="noheader"]
-----
-1,Bill,26
-2,Max,27
-3,Anna,22
-4,Gladys,29
-5,Summer,24
-----
-
-.Query
-[source, cypher, indent=0]
-----
-LOAD CSV FROM 'file:///friends.csv' AS line
-CALL {
-  WITH line
-  CREATE (:Person {name: line[1], age: toInteger(line[2])})
-} IN TRANSACTIONS OF 2 ROWS
-----
-
-.Result
-[role="queryresult",options="footer",cols="1*<m"]
-|===
-1+|(empty result)
-1+d|Rows: 0 +
-Nodes created: 5 +
-Properties set: 10 +
-Labels added: 5 +
-Transactions committed: 3
-|===
-
-The query now starts and commits three separate transactions:
-
-. The first two executions of the subquery (for the first two input rows from `LOAD CSV`) take place in the first transaction.
-. The first transaction is then committed before proceeding.
-. The next two executions of the subquery (for the next two input rows) take place in a second transaction.
-. The second transaction is committed.
-. The last execution of the subquery (for the last input row) takes place in a third transaction.
-. The third transaction is committed.
-
-You can also use `+CALL { ... } IN TRANSACTIONS of n ROWS+` to delete all your data in batches in order to avoid a huge garbage collection or an `OutOfMemory` exception.
-For example:
-
-.Query
-[source, cypher, indent=0]
-----
-MATCH (n)
-CALL {
-  WITH n
-  DETACH DELETE n
-} IN TRANSACTIONS OF 2 ROWS
-----
-
-.Result
-[role="queryresult",options="footer",cols="1*<m"]
-|===
-1+|(empty result)
-1+d|Rows: 0 +
-Nodes deleted: 9 +
-Relationships deleted: 2 +
-Transactions committed: 5
-|===
-
-[NOTE]
-====
-Up to a point, using a larger batch size will be more performant.
-The batch size of `2 ROWS` is an example given the small data set used here.
-For larger data sets, you might want to use larger batch sizes, such as `10000 ROWS`.
-====
-
-
-=== Errors
-
-If an error occurs in `CALL {} IN TRANSACTIONS` the entire query fails and
-both the current inner transaction and the outer transaction are rolled back.
-
-[IMPORTANT]
-====
-On error, any previously committed inner transactions remain committed, and are not rolled back.
-====
-
-In the following example, the last subquery execution in the second inner transaction fails
-due to division by zero.
-
-.Query
-[source, cypher, indent=0]
-----
-UNWIND [4, 2, 1, 0] AS i
-CALL {
-  WITH i
-  CREATE (:Example {num: 100/i})
-} IN TRANSACTIONS OF 2 ROWS
-RETURN i
-----
-
-.Error
-[source, error, role="noheader"]
-----
-/ by zero (Transactions committed: 1)
-----
-
-When the failure occurred, the first transaction had already been committed, so the database contains two example nodes.
-
-.Query
-[source, cypher, indent=0]
-----
-MATCH (e:Example)
-RETURN e.num
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| +e.num+
-| +25+
-| +50+
-1+d|Rows: 2
-|===
-
-
-=== Restrictions
-
-These are the restrictions on queries that use `+CALL { ... } IN TRANSACTIONS+`:
-
-* A nested `+CALL { ... } IN TRANSACTIONS+` inside a `+CALL { ... }+` clause is not supported.
-* A `+CALL { ... } IN TRANSACTIONS+` in a `UNION` is not supported.
-* A `+CALL { ... } IN TRANSACTIONS+` after a write clause is not supported, unless that write clause is inside a `+CALL { ... } IN TRANSACTIONS+`.
+  WITH p
+  MATCH (other:Person)
+  WHERE other.age < p.age
+  RETURN count(other) AS youngerPersonsCount
+}
+RETURN p.name, youngerPersonsCount
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
 

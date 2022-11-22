@@ -1,27 +1,70 @@
-:description: Query options available in Cypher.
+[[query-tuning]]
+= Query tuning
+:description: This section describes query tuning for the Cypher query language.  This section describes the query options available in Cypher. 
+
+//Check Mark
+:check-mark: icon:check[]
+
+//Cross Mark
+:cross-mark: icon:times[]
+
+Neo4j aims to execute queries as fast as possible.
+
+However, when optimizing for maximum query execution performance, it may be helpful to rephrase queries using knowledge about the domain and the application.
+
+The overall goal of manual query performance optimization is to ensure that only necessary data is retrieved from the graph.
+At the very least, data should get filtered out as early as possible in order to reduce the amount of work that has to be done in the later stages of query execution.
+This also applies to what gets returned: returning whole nodes and relationships ought to be avoided in favour of selecting and returning only the data that is needed.
+You should also make sure to set an upper limit on variable length patterns, so they don't cover larger portions of the dataset than needed.
+
+Each Cypher query gets optimized and transformed into an xref:execution-plans/index.adoc#execution-plan-introduction[execution plan] by the Cypher query planner.
+To minimize the resources used for this, try to use parameters instead of literals when possible.
+This allows Cypher to re-use your queries instead of having to parse and build new execution plans.
+
+To read more about the execution plan operators mentioned in this chapter, see xref:execution-plans/index.adoc[].
+
+* xref:query-tuning/query-options.adoc#cypher-query-options[Cypher query options]
+** xref:query-tuning/index.adoc#cypher-version[Cypher version]
+** xref:query-tuning/index.adoc#cypher-runtime[Cypher runtime]
+** xref:query-tuning/index.adoc#cypher-connect-components-planner[Cypher connect-components planner]
+** xref:query-tuning/index.adoc#cypher-update-strategy[Cypher update strategy]
+** xref:query-tuning/index.adoc#cypher-expression-engine[Cypher expression engine]
+** xref:query-tuning/index.adoc#cypher-operator-engine[Cypher operator engine]
+** xref:query-tuning/index.adoc#cypher-interpreted-pipes-fallback[Cypher interpreted pipes fallback]
+** xref:query-tuning/index.adoc#cypher-replanning[Cypher replanning]
+* xref:query-tuning/how-do-i-profile-a-query.adoc#how-do-i-profile-a-query[Profiling a query]
+* xref:query-tuning/indexes.adoc[The use of indexes]
+* xref:query-tuning/basic-example.adoc[Basic query tuning example]
+* xref:query-tuning/advanced-example.adoc[Advanced query tuning example]
+** xref:query-tuning/advanced-example.adoc#advanced-query-tuning-example-data-set[The data set]
+** xref:query-tuning/advanced-example.adoc#advanced-query-tuning-example-index-backed-property-lookup[Index-backed property-lookup]
+** xref:query-tuning/advanced-example.adoc#advanced-query-tuning-example-index-backed-order-by[Index-backed order by]
+* xref:query-tuning/using.adoc[Planner hints and the `USING` keyword]
+** xref:query-tuning/using.adoc#query-using-introduction[Introduction]
+** xref:query-tuning/using.adoc#query-using-index-hint[Index hints]
+** xref:query-tuning/using.adoc#query-using-scan-hint[Scan hints]
+** xref:query-tuning/using.adoc#query-using-join-hint[Join hints]
+** xref:query-tuning/using.adoc#query-using-periodic-commit-hint[`PERIODIC COMMIT` query hint]
+
 
 [[cypher-query-options]]
-= Cypher query options
-
-[abstract]
---
-This section describes the query options available in Cypher.
---
+== Cypher query options
 
 Query execution can be fine-tuned through the use of query options.
 In order to use one or more of these options, the query must be prepended with `CYPHER`, followed by the query option(s), as exemplified thus: `CYPHER query-option [further-query-options] query`.
 
 
 [[cypher-version]]
-== Cypher version
+=== Cypher version
 
 Occasionally, there is a requirement to use a previous version of the Cypher compiler when running a query.
-
 Here we detail the available versions:
 
 [options="header",cols="1m,3a,^1a"]
 |===
-| Query option | Description | Default
+| Query option
+| Description
+| Default
 
 | 3.5
 | This will force the query to use Neo4j Cypher 3.5.
@@ -32,30 +75,21 @@ Here we detail the available versions:
 |
 
 | 4.3
-| This will force the query to use Neo4j Cypher 4.3.
-|
-
-| 4.4
-|
-This will force the query to use Neo4j Cypher 4.4.
-As this is the default version, it is not necessary to use this option explicitly.
-
+| This will force the query to use Neo4j Cypher 4.3. As this is the default version, it is not necessary to use this option explicitly.
 | {check-mark}
-
 |===
-
 
 [WARNING]
 ====
 In Neo4j {neo4j-version}, the support for Cypher 3.5 is provided only at the parser level.
 The consequence is that some underlying features available in Neo4j 3.5 are no longer available and will result in runtime errors.
 
-Please refer to the discussion in xref::deprecations-additions-removals-compatibility.adoc#cypher-compatibility[Cypher Compatibility] for more information on which features are affected.
+Please refer to the discussion in xref:deprecations-additions-removals-compatibility.adoc#cypher-compatibility[Cypher Compatibility] for more information on which features are affected.
 ====
 
 
 [[cypher-runtime]]
-== Cypher runtime
+=== Cypher runtime
 
 Using the execution plan, the query is executed -- and records returned -- by the Cypher _runtime_.
 Depending on whether Neo4j Enterprise Edition or Neo4j Community Edition is used, there are three different runtimes available:
@@ -78,25 +112,23 @@ While this should lead to superior performance in most cases (over both the inte
 
 [options="header",cols="2m,2a,^1a"]
 |===
-| Option | Description | Default
+|Option
+|Description
+|Default
 
-| runtime=interpreted
-| This will force the query planner to use the interpreted runtime.
-|
-This is not used in Enterprise Edition unless explicitly asked for.
+|runtime=interpreted
+|This will force the query planner to use the interpreted runtime.
+|This is not used in Enterprise Edition unless explicitly asked for.
 It is the only option for all queries in Community Edition--it is not necessary to specify this option in Community Edition.
 
-| [enterprise-edition]#runtime=slotted#
-| This will cause the query planner to use the slotted runtime.
-| This is the default option for all queries which are not supported by `runtime=pipelined` in Enterprise Edition.
+|[enterprise-edition]#runtime=slotted#
+|This will cause the query planner to use the slotted runtime.
+|This is the default option for all queries which are not supported by `runtime=pipelined` in Enterprise Edition.
 
-| [enterprise-edition]#runtime=pipelined#
-|
-This will cause the query planner to use the pipelined runtime if it supports the query.
+|[enterprise-edition]#runtime=pipelined#
+|This will cause the query planner to use the pipelined runtime if it supports the query.
 If the pipelined runtime does not support the query, the planner will fall back to the slotted runtime.
-
-| This is the default option for some queries in Enterprise Edition.
-
+|This is the default option for some queries in Enterprise Edition.
 |===
 
 In Enterprise Edition, the Cypher query planner selects the runtime, falling back to alternative runtimes as follows:
@@ -108,8 +140,7 @@ In Enterprise Edition, the Cypher query planner selects the runtime, falling bac
 
 
 [[cypher-planner]]
-== Cypher planner
-
+=== Cypher planner
 The Cypher planner takes a Cypher query and computes an execution plan that solves it.
 For any given query there is likely a number of execution plan candidates that each solve the query in a different way.
 The planner uses a search algorithm to find the execution plan with the lowest estimated execution cost.
@@ -118,7 +149,9 @@ This table describes the available planner options:
 
 [options="header",cols="2m,3a,^1a"]
 |===
-| Query option | Description | Default
+| Query option
+| Description
+| Default
 
 | planner=cost
 | Use cost based planning with default limits on plan search space and time.
@@ -129,64 +162,56 @@ This table describes the available planner options:
 |
 
 | planner=dp
-|
-Use cost based planning without limits on plan search space and time to perform an exhaustive search for the best execution plan.
-
+| Use cost based planning without limits on plan search space and time to perform an exhaustive search for the best execution plan.
 [NOTE]
 ====
 Using this option can significantly _increase_ the planning time of the query.
 ====
-
 |
-
 |===
 
 
 [[cypher-connect-components-planner]]
-== Cypher connect-components planner
-
+=== Cypher connect-components planner
 One part of the Cypher planner is responsible for combining sub-plans for separate patterns into larger plans - a task referred to as _connecting components_.
 
 This table describes the available query options for the connect-components planner:
 
 [options="header",cols="2m,3a,^1a"]
 |===
-| Query option | Description | Default
+| Query option
+| Description
+| Default
 
 | connectComponentsPlanner=greedy
-|
-Use a greedy approach when combining sub-plans.
-
+| Use a greedy approach when combining sub-plans.
 [NOTE]
 ====
 Using this option can significantly _reduce_ the planning time of the query.
 ====
-
-|
+| 
 
 | connectComponentsPlanner=idp
-|
-Use the cost based IDP search algorithm when combining sub-plans.
-
+| Use the cost based IDP search algorithm when combining sub-plans.
 [NOTE]
 ====
 Using this option can significantly _increase_ the planning time of the query but usually finds better plans.
 ====
-
 | {check-mark}
-
 |===
 
 
 [[cypher-update-strategy]]
-== Cypher update strategy
+=== Cypher update strategy
 This option affects the eagerness of updating queries.
 
 The possible values are:
 
 [options="header",cols="2m,3a,^1a"]
 |===
-| Query option | Description | Default
+| Query option
+| Description
+| Default
 
 | updateStrategy=default
 | Update queries are executed eagerly when needed.
@@ -195,20 +220,20 @@ The possible values are:
 | updateStrategy=eager
 | Update queries are always executed eagerly.
 |
-
 |===
 
 
 [[cypher-expression-engine]]
-== Cypher expression engine
-
+=== Cypher expression engine
 This option affects how the runtime evaluates expressions.
 
 The possible values are:
 
 [options="header",cols="2m,3a,^1a"]
 |===
-| Query option | Description | Default
+| Query option
+| Description
+| Default
 
 | expressionEngine=default
 | Compile expressions and use the compiled expression engine when needed.
@@ -219,26 +244,24 @@ The possible values are:
 |
 
 | expressionEngine=compiled
-|
-Always compile expressions and use the _compiled_ expression engine.
+| Always compile expressions and use the _compiled_ expression engine.
 
 Cannot be used together with `runtime=interpreted`.
-
 |
-
 |===
 
 
 [[cypher-operator-engine]]
-== Cypher operator engine
-
+=== Cypher operator engine
 This query option affects whether the pipelined runtime attempts to generate compiled code for groups of operators.
 
 The possible values are:
 
 [options="header",cols="2m,3a,^1a"]
 |===
-| Query option | Description | Default
+| Query option
+| Description
+| Default
 
 | operatorEngine=default
 | Attempt to generate compiled operators when applicable.
@@ -249,68 +272,58 @@ The possible values are:
 |
 
 | operatorEngine=compiled
-|
-Always attempt to generate _compiled_ operators.
+| Always attempt to generate _compiled_ operators.
 
 Cannot be used together with `runtime=interpreted` or `runtime=slotted`.
-
 |
-
 |===
 
 
 [[cypher-interpreted-pipes-fallback]]
-== Cypher interpreted pipes fallback
-
+=== Cypher interpreted pipes fallback
 This query option affects how the pipelined runtime behaves for operators it does not directly support.
 
 The available options are:
 
 [options="header",cols="2m,3a,^1a"]
 |===
-| Query option | Description | Default
+| Query option
+| Description
+| Default
 
 | interpretedPipesFallback=default
-| Equivalent to `interpretedPipesFallback=whitelisted_plans_only`.
+| Equivalent to `interpretedPipesFallback=whitelisted_plans_only`
 | {check-mark}
 
 | interpretedPipesFallback=disabled
-|
-If the plan contains any operators not supported by the pipelined runtime then another runtime is chosen to execute the entire plan.
+| If the plan contains any operators not supported by the pipelined runtime then another runtime is chosen to execute the entire plan.
 
-Cannot be used together with `runtime=interpreted` or `runtime=slotted`.
-
+Cannot be used together with `runtime=interpreted` or `runtime=slotted`
 |
 
 | interpretedPipesFallback=whitelisted_plans_only
-|
-Parts of the execution plan can be executed on another runtime.
+| Parts of the execution plan can be executed on another runtime.
 Only certain operators are allowed to execute on another runtime.
 
 Cannot be used together with `runtime=interpreted` or `runtime=slotted`.
-
 |
 
 | interpretedPipesFallback=all
-|
-Parts of the execution plan may be executed on another runtime.
+| Parts of the execution plan may be executed on another runtime.
 Any operator is allowed to execute on another runtime.
 Queries with this option set might produce incorrect results, or fail.
 
 Cannot be used together with `runtime=interpreted` or `runtime=slotted`.
 
 [WARNING]
-====
 This setting is experimental, and using it in a production environment is discouraged.
-====
 
 |
-
 |===
 
 
 [[cypher-replanning]]
-== Cypher replanning
+=== Cypher replanning
 
 Cypher replanning occurs in the following circumstances:
 
@@ -318,41 +331,39 @@ Cypher replanning occurs in the following circumstances:
 This can either be when the server is first started or restarted, if the cache has recently been cleared, or if link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/configuration-settings#config_dbms.query_cache_size[dbms.query_cache_size] was exceeded.
 * When the time has past the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/configuration-settings#config_cypher.min_replan_interval[cypher.min_replan_interval] value, and the database statistics have changed more than the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/configuration-settings#config_cypher.statistics_divergence_threshold[cypher.statistics_divergence_threshold] value.
 
-There may be situations where xref::execution-plans/index.adoc[Cypher query planning] can occur at a non-ideal time.
+There may be situations where xref:execution-plans/index.adoc[Cypher query planning] can occur at a non-ideal time.
 For example, when a query must be as fast as possible and a valid plan is already in place.
 
 [NOTE]
-====
 Replanning is not performed for all queries at once; it is performed in the same thread as running the query, and can block the query.
 However, replanning one query does not replan any other queries.
-====
 
 There are three different replan options available:
 
 [options="header",cols="2m,3a,^1a"]
 |===
-| Option | Description | Default
+|Option
+|Description
+|Default
 
-| replan=default
-| This is the planning and replanning option as described above.
+|replan=default
+|This is the planning and replanning option as described above.
 | {check-mark}
 
-| replan=force
-| This will force a replan, even if the plan is valid according to the planning rules.
+|replan=force
+|This will force a replan, even if the plan is valid according to the planning rules.
 Once the new plan is complete, it replaces the existing one in the query cache.
 |
 
-| replan=skip
-| If a valid plan already exists, it will be used even if the planning rules would normally dictate that it should be replanned.
+|replan=skip
+|If a valid plan already exists, it will be used even if the planning rules would normally dictate that it should be replanned.
 |
-
 |===
 
 The replan option is prepended to queries.
-
 For example:
 
-[source, cypher, role=noplay, indent=0]
+[source, cypher, role=noplay]
 ----
 CYPHER replan=force MATCH ...
 ----
@@ -360,13 +371,44 @@ CYPHER replan=force MATCH ...
 In a mixed workload, you can force replanning by using the Cypher `EXPLAIN` commands.
 This can be useful to schedule replanning of queries which are expensive to plan, at known times of low load.
 Using `EXPLAIN` will make sure the query is only planned, but not executed.
-
 For example:
 
-[source, cypher, role=noplay, indent=0]
+[source, cypher, role=noplay]
 ----
 CYPHER replan=force EXPLAIN MATCH ...
 ----
 
 During times of known high load, `replan=skip` can be useful to not introduce unwanted latency spikes.
 
+
+[[how-do-i-profile-a-query]]
+== Profiling a query
+
+There are two options to choose from when you want to analyze a query by looking at its execution plan:
+
+`EXPLAIN`::
+If you want to see the execution plan but not run the statement, prepend your Cypher statement with `EXPLAIN`.
+The statement will always return an empty result and make no changes to the database.
+
+`PROFILE`::
+If you want to run the statement and see which operators are doing most of the work, use `PROFILE`.
+This will run your statement and keep track of how many rows pass through each operator, and how much each operator needs to interact with the storage layer to retrieve the necessary data.
+Note that _profiling your query uses more resources,_ so you should not profile unless you are actively working on a query.
+
+See xref:execution-plans/index.adoc[] for a detailed explanation of each of the operators contained in an execution plan.
+
+[TIP]
+====
+Being explicit about what types and labels you expect relationships and nodes to have in your query helps Neo4j use the best possible statistical information, which leads to better execution plans.
+This means that when you know that a relationship can only be of a certain type, you should add that to the query.
+The same goes for labels, where declaring labels on both the start and end nodes of a relationship helps Neo4j find the best way to execute the statement.
+====
+
+//cypher/cypher-docs/src/docs/dev/query-tuning-indexes.asciidoc
+
+//cypher/cypher-docs/src/docs/dev/basic-query-tuning-example.asciidoc
+
+//cypher/cypher-docs/src/docs/dev/advanced-query-tuning-example.asciidoc
+
+//cypher/cypher-docs/src/test/scala/org/neo4j/cypher/docgen/UsingTest.scala
+//generates: cypher/cypher-docs/target/docs/dev/ql/query-using.adoc
