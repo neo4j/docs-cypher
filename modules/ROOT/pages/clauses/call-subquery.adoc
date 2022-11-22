@@ -3,10 +3,9 @@
 :description: The `CALL {}` clause evaluates a subquery that returns some values. 
 
 * xref:clauses/call-subquery.adoc#subquery-call-introduction[Introduction]
-* xref:clauses/call-subquery.adoc#subquery-correlated-importing[Importing variables into subqueries]
-* xref:clauses/call-subquery.adoc#subquery-post-union[Post-union processing]
+* xref:clauses/call-subquery.adoc#subquery-post-union[Post- union processing]
 * xref:clauses/call-subquery.adoc#subquery-aggregation[Aggregation and side-effects]
-* xref:clauses/call-subquery.adoc#subquery-correlated-aggregation[Aggregation on imported variables]
+* xref:clauses/call-subquery.adoc#subquery-correlated[Correlated subqueries]
 
 [[subquery-call-introduction]]
 == Introduction
@@ -30,7 +29,7 @@ If the subquery does not return any rows, there will be no rows available after 
 There are restrictions on what queries are allowed as subqueries and how they interact with the enclosing query:
 
 * A subquery must end with a `RETURN` clause.
-* A subquery can only refer to variables from the enclosing query if they are explicitly imported.
+* A subquery cannot refer to variables from the enclosing query.
 * A subquery cannot return variables with the same names as variables in the enclosing query.
 * All variables that are returned from a subquery are afterwards available in the enclosing query.
 
@@ -64,64 +63,6 @@ The following graph is used for the examples below:
 
 ----
  
-
-[[subquery-correlated-importing]]
-== Importing variables into subqueries
-
-Variables are imported into a subquery using an importing `WITH` clause.
-As the subquery is evaluated for each incoming input row, the imported variables get bound to the corresponding values from the input row in each evaluation.
-
-
-.Query
-[source, cypher]
-----
-UNWIND [0, 1, 2] AS x
-CALL {
-  WITH x
-  RETURN x * 10 AS y
-}
-RETURN x, y
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| +x+ | +y+
-| +0+ | +0+
-| +1+ | +10+
-| +2+ | +20+
-2+d|Rows: 3
-|===
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE
-  (a:Person:Child {age: 20, name: 'Alice'}),
-  (b:Person {age: 27, name: 'Bob'}),
-  (c:Person:Parent {age: 65, name: 'Charlie'}),
-  (d:Person {age: 30, name: 'Dora'})
-  CREATE (a)-[:FRIEND_OF]->(b)
-  CREATE (a)-[:CHILD_OF]->(c)
-
-]]></database><command><![CDATA[
-UNWIND [0, 1, 2] AS x
-CALL {
-  WITH x
-  RETURN x * 10 AS y
-}
-RETURN x, y
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-An importing `WITH` clause must:
-
-* Consist only of simple references to outside variables - e.g. `WITH x, y, z`. Aliasing or expressions are not supported in importing `WITH` clauses - e.g. `WITH a AS b` or `WITH a+1 AS b`.
-* Be the first clause of a subquery (or the second clause, if directly following a `USE` clause).
 
 [[subquery-post-union]]
 == Post-union processing
@@ -190,22 +131,19 @@ ORDER BY p.name
 endif::nonhtmloutput[]
 
 If different parts of a result should be matched differently, with some aggregation over the whole results, subqueries need to be used.
-This example query finds friends and/or parents for each person.
-Subsequently the number of friends and parents are counted together.
+This example query finds all persons with friends in one part of the union and all children with parents in the other part.
+Subsequently the number of friends and parents is counted together.
 
 
 .Query
 [source, cypher]
 ----
-MATCH (p:Person)
 CALL {
-  WITH p
-  OPTIONAL MATCH (p)-[:FRIEND_OF]->(other:Person)
-  RETURN other
+  MATCH (p:Person)-[:FRIEND_OF]->(other:Person)
+  RETURN p, other
 UNION
-  WITH p
-  OPTIONAL MATCH (p)-[:CHILD_OF]->(other:Parent)
-  RETURN other
+  MATCH (p:Child)-[:CHILD_OF]->(other:Parent)
+  RETURN p, other
 }
 RETURN DISTINCT p.name, count(other)
 ----
@@ -215,10 +153,7 @@ RETURN DISTINCT p.name, count(other)
 |===
 | +p.name+ | +count(other)+
 | +"Alice"+ | +2+
-| +"Bob"+ | +0+
-| +"Charlie"+ | +0+
-| +"Dora"+ | +0+
-2+d|Rows: 4
+2+d|Rows: 1
 |===
 
 ifndef::nonhtmloutput[]
@@ -236,15 +171,12 @@ CREATE
   CREATE (a)-[:CHILD_OF]->(c)
 
 ]]></database><command><![CDATA[
-MATCH (p:Person)
 CALL {
-  WITH p
-  OPTIONAL MATCH (p)-[:FRIEND_OF]->(other:Person)
-  RETURN other
+  MATCH (p:Person)-[:FRIEND_OF]->(other:Person)
+  RETURN p, other
 UNION
-  WITH p
-  OPTIONAL MATCH (p)-[:CHILD_OF]->(other:Parent)
-  RETURN other
+  MATCH (p:Child)-[:CHILD_OF]->(other:Parent)
+  RETURN p, other
 }
 RETURN DISTINCT p.name, count(other)
 ]]></command></para></formalpara>
@@ -280,9 +212,7 @@ RETURN p.name, numberOfClones
 | +"Bob"+ | +5+
 | +"Charlie"+ | +5+
 | +"Dora"+ | +5+
-2+d|Rows: 4 +
-Nodes created: 20 +
-Labels added: 20
+2+d|Rows: 4
 |===
 
 ifndef::nonhtmloutput[]
@@ -311,61 +241,80 @@ RETURN p.name, numberOfClones
 ++++
 endif::nonhtmloutput[]
 
-[[subquery-correlated-aggregation]]
-== Aggregation on imported variables
-
-Aggregations in subqueries are scoped to the subquery evaluation, also for imported variables.
-The following example counts the number of younger persons for each person in the graph:
+[[subquery-correlated]]
+== Correlated subqueries
 
 
-.Query
+[NOTE]
+====
+This functionality is currently only available in Neo4j Fabric, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/fabric[Operations Manual -> Fabric].
+====
+
+A correlated subquery is a subquery that uses variables defined outside of the `CALL` clause.
+To be able to use a variable in this way, the variable must be explicitly imported into the subquery.
+
+[role=fabric]
+[[subquery-correlated-importing]]
+=== Importing variables into subqueries
+
+Variables are imported into a subquery using an importing `WITH` clause.
+As the subquery is evaluated for each incoming input row, the imported variables get bound to the corresponding values from the input row in each evaluation.
+
+.Query.
 [source, cypher]
 ----
-MATCH (p:Person)
+UNWIND [0, 1, 2] AS x
 CALL {
-  WITH p
-  MATCH (other:Person)
-  WHERE other.age < p.age
-  RETURN count(other) AS youngerPersonsCount
+  WITH x
+  RETURN x * 10 AS y
 }
-RETURN p.name, youngerPersonsCount
+RETURN x, y
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| +p.name+ | +youngerPersonsCount+
-| +"Alice"+ | +0+
-| +"Bob"+ | +1+
-| +"Charlie"+ | +3+
-| +"Dora"+ | +2+
-2+d|Rows: 4
+| +x+ | +y+
+| +0+ | +0+
+| +1+ | +10+
+| +2+ | +20+
+2+d|Rows: 3
 |===
 
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE
-  (a:Person:Child {age: 20, name: 'Alice'}),
-  (b:Person {age: 27, name: 'Bob'}),
-  (c:Person:Parent {age: 65, name: 'Charlie'}),
-  (d:Person {age: 30, name: 'Dora'})
-  CREATE (a)-[:FRIEND_OF]->(b)
-  CREATE (a)-[:CHILD_OF]->(c)
 
-]]></database><command><![CDATA[
-MATCH (p:Person)
+An importing `WITH` clause must:
+
+* Consist only of simple references to outside variables - e.g. `WITH x, y, z`.
+  Aliasing or expressions are not supported in importing `WITH` clauses - e.g. `WITH a AS b` or `WITH a + 1 AS b`.
+* Be the first clause of a subquery (or the second clause, if directly following a `USE` clause).
+
+[role=fabric]
+[[subquery-correlated-aggregation]]
+=== Aggregation on imported variables
+
+Aggregations in subqueries are scoped to the subquery evaluation, also for imported variables, as shown in the following example:
+
+.Query.
+[source, cypher]
+----
+UNWIND [0, 1, 2] AS x
 CALL {
-  WITH p
-  MATCH (other:Person)
-  WHERE other.age < p.age
-  RETURN count(other) AS youngerPersonsCount
+  WITH x
+  RETURN max(x) AS xMax
 }
-RETURN p.name, youngerPersonsCount
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
+RETURN x, xMax
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +x+ | +xMax+
+| +0+ | +0+
+| +1+ | +1+
+| +2+ | +2+
+2+d|Rows: 3
+|===
+
+The aggregation `max(x)` observes only a single value of `x` in each evaluation of the subquery, and thus simply evaluates to that same value.
+
 

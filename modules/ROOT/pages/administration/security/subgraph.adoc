@@ -5,32 +5,19 @@
 
 * xref:administration/security/subgraph.adoc#administration-security-subgraph-introduction[The `GRANT`, `DENY` and `REVOKE` commands]
 * xref:administration/security/subgraph.adoc#administration-security-subgraph-show[Listing privileges]
-** xref:administration/security/subgraph.adoc#administration-security-subgraph-show-all[Examples for listing all privileges]
-** xref:administration/security/subgraph.adoc#administration-security-subgraph-show-role[Examples for listing privileges for specific role]
-** xref:administration/security/subgraph.adoc#administration-security-subgraph-show-user[Examples for listing privileges for specific user]
+* xref:administration/security/subgraph.adoc#administration-security-subgraph-traverse[The `TRAVERSE` privilege]
+* xref:administration/security/subgraph.adoc#administration-security-subgraph-read[The `READ` privilege]
+* xref:administration/security/subgraph.adoc#administration-security-subgraph-match[The `MATCH` privilege]
+* xref:administration/security/subgraph.adoc#administration-security-subgraph-write[The `WRITE` privilege]
 * xref:administration/security/subgraph.adoc#administration-security-subgraph-revoke[The `REVOKE` command]
 
 
 Privileges control the access rights to graph elements using a combined whitelist/blacklist mechanism.
 It is possible to grant access, or deny access, or a combination of the two.
 The user will be able to access the resource if they have a grant (whitelist) and do not have a deny (blacklist) relevant to that resource.
-All other combinations of `GRANT` and `DENY` will result in the matching path being inaccessible.
-What this means in practice depends on whether we are talking about a xref:administration/security/reads.adoc[read privilege] or a xref:administration/security/writes.adoc[write privilege].
+All other combinations of `GRANT` and `DENY` will result in the matching path being invisible.
+It will appear to the user as if they have a smaller database (smaller graph).
 
-* If a entity is not accessible due to xref:administration/security/reads.adoc[read privileges], the data will become invisible to attempts to read it.
-  It will appear to the user as if they have a smaller database (smaller graph).
-* If an entity is not accessible due to xref:administration/security/writes.adoc[write privileges], an error will occur on any attempt to write that data.
-
-
-[NOTE]
-====
-In this document we will often use the terms _'allows'_ and _'enables'_ in seemingly identical ways. However, there is a subtle difference.
-We will use _'enables'_ to refer to the consequences of xref:administration/security/reads.adoc[read privileges] where a restriction will not cause an error,
-only a reduction in the apparent graph size. We will use _'allows'_ to refer to the consequence of xref:administration/security/writes.adoc[write privileges]
-where a restriction can result in an error.
-
-
-====
 
 [NOTE]
 ====
@@ -46,28 +33,64 @@ Information about the database access privilege can be found in xref:administrat
 
 // tag::neo4j-cypher-docs/docs/dev/ql/administration/security/grant-deny-syntax.asciidoc[]
 // tag::include-neo4j-documentation[]
-The administrators can use Cypher commands to manage Neo4j graph administrative rights.
-The components of the graph privilege commands are:
+The `GRANT` command allows an administrator to grant a privilege to a role in order to access an entity.
+The `DENY` command allows an administrator to deny a privilege to a role in order to prevent access to an entity.
+The `REVOKE` command allows an administrator to remove a previously granted or denied privilege.
+The syntax is:
 
-* the command:
-** `GRANT` – gives privileges to roles.
-** `DENY` – denies privileges to roles.
-** `REVOKE` – removes granted or denied privilege from roles.
+.General graph privilege command syntax
+[options="header", width="100%", cols="3a,2"]
+|===
+| Command | Description
+
+| [source, cypher, role=noplay]
+GRANT graph-privilege ON GRAPH[S] {* \| name} [entity] TO role[, ...]
+| Grant a privilege to one or multiple roles
+
+| [source, cypher, role=noplay]
+DENY graph-privilege ON GRAPH[S] {* \| name} [entity] TO role[, ...]
+| Deny a privilege to one or multiple roles
+
+| [source, cypher, role=noplay]
+REVOKE GRANT graph-privilege ON GRAPH[S] {* \| name} [entity] FROM role[, ...]
+| Revoke a granted privilege from one or multiple roles
+
+| [source, cypher, role=noplay]
+REVOKE DENY graph-privilege ON GRAPH[S] {* \| name} [entity] FROM role[, ...]
+| Revoke a denied privilege from one or multiple roles
+
+| [source, cypher, role=noplay]
+REVOKE graph-privilege ON GRAPH[S] {* \| name} [entity] FROM role[, ...]
+| Revoke a granted or denied privilege from one or multiple roles
+|===
+
+Where the components are:
 
 * _graph-privilege_
-** Can be either a xref:administration/security/reads.adoc[read privilege] or xref:administration/security/writes.adoc[write privilege].
-
-* _name_
-** The graph or graphs to associate the privilege with.
-Because in Neo4j {neo4j-version} you can have only one graph per database, this command uses the database name to refer to that graph.
+** `TRAVERSE`
 +
-[NOTE]
-====
-If you delete a database and create a new one with the same name, the new one will _NOT_ have the privileges assigned to the deleted graph.
-====
+allows the specified entities to be found
++
+** `READ`
++
+allows the specified properties to be read on the found entities.
+Note that granting property READ access does not imply that the entities with that property can be found.
+For example if there is also a DENY on it, the entity will not be found.
+The props can be `+*+` which means all properties.
++
+** `MATCH`
++
+this combines both TRAVERSE and READ allowing an entity to be found and its properties read.
++
+** `WRITE`
++
+this privilege can only be assigned to all nodes, relationships and properties in the entire graph (this means that the entity part of the command must also be `ELEMENTS +*+` and cannot be more specific).
++
+* _name_
+** The graph or graphs to associate the privilege with. In {neo4j-version} there can be only one graph per database, and therefore this command uses the database name to refer to that graph.
+   Note that if you delete a database and create a new one with the same name, the new one will _NOT_ have any of the privileges specifically assigned to the deleted graph.
 ** It can be `+*+` which means all graphs.
-Graphs created after this command execution will also be associated with these privileges.
-
+  Any new databases created after this command will also be associated with these privileges.
 * _entity_
 ** The graph elements this privilege applies to:
 *** `NODES` label (nodes with the specified label(s)).
@@ -76,53 +99,16 @@ Graphs created after this command execution will also be associated with these p
 ** The label or type can be `+*+` which means all labels or types.
 ** Multiple labels or types can be specified, comma-separated.
 ** Defaults to `ELEMENTS` `+*+` if omitted.
-** Some of the commands for write privileges do not allow an _entity_ part, see  xref:administration/security/writes.adoc[Write privileges] for details.
-
 * _role[, ...]_
 ** The role or roles to associate the privilege with, comma-separated.
 
-.General graph privilege command syntax
-[options="header", width="100%", cols="3a,2"]
-|===
-| Command | Description
 
-| [source, cypher, role=noplay]
-GRANT graph-privilege ON GRAPH[S] {* \| name[, ...]} [entity] TO role[, ...]
-| Grant a privilege to one or multiple roles.
-
-| [source, cypher, role=noplay]
-DENY graph-privilege ON GRAPH[S] {* \| name[, ...]} [entity] TO role[, ...]
-| Deny a privilege to one or multiple roles.
-
-| [source, cypher, role=noplay]
-REVOKE GRANT graph-privilege ON GRAPH[S] {* \| name[, ...]} [entity] FROM role[, ...]
-| Revoke a granted privilege from one or multiple roles.
-
-| [source, cypher, role=noplay]
-REVOKE DENY graph-privilege ON GRAPH[S] {* \| name[, ...]} [entity] FROM role[, ...]
-| Revoke a denied privilege from one or multiple roles.
-
-| [source, cypher, role=noplay]
-REVOKE graph-privilege ON GRAPH[S] {* \| name[, ...]} [entity] FROM role[, ...]
-| Revoke a granted or denied privilege from one or multiple roles.
-|===
-
-
-[NOTE]
-====
-`DENY` does NOT erase a granted privilege; they both exist.
-Use `REVOKE` if you want to remove a privilege.
-====
+NOTE: It is important to note that using DENY does NOT erase a GRANT command; they both exist.
+The only way to erase a privilege is with REVOKE.
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/security/grant-deny-syntax.asciidoc[]
 
-The general grant and deny syntax is illustrated in the image below.
-
-image::grant-privileges-overview.png[title="GRANT and DENY Syntax"]
-
-A more detailed syntax illustration would be the image below for graph privileges.
-
-image::grant-privileges-graph.png[title="Syntax of GRANT and DENY Graph Privileges. The `{` and `}` are part of the syntax and not used for grouping."]
+image::grant-privileges-graph.png[title="GRANT and DENY Syntax. The `{` and `}` are part of the syntax and not used for grouping."]
 
 The below image shows the hierarchy between the different graph privileges.
 
@@ -132,53 +118,7 @@ image::privilege-hierarchy-graph.png[title="Graph privileges hierarchy"]
 [[administration-security-subgraph-show]]
 == Listing privileges
 
-Available privileges can be displayed using the different `SHOW PRIVILEGES` commands.
-
-// tag::neo4j-cypher-docs/docs/dev/ql/administration/security/show-privileges-syntax.asciidoc[]
-// tag::include-neo4j-documentation[]
-.Show privileges command syntax
-[options="header", width="100%", cols="3a,2"]
-|===
-| Command | Description
-
-| [source, cypher, role=noplay]
-SHOW [ALL] PRIVILEGES
-    [YIELD field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
-    [WHERE expression]
-| List all privileges.
-
-| [source, cypher, role=noplay]
-SHOW ROLE name PRIVILEGES
-    [YIELD field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
-    [WHERE expression]
-| List privileges for a specific role.
-
-| [source, cypher, role=noplay]
-SHOW USER [name] PRIVILEGES
-    [YIELD field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
-    [WHERE expression]
-| List privileges for a specific user, or the current user.
-
-|===
-// end::include-neo4j-documentation[]
-// end::neo4j-cypher-docs/docs/dev/ql/administration/security/show-privileges-syntax.asciidoc[]
-
-[[administration-security-subgraph-show-all]]
-=== Examples for listing all privileges
-
-Available privileges for all roles can be displayed using `SHOW PRIVILEGES`.
-
-// tag::neo4j-cypher-docs/docs/dev/ql/administration/security/show-all-privileges-syntax.asciidoc[]
-// tag::include-neo4j-documentation[]
-.Command syntax
-[source, cypher, role=noplay]
------
-SHOW [ALL] PRIVILEGES
-    [YIELD field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
-    [WHERE expression]
------
-// end::include-neo4j-documentation[]
-// end::neo4j-cypher-docs/docs/dev/ql/administration/security/show-all-privileges-syntax.asciidoc[]
+Available privileges for all roles can be seen using `SHOW PRIVILEGES`.
 
 
 .Query
@@ -190,53 +130,60 @@ SHOW PRIVILEGES
 Lists all privileges for all roles.
 The table contains columns describing the privilege:
 
-* `access`: whether the privilege is granted or denied
-* `action`: which type of privilege this is: traverse, read, match, write, a database privilege, a dbms privilege or admin
-* `resource`: what type of scope this privilege applies to: the entire dbms, a database, a graph or sub-graph access
-* `graph`: the specific database or graph this privilege applies to
-* `segment`: for sub-graph access control, this describes the scope in terms of labels or relationship types
-* `role`: the role the privilege is granted to
+* access: whether the privilege is granted or denied (whitelist or blacklist)
+* action: which type of privilege this is: access, traverse, read, write, token, schema or admin
+* resource: what type of scope this privilege applies to: the entire dbms, a database, a graph or sub-graph access
+* graph: the specific database or graph this privilege applies to
+* segment: for sub-graph access control, this describes the scope in terms of labels or relationship types
+* role: the role the privilege is granted to
 
 
 .Result
 [role="queryresult",options="header,footer",cols="6*<m"]
 |===
 | +access+ | +action+ | +resource+ | +graph+ | +segment+ | +role+
-| +"GRANTED"+ | +"access"+ | +"database"+ | +"DEFAULT"+ | +"database"+ | +"PUBLIC"+
-| +"GRANTED"+ | +"match"+ | +"all_properties"+ | +"*"+ | +"NODE(*)"+ | +"admin"+
-| +"GRANTED"+ | +"write"+ | +"graph"+ | +"*"+ | +"NODE(*)"+ | +"admin"+
-| +"GRANTED"+ | +"match"+ | +"all_properties"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"admin"+
-| +"GRANTED"+ | +"write"+ | +"graph"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"admin"+
+| +"GRANTED"+ | +"read"+ | +"all_properties"+ | +"*"+ | +"NODE(*)"+ | +"admin"+
+| +"GRANTED"+ | +"write"+ | +"all_properties"+ | +"*"+ | +"NODE(*)"+ | +"admin"+
+| +"GRANTED"+ | +"traverse"+ | +"graph"+ | +"*"+ | +"NODE(*)"+ | +"admin"+
+| +"GRANTED"+ | +"read"+ | +"all_properties"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"admin"+
+| +"GRANTED"+ | +"write"+ | +"all_properties"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"admin"+
+| +"GRANTED"+ | +"traverse"+ | +"graph"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"admin"+
 | +"GRANTED"+ | +"access"+ | +"database"+ | +"*"+ | +"database"+ | +"admin"+
 | +"GRANTED"+ | +"admin"+ | +"database"+ | +"*"+ | +"database"+ | +"admin"+
-| +"GRANTED"+ | +"constraint"+ | +"database"+ | +"*"+ | +"database"+ | +"admin"+
-| +"GRANTED"+ | +"index"+ | +"database"+ | +"*"+ | +"database"+ | +"admin"+
+| +"GRANTED"+ | +"schema"+ | +"database"+ | +"*"+ | +"database"+ | +"admin"+
 | +"GRANTED"+ | +"token"+ | +"database"+ | +"*"+ | +"database"+ | +"admin"+
-| +"GRANTED"+ | +"match"+ | +"all_properties"+ | +"*"+ | +"NODE(*)"+ | +"architect"+
-| +"GRANTED"+ | +"write"+ | +"graph"+ | +"*"+ | +"NODE(*)"+ | +"architect"+
-| +"GRANTED"+ | +"match"+ | +"all_properties"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"architect"+
-| +"GRANTED"+ | +"write"+ | +"graph"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"architect"+
+| +"GRANTED"+ | +"read"+ | +"all_properties"+ | +"*"+ | +"NODE(*)"+ | +"architect"+
+| +"GRANTED"+ | +"write"+ | +"all_properties"+ | +"*"+ | +"NODE(*)"+ | +"architect"+
+| +"GRANTED"+ | +"traverse"+ | +"graph"+ | +"*"+ | +"NODE(*)"+ | +"architect"+
+| +"GRANTED"+ | +"read"+ | +"all_properties"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"architect"+
+| +"GRANTED"+ | +"write"+ | +"all_properties"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"architect"+
+| +"GRANTED"+ | +"traverse"+ | +"graph"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"architect"+
 | +"GRANTED"+ | +"access"+ | +"database"+ | +"*"+ | +"database"+ | +"architect"+
-| +"GRANTED"+ | +"constraint"+ | +"database"+ | +"*"+ | +"database"+ | +"architect"+
-| +"GRANTED"+ | +"index"+ | +"database"+ | +"*"+ | +"database"+ | +"architect"+
+| +"GRANTED"+ | +"schema"+ | +"database"+ | +"*"+ | +"database"+ | +"architect"+
 | +"GRANTED"+ | +"token"+ | +"database"+ | +"*"+ | +"database"+ | +"architect"+
-| +"GRANTED"+ | +"match"+ | +"all_properties"+ | +"*"+ | +"NODE(*)"+ | +"editor"+
-| +"GRANTED"+ | +"write"+ | +"graph"+ | +"*"+ | +"NODE(*)"+ | +"editor"+
-| +"GRANTED"+ | +"match"+ | +"all_properties"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"editor"+
-| +"GRANTED"+ | +"write"+ | +"graph"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"editor"+
+| +"GRANTED"+ | +"read"+ | +"all_properties"+ | +"*"+ | +"NODE(*)"+ | +"editor"+
+| +"GRANTED"+ | +"write"+ | +"all_properties"+ | +"*"+ | +"NODE(*)"+ | +"editor"+
+| +"GRANTED"+ | +"traverse"+ | +"graph"+ | +"*"+ | +"NODE(*)"+ | +"editor"+
+| +"GRANTED"+ | +"read"+ | +"all_properties"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"editor"+
+| +"GRANTED"+ | +"write"+ | +"all_properties"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"editor"+
+| +"GRANTED"+ | +"traverse"+ | +"graph"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"editor"+
 | +"GRANTED"+ | +"access"+ | +"database"+ | +"*"+ | +"database"+ | +"editor"+
 | +"DENIED"+ | +"access"+ | +"database"+ | +"neo4j"+ | +"database"+ | +"noAccessUsers"+
-| +"GRANTED"+ | +"match"+ | +"all_properties"+ | +"*"+ | +"NODE(*)"+ | +"publisher"+
-| +"GRANTED"+ | +"write"+ | +"graph"+ | +"*"+ | +"NODE(*)"+ | +"publisher"+
-| +"GRANTED"+ | +"match"+ | +"all_properties"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"publisher"+
-| +"GRANTED"+ | +"write"+ | +"graph"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"publisher"+
+| +"GRANTED"+ | +"read"+ | +"all_properties"+ | +"*"+ | +"NODE(*)"+ | +"publisher"+
+| +"GRANTED"+ | +"write"+ | +"all_properties"+ | +"*"+ | +"NODE(*)"+ | +"publisher"+
+| +"GRANTED"+ | +"traverse"+ | +"graph"+ | +"*"+ | +"NODE(*)"+ | +"publisher"+
+| +"GRANTED"+ | +"read"+ | +"all_properties"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"publisher"+
+| +"GRANTED"+ | +"write"+ | +"all_properties"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"publisher"+
+| +"GRANTED"+ | +"traverse"+ | +"graph"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"publisher"+
 | +"GRANTED"+ | +"access"+ | +"database"+ | +"*"+ | +"database"+ | +"publisher"+
 | +"GRANTED"+ | +"token"+ | +"database"+ | +"*"+ | +"database"+ | +"publisher"+
-| +"GRANTED"+ | +"match"+ | +"all_properties"+ | +"*"+ | +"NODE(*)"+ | +"reader"+
-| +"GRANTED"+ | +"match"+ | +"all_properties"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"reader"+
+| +"GRANTED"+ | +"read"+ | +"all_properties"+ | +"*"+ | +"NODE(*)"+ | +"reader"+
+| +"GRANTED"+ | +"traverse"+ | +"graph"+ | +"*"+ | +"NODE(*)"+ | +"reader"+
+| +"GRANTED"+ | +"read"+ | +"all_properties"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"reader"+
+| +"GRANTED"+ | +"traverse"+ | +"graph"+ | +"*"+ | +"RELATIONSHIP(*)"+ | +"reader"+
 | +"GRANTED"+ | +"access"+ | +"database"+ | +"*"+ | +"database"+ | +"reader"+
 | +"GRANTED"+ | +"access"+ | +"database"+ | +"neo4j"+ | +"database"+ | +"regularUsers"+
-6+d|Rows: 34
+6+d|Rows: 41
 |===
 
 ifndef::nonhtmloutput[]
@@ -258,116 +205,7 @@ SHOW PRIVILEGES
 ++++
 endif::nonhtmloutput[]
 
-It is also possible to filter and sort the results by using `YIELD`, `ORDER BY` and `WHERE`.
-
-
-.Query
-[source, cypher]
-----
-SHOW PRIVILEGES YIELD role, access, action ORDER BY action WHERE role = 'admin' 
-----
-
-In this example:
-
-* The number of columns returned has been reduced with the `YIELD` clause.
-* The order of the returned columns has been changed.
-* The results have been filtered to only return the `admin` role using a `WHERE` clause.
-* The results are ordered by the `action` column using `ORDER BY`.
-
-`SKIP` and `LIMIT` can also be used to paginate the results.
-
-
-.Result
-[role="queryresult",options="header,footer",cols="3*<m"]
-|===
-| +role+ | +access+ | +action+
-| +"admin"+ | +"GRANTED"+ | +"access"+
-| +"admin"+ | +"GRANTED"+ | +"admin"+
-| +"admin"+ | +"GRANTED"+ | +"constraint"+
-| +"admin"+ | +"GRANTED"+ | +"index"+
-| +"admin"+ | +"GRANTED"+ | +"match"+
-| +"admin"+ | +"GRANTED"+ | +"match"+
-| +"admin"+ | +"GRANTED"+ | +"token"+
-| +"admin"+ | +"GRANTED"+ | +"write"+
-| +"admin"+ | +"GRANTED"+ | +"write"+
-3+d|Rows: 9
-|===
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE noAccessUsers
-GRANT ROLE regularUsers TO jake
-GRANT ACCESS ON DATABASE neo4j TO regularUsers
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-SHOW PRIVILEGES YIELD role, access, action ORDER BY action WHERE role = 'admin' 
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-`WHERE` can be used without `YIELD`
-
-
-.Query
-[source, cypher]
-----
-SHOW PRIVILEGES WHERE graph <> '*' 
-----
-
-In this example, the `WHERE` clause is used to filter privileges down to those that target specific graphs only.
-
-.Result
-[role="queryresult",options="header,footer",cols="6*<m"]
-|===
-| +access+ | +action+ | +resource+ | +graph+ | +segment+ | +role+
-| +"GRANTED"+ | +"access"+ | +"database"+ | +"DEFAULT"+ | +"database"+ | +"PUBLIC"+
-| +"DENIED"+ | +"access"+ | +"database"+ | +"neo4j"+ | +"database"+ | +"noAccessUsers"+
-| +"GRANTED"+ | +"access"+ | +"database"+ | +"neo4j"+ | +"database"+ | +"regularUsers"+
-6+d|Rows: 3
-|===
-
-ifndef::nonhtmloutput[]
-[subs="none"]
-++++
-<formalpara role="cypherconsole">
-<title>Try this query live</title>
-<para><database><![CDATA[
-CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
-CREATE ROLE regularUsers
-CREATE ROLE noAccessUsers
-GRANT ROLE regularUsers TO jake
-GRANT ACCESS ON DATABASE neo4j TO regularUsers
-DENY ACCESS ON DATABASE neo4j TO noAccessUsers
-
-]]></database><command><![CDATA[
-SHOW PRIVILEGES WHERE graph <> '*' 
-]]></command></para></formalpara>
-++++
-endif::nonhtmloutput[]
-
-[[administration-security-subgraph-show-role]]
-=== Examples for listing privileges for specific role
-
-Available privileges for a particular role can be displayed using `SHOW ROLE name PRIVILEGES`.
-
-// tag::neo4j-cypher-docs/docs/dev/ql/administration/security/show-role-privileges-syntax.asciidoc[]
-// tag::include-neo4j-documentation[]
-.Command syntax
-[source, cypher, role=noplay]
------
-SHOW ROLE name PRIVILEGES
-    [YIELD field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
-    [WHERE expression]
------
-// end::include-neo4j-documentation[]
-// end::neo4j-cypher-docs/docs/dev/ql/administration/security/show-role-privileges-syntax.asciidoc[]
+Available privileges for a particular role can be seen using `SHOW ROLE name PRIVILEGES`.
 
 
 .Query
@@ -376,7 +214,7 @@ SHOW ROLE name PRIVILEGES
 SHOW ROLE regularUsers PRIVILEGES
 ----
 
-Lists all privileges for role `regularUsers`.
+Lists all privileges for role 'regularUsers'
 
 .Result
 [role="queryresult",options="header,footer",cols="6*<m"]
@@ -405,10 +243,7 @@ SHOW ROLE regularUsers PRIVILEGES
 ++++
 endif::nonhtmloutput[]
 
-[[administration-security-subgraph-show-user]]
-=== Examples for listing privileges for specific user
-
-Available privileges for a particular user can be displayed using `SHOW USER name PRIVILEGES`.
+Available privileges for a particular user can be seen using `SHOW USER name PRIVILEGES`.
 
 [NOTE]
 ====
@@ -417,18 +252,6 @@ Please note that if a non-native auth provider like LDAP is in use, `SHOW USER P
 
 ====
 
-// tag::neo4j-cypher-docs/docs/dev/ql/administration/security/show-user-privileges-syntax.asciidoc[]
-// tag::include-neo4j-documentation[]
-.Command syntax
-[source, cypher, role=noplay]
------
-SHOW USER [name] PRIVILEGES
-    [YIELD field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
-    [WHERE expression]
------
-// end::include-neo4j-documentation[]
-// end::neo4j-cypher-docs/docs/dev/ql/administration/security/show-user-privileges-syntax.asciidoc[]
-
 
 .Query
 [source, cypher]
@@ -436,15 +259,14 @@ SHOW USER [name] PRIVILEGES
 SHOW USER jake PRIVILEGES
 ----
 
-Lists all privileges for user `jake`.
+Lists all privileges for user 'jake'
 
 .Result
 [role="queryresult",options="header,footer",cols="7*<m"]
 |===
 | +access+ | +action+ | +resource+ | +graph+ | +segment+ | +role+ | +user+
-| +"GRANTED"+ | +"access"+ | +"database"+ | +"DEFAULT"+ | +"database"+ | +"PUBLIC"+ | +"jake"+
 | +"GRANTED"+ | +"access"+ | +"database"+ | +"neo4j"+ | +"database"+ | +"regularUsers"+ | +"jake"+
-7+d|Rows: 2
+7+d|Rows: 1
 |===
 
 ifndef::nonhtmloutput[]
@@ -466,14 +288,40 @@ SHOW USER jake PRIVILEGES
 ++++
 endif::nonhtmloutput[]
 
-The same command can be used at all times to review available privileges for the current user. For this purpose, a shorter form of the the command also exists: SHOW USER PRIVILEGES.
+[role=enterprise-edition]
+[[administration-security-subgraph-traverse]]
+== The `TRAVERSE` privilege
+
+Users can be granted the right to find nodes and relationships using the `GRANT TRAVERSE` privilege.
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/security/grant-traverse-syntax.asciidoc[]
+// tag::include-neo4j-documentation[]
+.Command syntax
+[source, cypher, role=noplay]
+-----
+GRANT TRAVERSE
+    ON GRAPH[S] { * | name }
+        [
+            ELEMENT[S] { * | label-or-rel-type[, ...] }
+            | NODE[S] { * | label[, ...] }
+            | RELATIONSHIP[S] { * | rel-type[, ...] }
+        ]
+    TO role[, ...]
+-----
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/security/grant-traverse-syntax.asciidoc[]
+
+For example, we can allow the user `jake`, who has role 'regularUsers' to find all nodes with the label `Post`.
 
 
 .Query
 [source, cypher]
 ----
-SHOW USER PRIVILEGES
+GRANT TRAVERSE ON GRAPH neo4j NODES Post TO regularUsers
 ----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 1
 
 ifndef::nonhtmloutput[]
 [subs="none"]
@@ -489,10 +337,461 @@ GRANT ACCESS ON DATABASE neo4j TO regularUsers
 DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
 ]]></database><command><![CDATA[
-SHOW USER PRIVILEGES
+GRANT TRAVERSE ON GRAPH neo4j NODES Post TO regularUsers
 ]]></command></para></formalpara>
 ++++
 endif::nonhtmloutput[]
+
+The `TRAVERSE` privilege can also be denied.
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/security/deny-traverse-syntax.asciidoc[]
+// tag::include-neo4j-documentation[]
+.Command syntax
+[source, cypher, role=noplay]
+-----
+DENY TRAVERSE
+    ON GRAPH[S] { * | name }
+        [
+            ELEMENT[S] { * | label-or-rel-type[, ...] }
+            | NODE[S] { * | label[, ...] }
+            | RELATIONSHIP[S] { * | rel-type[, ...] }
+        ]
+    TO role[, ...]
+-----
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/security/deny-traverse-syntax.asciidoc[]
+
+For example, we can disallow the user `jake`, who has role 'regularUsers' to find all nodes with the label `Payments`.
+
+
+.Query
+[source, cypher]
+----
+DENY TRAVERSE ON GRAPH neo4j NODES Payments TO regularUsers
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 1
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE ROLE regularUsers
+CREATE ROLE noAccessUsers
+GRANT ROLE regularUsers TO jake
+GRANT ACCESS ON DATABASE neo4j TO regularUsers
+DENY ACCESS ON DATABASE neo4j TO noAccessUsers
+
+]]></database><command><![CDATA[
+DENY TRAVERSE ON GRAPH neo4j NODES Payments TO regularUsers
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[role=enterprise-edition]
+[[administration-security-subgraph-read]]
+== The `READ` privilege
+
+Users can be granted the right to do property reads on nodes and relationships using the `GRANT READ` privilege.
+It is very important to note that users can only read properties on entities that they are allowed to find in the first place.
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/security/grant-read-syntax.asciidoc[]
+// tag::include-neo4j-documentation[]
+.Command syntax
+[source, cypher, role=noplay]
+-----
+GRANT READ
+    "{" { * | property[, ...] } "}"
+    ON GRAPH[S] { * | name }
+        [
+            ELEMENT[S] { * | label-or-rel-type[, ...] }
+            | NODE[S] { * | label[, ...] }
+            | RELATIONSHIP[S] { * | rel-type[, ...] }
+        ]
+    TO role[, ...]
+-----
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/security/grant-read-syntax.asciidoc[]
+
+For example, we can allow the user `jake`, who has role 'regularUsers' to read all properties on nodes with the label `Post`.
+The `*` implies that the ability to read all properties also extends to properties that might be added in the future.
+
+
+.Query
+[source, cypher]
+----
+GRANT READ { * } ON GRAPH neo4j NODES Post TO regularUsers
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 1
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE ROLE regularUsers
+CREATE ROLE noAccessUsers
+GRANT ROLE regularUsers TO jake
+GRANT ACCESS ON DATABASE neo4j TO regularUsers
+DENY ACCESS ON DATABASE neo4j TO noAccessUsers
+
+]]></database><command><![CDATA[
+GRANT READ { * } ON GRAPH neo4j NODES Post TO regularUsers
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+The `READ` privilege can also be denied.
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/security/deny-read-syntax.asciidoc[]
+// tag::include-neo4j-documentation[]
+.Command syntax
+[source, cypher, role=noplay]
+-----
+DENY READ
+    "{" { * | property[, ...] } "}"
+    ON GRAPH[S] { * | name }
+        [
+            ELEMENT[S] { * | label-or-rel-type[, ...] }
+            | NODE[S] { * | label[, ...] }
+            | RELATIONSHIP[S] { * | rel-type[, ...] }
+        ]
+    TO role[, ...]
+-----
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/security/deny-read-syntax.asciidoc[]
+
+Although we just granted the user 'jake' the right to read all properties, we may want to hide the `secret` property. The following example shows how to do that.
+
+
+.Query
+[source, cypher]
+----
+DENY READ { secret } ON GRAPH neo4j NODES Post TO regularUsers
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 1
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE ROLE regularUsers
+CREATE ROLE noAccessUsers
+GRANT ROLE regularUsers TO jake
+GRANT ACCESS ON DATABASE neo4j TO regularUsers
+DENY ACCESS ON DATABASE neo4j TO noAccessUsers
+
+]]></database><command><![CDATA[
+DENY READ { secret } ON GRAPH neo4j NODES Post TO regularUsers
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[role=enterprise-edition]
+[[administration-security-subgraph-match]]
+== The `MATCH` privilege
+
+As a shorthand for `TRAVERSE` and `READ`, users can be granted the right to find and do property reads on nodes and relationships using the `GRANT MATCH` privilege. 
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/security/grant-match-syntax.asciidoc[]
+// tag::include-neo4j-documentation[]
+.Command syntax
+[source, cypher, role=noplay]
+-----
+GRANT MATCH
+    "{" { * | property[, ...] } "}"
+    ON GRAPH[S] { * | name }
+        [
+            ELEMENT[S] { * | label-or-rel-type[, ...] }
+            | NODE[S] { * | label[, ...] }
+            | RELATIONSHIP[S] { * | rel-type[, ...] }
+        ]
+    TO role[, ...]
+-----
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/security/grant-match-syntax.asciidoc[]
+
+For example if you want to grant the ability to read the properties `language` and `length` for nodes with the label `Message`,
+as well as the ability to find these nodes, to a role `regularUsers` you can use the following `GRANT MATCH` query.
+
+
+.Query
+[source, cypher]
+----
+GRANT MATCH { language, length } ON GRAPH neo4j NODES Message TO regularUsers
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 3
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE ROLE regularUsers
+CREATE ROLE noAccessUsers
+GRANT ROLE regularUsers TO jake
+GRANT ACCESS ON DATABASE neo4j TO regularUsers
+DENY ACCESS ON DATABASE neo4j TO noAccessUsers
+
+]]></database><command><![CDATA[
+GRANT MATCH { language, length } ON GRAPH neo4j NODES Message TO regularUsers
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+Like all other privileges, the `MATCH` privilege can also be denied.
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/security/deny-match-syntax.asciidoc[]
+// tag::include-neo4j-documentation[]
+.Command syntax
+[source, cypher, role=noplay]
+-----
+DENY MATCH
+    "{" { * | property[, ...] } "}"
+    ON GRAPH[S] { * | name }
+        [
+            ELEMENT[S] { * | label-or-rel-type[, ...] }
+            | NODE[S] { * | label[, ...] }
+            | RELATIONSHIP[S] { * | rel-type[, ...] }
+        ]
+    TO role[, ...]
+-----
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/security/deny-match-syntax.asciidoc[]
+
+Please note that the effect of denying a `MATCH` privilege depends on whether concrete property keys are specified or a `+*+`.
+If you specify concrete property keys then `DENY MATCH` will only deny reading those properties. Finding the elements to traverse would still be allowed.
+If you specify `+*+` instead then both traversal of the element and all property reads will be disallowed.
+The following queries will show examples for this.
+
+Denying to read the property ´content´ on nodes with the label `Message` for the role `regularUsers` would look like the following query.
+Although not being able to read this specific property, nodes with that label can still be traversed (and, depending on other grants, other properties on it could still be read).
+
+
+.Query
+[source, cypher]
+----
+DENY MATCH { content } ON GRAPH neo4j NODES Message TO regularUsers
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 1
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE ROLE regularUsers
+CREATE ROLE noAccessUsers
+GRANT ROLE regularUsers TO jake
+GRANT ACCESS ON DATABASE neo4j TO regularUsers
+DENY ACCESS ON DATABASE neo4j TO noAccessUsers
+
+]]></database><command><![CDATA[
+DENY MATCH { content } ON GRAPH neo4j NODES Message TO regularUsers
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+The following query exemplifies how it would look like if you want to deny both reading all properties and traversing nodes labeled with `Account`.
+
+
+.Query
+[source, cypher]
+----
+DENY MATCH { * } ON GRAPH neo4j NODES Account TO regularUsers
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 2
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE ROLE regularUsers
+CREATE ROLE noAccessUsers
+GRANT ROLE regularUsers TO jake
+GRANT ACCESS ON DATABASE neo4j TO regularUsers
+DENY ACCESS ON DATABASE neo4j TO noAccessUsers
+
+]]></database><command><![CDATA[
+DENY MATCH { * } ON GRAPH neo4j NODES Account TO regularUsers
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[NOTE]
+====
+Please note that `REVOKE MATCH` is not allowed, instead revoke the individual `READ` and `TRAVERSE` privileges.
+
+
+====
+
+[role=enterprise-edition]
+[[administration-security-subgraph-write]]
+== The `WRITE` privilege
+
+The `WRITE` privilege enables you to write on a graph.
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/security/grant-write-syntax.asciidoc[]
+// tag::include-neo4j-documentation[]
+.Command syntax
+[source, cypher, role=noplay]
+-----
+GRANT WRITE
+    ON GRAPH[S] { * | name }
+    TO role[, ...]
+-----
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/security/grant-write-syntax.asciidoc[]
+
+For example, granting the ability to write on the graph `neo4j` to the role `regularUsers` would be achieved using:
+
+
+.Query
+[source, cypher]
+----
+GRANT WRITE ON GRAPH neo4j TO regularUsers
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 2
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE ROLE regularUsers
+CREATE ROLE noAccessUsers
+GRANT ROLE regularUsers TO jake
+GRANT ACCESS ON DATABASE neo4j TO regularUsers
+DENY ACCESS ON DATABASE neo4j TO noAccessUsers
+
+]]></database><command><![CDATA[
+GRANT WRITE ON GRAPH neo4j TO regularUsers
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[NOTE]
+====
+Unlike with `GRANT READ` it is not possible to restrict `WRITE` privileges to specific ELEMENTS, NODES or RELATIONSHIPS.
+
+
+====
+
+For example, using `NODES A` will produce a syntax error.
+
+
+.Query
+[source, cypher]
+----
+GRANT WRITE ON GRAPH neo4j NODES A TO regularUsers
+----
+
+[role="erroronlyqueryresult"]
+The use of ELEMENT, NODE or RELATIONSHIP with the WRITE privilege is not supported in this version. (line 1, column 1 (offset: 0)) +
+"GRANT WRITE ON GRAPH neo4j NODES A TO regularUsers" +
+ ^
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE ROLE regularUsers
+CREATE ROLE noAccessUsers
+GRANT ROLE regularUsers TO jake
+GRANT ACCESS ON DATABASE neo4j TO regularUsers
+DENY ACCESS ON DATABASE neo4j TO noAccessUsers
+
+]]></database><command><![CDATA[
+GRANT WRITE ON GRAPH neo4j NODES A TO regularUsers
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+The `WRITE` privilege can also be denied.
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/security/deny-write-syntax.asciidoc[]
+// tag::include-neo4j-documentation[]
+.Command syntax
+[source, cypher, role=noplay]
+-----
+DENY WRITE
+    ON GRAPH[S] { * | name }
+    TO role[, ...]
+-----
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/security/deny-write-syntax.asciidoc[]
+
+For example, denying the ability to write on the graph `neo4j` to the role `regularUsers` would be achieved using:
+
+
+.Query
+[source, cypher]
+----
+DENY WRITE ON GRAPH neo4j TO regularUsers
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 2
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE ROLE regularUsers
+CREATE ROLE noAccessUsers
+GRANT ROLE regularUsers TO jake
+GRANT ACCESS ON DATABASE neo4j TO regularUsers
+DENY ACCESS ON DATABASE neo4j TO noAccessUsers
+
+]]></database><command><![CDATA[
+DENY WRITE ON GRAPH neo4j TO regularUsers
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[NOTE]
+====
+Users with `WRITE` privilege but restricted `TRAVERSE` privileges will not be able to do `DETACH DELETE` in all cases.
+ See link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/access-control#detach-delete-restricted-user[Operations Manual -> Fine-grained access control] for more info.
+
+
+====
 
 [role=enterprise-edition]
 [[administration-security-subgraph-revoke]]
@@ -506,11 +805,18 @@ Privileges that were granted or denied earlier can be revoked using the `REVOKE`
 [source, cypher, role=noplay]
 -----
 REVOKE
-    [ GRANT | DENY ] graph-privilege
+    [ GRANT | DENY ] privilege
     FROM role[, ...]
 -----
 // end::include-neo4j-documentation[]
 // end::neo4j-cypher-docs/docs/dev/ql/administration/security/revoke-syntax.asciidoc[]
+
+[NOTE]
+====
+Please note that `REVOKE MATCH` is not allowed, instead revoke the individual `READ` and `TRAVERSE` privileges.
+
+
+====
 
 An example usage of the `REVOKE` command is given here:
 
@@ -571,6 +877,84 @@ DENY ACCESS ON DATABASE neo4j TO noAccessUsers
 
 ]]></database><command><![CDATA[
 REVOKE TRAVERSE ON GRAPH neo4j NODES Payments FROM regularUsers
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+Some privileges are compound privileges and contains sub-privileges, for example xref:administration/security/administration.adoc#administration-security-administration-database-indexes[`INDEX MANAGEMENT`] which covers `CREATE INDEX` and `DROP INDEX`.
+When these compound privileges are revoked, all sub-privileges matching the revoke command will also be revoked as shown in the example below.
+
+// tag::neo4j-cypher-docs/docs/dev/ql/administration/security/grant-create-drop-index-syntax.asciidoc[]
+// tag::include-neo4j-documentation[]
+.Add `CREATE INDEX` and `DROP INDEX` privileges
+[source, cypher, role=noplay]
+-----
+GRANT CREATE INDEX ON DATABASE * TO indexUsers
+GRANT DROP INDEX ON DATABASE * TO indexUsers
+-----
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/administration/security/grant-create-drop-index-syntax.asciidoc[]
+
+
+.Query
+[source, cypher]
+----
+REVOKE INDEX MANAGEMENT ON DATABASE * FROM indexUsers
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 2
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE ROLE regularUsers
+CREATE ROLE noAccessUsers
+GRANT ROLE regularUsers TO jake
+GRANT ACCESS ON DATABASE neo4j TO regularUsers
+DENY ACCESS ON DATABASE neo4j TO noAccessUsers
+
+]]></database><command><![CDATA[
+REVOKE INDEX MANAGEMENT ON DATABASE * FROM indexUsers
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+
+.Query
+[source, cypher]
+----
+SHOW ROLE indexUsers PRIVILEGES
+----
+
+Both the `CREATE INDEX` and `DROP INDEX` privileges have been revoked:
+
+.Result
+[role="queryresult",options="footer",cols="6*<m"]
+|===
+6+|(empty result)
+6+d|Rows: 0
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE USER jake SET PASSWORD 'abc123' CHANGE NOT REQUIRED SET STATUS ACTIVE
+CREATE ROLE regularUsers
+CREATE ROLE noAccessUsers
+GRANT ROLE regularUsers TO jake
+GRANT ACCESS ON DATABASE neo4j TO regularUsers
+DENY ACCESS ON DATABASE neo4j TO noAccessUsers
+
+]]></database><command><![CDATA[
+SHOW ROLE indexUsers PRIVILEGES
 ]]></command></para></formalpara>
 ++++
 endif::nonhtmloutput[]
