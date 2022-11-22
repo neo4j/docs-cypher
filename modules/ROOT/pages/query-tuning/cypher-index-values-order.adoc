@@ -1,0 +1,445 @@
+[[cypher-index-values-order]]
+= Index Values and Order
+:description: This section describes some more subtle optimizations based on new native index capabilities 
+
+
+One of the most important and useful ways of optimizing Cypher queries involves creating appropriate indexes.
+This is described in more detail in xref:schema/indexes.adoc[], and demonstrated in xref:query-tuning/basic-query-tuning-example.adoc[].
+In summary, an index will be based on the combination of a `Label` and a `property`.
+Any Cypher query that searches for nodes with a specific label and some predicate on the property (equality, range or existence) will be planned to use
+the index if the cost planner deems that to be the most efficient solution.
+
+
+In order to benefit from enhancements provided by native indexes, it is useful to understand when _index-backed property lookup_ and _index-backed order by_ will come into play.
+In Neo4j 3.4 and earlier, the fact that the index contains the property value, and the results are returned in a specific order, was not used improve the performance of any later part of the query that might depend on the property value or result order.
+
+
+Let's explain how to use these features with a more advanced query tuning example.
+
+
+[NOTE]
+====
+If you are upgrading an existing store to {neo4j-version-exact}, it may be necessary to drop and re-create existing indexes.
+For information on native index support and upgrade considerations regarding indexes, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/performance-configuration/schema-indexes[Operations Manual -> Schema indexes].
+====
+
+
+== Advanced query tuning example
+
+
+In this example we will demonstrate the impact native indexes can have on query performance under certain conditions.
+We'll use a movies dataset to illustrate this more advanced query tuning.
+
+
+ifndef::backend-pdf[]
+ifdef::backend-html,backend-html5,backend-xhtml11,backend-deckjs[]
+++++
+<span class="setup-query"></span>
+++++
+endif::[]
+endif::[]
+ifndef::backend-pdf[]
+ifndef::backend-html,backend-html5,backend-xhtml11,backend-deckjs[]
+++++
+<simpara role="setup-query"></simpara>
+++++
+endif::[]
+endif::[]
+
+
+[source, cypher, subs=attributes+]
+----
+LOAD CSV WITH HEADERS FROM 'file:///query-tuning/movies.csv' AS line
+MERGE (m:Movie { title: line.title })
+ON CREATE SET m.released = toInteger(line.released), m.tagline = line.tagline
+----
+
+
+ifndef::backend-pdf[]
+ifdef::backend-html,backend-html5,backend-xhtml11,backend-deckjs[]
+++++
+<span class="setup-query"></span>
+++++
+endif::[]
+endif::[]
+ifndef::backend-pdf[]
+ifndef::backend-html,backend-html5,backend-xhtml11,backend-deckjs[]
+++++
+<simpara role="setup-query"></simpara>
+++++
+endif::[]
+endif::[]
+
+
+[source, cypher, subs=attributes+]
+----
+LOAD CSV WITH HEADERS FROM 'file:///query-tuning/actors.csv' AS line
+MATCH (m:Movie { title: line.title })
+MERGE (p:Person { name: line.name })
+ON CREATE SET p.born = toInteger(line.born)
+MERGE (p)-[:ACTED_IN { roles:split(line.roles, ';')}]->(m)
+----
+
+
+ifndef::backend-pdf[]
+ifdef::backend-html,backend-html5,backend-xhtml11,backend-deckjs[]
+++++
+<span class="setup-query"></span>
+++++
+endif::[]
+endif::[]
+ifndef::backend-pdf[]
+ifndef::backend-html,backend-html5,backend-xhtml11,backend-deckjs[]
+++++
+<simpara role="setup-query"></simpara>
+++++
+endif::[]
+endif::[]
+
+
+[source, cypher, subs=attributes+]
+----
+LOAD CSV WITH HEADERS FROM 'file:///query-tuning/directors.csv' AS line
+MATCH (m:Movie { title: line.title })
+MERGE (p:Person { name: line.name })
+ON CREATE SET p.born = toInteger(line.born)
+MERGE (p)-[:DIRECTED]->(m)
+----
+
+
+[source,cypher]
+----
+CREATE INDEX ON :Person(name)
+----
+
+
+[source,cypher]
+----
+CALL db.awaitIndexes
+----
+
+
+[source,cypher]
+----
+CALL db.indexes
+----
+
+
+[source, role="queryresult noheader"]
+----
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| description              | indexName       | tokenNames | properties | state    | type                  | progress | provider                                  | id | failureMessage |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "INDEX ON :Person(name)" | "Unnamed index" | ["Person"] | ["name"]   | "ONLINE" | "node_label_property" | 100.0    | {version -> "1.0", key -> "native-btree"} | 1  | ""             |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+1 row
+----
+
+
+=== Index-backed property-lookup
+
+
+Let’s say we want to write a query to find persons with the name 'Tom' that acted in a movie.
+
+
+[source,cypher]
+----
+MATCH (p:Person)-[:ACTED_IN]->(m:Movie)
+WHERE p.name STARTS WITH 'Tom'
+RETURN p.name, count(m)
+----
+
+
+[source, role="queryresult noheader"]
+----
++---------------------------+
+| p.name         | count(m) |
++---------------------------+
+| "Tom Cruise"   | 3        |
+| "Tom Hanks"    | 12       |
+| "Tom Skerritt" | 1        |
++---------------------------+
+3 rows
+----
+
+
+We have asked the database to return all the actors with the first name 'Tom'.
+There are three of them: _'Tom Cruise'_, _'Tom Skerritt'_ and _'Tom Hanks'_.
+In previous versions of Neo4j, the final clause `RETURN p.name` would cause the database to take the node `p` and look up its properties and return the value of the property `name`.
+With native indexes, however, we can leverage the fact that indexes store the property values.
+In this case, it means that the names can be looked up directly from the index.
+This allows Cypher to avoid the second call to the database to find the property, which can save time on very large queries.
+
+
+If we profile the above query, we see that the `NodeIndexScan` in the `Variables` column contains `cached[p.name]`,
+which means that `p.name` is retrieved from the index.
+We can also see that the `Projection` has no `DB Hits`, which means it does not have to access the database again.
+
+
+[source,cypher]
+----
+PROFILE
+MATCH (p:Person)-[:ACTED_IN]->(m:Movie)
+WHERE p.name STARTS WITH 'Tom'
+RETURN p.name, count(m)
+----
+
+
+[source]
+----
+Compiler CYPHER 3.5
+
+Planner COST
+
+Runtime INTERPRETED
+
+Runtime version 3.5
+
++-----------------------+----------------+------+---------+-----------------+-------------------+----------------------+------------+----------------------------------+--------------------------------------------+
+| Operator              | Estimated Rows | Rows | DB Hits | Page Cache Hits | Page Cache Misses | Page Cache Hit Ratio | Order      | Variables                        | Other                                      |
++-----------------------+----------------+------+---------+-----------------+-------------------+----------------------+------------+----------------------------------+--------------------------------------------+
+| +ProduceResults       |              1 |    3 |       0 |               0 |                 0 |               0.0000 | p.name ASC | count(m), p.name                 |                                            |
+| |                     +----------------+------+---------+-----------------+-------------------+----------------------+------------+----------------------------------+--------------------------------------------+
+| +EagerAggregation     |              1 |    3 |       0 |               0 |                 0 |               0.0000 | p.name ASC | count(m), p.name                 | p.name                                     |
+| |                     +----------------+------+---------+-----------------+-------------------+----------------------+------------+----------------------------------+--------------------------------------------+
+| +Filter               |              1 |   16 |      16 |               0 |                 0 |               0.0000 | p.name ASC | anon[17], cached[p.name], m, p   | m:Movie                                    |
+| |                     +----------------+------+---------+-----------------+-------------------+----------------------+------------+----------------------------------+--------------------------------------------+
+| +Expand(All)          |              1 |   16 |      20 |               0 |                 0 |               0.0000 | p.name ASC | anon[17], m -- cached[p.name], p | (p)-[:ACTED_IN]->(m)                       |
+| |                     +----------------+------+---------+-----------------+-------------------+----------------------+------------+----------------------------------+--------------------------------------------+
+| +NodeIndexSeekByRange |              1 |    4 |       5 |               0 |                 0 |               0.0000 | p.name ASC | cached[p.name], p                | :Person(name STARTS WITH $`  AUTOSTRING0`) |
++-----------------------+----------------+------+---------+-----------------+-------------------+----------------------+------------+----------------------------------+--------------------------------------------+
+
+Total database accesses: 41
+
+----
+
+
+If we change the query, such that it can no longer use an index, we will see that there will be no `cached[p.name]` in the Variables, and that the
+`Projection` now has `DB Hits`, since it accesses the database again to retrieve the name.
+
+
+[source,cypher]
+----
+PROFILE
+MATCH (p:Person)-[:ACTED_IN]->(m:Movie)
+RETURN p.name, count(m)
+----
+
+
+[source]
+----
+Compiler CYPHER 3.5
+
+Planner COST
+
+Runtime INTERPRETED
+
+Runtime version 3.5
+
++-------------------+----------------+------+---------+-----------------+-------------------+----------------------+------------------+----------------------+
+| Operator          | Estimated Rows | Rows | DB Hits | Page Cache Hits | Page Cache Misses | Page Cache Hit Ratio | Variables        | Other                |
++-------------------+----------------+------+---------+-----------------+-------------------+----------------------+------------------+----------------------+
+| +ProduceResults   |             13 |  102 |       0 |               0 |                 0 |               0.0000 | count(m), p.name |                      |
+| |                 +----------------+------+---------+-----------------+-------------------+----------------------+------------------+----------------------+
+| +EagerAggregation |             13 |  102 |     172 |               0 |                 0 |               0.0000 | count(m), p.name | p.name               |
+| |                 +----------------+------+---------+-----------------+-------------------+----------------------+------------------+----------------------+
+| +Filter           |            172 |  172 |     172 |               0 |                 0 |               0.0000 | anon[17], m, p   | p:Person             |
+| |                 +----------------+------+---------+-----------------+-------------------+----------------------+------------------+----------------------+
+| +Expand(All)      |            172 |  172 |     210 |               0 |                 0 |               0.0000 | anon[17], p -- m | (m)<-[:ACTED_IN]-(p) |
+| |                 +----------------+------+---------+-----------------+-------------------+----------------------+------------------+----------------------+
+| +NodeByLabelScan  |             38 |   38 |      39 |               0 |                 0 |               0.0000 | m                | :Movie               |
++-------------------+----------------+------+---------+-----------------+-------------------+----------------------+------------------+----------------------+
+
+Total database accesses: 593
+
+----
+
+
+It is important to note that not all property types are supported, because not all are supported by native indexes.
+Additionally, some property types such as the spatial type `Point`, are indexed in an index that is designed to be approximate and cannot return the values.
+For non-native indexes and the spatial type `Point`, there will still be a second database access to retrieve those values.
+In indexes with mixed values, only those values that cannot be looked up from the index will trigger another database access action.
+
+
+Predicates that can be used to enable this optimization are:
+
+
+* Existance (`WHERE exists(n.name)`)
+* Equality (e.g. `WHERE n.name = 'Tom Hanks'`)
+* Range (eg. `WHERE n.uid > 1000 AND n.uid < 2000`)
+* Prefix (eg. `WHERE n.name STARTS WITH 'Tom'`)
+* Suffix (eg. `WHERE n.name ENDS WITH 'Hanks'`)
+* Substring (eg. `WHERE n.name CONTAINS 'a'`)
+
+
+=== Index-backed order by
+
+
+Now consider the following refinement to the query:
+
+
+[source,cypher]
+----
+MATCH (p:Person)-[:ACTED_IN]->(m:Movie)
+WHERE p.name STARTS WITH 'Tom'
+RETURN p.name, count(m)
+ORDER BY p.name
+----
+
+
+[source, role="queryresult noheader"]
+----
++---------------------------+
+| p.name         | count(m) |
++---------------------------+
+| "Tom Cruise"   | 3        |
+| "Tom Hanks"    | 12       |
+| "Tom Skerritt" | 1        |
++---------------------------+
+3 rows
+----
+
+
+We are asking for the results in ascending alphabetical order.
+The native index happens to store String properties in ascending alphabetical order, and Cypher knows this.
+In Neo4j 3.4 and earlier, Cypher would plan a `Sort` operation to sort the results, which means building a collection in memory and running a sort algorithm on it.
+For large result sets this can be expensive in terms of both memory and time.
+If you are using the native index, Cypher will recognise that the index already returns data in the correct order, and skip the `Sort` operation.
+
+
+Indexes storing values of the spatial type `Point`, and non-native indexes, cannot be relied on to return the values in the correct order.
+This means that for Cypher to enable this optimization, the query needs a predicate that limits the type of the property to some type that is guaranteed to be in the right order.
+
+
+To demonstrate this effect, let's remove the String prefix predicate so that Cypher no longer knows the type of the property, and replace it with an existence predicate.
+Now the database can no longer guarantee the order.
+If we profile the query we will see the `Sort` operation:
+
+
+[source,cypher]
+----
+PROFILE
+MATCH (p:Person)-[:ACTED_IN]->(m:Movie)
+USING INDEX p:Person(name)
+WHERE exists(p.name)
+RETURN p.name, count(m)
+ORDER BY p.name
+----
+
+
+[source]
+----
+Compiler CYPHER 3.5
+
+Planner COST
+
+Runtime INTERPRETED
+
+Runtime version 3.5
+
++-------------------+----------------+------+---------+-----------------+-------------------+----------------------+------------+----------------------------------+----------------------+
+| Operator          | Estimated Rows | Rows | DB Hits | Page Cache Hits | Page Cache Misses | Page Cache Hit Ratio | Order      | Variables                        | Other                |
++-------------------+----------------+------+---------+-----------------+-------------------+----------------------+------------+----------------------------------+----------------------+
+| +ProduceResults   |             13 |  102 |       0 |               0 |                 0 |               0.0000 | p.name ASC | count(m), p.name                 |                      |
+| |                 +----------------+------+---------+-----------------+-------------------+----------------------+------------+----------------------------------+----------------------+
+| +Sort             |             13 |  102 |       0 |               0 |                 0 |               0.0000 | p.name ASC | count(m), p.name                 | p.name               |
+| |                 +----------------+------+---------+-----------------+-------------------+----------------------+------------+----------------------------------+----------------------+
+| +EagerAggregation |             13 |  102 |       0 |               0 |                 0 |               0.0000 |            | count(m), p.name                 | p.name               |
+| |                 +----------------+------+---------+-----------------+-------------------+----------------------+------------+----------------------------------+----------------------+
+| +Filter           |            172 |  172 |     172 |               0 |                 0 |               0.0000 |            | anon[17], cached[p.name], m, p   | m:Movie              |
+| |                 +----------------+------+---------+-----------------+-------------------+----------------------+------------+----------------------------------+----------------------+
+| +Expand(All)      |            172 |  172 |     297 |               0 |                 0 |               0.0000 |            | anon[17], m -- cached[p.name], p | (p)-[:ACTED_IN]->(m) |
+| |                 +----------------+------+---------+-----------------+-------------------+----------------------+------------+----------------------------------+----------------------+
+| +NodeIndexScan    |            125 |  125 |     127 |               0 |                 0 |               0.0000 |            | cached[p.name], p                | :Person(name)        |
++-------------------+----------------+------+---------+-----------------+-------------------+----------------------+------------+----------------------------------+----------------------+
+
+Total database accesses: 596
+
+----
+
+
+The `Order` column describes the order of rows after each operator.
+We see that the order is undefined until the `Sort` operator.
+Now if we add back the predicate that gives us the property type information,
+we will see the `Sort` operation is no longer there:
+
+
+[source,cypher]
+----
+PROFILE
+MATCH (p:Person)-[:ACTED_IN]->(m:Movie)
+WHERE p.name STARTS WITH 'Tom'
+RETURN p.name, count(m)
+ORDER BY p.name
+----
+
+
+[source]
+----
+Compiler CYPHER 3.5
+
+Planner COST
+
+Runtime INTERPRETED
+
+Runtime version 3.5
+
++-----------------------+----------------+------+---------+-----------------+-------------------+----------------------+------------+----------------------------------+--------------------------------------------+
+| Operator              | Estimated Rows | Rows | DB Hits | Page Cache Hits | Page Cache Misses | Page Cache Hit Ratio | Order      | Variables                        | Other                                      |
++-----------------------+----------------+------+---------+-----------------+-------------------+----------------------+------------+----------------------------------+--------------------------------------------+
+| +ProduceResults       |              1 |    3 |       0 |               0 |                 0 |               0.0000 | p.name ASC | count(m), p.name                 |                                            |
+| |                     +----------------+------+---------+-----------------+-------------------+----------------------+------------+----------------------------------+--------------------------------------------+
+| +EagerAggregation     |              1 |    3 |       0 |               0 |                 0 |               0.0000 | p.name ASC | count(m), p.name                 | p.name                                     |
+| |                     +----------------+------+---------+-----------------+-------------------+----------------------+------------+----------------------------------+--------------------------------------------+
+| +Filter               |              1 |   16 |      16 |               0 |                 0 |               0.0000 | p.name ASC | anon[17], cached[p.name], m, p   | m:Movie                                    |
+| |                     +----------------+------+---------+-----------------+-------------------+----------------------+------------+----------------------------------+--------------------------------------------+
+| +Expand(All)          |              1 |   16 |      20 |               0 |                 0 |               0.0000 | p.name ASC | anon[17], m -- cached[p.name], p | (p)-[:ACTED_IN]->(m)                       |
+| |                     +----------------+------+---------+-----------------+-------------------+----------------------+------------+----------------------------------+--------------------------------------------+
+| +NodeIndexSeekByRange |              1 |    4 |       5 |               0 |                 0 |               0.0000 | p.name ASC | cached[p.name], p                | :Person(name STARTS WITH $`  AUTOSTRING0`) |
++-----------------------+----------------+------+---------+-----------------+-------------------+----------------------+------------+----------------------------------+--------------------------------------------+
+
+Total database accesses: 41
+
+----
+
+
+We also see that the `Order` column contains `p.name ASC` from the index seek operation, meaning that the rows are ordered by `p.name` in ascending order.
+
+
+_Index-backed order by_ can also be used for queries that expect their results is descending order, but with slightly lower performance.
+
+
+==== Restrictions
+
+
+The optimization can only work on native indexes, and only if we query for a specific type, in order to rule out the spatial type `Point`.
+Predicates that can be used to enable this optimization are:
+
+
+* Equality (e.g. `WHERE n.name = 'Tom Hanks'`)
+* Range (eg. `WHERE n.uid > 1000 AND n.uid < 2000`)
+* Prefix (eg. `WHERE n.name STARTS WITH 'Tom'`)
+* Suffix (eg. `WHERE n.name ENDS WITH 'Hanks'`)
+* Substring (eg. `WHERE n.name CONTAINS 'a'`)
+
+
+Predicates that will not work:
+
+
+* Existence (eg. `WHERE exists(n.email)`) because no property type information is given
+
+
+ifndef::backend-pdf[]
+ifdef::backend-html,backend-html5,backend-xhtml11,backend-deckjs[]
+++++
+<p class="cypherdoc-console"></p>
+++++
+endif::[]
+endif::[]
+ifndef::backend-pdf[]
+ifndef::backend-html,backend-html5,backend-xhtml11,backend-deckjs[]
+++++
+<simpara role="cypherdoc-console"></simpara>
+++++
+endif::[]
+endif::[]

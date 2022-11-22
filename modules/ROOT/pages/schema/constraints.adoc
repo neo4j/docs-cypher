@@ -1,0 +1,930 @@
+[[query-constraints]]
+= Constraints
+:description: Neo4j helps enforce data integrity with the use of constraints. Constraints can be applied to either nodes or relationships. Unique node property constraints can be created, along with node and relationship property existence constraints, and Node Keys, which guarantee both existence and uniqueness. 
+
+* xref:schema/constraints.adoc#query-constraint-introduction[Introduction]
+* xref:schema/constraints.adoc#query-constraint-unique-nodes[Unique node property constraints]
+ ** xref:schema/constraints.adoc#constraints-create-unique-constraint[Create unique constraint]
+ ** xref:schema/constraints.adoc#constraints-drop-unique-constraint[Drop unique constraint]
+ ** xref:schema/constraints.adoc#constraints-create-a-node-that-complies-with-unique-property-constraints[Create a node that complies with unique property constraints]
+ ** xref:schema/constraints.adoc#constraints-create-a-node-that-violates-a-unique-property-constraint[Create a node that violates a unique property constraint]
+ ** xref:schema/constraints.adoc#constraints-failure-to-create-a-unique-property-constraint-due-to-conflicting-nodes[Failure to create a unique property constraint due to conflicting nodes]
+* xref:schema/constraints.adoc#constraints-get-a-list-of-all-constraints-in-the-database[Get a list of all constraints in the database]
+* xref:schema/constraints.adoc#query-constraint-prop-exist-nodes[Node property existence constraints]
+ ** xref:schema/constraints.adoc#constraints-create-node-property-existence-constraint[Create node property existence constraint]
+ ** xref:schema/constraints.adoc#constraints-drop-node-property-existence-constraint[Drop node property existence constraint]
+ ** xref:schema/constraints.adoc#constraints-create-a-node-that-complies-with-property-existence-constraints[Create a node that complies with property existence constraints]
+ ** xref:schema/constraints.adoc#constraints-create-a-node-that-violates-a-property-existence-constraint[Create a node that violates a property existence constraint]
+ ** xref:schema/constraints.adoc#constraints-removing-an-existence-constrained-node-property[Removing an existence constrained node property]
+ ** xref:schema/constraints.adoc#constraints-failure-to-create-a-node-property-existence-constraint-due-to-existing-node[Failure to create a node property existence constraint due to existing node]
+* xref:schema/constraints.adoc#query-constraint-prop-exist-rels[Relationship property existence constraints]
+ ** xref:schema/constraints.adoc#constraints-create-relationship-property-existence-constraint[Create relationship property existence constraint]
+ ** xref:schema/constraints.adoc#constraints-drop-relationship-property-existence-constraint[Drop relationship property existence constraint]
+ ** xref:schema/constraints.adoc#constraints-create-a-relationship-that-complies-with-property-existence-constraints[Create a relationship that complies with property existence constraints]
+ ** xref:schema/constraints.adoc#constraints-create-a-relationship-that-violates-a-property-existence-constraint[Create a relationship that violates a property existence constraint]
+ ** xref:schema/constraints.adoc#constraints-removing-an-existence-constrained-relationship-property[Removing an existence constrained relationship property]
+ ** xref:schema/constraints.adoc#constraints-failure-to-create-a-relationship-property-existence-constraint-due-to-existing-relationship[Failure to create a relationship property existence constraint due to existing relationship]
+* xref:schema/constraints.adoc#query-constraint-node-key[Node Keys]
+ ** xref:schema/constraints.adoc#constraints-create-a-node-key[Create a Node Key]
+ ** xref:schema/constraints.adoc#constraints-drop-a-node-key[Drop a Node Key]
+ ** xref:schema/constraints.adoc#constraints-create-a-node-that-complies-with-a-node-key[Create a node that complies with a Node Key]
+ ** xref:schema/constraints.adoc#constraints-create-a-node-that-violates-a-node-key[Create a node that violates a Node Key]
+ ** xref:schema/constraints.adoc#constraints-removing-a-node-key-constrained-property[Removing a `NODE KEY`-constrained property]
+ ** xref:schema/constraints.adoc#constraints-failure-to-create-a-node-key-due-to-existing-node[Failure to create a Node Key due to existing node]
+
+
+[[query-constraint-introduction]]
+== Introduction
+
+The following constraint types are available:
+
+*Unique property constraints*::
+Unique property constraints ensure that property values are unique for all nodes with a specific label.
+Unique constraints do not mean that all nodes have to have a unique value for the properties -- nodes without the property are not subject to this rule.
+
+*[enterprise-edition]#Property existence constraints#*::
+Property existence constraints ensure that a property exists for all nodes with a specific label or for all relationships with a specific type.
+All queries that try to create new nodes or relationships without the property, or queries that try to remove the mandatory property will now fail.
+
+*[enterprise-edition]#Node Keys#*::
+Node Keys ensure that, for a given label and set of properties:
++
+[lowerroman]
+. All the properties exist on all the nodes with that label.
+. The combination of the property values is unique.
+
++
+Queries attempting to do any of the following will fail:
+
+* Create new nodes without all the properties or where the combination of property values is not unique.
+* Remove one of the mandatory properties.
+* Update the properties so that the combination of property values is no longer unique.
+
+
+[NOTE]
+Property existence constraints and Node Keys are only available in Neo4j Enterprise Edition.
+Note that databases with property existence constraints and/or Node Keys cannot be opened using Neo4j Community Edition.
+
+A given label can have multiple constraints, and unique and property existence constraints can be combined on the same property.
+
+Adding constraints is an atomic operation that can take a while -- all existing data has to be scanned before Neo4j can turn the constraint 'on'.
+
+Creating a constraint has the following implications on indexes:
+
+* Adding a unique property constraint on a property will also add a xref:schema/indexes.adoc#schema-index-create-a-single-property-index[single-property index] on that property, so such an index cannot be added separately.
+* Adding a Node Key for a set of properties will also add a xref:schema/indexes.adoc#schema-index-create-a-composite-index[composite index] on those properties, so such an index cannot be added separately.
+* Cypher will use these indexes for lookups just like other indexes; see the xref:schema/indexes.adoc[Indexes] section for more details on the rules governing their behavior.
+* If a unique property constraint is dropped and the single-property index on the property is still required, the index will need to be created explicitly.
+* If a Node Key is dropped and the composite-property index on the properties is still required, the index will need to be created explicitly.
+
+
+[[query-constraint-unique-nodes]]
+== Unique node property constraints
+
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/create-unique-constraint.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[constraints-create-unique-constraint]]
+== Create unique constraint ==
+To create a constraint that makes sure that your database will never contain more than one node with a specific label and one property value, use the `IS UNIQUE` syntax.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-unique-constraint.query.asciidoc[]
+[source,cypher]
+----
+CREATE CONSTRAINT ON (book:Book) ASSERT book.isbn IS UNIQUE
+----
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-unique-constraint.query.asciidoc[]
+// end::query[]
+
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-unique-constraint.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Unique constraints added: 1
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-unique-constraint.result.asciidoc[]
+// end::result[]
+
+
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/create-unique-constraint.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/drop-unique-constraint.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[constraints-drop-unique-constraint]]
+== Drop unique constraint ==
+By using `DROP CONSTRAINT`, you remove a constraint from the database.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-drop-unique-constraint.query.asciidoc[]
+[source,cypher]
+----
+DROP CONSTRAINT ON (book:Book) ASSERT book.isbn IS UNIQUE
+----
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-drop-unique-constraint.query.asciidoc[]
+// end::query[]
+
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-drop-unique-constraint.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Unique constraints removed: 1
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-drop-unique-constraint.result.asciidoc[]
+// end::result[]
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/drop-unique-constraint.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/create-a-node-that-complies-with-unique-property-constraints.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[constraints-create-a-node-that-complies-with-unique-property-constraints]]
+== Create a node that complies with unique property constraints ==
+Create a `Book` node with an `isbn` that isn't already in the database.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-node-that-complies-with-unique-property-constraints.query.asciidoc[]
+[source,cypher]
+----
+CREATE (book:Book { isbn: '1449356265', title: 'Graph Databases' })
+----
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-node-that-complies-with-unique-property-constraints.query.asciidoc[]
+// end::query[]
+
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-node-that-complies-with-unique-property-constraints.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Nodes created: 1
+Properties set: 2
+Labels added: 1
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-node-that-complies-with-unique-property-constraints.result.asciidoc[]
+// end::result[]
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/create-a-node-that-complies-with-unique-property-constraints.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/create-a-node-that-violates-a-unique-property-constraint.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[constraints-create-a-node-that-violates-a-unique-property-constraint]]
+== Create a node that violates a unique property constraint ==
+Create a `Book` node with an `isbn` that is already used in the database.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-node-that-violates-a-unique-property-constraint.query.asciidoc[]
+[source,cypher]
+----
+CREATE (book:Book { isbn: '1449356265', title: 'Graph Databases' })
+----
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-node-that-violates-a-unique-property-constraint.query.asciidoc[]
+// end::query[]
+
+
+In this case the node isn't created in the graph.
+
+.Error message
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-node-that-violates-a-unique-property-constraint.result.asciidoc[]
+[source]
+----
+Node(0) already exists with label `Book` and property `isbn` = '1449356265'
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-node-that-violates-a-unique-property-constraint.result.asciidoc[]
+// end::result[]
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/create-a-node-that-violates-a-unique-property-constraint.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/failure-to-create-a-unique-property-constraint-due-to-conflicting-nodes.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[constraints-failure-to-create-a-unique-property-constraint-due-to-conflicting-nodes]]
+== Failure to create a unique property constraint due to conflicting nodes ==
+Create a unique property constraint on the property `isbn` on nodes with the `Book` label when there are two nodes with the same `isbn`.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-failure-to-create-a-unique-property-constraint-due-to-conflicting-nodes.query.asciidoc[]
+[source,cypher]
+----
+CREATE CONSTRAINT ON (book:Book) ASSERT book.isbn IS UNIQUE
+----
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-failure-to-create-a-unique-property-constraint-due-to-conflicting-nodes.query.asciidoc[]
+// end::query[]
+
+
+In this case the constraint can't be created because it is violated by existing data. We may choose to use xref:schema/indexes.adoc[] instead or remove the offending nodes and then re-apply the constraint.
+
+.Error message
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-failure-to-create-a-unique-property-constraint-due-to-conflicting-nodes.result.asciidoc[]
+[source]
+----
+Unable to create CONSTRAINT ON ( book:Book ) ASSERT book.isbn IS UNIQUE:
+Both Node(0) and Node(20) have the label `Book` and property `isbn` =
+'1449356265'
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-failure-to-create-a-unique-property-constraint-due-to-conflicting-nodes.result.asciidoc[]
+// end::result[]
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/failure-to-create-a-unique-property-constraint-due-to-conflicting-nodes.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/get-a-list-of-all-constraints-in-the-database.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[constraints-get-a-list-of-all-constraints-in-the-database]]
+== Get a list of all constraints in the database ==
+Calling the built-in procedure `db.constraints` will list all the constraints in the database.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-get-a-list-of-all-constraints-in-the-database.query.asciidoc[]
+[source,cypher]
+----
+CALL db.constraints
+----
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-get-a-list-of-all-constraints-in-the-database.query.asciidoc[]
+// end::query[]
+
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-get-a-list-of-all-constraints-in-the-database.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++----------------------------------------------------------+
+| description                                              |
++----------------------------------------------------------+
+| "CONSTRAINT ON ( book:Book ) ASSERT book.isbn IS UNIQUE" |
++----------------------------------------------------------+
+1 row
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-get-a-list-of-all-constraints-in-the-database.result.asciidoc[]
+// end::result[]
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/get-a-list-of-all-constraints-in-the-database.asciidoc[]
+
+
+[role=enterprise-edition]
+[[query-constraint-prop-exist-nodes]]
+== Node property existence constraints
+
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/create-node-property-existence-constraint.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[constraints-create-node-property-existence-constraint]]
+== Create node property existence constraint ==
+To create a constraint that ensures that all nodes with a certain label have a certain property, use the `ASSERT exists(variable.propertyName)` syntax.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-node-property-existence-constraint.query.asciidoc[]
+[source,cypher]
+----
+CREATE CONSTRAINT ON (book:Book) ASSERT exists(book.isbn)
+----
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-node-property-existence-constraint.query.asciidoc[]
+// end::query[]
+
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-node-property-existence-constraint.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Property existence constraints added: 1
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-node-property-existence-constraint.result.asciidoc[]
+// end::result[]
+
+
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/create-node-property-existence-constraint.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/drop-node-property-existence-constraint.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[constraints-drop-node-property-existence-constraint]]
+== Drop node property existence constraint ==
+By using `DROP CONSTRAINT`, you remove a constraint from the database.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-drop-node-property-existence-constraint.query.asciidoc[]
+[source,cypher]
+----
+DROP CONSTRAINT ON (book:Book) ASSERT exists(book.isbn)
+----
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-drop-node-property-existence-constraint.query.asciidoc[]
+// end::query[]
+
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-drop-node-property-existence-constraint.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Property existence constraints removed: 1
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-drop-node-property-existence-constraint.result.asciidoc[]
+// end::result[]
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/drop-node-property-existence-constraint.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/create-a-node-that-complies-with-property-existence-constraints.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[constraints-create-a-node-that-complies-with-property-existence-constraints]]
+== Create a node that complies with property existence constraints ==
+Create a `Book` node with an `isbn` property.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-node-that-complies-with-property-existence-constraints.query.asciidoc[]
+[source,cypher]
+----
+CREATE (book:Book { isbn: '1449356265', title: 'Graph Databases' })
+----
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-node-that-complies-with-property-existence-constraints.query.asciidoc[]
+// end::query[]
+
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-node-that-complies-with-property-existence-constraints.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Nodes created: 1
+Properties set: 2
+Labels added: 1
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-node-that-complies-with-property-existence-constraints.result.asciidoc[]
+// end::result[]
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/create-a-node-that-complies-with-property-existence-constraints.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/create-a-node-that-violates-a-property-existence-constraint.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[constraints-create-a-node-that-violates-a-property-existence-constraint]]
+== Create a node that violates a property existence constraint ==
+Trying to create a `Book` node without an `isbn` property, given a property existence constraint on `:Book(isbn)`.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-node-that-violates-a-property-existence-constraint.query.asciidoc[]
+[source,cypher]
+----
+CREATE (book:Book { title: 'Graph Databases' })
+----
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-node-that-violates-a-property-existence-constraint.query.asciidoc[]
+// end::query[]
+
+
+In this case the node isn't created in the graph.
+
+.Error message
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-node-that-violates-a-property-existence-constraint.result.asciidoc[]
+[source]
+----
+Node(0) with label `Book` must have the property `isbn`
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-node-that-violates-a-property-existence-constraint.result.asciidoc[]
+// end::result[]
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/create-a-node-that-violates-a-property-existence-constraint.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/removing-an-existence-constrained-node-property.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[constraints-removing-an-existence-constrained-node-property]]
+== Removing an existence constrained node property ==
+Trying to remove the `isbn` property from an existing node `book`, given a property existence constraint on `:Book(isbn)`.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-removing-an-existence-constrained-node-property.query.asciidoc[]
+[source,cypher]
+----
+MATCH (book:Book { title: 'Graph Databases' })
+REMOVE book.isbn
+----
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-removing-an-existence-constrained-node-property.query.asciidoc[]
+// end::query[]
+
+
+In this case the property is not removed.
+
+.Error message
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-removing-an-existence-constrained-node-property.result.asciidoc[]
+[source]
+----
+Node(0) with label `Book` must have the property `isbn`
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-removing-an-existence-constrained-node-property.result.asciidoc[]
+// end::result[]
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/removing-an-existence-constrained-node-property.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/failure-to-create-a-node-property-existence-constraint-due-to-existing-node.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[constraints-failure-to-create-a-node-property-existence-constraint-due-to-existing-node]]
+== Failure to create a node property existence constraint due to existing node ==
+Create a constraint on the property `isbn` on nodes with the `Book` label when there already exists  a node without an `isbn`.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-failure-to-create-a-node-property-existence-constraint-due-to-existing-node.query.asciidoc[]
+[source,cypher]
+----
+CREATE CONSTRAINT ON (book:Book) ASSERT exists(book.isbn)
+----
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-failure-to-create-a-node-property-existence-constraint-due-to-existing-node.query.asciidoc[]
+// end::query[]
+
+
+In this case the constraint can't be created because it is violated by existing data. We may choose to remove the offending nodes and then re-apply the constraint.
+
+.Error message
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-failure-to-create-a-node-property-existence-constraint-due-to-existing-node.result.asciidoc[]
+[source]
+----
+Unable to create CONSTRAINT ON ( book:Book ) ASSERT exists(book.isbn):
+Node(0) with label `Book` must have the property `isbn`
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-failure-to-create-a-node-property-existence-constraint-due-to-existing-node.result.asciidoc[]
+// end::result[]
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/failure-to-create-a-node-property-existence-constraint-due-to-existing-node.asciidoc[]
+
+
+[role=enterprise-edition]
+[[query-constraint-prop-exist-rels]]
+== Relationship property existence constraints
+
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/create-relationship-property-existence-constraint.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[constraints-create-relationship-property-existence-constraint]]
+== Create relationship property existence constraint ==
+To create a constraint that makes sure that all relationships with a certain type have a certain property, use the `ASSERT exists(variable.propertyName)` syntax.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-relationship-property-existence-constraint.query.asciidoc[]
+[source,cypher]
+----
+CREATE CONSTRAINT ON ()-[like:LIKED]-() ASSERT exists(like.day)
+----
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-relationship-property-existence-constraint.query.asciidoc[]
+// end::query[]
+
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-relationship-property-existence-constraint.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Property existence constraints added: 1
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-relationship-property-existence-constraint.result.asciidoc[]
+// end::result[]
+
+
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/create-relationship-property-existence-constraint.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/drop-relationship-property-existence-constraint.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[constraints-drop-relationship-property-existence-constraint]]
+== Drop relationship property existence constraint ==
+To remove a constraint from the database, use `DROP CONSTRAINT`.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-drop-relationship-property-existence-constraint.query.asciidoc[]
+[source,cypher]
+----
+DROP CONSTRAINT ON ()-[like:LIKED]-() ASSERT exists(like.day)
+----
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-drop-relationship-property-existence-constraint.query.asciidoc[]
+// end::query[]
+
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-drop-relationship-property-existence-constraint.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Property existence constraints removed: 1
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-drop-relationship-property-existence-constraint.result.asciidoc[]
+// end::result[]
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/drop-relationship-property-existence-constraint.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/create-a-relationship-that-complies-with-property-existence-constraints.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[constraints-create-a-relationship-that-complies-with-property-existence-constraints]]
+== Create a relationship that complies with property existence constraints ==
+Create a `LIKED` relationship with a `day` property.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-relationship-that-complies-with-property-existence-constraints.query.asciidoc[]
+[source,cypher]
+----
+CREATE (user:User)-[like:LIKED { day: 'yesterday' }]->(book:Book)
+----
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-relationship-that-complies-with-property-existence-constraints.query.asciidoc[]
+// end::query[]
+
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-relationship-that-complies-with-property-existence-constraints.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Nodes created: 2
+Relationships created: 1
+Properties set: 1
+Labels added: 2
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-relationship-that-complies-with-property-existence-constraints.result.asciidoc[]
+// end::result[]
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/create-a-relationship-that-complies-with-property-existence-constraints.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/create-a-relationship-that-violates-a-property-existence-constraint.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[constraints-create-a-relationship-that-violates-a-property-existence-constraint]]
+== Create a relationship that violates a property existence constraint ==
+Trying to create a `LIKED` relationship without a `day` property, given a property existence constraint `:LIKED(day)`.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-relationship-that-violates-a-property-existence-constraint.query.asciidoc[]
+[source,cypher]
+----
+CREATE (user:User)-[like:LIKED]->(book:Book)
+----
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-relationship-that-violates-a-property-existence-constraint.query.asciidoc[]
+// end::query[]
+
+
+In this case the relationship isn't created in the graph.
+
+.Error message
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-relationship-that-violates-a-property-existence-constraint.result.asciidoc[]
+[source]
+----
+Relationship(0) with type `LIKED` must have the property `day`
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-relationship-that-violates-a-property-existence-constraint.result.asciidoc[]
+// end::result[]
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/create-a-relationship-that-violates-a-property-existence-constraint.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/removing-an-existence-constrained-relationship-property.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[constraints-removing-an-existence-constrained-relationship-property]]
+== Removing an existence constrained relationship property ==
+Trying to remove the `day` property from an existing relationship `like` of type `LIKED`, given a property existence constraint `:LIKED(day)`.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-removing-an-existence-constrained-relationship-property.query.asciidoc[]
+[source,cypher]
+----
+MATCH (user:User)-[like:LIKED]->(book:Book)
+REMOVE like.day
+----
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-removing-an-existence-constrained-relationship-property.query.asciidoc[]
+// end::query[]
+
+
+In this case the property is not removed.
+
+.Error message
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-removing-an-existence-constrained-relationship-property.result.asciidoc[]
+[source]
+----
+Relationship(0) with type `LIKED` must have the property `day`
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-removing-an-existence-constrained-relationship-property.result.asciidoc[]
+// end::result[]
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/removing-an-existence-constrained-relationship-property.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/failure-to-create-a-relationship-property-existence-constraint-due-to-existing-relationship.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[constraints-failure-to-create-a-relationship-property-existence-constraint-due-to-existing-relationship]]
+== Failure to create a relationship property existence constraint due to existing relationship ==
+Create a constraint on the property `day` on relationships with the `LIKED` type when there already exists a relationship without a property named `day`.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-failure-to-create-a-relationship-property-existence-constraint-due-to-existing-relationship.query.asciidoc[]
+[source,cypher]
+----
+CREATE CONSTRAINT ON ()-[like:LIKED]-() ASSERT exists(like.day)
+----
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-failure-to-create-a-relationship-property-existence-constraint-due-to-existing-relationship.query.asciidoc[]
+// end::query[]
+
+
+In this case the constraint can't be created because it is violated by existing data. We may choose to remove the offending relationships and then re-apply the constraint.
+
+.Error message
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-failure-to-create-a-relationship-property-existence-constraint-due-to-existing-relationship.result.asciidoc[]
+[source]
+----
+Unable to create CONSTRAINT ON ()-[ liked:LIKED ]-() ASSERT exists(liked.day):
+Relationship(0) with type `LIKED` must have the property `day`
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-failure-to-create-a-relationship-property-existence-constraint-due-to-existing-relationship.result.asciidoc[]
+// end::result[]
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/failure-to-create-a-relationship-property-existence-constraint-due-to-existing-relationship.asciidoc[]
+
+
+[role=enterprise-edition]
+[[query-constraint-node-key]]
+== Node Keys
+
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/create-a-node-key.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[constraints-create-a-node-key]]
+== Create a Node Key ==
+To create a Node Key ensuring that all nodes with a particular label have a set of defined properties whose combined value is unique, and where all properties in the set are present, use the `ASSERT (variable.propertyName_1, ..., variable.propertyName_n) IS NODE KEY` syntax.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-node-key.query.asciidoc[]
+[source,cypher]
+----
+CREATE CONSTRAINT ON (n:Person) ASSERT (n.firstname, n.surname) IS NODE KEY
+----
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-node-key.query.asciidoc[]
+// end::query[]
+
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-node-key.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Node key constraints added: 1
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-node-key.result.asciidoc[]
+// end::result[]
+
+
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/create-a-node-key.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/drop-a-node-key.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[constraints-drop-a-node-key]]
+== Drop a Node Key ==
+Use `DROP CONSTRAINT` to remove a Node Key from the database.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-drop-a-node-key.query.asciidoc[]
+[source,cypher]
+----
+DROP CONSTRAINT ON (n:Person) ASSERT (n.firstname, n.surname) IS NODE KEY
+----
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-drop-a-node-key.query.asciidoc[]
+// end::query[]
+
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-drop-a-node-key.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Node key constraints removed: 1
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-drop-a-node-key.result.asciidoc[]
+// end::result[]
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/drop-a-node-key.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/create-a-node-that-complies-with-a-node-key.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[constraints-create-a-node-that-complies-with-a-node-key]]
+== Create a node that complies with a Node Key ==
+Create a `Person` node with both a `firstname` and `surname` property.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-node-that-complies-with-a-node-key.query.asciidoc[]
+[source,cypher]
+----
+CREATE (p:Person { firstname: 'John', surname: 'Wood', age: 55 })
+----
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-node-that-complies-with-a-node-key.query.asciidoc[]
+// end::query[]
+
+
+.Result
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-node-that-complies-with-a-node-key.result.asciidoc[]
+[source, role="queryresult noheader"]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Nodes created: 1
+Properties set: 3
+Labels added: 1
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-node-that-complies-with-a-node-key.result.asciidoc[]
+// end::result[]
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/create-a-node-that-complies-with-a-node-key.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/create-a-node-that-violates-a-node-key.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[constraints-create-a-node-that-violates-a-node-key]]
+== Create a node that violates a Node Key ==
+Trying to create a `Person` node without a `surname` property, given a Node Key on `:Person(firstname, surname)`, will fail.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-node-that-violates-a-node-key.query.asciidoc[]
+[source,cypher]
+----
+CREATE (p:Person { firstname: 'Jane', age: 34 })
+----
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-node-that-violates-a-node-key.query.asciidoc[]
+// end::query[]
+
+
+In this case the node isn't created in the graph.
+
+.Error message
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-node-that-violates-a-node-key.result.asciidoc[]
+[source]
+----
+Node(0) with label `Person` must have the properties `firstname, surname`
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-create-a-node-that-violates-a-node-key.result.asciidoc[]
+// end::result[]
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/create-a-node-that-violates-a-node-key.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/removing-a-node-key-constrained-property.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[constraints-removing-a-node-key-constrained-property]]
+== Removing a `NODE KEY`-constrained property ==
+Trying to remove the `surname` property from an existing node `Person`, given a `NODE KEY` constraint on `:Person(firstname, surname)`.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-removing-a-node-key-constrained-property.query.asciidoc[]
+[source,cypher]
+----
+MATCH (p:Person { firstname: 'John', surname: 'Wood' })
+REMOVE p.surname
+----
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-removing-a-node-key-constrained-property.query.asciidoc[]
+// end::query[]
+
+
+In this case the property is not removed.
+
+.Error message
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-removing-a-node-key-constrained-property.result.asciidoc[]
+[source]
+----
+Node(0) with label `Person` must have the properties `firstname, surname`
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-removing-a-node-key-constrained-property.result.asciidoc[]
+// end::result[]
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/removing-a-node-key-constrained-property.asciidoc[]
+
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/failure-to-create-a-node-key-due-to-existing-node.asciidoc[]
+// tag::include-neo4j-documentation[]
+[[constraints-failure-to-create-a-node-key-due-to-existing-node]]
+== Failure to create a Node Key due to existing node ==
+Trying to create a Node Key on the property `surname` on nodes with the `Person` label will fail when  a node without a `surname` already exists in the database.
+
+.Query
+// tag::query[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-failure-to-create-a-node-key-due-to-existing-node.query.asciidoc[]
+[source,cypher]
+----
+CREATE CONSTRAINT ON (n:Person) ASSERT (n.firstname, n.surname) IS NODE KEY
+----
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-failure-to-create-a-node-key-due-to-existing-node.query.asciidoc[]
+// end::query[]
+
+
+In this case the Node Key can't be created because it is violated by existing data. We may choose to remove the offending nodes and then re-apply the constraint.
+
+.Error message
+// tag::result[]
+// tag::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-failure-to-create-a-node-key-due-to-existing-node.result.asciidoc[]
+[source]
+----
+Unable to create CONSTRAINT ON ( person:Person ) ASSERT exists(person.firstname,
+person.surname):
+Node(0) with label `Person` must have the properties `firstname, surname`
+----
+
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/includes/constraints-failure-to-create-a-node-key-due-to-existing-node.result.asciidoc[]
+// end::result[]
+
+// end::include-neo4j-documentation[]
+// end::neo4j-cypher-docs/docs/dev/ql/constraints/failure-to-create-a-node-key-due-to-existing-node.asciidoc[]
