@@ -1,0 +1,961 @@
+:description: This section describes the semantics of Cypher when composing different read and write clauses.
+
+[[cypher-clause-composition]]
+= Clause composition
+
+[abstract]
+--
+This section describes the semantics of Cypher when composing different read and write clauses.
+--
+
+A query is made up from several clauses chained together.
+These are discussed in more detail in the chapter on xref::clauses/index.adoc[Clauses].
+
+The semantics of a whole query is defined by the semantics of its clauses.
+Each clause has as input the state of the graph and a table of intermediate results consisting of the current variables.
+The output of a clause is a new state of the graph and a new table of intermediate results, serving as input to the next clause.
+The first clause takes as input the state of the graph before the query and an empty table of intermediate results.
+The output of the last clause is  the result of the query.
+
+.Table of intermediate results between read clauses
+======
+
+The following example graph is used throughout this section.
+
+[graphviz]
+----
+digraph L { node [shape=record style=rounded];
+  N0 [
+    label = "{Person|name = \'John\'\l}"
+  ]
+  N0 -> N3 [
+    color = "#2e3436"
+    fontcolor = "#2e3436"
+    label = "FRIEND\n"
+  ]
+  N0 -> N1 [
+    color = "#2e3436"
+    fontcolor = "#2e3436"
+    label = "FRIEND\n"
+  ]
+  N1 [
+    label = "{Person|name = \'Joe\'\l}"
+  ]
+  N1 -> N2 [
+    color = "#2e3436"
+    fontcolor = "#2e3436"
+    label = "FRIEND\n"
+  ]
+  N2 [
+    label = "{Person|name = \'Steve\'\l}"
+  ]
+  N3 [
+    label = "{Person|name = \'Sara\'\l}"
+  ]
+  N3 -> N4 [
+    color = "#2e3436"
+    fontcolor = "#2e3436"
+    label = "FRIEND\n"
+  ]
+  N4 [
+    label = "{Person|name = \'Maria\'\l}"
+  ]
+}
+----
+
+Now follows the table of intermediate results and the state of the graph after each clause for the following query:
+
+[source,cypher, indent=0]
+----
+MATCH (john:Person {name: 'John'})
+MATCH (john)-[:FRIEND]->(friend)
+RETURN friend.name AS friendName
+----
+
+The query only has read clauses, so the state of the graph remains unchanged and is therefore omitted below.
+
+.+The table of intermediate results after each clause+
+[options="header", width="100%", cols="3a, 4a"]
+|===
+
+| Clause
+| Table of intermediate results after the clause
+
+| ----
+MATCH (john:Person {name: 'John'})
+----
+|
+[options="header",cols="1"]
+!===
+! john
+! ({name: 'John'})
+!===
+
+| ----
+MATCH (john)-[:FRIEND]->(friend)
+----
+|
+[options="header",cols="1, 1"]
+!===
+! john             ! friend
+! ({name: 'John'}) ! ({name: 'Sara'})
+! ({name: 'John'}) ! ({name: 'Joe'})
+!===
+
+| ----
+RETURN friend.name AS friendName
+----
+|
+[options="header",cols="1"]
+!===
+! friendName
+! 'Sara'
+! 'Joe'
+!===
+
+
+|===
+======
+
+The above example only looked at clauses that allow linear composition and omitted write clauses.
+The next section will explore these non-linear composition and write clauses.
+
+[[cypher-clause-composition-rw-queries]]
+== Read-write queries
+
+In a Cypher query, read and write clauses can take turns.
+The most important aspect of read-write queries is that the state of the graph also changes between clauses.
+
+[IMPORTANT]
+====
+A clause can never observe writes made by a later clause.
+====
+
+.Table of intermediate results and state of the graph between read and write clauses
+======
+
+Using the same example graph as above, this example shows the table of intermediate results and the state of the graph after each clause for the following query:
+
+[source,cypher, indent=0]
+----
+MATCH (j:Person) WHERE j.name STARTS WITH "J"
+CREATE (j)-[:FRIEND]->(jj:Person {name: "Jay-jay"})
+----
+The query finds all nodes where the `name` property starts with "J"
+and for each such node it creates another node with  the `name` property set to "Jay-jay".
+
+
+.+The table of intermediate results and the state of the graph after each clause+
+[options="header", width="100%", cols="3a, 4a, 4a"]
+|===
+
+| Clause
+| Table of intermediate results after the clause
+| State of the graph after the clause, changes in red
+
+| ----
+MATCH (j:Person) WHERE j.name STARTS WITH "J"
+----
+|
+[options="header",cols="1"]
+!===
+! j
+! ({name: 'John'})
+! ({name: 'Joe'})
+!===
+|
+[graphviz]
+----
+digraph L { node [shape=record style=rounded];
+N0 [
+label = "{Person\|name = \'John\'\l}"
+]
+N0 -> N3 [
+color = "grey"
+fontcolor = "grey"
+label = "FRIEND\n"
+]
+N0 -> N1 [
+color = "#2e3436"
+fontcolor = "#2e3436"
+label = "FRIEND\n"
+]
+N1 [
+label = "{Person\|name = \'Joe\'\l}"
+]
+N1 -> N2 [
+color = "grey"
+fontcolor = "grey"
+label = "FRIEND\n"
+]
+N2 [
+color = "grey"
+fontcolor = "grey"
+label = "{Person\|name = \'Steve\'\l}"
+]
+N3 [
+color = "grey"
+fontcolor = "grey"
+label = "{Person\|name = \'Sara\'\l}"
+]
+N3 -> N4 [
+color = "grey"
+fontcolor = "grey"
+label = "FRIEND\n"
+]
+N4 [
+color = "grey"
+fontcolor = "grey"
+label = "{Person\|name = \'Maria\'\l}"
+]
+}
+----
+
+| ----
+CREATE (j)-[:FRIEND]->(jj:Person {name: "Jay-jay"})
+----
+|
+[options="header",cols="1, 1"]
+!===
+! j                ! jj
+! ({name: 'John'}) ! ({name: 'Jay-jay'})
+! ({name: 'Joe'})  ! ({name: 'Jay-jay'})
+!===
+|
+
+[graphviz]
+----
+digraph L { node [shape=record style=rounded];
+N0 [
+label = "{Person\|name = \'John\'\l}"
+]
+N0 -> N3 [
+color = "#2e3436"
+fontcolor = "#2e3436"
+label = "FRIEND\n"
+]
+N0 -> N1 [
+color = "#2e3436"
+fontcolor = "#2e3436"
+label = "FRIEND\n"
+]
+N1 [
+label = "{Person\|name = \'Joe\'\l}"
+]
+N1 -> N2 [
+color = "#2e3436"
+fontcolor = "#2e3436"
+label = "FRIEND\n"
+]
+N2 [
+label = "{Person\|name = \'Steve\'\l}"
+]
+N3 [
+label = "{Person\|name = \'Sara\'\l}"
+]
+N3 -> N4 [
+color = "#2e3436"
+fontcolor = "#2e3436"
+label = "FRIEND\n"
+]
+N4 [
+label = "{Person\|name = \'Maria\'\l}"
+]
+N0 -> N5 [
+color = "red"
+fontcolor = "red"
+label = "FRIEND\n"
+]
+N5 [
+color = "red"
+fontcolor = "red"
+label = "{Person\|name = \'Jay-jay\'\l}"
+]
+N1 -> N6 [
+color = "red"
+fontcolor = "red"
+label = "FRIEND\n"
+]
+N6 [
+color = "red"
+fontcolor = "red"
+label = "{Person\|name = \'Jay-jay\'\l}"
+]
+}
+----
+|===
+
+It is important to note that the `MATCH` clause does not find the `Person` nodes that are created by the `CREATE` clause,
+even though the name "Jay-jay" starts with "J".
+This is because the `CREATE` clause comes after the `MATCH` clause and thus the `MATCH` can not observe any changes to
+the graph made by the `CREATE`.
+
+======
+
+[[cypher-clause-composition-union-queries]]
+== Queries with `UNION`
+
+xref::clauses/union.adoc[`UNION`] queries are slightly different because the results of two or more queries are put together,
+but each query starts with an empty table of intermediate results.
+
+In a query with a `UNION` clause, any clause _before_ the `UNION` cannot observe writes made by a clause _after_ the `UNION`.
+Any clause _after_ `UNION` can observe all writes made by a clause _before_ the `UNION`.
+This means that the rule that a clause can never observe writes made by a later clause still applies in queries using `UNION`.
+
+.Table of intermediate results and state of the graph in a query with `UNION`
+======
+Using the same example graph as above, this example shows the table of intermediate results and the state of the graph after each clause for the following query:
+
+[source,cypher, indent=0]
+----
+CREATE (jj:Person {name: "Jay-jay"})
+RETURN count(*) AS count
+  UNION
+MATCH (j:Person) WHERE j.name STARTS WITH "J"
+RETURN count(*) AS count
+----
+
+.+The table of intermediate results and the state of the graph after each clause+
+[options="header", width="100%", cols="3a, 4a, 4a"]
+|===
+
+| Clause
+| Table of intermediate results after the clause
+| State of the graph after the clause, changes in red
+
+| ----
+CREATE (jj:Person {name: "Jay-jay"})
+----
+|
+[options="header",cols="1"]
+!===
+! jj
+! ({name: 'Jay-jay'})
+!===
+|
+
+[graphviz]
+----
+digraph L { node [shape=record style=rounded];
+N0 [
+label = "{Person\|name = \'John\'\l}"
+]
+N0 -> N3 [
+color = "#2e3436"
+fontcolor = "#2e3436"
+label = "FRIEND\n"
+]
+N0 -> N1 [
+color = "#2e3436"
+fontcolor = "#2e3436"
+label = "FRIEND\n"
+]
+N1 [
+label = "{Person\|name = \'Joe\'\l}"
+]
+N1 -> N2 [
+color = "#2e3436"
+fontcolor = "#2e3436"
+label = "FRIEND\n"
+]
+N2 [
+label = "{Person\|name = \'Steve\'\l}"
+]
+N3 [
+label = "{Person\|name = \'Sara\'\l}"
+]
+N3 -> N4 [
+color = "#2e3436"
+fontcolor = "#2e3436"
+label = "FRIEND\n"
+]
+N4 [
+label = "{Person\|name = \'Maria\'\l}"
+]
+N5 [
+color = "red"
+fontcolor = "red"
+label = "{Person\|name = \'Jay-jay\'\l}"
+]
+}
+----
+| ----
+RETURN count(*) AS count
+----
+|
+[options="header",cols="1"]
+!===
+! count
+! 1
+!===
+|
+
+[graphviz]
+----
+digraph L { node [shape=record style=rounded];
+N0 [
+label = "{Person\|name = \'John\'\l}"
+]
+N0 -> N3 [
+color = "#2e3436"
+fontcolor = "#2e3436"
+label = "FRIEND\n"
+]
+N0 -> N1 [
+color = "#2e3436"
+fontcolor = "#2e3436"
+label = "FRIEND\n"
+]
+N1 [
+label = "{Person\|name = \'Joe\'\l}"
+]
+N1 -> N2 [
+color = "#2e3436"
+fontcolor = "#2e3436"
+label = "FRIEND\n"
+]
+N2 [
+label = "{Person\|name = \'Steve\'\l}"
+]
+N3 [
+label = "{Person\|name = \'Sara\'\l}"
+]
+N3 -> N4 [
+color = "#2e3436"
+fontcolor = "#2e3436"
+label = "FRIEND\n"
+]
+N4 [
+label = "{Person\|name = \'Maria\'\l}"
+]
+N5 [
+label = "{Person\|name = \'Jay-jay\'\l}"
+]
+}
+----
+| ----
+MATCH (j:Person) WHERE j.name STARTS WITH "J"
+----
+|
+[options="header",cols="1"]
+!===
+! j
+! ({name: 'John'})
+! ({name: 'Joe'})
+! ({name: 'Jay-jay'})
+!===
+|
+[graphviz]
+----
+digraph L { node [shape=record style=rounded];
+N0 [
+label = "{Person\|name = \'John\'\l}"
+]
+N0 -> N3 [
+color = "grey"
+fontcolor = "grey"
+label = "FRIEND\n"
+]
+N0 -> N1 [
+color = "#2e3436"
+fontcolor = "#2e3436"
+label = "FRIEND\n"
+]
+N1 [
+label = "{Person\|name = \'Joe\'\l}"
+]
+N1 -> N2 [
+color = "grey"
+fontcolor = "grey"
+label = "FRIEND\n"
+]
+N2 [
+color = "grey"
+fontcolor = "grey"
+label = "{Person\|name = \'Steve\'\l}"
+]
+N3 [
+color = "grey"
+fontcolor = "grey"
+label = "{Person\|name = \'Sara\'\l}"
+]
+N3 -> N4 [
+color = "grey"
+fontcolor = "grey"
+label = "FRIEND\n"
+]
+N4 [
+color = "grey"
+fontcolor = "grey"
+label = "{Person\|name = \'Maria\'\l}"
+]
+N5 [
+label = "{Person\|name = \'Jay-jay\'\l}"
+]
+}
+----
+| ----
+RETURN count(*) AS count
+----
+|
+[options="header",cols="1"]
+!===
+! count
+! 3
+!===
+|
+
+[graphviz]
+----
+digraph L { node [shape=record style=rounded];
+N0 [
+label = "{Person\|name = \'John\'\l}"
+]
+N0 -> N3 [
+color = "#2e3436"
+fontcolor = "#2e3436"
+label = "FRIEND\n"
+]
+N0 -> N1 [
+color = "#2e3436"
+fontcolor = "#2e3436"
+label = "FRIEND\n"
+]
+N1 [
+label = "{Person\|name = \'Joe\'\l}"
+]
+N1 -> N2 [
+color = "#2e3436"
+fontcolor = "#2e3436"
+label = "FRIEND\n"
+]
+N2 [
+label = "{Person\|name = \'Steve\'\l}"
+]
+N3 [
+label = "{Person\|name = \'Sara\'\l}"
+]
+N3 -> N4 [
+color = "#2e3436"
+fontcolor = "#2e3436"
+label = "FRIEND\n"
+]
+N4 [
+label = "{Person\|name = \'Maria\'\l}"
+]
+N5 [
+label = "{Person\|name = \'Jay-jay\'\l}"
+]
+}
+----
+
+|===
+
+It is important to note that the `MATCH` clause finds the `Person` node that is created by the `CREATE` clause.
+This is because the `CREATE` clause comes before the `MATCH` clause and thus the `MATCH` can observe any changes to
+the graph made by the `CREATE`.
+
+======
+
+[[cypher-clause-composition-call-queries]]
+== Queries with `CALL {}` subqueries
+
+Subqueries inside a xref::clauses/call-subquery.adoc[`CALL {}`] clause are evaluated for each incoming input row.
+This means that write clauses inside a subquery can get executed more than once.
+The different invocations of the subquery are executed in turn, in the order of the incoming input rows.
+
+Later invocations of the subquery can observe writes made by earlier invocations of the subquery.
+
+.Table of intermediate results and state of the graph in a query qith `CALL {}`
+======
+Using the same example graph as above, this example shows the table of intermediate results and the state of the graph after each clause for the following query:
+
+[source,cypher, indent=0]
+----
+MATCH (john:Person {name: 'John'})
+SET john.friends = []
+WITH john
+MATCH (john)-[:FRIEND]->(friend)
+WITH john, friend
+CALL {
+  WITH john, friend
+  WITH *, john.friends AS friends
+  SET john.friends = friends + friend.name
+}
+----
+
+.+The table of intermediate results and the state of the graph after each clause+
+[options="header", width="100%", cols="3a, 4a, 4a"]
+|===
+
+| Clause
+| Table of intermediate results after the clause
+| State of the graph after the clause, changes in red
+|----
+MATCH (john:Person {name: 'John'})
+----
+|
+[options="header",cols="1, 1"]
+!===
+! john
+! ({name: 'John'})
+!===
+|
+[graphviz]
+----
+digraph L { node [shape=record style=rounded];
+N0 [
+label = "{Person\|name = \'John\'\l}"
+]
+N0 -> N3 [
+color = "grey"
+fontcolor = "grey"
+label = "FRIEND\n"
+]
+N0 -> N1 [
+color = "grey"
+fontcolor = "grey"
+label = "FRIEND\n"
+]
+N1 [
+
+color = "grey"
+fontcolor = "grey"
+label = "{Person\|name = \'Joe\'\l}"
+]
+N1 -> N2 [
+color = "grey"
+fontcolor = "grey"
+label = "FRIEND\n"
+]
+N2 [
+color = "grey"
+fontcolor = "grey"
+label = "{Person\|name = \'Steve\'\l}"
+]
+N3 [
+color = "grey"
+fontcolor = "grey"
+label = "{Person\|name = \'Sara\'\l}"
+]
+N3 -> N4 [
+color = "grey"
+fontcolor = "grey"
+label = "FRIEND\n"
+]
+N4 [
+color = "grey"
+fontcolor = "grey"
+label = "{Person\|name = \'Maria\'\l}"
+]
+}
+----
+|----
+SET john.friends = []
+----
+|
+[options="header",cols="1, 1"]
+!===
+! john
+! ({name: 'John', friends: []})
+!===
+|
+[graphviz]
+----
+digraph L { node [shape=record style=rounded];
+N0 [
+color = "red"
+fontcolor = "red"
+label = "{Person\|name = \'John\'\l\|friends = []\l}"
+]
+N0 -> N3 [
+label = "FRIEND\n"
+]
+N0 -> N1 [
+color = "#2e3436"
+fontcolor = "#2e3436"
+label = "FRIEND\n"
+]
+N1 [
+label = "{Person\|name = \'Joe\'\l}"
+]
+N1 -> N2 [
+label = "FRIEND\n"
+]
+N2 [
+label = "{Person\|name = \'Steve\'\l}"
+]
+N3 [
+label = "{Person\|name = \'Sara\'\l}"
+]
+N3 -> N4 [
+label = "FRIEND\n"
+]
+N4 [
+label = "{Person\|name = \'Maria\'\l}"
+]
+}
+----
+
+
+|----
+MATCH (john)-[:FRIEND]->(friend)
+----
+|
+[options="header",cols="1, 1"]
+!===
+! john             ! friend
+! ({name: 'John', friends: []}) ! ({name: 'Sara'})
+! ({name: 'John', friends: []}) ! ({name: 'Joe'})
+!===
+|
+[graphviz]
+----
+digraph L { node [shape=record style=rounded];
+N0 [
+label = "{Person\|name = \'John\'\l\|friends = []\l}"
+]
+N0 -> N3 [
+label = "FRIEND\n"
+]
+N0 -> N1 [
+color = "#2e3436"
+fontcolor = "#2e3436"
+label = "FRIEND\n"
+]
+N1 [
+label = "{Person\|name = \'Joe\'\l}"
+]
+N1 -> N2 [
+color = "grey"
+fontcolor = "grey"
+label = "FRIEND\n"
+]
+N2 [
+color = "grey"
+fontcolor = "grey"
+label = "{Person\|name = \'Steve\'\l}"
+]
+N3 [
+label = "{Person\|name = \'Sara\'\l}"
+]
+N3 -> N4 [
+color = "grey"
+fontcolor = "grey"
+label = "FRIEND\n"
+]
+N4 [
+color = "grey"
+fontcolor = "grey"
+label = "{Person\|name = \'Maria\'\l}"
+]
+}
+----
+
+| First invocation of
+----
+WITH *, john.friends AS friends
+----
+|
+[options="header",cols="2, 1, 1"]
+!===
+! john                          ! friend           ! friends
+! ({name: 'John', friends: []}) ! ({name: 'Sara'}) ! []
+!===
+|
+[graphviz]
+----
+digraph L { node [shape=record style=rounded];
+N0 [
+label = "{Person\|name = \'John\'\l\|friends = []\l}"
+]
+N0 -> N3 [
+label = "FRIEND\n"
+]
+N0 -> N1 [
+color = "#2e3436"
+fontcolor = "#2e3436"
+label = "FRIEND\n"
+]
+N1 [
+label = "{Person\|name = \'Joe\'\l}"
+]
+N1 -> N2 [
+label = "FRIEND\n"
+]
+N2 [
+label = "{Person\|name = \'Steve\'\l}"
+]
+N3 [
+label = "{Person\|name = \'Sara\'\l}"
+]
+N3 -> N4 [
+label = "FRIEND\n"
+]
+N4 [
+label = "{Person\|name = \'Maria\'\l}"
+]
+}
+----
+
+| First invocation of
+----
+SET john.friends = friends + friend.name
+----
+
+|[options="header",cols="2, 1, 1"]
+!===
+! john                                ! friend           ! friends
+! ({name: 'John', friends: ['Sara']}) ! ({name: 'Sara'}) ! []
+!===
+|
+[graphviz]
+----
+digraph L { node [shape=record style=rounded];
+N0 [
+color = "red"
+fontcolor = "red"
+label = "{Person\|name = \'John\'\l\|friends = ['Sara']\l}"
+]
+N0 -> N3 [
+label = "FRIEND\n"
+]
+N0 -> N1 [
+color = "#2e3436"
+fontcolor = "#2e3436"
+label = "FRIEND\n"
+]
+N1 [
+label = "{Person\|name = \'Joe\'\l}"
+]
+N1 -> N2 [
+label = "FRIEND\n"
+]
+N2 [
+label = "{Person\|name = \'Steve\'\l}"
+]
+N3 [
+label = "{Person\|name = \'Sara\'\l}"
+]
+N3 -> N4 [
+label = "FRIEND\n"
+]
+N4 [
+label = "{Person\|name = \'Maria\'\l}"
+]
+}
+----
+
+| Second invocation of
+----
+WITH *, john.friends AS friends
+----
+|
+[options="header",cols="2, 1, 1"]
+!===
+! john                                ! friend           ! friends
+! ({name: 'John', friends: ['Sara']}) ! ({name: 'Joe'}) ! ['Sara']
+!===
+|
+[graphviz]
+----
+digraph L { node [shape=record style=rounded];
+N0 [
+label = "{Person\|name = \'John\'\l\|friends = ['Sara']\l}"
+]
+N0 -> N3 [
+label = "FRIEND\n"
+]
+N0 -> N1 [
+color = "#2e3436"
+fontcolor = "#2e3436"
+label = "FRIEND\n"
+]
+N1 [
+label = "{Person\|name = \'Joe\'\l}"
+]
+N1 -> N2 [
+label = "FRIEND\n"
+]
+N2 [
+label = "{Person\|name = \'Steve\'\l}"
+]
+N3 [
+label = "{Person\|name = \'Sara\'\l}"
+]
+N3 -> N4 [
+label = "FRIEND\n"
+]
+N4 [
+label = "{Person\|name = \'Maria\'\l}"
+]
+}
+----
+
+| Second invocation of
+----
+SET john.friends = friends + friend.name
+----
+
+|[options="header",cols="2, 1, 1"]
+!===
+! john                                       ! friend           ! friends
+! ({name: 'John', friends: ['Sara', 'Joe']}) ! ({name: 'Joe'}) ! ['Sara']
+!===
+|
+[graphviz]
+----
+digraph L { node [shape=record style=rounded];
+N0 [
+color = "red"
+fontcolor = "red"
+label = "{Person\|name = \'John\'\l\|friends = ['Sara', 'Joe']\l}"
+]
+N0 -> N3 [
+label = "FRIEND\n"
+]
+N0 -> N1 [
+color = "#2e3436"
+fontcolor = "#2e3436"
+label = "FRIEND\n"
+]
+N1 [
+label = "{Person\|name = \'Joe\'\l}"
+]
+N1 -> N2 [
+label = "FRIEND\n"
+]
+N2 [
+label = "{Person\|name = \'Steve\'\l}"
+]
+N3 [
+label = "{Person\|name = \'Sara\'\l}"
+]
+N3 -> N4 [
+label = "FRIEND\n"
+]
+N4 [
+label = "{Person\|name = \'Maria\'\l}"
+]
+}
+----
+|===
+
+It is important to note that, in the subquery, the second invocation of the `WITH` clause could observe
+the writes made by the first invocation of the `SET` clause.
+
+======
+
+[[cypher-clause-composition-implementation]]
+== Notes on the implementation
+
+An easy way to implement the semantics outlined above is to fully execute each clause and
+materialize the table of intermediate results before executing the next clause.
+This approach would consume a lot of memory for materializing the tables of intermediate results and would generally not perform well.
+
+Instead, Cypher will in general try to interleave the execution of clauses.
+This is called xref::execution-plans/index.adoc#eagerness-laziness[lazy evaluation].
+It only materializes intermediate results when needed.
+In many read-write queries it is unproblematic to execute clauses interleaved, but when it is not,
+Cypher must ensure that the table of intermediate results gets materialized at the right time(s).
+This is done by inserting an xref::execution-plans/operators.adoc#query-plan-eager[`Eager`] operator into the execution plan.
