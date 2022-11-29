@@ -7,9 +7,8 @@ from prettytable import PrettyTable
 log = logging.getLogger()
 pp = pprint.PrettyPrinter(indent=1, width=120, sort_dicts=False)
 
-# python -m pytest tests/test_query_plan_AllNodesScan.py
-def test_consume(neo4j_container):
-
+# python -m pytest tests/test_match_clause.py
+def test_match(neo4j_container, before_cleanup):
     test_id = "9c50f265-f7e9-4a9a-a4c2-871b02ae22e6"
 
     adoc_path = "docs-cypher/modules/ROOT/pages/clauses/match.adoc"
@@ -36,10 +35,6 @@ def test_consume(neo4j_container):
     +------------------------------------------------+''')
     # neo4j.GraphDatabase.driver
     driver = neo4j_container.get_driver()
-
-    # CLEAN
-    with driver.session() as session:
-        session.run("MATCH (_) DETACH DELETE _").consume()
 
     # STATE
     with driver.session() as session:

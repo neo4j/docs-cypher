@@ -37,7 +37,7 @@ def neo4j_container(request):
     log.info("volumes {}".format(neo4j.volumes))
     log.info(neo4j.image)
 
-    neo4j.start() # https://github.com/testcontainers/testcontainers-python/blob/master/testcontainers/core/container.py#L51
+    neo4j.start()
 
     def stop_neo4j():
         #driver.close()
@@ -52,3 +52,10 @@ def neo4j_container(request):
 
     return neo4j
 
+@pytest.fixture(autouse=False, scope="module")
+def before_cleanup(neo4j_container):
+    driver = neo4j_container.get_driver()
+    with driver.session() as session:
+        session.run("MATCH (_) DETACH DELETE _").consume()
+    log.info('Cleaing before each test run')
+    driver.close()

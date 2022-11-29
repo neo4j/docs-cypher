@@ -8,18 +8,13 @@ log = logging.getLogger()
 pp = pprint.PrettyPrinter(indent=1, width=120, sort_dicts=False)
 
 # python -m pytest tests/test_query_plan_AllNodesScan.py
-def test_consume(neo4j_container):
-
+def test_allNodesScan(neo4j_container, before_cleanup):
     test_id = "8563b9dd-31ed-49fe-9c04-a491377526d0"
 
     adoc = "/home/martin/WSPACEDOCS/docs-cypher/modules/ROOT/pages/execution-plans/operators.adoc"
 
     # neo4j.GraphDatabase.driver
     driver = neo4j_container.get_driver()
-
-    # CLEAN
-    with driver.session() as session:
-        session.run("MATCH (_) DETACH DELETE _").consume()
 
     # STATE
     with driver.session() as session:
