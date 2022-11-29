@@ -1,4 +1,3 @@
-import pytest
 import logging
 import pprint
 
