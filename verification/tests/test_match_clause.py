@@ -24,8 +24,6 @@ def test_consume(neo4j_container):
 
     # Test that the result is present on a specific page
     result = dedent('''\
-    Rows: 7
-
     +------------------------------------------------+
     | n                                              |
     +------------------------------------------------+
@@ -37,8 +35,6 @@ def test_consume(neo4j_container):
     | Node(:Movie {title: 'Wall Street'})            |
     | Node(:Movie {title: 'The American President'}) |
     +------------------------------------------------+''')
-
-
     # neo4j.GraphDatabase.driver
     driver = neo4j_container.get_driver()
 
@@ -69,12 +65,14 @@ def test_consume(neo4j_container):
 
     # EXAMPLE
     def match_person_nodes(tx):
-        q = dedent('''\
-        MATCH (n)
-        RETURN n
-        ORDER BY n.ix''')
+        q = dedent(example + " ORDER BY n.ix")
         result = tx.run(q)
-        data = [[record["n"],] for record in result]
+        data = []   
+        for record in result:
+            if record["n"]["title"]:
+                data.append(["Node(:" + list(record["n"].labels)[0] + " {title: '" + record["n"]["title"] + "'})"])
+            elif record["n"]["name"]:
+                data.append(["Node(:" + list(record["n"].labels)[0]  + " {name: '" + record["n"]["name"] + "'})"])
         summary = result.consume()
         return (result.keys(), data, summary)
 
@@ -83,15 +81,14 @@ def test_consume(neo4j_container):
 
     driver.close()
 
-    #log.info(data)
-    #log.info("\nCounters:\n{}".format(summary.counters))
-    #log.info("\nNotifications:\n{}".format(summary.notifications))
-    #log.info("\nQuery Plan:\n{}".format(summary.plan))
-    #profile = pp.pformat(summary.profile)
-    #log.info("\nQuery Profile:\n{}".format(profile))
+    log.info(data)
+    log.info("\nCounters:\n{}".format(summary.counters))
+    log.info("\nNotifications:\n{}".format(summary.notifications))
+    log.info("\nQuery Plan:\n{}".format(summary.plan))
+    profile = pp.pformat(summary.profile)
+    log.info("\nQuery Profile:\n{}".format(profile))
 
     assert keys == ["n"]
-    assert len(data) == 7
 
     pt = PrettyTable()
     pt.align = "l"
@@ -99,45 +96,9 @@ def test_consume(neo4j_container):
     pt.field_names = keys
 
     for row in data:
-        # TODO: convert to representation for different types
-        #
-        # https://github.com/jazzband/prettytable#style-options
-        # custom_format
-        #
-        # Integer: 0, 1, -2
-        # Float: 0.0, 0.1, -1.3
-        # NaN: NaN
-        # String: 'Example', 'ABCDEF'
-        # Boolean: true, false
-        # Null: null
-        # Map: {a: 123, b: 'abc'}
-        # List: [1, 2, 3]
-        # Node: (:Label1:Label2 {prop1: 'a', prop2: 'b'}) or Node(:Label1:Label2 {prop1: 'a', prop2: 'b'})
-        # Relationship: [:TYPE {prop1: 'a', prop2: 'b'}] or Rel(:TYPE {prop1: 'a', prop2: 'b'})
-        # Path:
-        # Date:
-        # Time:
-        # LocalTime:
-        # DateTime:
-        # LocalDateTime:
-        # Duration:
-        # Point:
         pt.add_row(row)
 
-    output = dedent('''\
-    +-------------------------------------------------------------------------------------------------+
-    | n                                                                                               |
-    +-------------------------------------------------------------------------------------------------+
-    | <Node id=0 labels=frozenset({'Person'}) properties={'name': 'Charlie Sheen', 'ix': 0}>          |
-    | <Node id=1 labels=frozenset({'Person'}) properties={'name': 'Martin Sheen', 'ix': 1}>           |
-    | <Node id=2 labels=frozenset({'Person'}) properties={'name': 'Michael Douglas', 'ix': 2}>        |
-    | <Node id=3 labels=frozenset({'Person'}) properties={'name': 'Oliver Stone', 'ix': 3}>           |
-    | <Node id=4 labels=frozenset({'Person'}) properties={'name': 'Rob Reiner', 'ix': 4}>             |
-    | <Node id=5 labels=frozenset({'Movie'}) properties={'title': 'Wall Street', 'ix': 5}>            |
-    | <Node id=6 labels=frozenset({'Movie'}) properties={'title': 'The American President', 'ix': 6}> |
-    +-------------------------------------------------------------------------------------------------+''')
+    log.info("\n{}".format(pt))
 
-    #log.info("\n{}".format(pt))
-
-    assert output == str(pt)
+    assert result == str(pt)
 
