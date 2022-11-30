@@ -7,20 +7,16 @@ from prettytable import PrettyTable
 log = logging.getLogger()
 pp = pprint.PrettyPrinter(indent=1, width=120, sort_dicts=False)
 
-# python -m pytest tests/test_match_clause.py
-def test_match(neo4j_container, before_cleanup):
-    test_id = "9c50f265-f7e9-4a9a-a4c2-871b02ae22e6"
+# python -m pytest tests/test_clause_match.py
+def test_getAllNodes(neo4j_container, before_cleanup):
+    #test_id = "9c50f265-f7e9-4a9a-a4c2-871b02ae22e6"
 
-    adoc_path = "docs-cypher/modules/ROOT/pages/clauses/match.adoc"
-
-    # Test that the ID for the test is present on a specific page
-    # Test that the example is present on a specific page
+    #adoc_path = "docs-cypher/modules/ROOT/pages/clauses/match.adoc"
 
     example = dedent('''\
     MATCH (n)
     RETURN n''')
 
-    # Test that the result is present on a specific page
     result = dedent('''\
     +------------------------------------------------+
     | n                                              |
@@ -33,7 +29,7 @@ def test_match(neo4j_container, before_cleanup):
     | Node(:Movie {title: 'Wall Street'})            |
     | Node(:Movie {title: 'The American President'}) |
     +------------------------------------------------+''')
-    # neo4j.GraphDatabase.driver
+
     driver = neo4j_container.get_driver()
 
     # STATE
@@ -75,13 +71,6 @@ def test_match(neo4j_container, before_cleanup):
 
     driver.close()
 
-    log.info(data)
-    log.info("\nCounters:\n{}".format(summary.counters))
-    log.info("\nNotifications:\n{}".format(summary.notifications))
-    log.info("\nQuery Plan:\n{}".format(summary.plan))
-    profile = pp.pformat(summary.profile)
-    log.info("\nQuery Profile:\n{}".format(profile))
-
     assert keys == ["n"]
 
     pt = PrettyTable()
@@ -95,4 +84,3 @@ def test_match(neo4j_container, before_cleanup):
     log.info("\n{}".format(pt))
 
     assert result == str(pt)
-
