@@ -277,7 +277,7 @@ A random number is returned.
 [[functions-round]]
 == round()
 
-`round()` returns the value of the given number rounded to the nearest integer, with half-way values always rounded up.
+`round()` returns the value of the given number rounded to the nearest integer, with ties always rounded towards positive infinity.
 
 *Syntax:*
 
@@ -335,11 +335,31 @@ RETURN round(3.141592)
 
 ======
 
+.+round() of negative number with tie+
+======
+
+.Query
+[source, cypher, indent=0]
+----
+RETURN round(-1.5)
+----
+
+Ties are rounded towards positive infinity, therfore `-1.0` is returned.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +round(-1.5)+
+| +-1.0+
+1+d|Rows: 1
+|===
+
+======
 
 [[functions-round2]]
 == round(), with precision
-
-`round()` returns the value of the given number rounded with the specified precision, with half-values always being rounded up.
+`round()` returns the value of the given number rounded to the closest value of given precision, with ties always being rounded away from zero (using rounding mode `HALF_UP`).
+The exception is for precision 0, where ties are rounded towards positive infinity to align with <<functions-round>> without precision.
 
 *Syntax:*
 
@@ -373,12 +393,12 @@ round(expression, precision)
 
 |===
 
-| `round(null)` returns `null`.
+| `round()` returns `null` if any of its input parameters are `null`.
 
 |===
 
 
-.+round()+
+.+round() with precision+
 ======
 
 .Query
@@ -395,6 +415,52 @@ RETURN round(3.141592, 3)
 
 | +round(3.141592, 3)+
 | +3.142+
+1+d|Rows: 1
+
+|===
+
+======
+
+.+round() with precision 0 and tie+
+======
+
+.Query
+[source, cypher, indent=0]
+----
+RETURN round(-1.5, 0)
+----
+
+To align with `round(-1.5)`, `-1.0` is returned.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+
+| +round(-1.5, 0)+
+| +-1.0+
+1+d|Rows: 1
+
+|===
+
+======
+
+.+round() with precision 1 and tie+
+======
+
+.Query
+[source, cypher, indent=0]
+----
+RETURN round(-1.55, 1)
+----
+
+The default is to round away from zero when there is a tie, therefore `-1.6` is returned.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+
+| +round(-1.55, 1)+
+| +-1.6+
 1+d|Rows: 1
 
 |===
@@ -444,61 +510,223 @@ round(expression, precision, mode)
 |===
 | `Mode` | Description
 
-| `CEILING`
-| Round towards positive infinity.
+| `UP`
+| Round away from zero.
 
 | `DOWN`
 | Round towards zero.
 
+| `CEILING`
+| Round towards positive infinity.
+
 | `FLOOR`
-| Round towards zero.
-
-| `HALF_DOWN`
-| Round towards closest value of given precision, with half-values always being rounded down.
-
-| `HALF_EVEN`
-| Round towards closest value of given precision, with half-values always being rounded to the even neighbor.
+| Round towards negative infinity.
 
 | `HALF_UP`
-| Round towards closest value of given precision, with half-values always being rounded up.
+| Round towards closest value of given precision, with ties always being rounded away from zero.
 
-| `UP`
-| Round away from zero.
+| `HALF_DOWN`
+| Round towards closest value of given precision, with ties always being rounded towards zero.
+
+| `HALF_EVEN`
+| Round towards closest value of given precision, with ties always being rounded to the even neighbor.
 
 |===
 
 *Considerations:*
+|===
+
+| For the rounding modes, a tie means that the two closest values of the given precision are at the same distance from the given value.
+E.g. for precision 1, 2.15 is a tie as it has equal distance to 2.1 and 2.2, while 2.151 is not a tie, as it is closer to 2.2.
 
 |===
 
-| `round(null)` returns `null`.
+|===
+
+|  `round()` returns `null` if any of its input parameters are `null`.
 
 |===
 
-
-.+round()+
+.+round() with precision and UP rounding mode+
 ======
 
 .Query
 [source, cypher, indent=0]
 ----
-RETURN round(3.141592, 2, 'CEILING')
+RETURN round(1.249, 1, 'UP') AS positive,
+round(-1.251, 1, 'UP') AS negative,
+round(1.25, 1, 'UP') AS positiveTie,
+round(-1.35, 1, 'UP') AS negativeTie
 ----
 
-`3.15` is returned.
+The rounded values using precision 1 and rounding mode `UP` are returned.
 
 .Result
-[role="queryresult",options="header,footer",cols="1*<m"]
+[role="queryresult",options="header,footer",cols="4*<m"]
 |===
 
-| +round(3.141592, 2, 'CEILING')+
-| +3.15+
-1+d|Rows: 1
+| +positive+ | +negative+ | +positiveTie+ | +negativeTie+
+| +1.3+ | +-1.3+ | +1.3+ | +-1.4+
+4+d|Rows: 1
 
 |===
 
 ======
 
+.+round() with precision and DOWN rounding mode+
+======
+
+.Query
+[source, cypher, indent=0]
+----
+RETURN round(1.249, 1, 'DOWN') AS positive,
+round(-1.251, 1, 'DOWN') AS negative,
+round(1.25, 1, 'DOWN') AS positiveTie,
+round(-1.35, 1, 'DOWN') AS negativeTie
+----
+
+The rounded values using precision 1 and rounding mode `DOWN` are returned.
+
+.Result
+[role="queryresult",options="header,footer",cols="4*<m"]
+|===
+
+| +positive+ | +negative+ | +positiveTie+ | +negativeTie+
+| +1.2+ | +-1.2+ | +1.2+ | +-1.3+
+4+d|Rows: 1
+
+|===
+
+======
+
+.+round() with precision and CEILING rounding mode+
+======
+
+.Query
+[source, cypher, indent=0]
+----
+RETURN round(1.249, 1, 'CEILING') AS positive,
+round(-1.251, 1, 'CEILING') AS negative,
+round(1.25, 1, 'CEILING') AS positiveTie,
+round(-1.35, 1, 'CEILING') AS negativeTie
+----
+
+The rounded values using precision 1 and rounding mode `CEILING` are returned.
+
+.Result
+[role="queryresult",options="header,footer",cols="4*<m"]
+|===
+
+| +positive+ | +negative+ | +positiveTie+ | +negativeTie+
+| +1.3+ | +-1.2+ | +1.3+ | +-1.3+
+4+d|Rows: 1
+
+|===
+
+======
+
+.+round() with precision and FLOOR rounding mode+
+======
+
+.Query
+[source, cypher, indent=0]
+----
+RETURN round(1.249, 1, 'FLOOR') AS positive,
+round(-1.251, 1, 'FLOOR') AS negative,
+round(1.25, 1, 'FLOOR') AS positiveTie,
+round(-1.35, 1, 'FLOOR') AS negativeTie
+----
+
+The rounded values using precision 1 and rounding mode `FLOOR` are returned.
+
+.Result
+[role="queryresult",options="header,footer",cols="4*<m"]
+|===
+
+| +positive+ | +negative+ | +positiveTie+ | +negativeTie+
+| +1.2+ | +-1.3+ | +1.2+ | +-1.4+
+4+d|Rows: 1
+
+|===
+
+======
+
+.+round() with precision and HALF_UP rounding mode+
+======
+
+.Query
+[source, cypher, indent=0]
+----
+RETURN round(1.249, 1, 'HALF_UP') AS positive,
+round(-1.251, 1, 'HALF_UP') AS negative,
+round(1.25, 1, 'HALF_UP') AS positiveTie,
+round(-1.35, 1, 'HALF_UP') AS negativeTie
+----
+
+The rounded values using precision 1 and rounding mode `HALF_UP` are returned.
+
+.Result
+[role="queryresult",options="header,footer",cols="4*<m"]
+|===
+
+| +positive+ | +negative+ | +positiveTie+ | +negativeTie+
+| +1.2+ | +-1.3+ | +1.3+ | +-1.4+
+4+d|Rows: 1
+
+|===
+
+======
+.+round() with precision and HALF_DOWN rounding mode+
+======
+
+.Query
+[source, cypher, indent=0]
+----
+RETURN round(1.249, 1, 'HALF_DOWN') AS positive,
+round(-1.251, 1, 'HALF_DOWN') AS negative,
+round(1.25, 1, 'HALF_DOWN') AS positiveTie,
+round(-1.35, 1, 'HALF_DOWN') AS negativeTie
+----
+
+The rounded values using precision 1 and rounding mode `HALF_DOWN` are returned.
+
+.Result
+[role="queryresult",options="header,footer",cols="4*<m"]
+|===
+
+| +positive+ | +negative+ | +positiveTie+ | +negativeTie+
+| +1.2+ | +-1.3+ | +1.2+ | +-1.3+
+4+d|Rows: 1
+
+|===
+
+======
+
+.+round() with precision and HALF_EVEN rounding mode+
+======
+
+.Query
+[source, cypher, indent=0]
+----
+RETURN round(1.249, 1, 'HALF_EVEN') AS positive,
+round(-1.251, 1, 'HALF_EVEN') AS negative,
+round(1.25, 1, 'HALF_EVEN') AS positiveTie,
+round(-1.35, 1, 'HALF_EVEN') AS negativeTie
+----
+
+The rounded values using precision 1 and rounding mode `HALF_EVEN` are returned.
+
+.Result
+[role="queryresult",options="header,footer",cols="4*<m"]
+|===
+
+| +positive+ | +negative+ | +positiveTie+ | +negativeTie+
+| +1.2+ | +-1.3+ | +1.2+ | +-1.4+
+4+d|Rows: 1
+
+|===
+
+======
 
 [[functions-sign]]
 == sign()
