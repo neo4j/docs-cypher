@@ -1,0 +1,392 @@
+:description: This section explains how to use Cypher to manage servers in Neo4j.
+[role=enterprise-edition]
+[[server-management]]
+= Managing servers
+
+
+Servers can be added and managed using a set of Cypher administration commands executed against the `system` database.
+
+When connected to the DBMS over `bolt`, administration commands are automatically routed to the `system` database.
+
+
+[[server-management-syntax]]
+== Server management command syntax
+
+[NOTE]
+====
+The syntax descriptions use xref:access-control/index.adoc#access-control-syntax[the style] from access control.
+====
+
+[cols="<15s,<85"]
+|===
+| Command
+m| ENABLE SERVER
+
+| Syntax
+a|
+[source, cyper, role=noplay]
+----
+ENABLE SERVER 'serverId' [OPTIONS "{" option: value[,...] "}"]
+----
+
+| Description
+a| Adds a server that has been discovered to the cluster.
+For more information see <<server-management-enable-server>>.
+
+| Required privilege
+a| `GRANT SERVER MANAGEMENT`
+
+(see xref:access-control/dbms-administration.adoc#access-control-dbms-administration-server-management[SERVER MANAGEMENT privileges])
+|===
+
+[cols="<15s,<85"]
+|===
+| Command
+m| ALTER SERVER
+
+| Syntax
+a|
+[source, cyper, role=noplay]
+----
+ALTER SERVER 'name' SET OPTIONS "{" option: value[,...] "}"
+----
+
+| Description
+a| Changes the constraints for a server.
+For more information see <<server-management-alter-server>>.
+
+| Required privilege
+a| `GRANT SERVER MANAGEMENT`
+
+(see xref:access-control/dbms-administration.adoc#access-control-dbms-administration-server-management[SERVER MANAGEMENT privileges])
+|===
+
+[cols="<15s,<85"]
+|===
+| Command
+m| RENAME SERVER
+
+| Syntax
+a|
+[source, cyper, role=noplay]
+----
+RENAME SERVER 'name' TO 'newName'
+----
+
+| Description
+a| Changes the name of a server.
+For more information see <<server-management-rename-server>>.
+
+| Required privilege
+a| `GRANT SERVER MANAGEMENT`
+
+(see xref:access-control/dbms-administration.adoc#access-control-dbms-administration-server-management[SERVER MANAGEMENT privileges])
+|===
+
+[cols="<15s,<85"]
+|===
+| Command
+m| REALLOCATE DATABASES
+
+| Syntax
+a|
+[source, cyper, role=noplay]
+----
+[DRYRUN] REALLOCATE DATABASE[S]
+----
+
+| Description
+a| Re-balances databases among the servers in the cluster.
+For more information see <<server-management-reallocate>>.
+
+| Required privilege
+a| `GRANT SERVER MANAGEMENT`
+
+(see xref:access-control/dbms-administration.adoc#access-control-dbms-administration-server-management[SERVER MANAGEMENT privileges])
+|===
+
+[cols="<15s,<85"]
+|===
+| Command
+m| DEALLOCATE DATABASES
+
+| Syntax
+a|
+[source, cyper, role=noplay]
+----
+[DRYRUN] DEALLOCATE DATABASE[S] FROM SERVER[S] 'name'[, ...]
+----
+
+| Description
+a| Removes all databases from the given servers.
+For more information see <<server-management-deallocate>>.
+
+| Required privilege
+a| `GRANT SERVER MANAGEMENT`
+
+(see xref:access-control/dbms-administration.adoc#access-control-dbms-administration-server-management[SERVER MANAGEMENT privileges])
+|===
+
+[cols="<15s,<85"]
+|===
+| Command
+m| DROP SERVER
+
+| Syntax
+a|
+[source, cyper, role=noplay]
+----
+DROP SERVER 'name'
+----
+
+| Description
+a| Removes a server not hosting any databases from the cluster.
+For more information see <<server-management-drop-server>>.
+
+| Required privilege
+a| `GRANT SERVER MANAGEMENT`
+
+(see xref:access-control/dbms-administration.adoc#access-control-dbms-administration-server-management[SERVER MANAGEMENT privileges])
+|===
+
+[cols="<15s,<85"]
+|===
+| Command
+m| SHOW SERVERS
+
+| Syntax
+a|
+[source, cyper, role=noplay]
+----
+SHOW SERVER[S]
+  [YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+  [WHERE expression]
+  [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+----
+
+| Description
+a| Lists all servers visible to the cluster.
+For more information see <<server-management-show-servers>>.
+
+| Required privilege
+a| `GRANT SHOW SERVERS`
+
+(see xref:access-control/dbms-administration.adoc#access-control-dbms-administration-server-management[SERVER MANAGEMENT privileges])
+|===
+
+[[server-management-show-servers]]
+== Listing servers
+
+`SHOW SERVERS` displays all servers running in the cluster, including servers that have yet to be enabled as well as dropped servers.
+
+The table of results shows information about the servers:
+
+[options="header", width="100%", cols="2a,4,1,1"]
+|===
+| Column
+| Description
+| Default output
+| Full output
+
+| name
+| Name of the server.
+| {check-mark}
+| {check-mark}
+
+| serverId
+| Id of the server.
+|
+| {check-mark}
+
+| address
+| Bolt address of the server (if enabled).
+| {check-mark}
+| {check-mark}
+
+| httpAddress
+| Http address of the server (if enabled).
+|
+| {check-mark}
+
+| httpsAddress
+| Https address of the server (if enabled).
+|
+| {check-mark}
+
+| state
+| Information of the state of the server: `free`, `enabled`, `deallocating`, or `dropped`.
+| {check-mark}
+| {check-mark}
+
+| health
+| The availability of the server: `available` or `unavailable`.
+| {check-mark}
+| {check-mark}
+
+| hosting
+| A list of databases currently hosted on the server.
+| {check-mark}
+| {check-mark}
+
+| requestedHosting
+| A list of databases that should be hosted on the server, decided by the allocator.
+|
+| {check-mark}
+
+| tags
+| Tags are user provided strings that can be used while allocating databases.
+|
+| {check-mark}
+
+| allowedDatabases
+| A list of databases allowed to be hosted on the server.
+|
+| {check-mark}
+
+| deniedDatabases
+| A list of databases not allowed to be hosted on the server.
+|
+| {check-mark}
+
+| modeConstraint
+| Constraint for the allocator to allocate only databases in this mode on the server.
+|
+| {check-mark}
+
+| version
+| Neo4j version the server is running.
+|
+| {check-mark}
+|===
+
+A summary of all servers can be displayed using the command `SHOW SERVERS`.
+
+.Result
+[options="header,footer", width="100%", cols="m,m,m,m,m"]
+|===
+|name|address|state|health|hosting
+
+| "server1"                              | "localhost:20000" | "Enabled" | "Available" | ["system","neo4j"]
+| "server2"                              | "localhost:20007" | "Enabled" | "Available" | ["system","neo4j"]
+| "server3"                              | "localhost:20014" | "Enabled" | "Available" | ["system","neo4j"]
+| "0c030000-267b-49a8-801f-78bd0b5c6445" | "localhost:20021" | "Free"    | "Available" | ["system"]
+|===
+
+[[server-management-enable-server]]
+== Enabling servers
+
+A server can be added to the cluster with the `ENABLE SERVER 'name'` command.
+The servers initial name is its id.
+The server must be in the `free` state to be added to the cluster.
+If the server is already `enabled` and the command is executed with the same options specified nothing is changed.
+In any other case trying to enable a server fails.
+
+The possible options allowed when enabling a server are:
+
+[options="header", width="100%", cols="2a,2,^.^"]
+|===
+| Option
+| Allowed values
+| Description
+
+| modeConstraint
+| `PRIMARY`, `SECONDARY`, `NONE`
+| Databases may only be hosted on the server in the mode specified by the constraint.
+`None` means there is no constraint and any mode is allowed.
+
+| allowedDatabases
+| list of database names
+| Only databases matching the specified names may be hosted on the server.
+This may not be specified in combination with `deniedDatabases`.
+
+| deniedDatabases
+| list of database names
+| Only databases **not** matching the specified names may be hosted on the server.
+This may not be specified in combination with `allowedDatabases`.
+|===
+
+[[server-management-alter-server]]
+== Modifying servers
+
+The constraints on a server can be changed with `ALTER SERVER 'name' SET OPTIONS { option: value }`.
+Either the name or the id of the server can be used.
+
+The possible options allowed when altering a server are:
+
+[options="header", width="100%", cols="2a,2,^.^"]
+|===
+| Option
+| Allowed values
+| Description
+
+| modeConstraint
+| `PRIMARY`, `SECONDARY`, `NONE`
+| Databases may only be hosted on the server in the mode specified by the constraint.
+`None` means there is no constraint and any mode is allowed.
+
+| allowedDatabases
+| list of database names
+| Only databases matching the specified names may be hosted on the server.
+This may not be specified in combination with `deniedDatabases`.
+
+| deniedDatabases
+| list of database names
+| Only databases **not** matching the specified names may be hosted on the server.
+This may not be specified in combination with `allowedDatabases`.
+|===
+
+[[server-management-rename-server]]
+== Renaming servers
+
+The name of a server can be altered with `RENAME SERVER 'name' TO 'newName'`.
+Either the id or current name of the server can be used to identify the server.
+The new name of the server must be unique.
+
+[[server-management-reallocate]]
+== Reallocate databases
+
+After enabling a server, `REALLOCATE DATABASES` can be used to make the cluster re-balance databases across all servers that are part of the cluster.
+Using `DRYRUN REALLOCATE DATABASE` returns a view of how the databases would have been re-balanced if the command was executed without `DRYRUN`:
+
+.Result
+[options="header,footer", width="100%", cols="m,m,m,m,m,m"]
+|===
+|database|fromServerName|fromServerId|toServerName|toServerId|mode
+
+| "db1"    | "server-1" | "00000000-94ff-4ede-87be-3d741b795480" | "server-4" | "00000002-25a9-4984-9ad2-dc39024c9238" | "primary"
+| "db3"    | "server-1" | "00000000-94ff-4ede-87be-3d741b795480" | "server-5" | "00000003-0df7-4057-81fd-1cf43c9ef5f7" | "primary"
+|===
+
+[NOTE]
+====
+`DRYRUN` is introduced in Neo4j 5.2, and thus is not available in earlier minor releases of v5.
+====
+
+[[server-management-deallocate]]
+== Deallocate databases
+
+A server can be set to not host any databases with `DEALLOCATE DATABASES FROM SERVER 'name'`, in preparation for removing the server from the cluster.
+Either the id or name of the server can be used.
+All databases that the server is hosting are moved to other servers.
+The server changes state to `deallocating`.
+A deallocated server cannot readily be enabled again.
+
+Multiple servers can be deallocated at the same time, `DEALLOCATE DATABASES FROM SERVER 'server-1', 'server-2'`.
+The command fails if there aren't enough servers available to move the databases to.
+
+Using `DRYRUN DEALLOCATE DATABASES FROM 'server-1', 'server-2'` returns a view of how the databases would have been re-balanced if the command was executed without `DRYRUN`:
+
+.Result
+[options="header,footer", width="100%", cols="m,m,m,m,m,m"]
+|===
+|database|fromServerName|fromServerId|toServerName|toServerId|mode
+| "db1" | "server-1" | "00000001-8c04-4731-a2fd-7b0289c511ce" | "server-4" | "00000002-5b91-43c1-8b25-5289f674563e" | "primary"
+| "db1" | "server-2" | "00000000-7e53-427c-a987-24634c4745f3" | "server-5" | "00000003-0e98-44c8-9844-f0a4eb95b0d8" | "primary"
+|===
+
+[[server-management-drop-server]]
+== Drop server
+
+When a server has been deallocated and is no longer hosting any databases it can be removed from the cluster with `DROP SERVER 'name'`.
+Either the id or name of the server can be used.
+As long as the server is running, it is listed when showing servers with the state `dropped`.
