@@ -13,6 +13,7 @@ A local database alias can only target a database within the same DBMS.
 A remote alias may target a database from another Neo4j DBMS.
 When a query is run against an alias, it will be redirected to the target database.
 The home database for users can be set to an alias, which will be resolved to the target database on use.
+Both local and remote database aliases can be created as part of a xref::databases.adoc#administration-databases-create-composite-database[composite database].
 
 A local alias can be used in all other Cypher commands in place of the target database.
 Please note that the local alias will be resolved while executing the command.
@@ -240,6 +241,31 @@ This prevents issues such as a transaction executing against multiple target dat
 [[alias-management-show-alias]]
 == Listing database aliases
 
+////
+CREATE DATABASE `movies`;
+CREATE ALIAS `films` FOR DATABASE `movies`;
+CREATE ALIAS `motion pictures` FOR DATABASE `movies` PROPERTIES { nameContainsSpace: true };
+CREATE DATABASE `northwind-graph-2020`;
+CREATE DATABASE `northwind-graph-2021`;
+CREATE DATABASE `northwind-graph-2022`;
+CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687" USER alice PASSWORD "password";
+DRIVER {
+  ssl_enforced: true,
+  connection_timeout: duration({seconds: 5}),
+  connection_max_lifetime: duration({hours: 1}),
+  connection_pool_acquisition_timeout: duration({minutes: 1}),
+  connection_pool_idle_test: duration({minutes: 2}),
+  connection_pool_max_size: 10,
+  logging_level: 'info'
+};
+CREATE DATABASE `sci-fi-books`;
+CREATE COMPOSITE DATABASE `library`;
+CREATE ALIAS `library`.`sci-fi` FOR DATABASE `sci-fi-books`;
+CREATE ALIAS `library`.`romance` FOR DATABASE `romance-books` AT 'neo4j+s://location:7687'; USER alice PASSWORD 'password';
+CREATE COMPOSITE DATABASE garden
+CREATE DATABASE `perennial-flowers`
+////
+
 Available database aliases can be seen using `SHOW ALIASES FOR DATABASE`.
 The required privileges are described xref::access-control/dbms-administration.adoc#access-control-dbms-administration-alias-management[here].
 
@@ -277,29 +303,22 @@ List of xref::aliases.adoc#remote-alias-driver-settings[driver settings] allowed
 The detailed information for a particular database alias can be displayed using the command `SHOW ALIASES FOR DATABASE YIELD *`.
 When a `YIELD *` clause is provided, the full set of columns is returned.
 
+.Query
+[source, cypher, indent=0]
+----
+SHOW ALIASES FOR DATABASE YIELD *
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="5*<m"]
+
 
 .+SHOW ALIASES FOR DATABASE+
 ======
 
 A summary of all available databases alias can be displayed using the command `SHOW ALIASES FOR DATABASE`.
 
-////
-CREATE DATABASE `movies`
-CREATE ALIAS `films` FOR DATABASE `movies`
-CREATE ALIAS `motion pictures` FOR DATABASE `movies`
-CREATE DATABASE `northwind-graph-2020`
-CREATE DATABASE `northwind-graph-2021`
-CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687" USER alice PASSWORD "password"
-DRIVER {
-  ssl_enforced: true,
-  connection_timeout: duration({seconds: 5}),
-  connection_max_lifetime: duration({hours: 1}),
-  connection_pool_acquisition_timeout: duration({minutes: 1}),
-  connection_pool_idle_test: duration({minutes: 2}),
-  connection_pool_max_size: 10,
-  logging_level: 'info'
-}
-////
+
 
 .Query
 [source, cypher, indent=0]
@@ -453,6 +472,16 @@ It is also possible to use `SKIP` and `LIMIT` to paginate the results.
 
 ======
 
+To list just one database alias, the `SHOW ALIASES` command takes an alias name:
+
+.Query
+[source, cypher, indent=0]
+----
+SHOW ALIAS films FOR DATABASES
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
 
 [role=enterprise-edition]
 [[alias-management-create-database-alias]]
@@ -503,7 +532,7 @@ Alias names are subject to the xref::syntax/naming.adoc[standard Cypher restrict
 
 The following naming rules apply:
 
-* A name is a valid identifier, additionally allowing dots e.g. `main.alias` for local aliases.
+* A name is a valid identifier.
 * Name length can be up to 65534 characters.
 * Names cannot end with dots.
 * Names that begin with an underscore or with the prefix `system` are reserved for internal use.
@@ -556,7 +585,7 @@ Rows: 0
 .+SHOW DATABASE+
 ======
 
-When a local database alias has been created, it will show up in the aliases column provided by the command `SHOW DATABASES` and in the `SHOW ALIASES FOR DATABASE` command.
+When a local database `alias` has been created, it will show up in the aliases column provided by the command `SHOW DATABASES` and in the `SHOW ALIASES FOR DATABASE` command.
 
 ////
 CREATE DATABASE `movies`
@@ -603,6 +632,7 @@ CREATE ALIAS `films` FOR DATABASE `movies`
 CREATE ALIAS `motion pictures` FOR DATABASE `movies`
 CREATE DATABASE `northwind-graph-2020`
 CREATE DATABASE `northwind-graph-2021`
+CREATE DATABASE `northwind-graph-2022`
 CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687" USER alice PASSWORD "password" DRIVER {
     ssl_enforced: true,
     connection_timeout: duration({seconds: 5}),
@@ -617,8 +647,7 @@ CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687"
 .Query
 [source, cypher, indent=0]
 ----
-SHOW ALIASES FOR DATABASE
-WHERE name = 'northwind'
+SHOW ALIASES `northwind` FOR DATABASE
 ----
 
 .Result
@@ -633,6 +662,29 @@ WHERE name = 'northwind'
 
 ======
 
+Local database aliases can also be given properties.
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE ALIAS `northwind-2022`
+FOR DATABASE `northwind-graph-2022`
+PROPERTIES { newestNorthwind: true, index: 3 }
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="5*<m"]
+
+The properties are then shown in the `SHOW ALIASES FOR DATABASE YIELD ...` command.
+
+.Query
+[source, cypher, indent=0]
+----
+SHOW ALIAS `northwind-2022` FOR DATABASE YIELD name, properties
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="5*<m"]
 
 .+CREATE ALIAS+
 ======
@@ -836,9 +888,12 @@ CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687"
 .Query
 [source, cypher, indent=0]
 ----
-SHOW ALIASES FOR DATABASE
-WHERE name = 'remote-northwind'
+SHOW ALIAS `remote-northwind` 
+FOR DATABASE
+
 ----
+
+query("SHOW ALIAS `remote-northwind` FOR DATABASE", assertNameField("remote-northwind")) {
 
 .Result
 [role="queryresult",options="header,footer",cols="5*<m"]
@@ -1105,7 +1160,7 @@ Rows: 0
 .+SHOW DATABASE+
 ======
 
-When a local database alias has been altered, it will show up in the aliases column for the target database provided by the command `SHOW DATABASES`.
+When a local database alias has been altered, it will show up in the `aliases` column for the target database provided by the command `SHOW DATABASES`.
 
 ////
 CREATE DATABASE `movies`
