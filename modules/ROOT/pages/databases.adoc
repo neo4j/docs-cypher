@@ -15,6 +15,11 @@ These administrative commands are automatically routed to the `system` database 
 
 The syntax of the database management commands is as follows:
 
+[NOTE]
+====
+The syntax descriptions use xref:access-control/index.adoc#access-control-syntax[the style] from access control.
+====
+
 .Database management command syntax
 [options="header", width="100%", cols="1m,5a"]
 |===
@@ -24,13 +29,13 @@ The syntax of the database management commands is as follows:
 |
 [source, syntax, role="noheader"]
 ----
-SHOW { DATABASE name \| DATABASES \| DEFAULT DATABASE \| HOME DATABASE }
+SHOW { DATABASE[S] name \| DATABASE[S] \| DEFAULT DATABASE \| HOME DATABASE }
 [WHERE expression]
 ----
 
 [source, syntax, role="noheader"]
 ----
-SHOW { DATABASE name \| DATABASES \| DEFAULT DATABASE \| HOME DATABASE }
+SHOW { DATABASE[S] name \| DATABASE[S] \| DEFAULT DATABASE \| HOME DATABASE }
 YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]
 [WHERE expression]
 [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
@@ -50,6 +55,7 @@ CREATE DATABASE name [IF NOT EXISTS]
 ----
 CREATE OR REPLACE DATABASE name
 [TOPOLOGY n PRIMAR{Y\|IES} [m SECONDAR{Y\|IES}]]
+[OPTIONS "{" option: value[, ...] "}"]
 [WAIT [n [SEC[OND[S]]]]\|NOWAIT]
 ----
 
@@ -58,12 +64,15 @@ CREATE OR REPLACE DATABASE name
 [source, synatx, role="noheader"]
 ----
 CREATE COMPOSITE DATABASE name [IF NOT EXISTS]
+[OPTIONS "{" "}"]
 [WAIT [n [SEC[OND[S]]]]\|NOWAIT]
 ----
 
 [source, syntax, role="noheader"]
 ----
-CREATE OR REPLACE COMPOSITE DATABASE name [WAIT [n [SEC[OND[S]]]]\|NOWAIT]
+CREATE OR REPLACE COMPOSITE DATABASE name
+[OPTIONS "{" "}"]
+[WAIT [n [SEC[OND[S]]]]\|NOWAIT]
 ----
 
 | ALTER DATABASE
@@ -100,7 +109,6 @@ DROP [COMPOSITE] DATABASE name [IF EXISTS] [{DUMP\|DESTROY} [DATA]] [WAIT [n [SE
 
 |===
 
-
 [[administration-databases-show-databases]]
 == Listing databases
 
@@ -129,6 +137,11 @@ These commands return the following columns:
 
 | access
 | The database access mode, either `read-write` or `read-only`. label:default-output[]
+
+[NOTE]
+====
+A database may be described as read-only when using `ALTER DATABASE ... SET ACCESS READ ONLY`.
+====
 
 | databaseID
 | The database unique ID.
@@ -248,6 +261,11 @@ However, some privileges enable users to see additional databases regardless of 
 * Users with `DATABASE MANAGEMENT` privilege can see all databases.
 
 If a user has not been granted `ACCESS` privilege to any databases nor any of the above special cases, the command can still be executed but will only return the `system` database, which is always visible.
+====
+[NOTE]
+====
+Databases hosted on servers that are offline are also returned by the `SHOW DATABASES` command. 
+For such databases, the `address` column displays `NULL`, the `currentStatus` column displays `unknown`, and the `statusMessage` displays `Server is unavailable`.
 ====
 
 ======
@@ -478,6 +496,7 @@ The following naming rules apply:
 * Database name length must be between 3 and 63 characters.
 * The first character must be an ASCII alphabetic character.
 * Subsequent characters can be ASCII alphabetic (`mydatabase`), numeric characters (`mydatabase2`), dots (`main.db`), and dashes (enclosed within backticks, e.g., `CREATE DATABASE ++`main-db`++`).
+Using database names with dots without enclosing them in backticks is deprecated.
 * Names cannot end with dots or dashes.
 * Names that begin with an underscore or with the prefix `system` are reserved for internal use.
 ====
@@ -532,7 +551,7 @@ CREATE DATABASE `topology-example` TOPOLOGY 1 PRIMARY 0 SECONDARIES
 ----
 
 // TODO: Add result
-For more details on primary and secondary server roles, see link:{neo4j-docs-base-uri}/operations-manual{page-version}/clustering#clustering-introduction-operational[Cluster overview].
+For more details on primary and secondary server roles, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/clustering#clustering-introduction-operational[Cluster overview].
 
 [NOTE]
 ====
@@ -647,7 +666,7 @@ The `CREATE DATABASE` command can have a map of options, e.g. `OPTIONS {key: 'va
 
 [NOTE]
 ====
-The `OPTIONS` are only available to standard databases and not composite databases.
+There are no available `OPTIONS` values for composite databases.
 ====
 
 
@@ -668,12 +687,28 @@ Currently this is only supported with `existingDataSeedInstance` and must be set
 Defines which instance is used for seeding the data of the created database.
 The instance id can be taken from the id column of the `dbms.cluster.overview()` procedure. Can only be used in clusters.
 
+| `seedURI`
+| URI to a backup or a dump from an existing database.
+|
+Defines an identical seed from an external source which will be used to seed all servers.
+
+| `seedConfig`
+| comma separated list of configuration values.
+|
+Defines additional configuration specified by comma separated `name=value` pairs that might be required by certain seed providers.
+
+| `seedCredentials`
+| credentials
+|
+Defines credentials that needs to be passed into certain seed providers.
+
 |===
 
 
 [NOTE]
 ====
-The `existingData` and `existingDataSeedInstance` options cannot be combined with the `OR REPLACE` part of this command.
+The `existingData`, `existingDataSeedInstance`, `seedURI`, `seedConfig` and `seedCredentials` options cannot be combined with the `OR REPLACE` part of this command.
+For details about the use of these seeding options, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/clustering/databases/#cluster-seed[Operations Manual -> Seed a cluster].
 ====
 
 
@@ -688,7 +723,7 @@ Standard databases can be modified using the command `ALTER DATABASE`.
 
 By default, a database has read-write access mode on creation.
 The database can be limited to read-only mode on creation using the configuration parameters `dbms.databases.default_to_read_only`, `dbms.databases.read_only`, and `dbms.database.writable`.
-For details, see link:{neo4j-docs-base-uri}/operations-manual{page-version}/manage-databases/configuration#manage_database_parameters[Configuration parameters].
+For details, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/manage-databases/configuration#manage_database_parameters[Configuration parameters].
 
 A database that was created with read-write access mode can be changed to read-only.
 To change it to read-only, you can use the `ALTER DATABASE` command with the sub-clause `SET ACCESS READ ONLY`.
@@ -799,6 +834,12 @@ SET TOPOLOGY 3 PRIMARY 0 SECONDARIES
 
 ======
 
+[NOTE]
+====
+It is not possible to automatically transition to or from a topology with a single primary host.
+See the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/clustering/databases#_alter_topology[Operations Manual -> Alter topology] for more information.
+====
+
 
 .+SHOW DATABASE+
 ======
@@ -811,7 +852,7 @@ SHOW DATABASES yield name, currentPrimariesCount, currentSecondariesCount, reque
 
 ======
 
-For more details on primary and secondary server roles, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/clustering/inroduction#clustering-introduction-operational[Cluster overview].
+For more details on primary and secondary server roles, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/clustering/introduction#clustering-introduction-operational[Operations Manual -> Clustering overview].
 
 [NOTE]
 ====
