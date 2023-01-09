@@ -15,6 +15,11 @@ These administrative commands are automatically routed to the `system` database 
 
 The syntax of the database management commands is as follows:
 
+[NOTE]
+====
+The syntax descriptions use xref:access-control/index.adoc#access-control-syntax[the style] from access control.
+====
+
 .Database management command syntax
 [options="header", width="100%", cols="1m,5a"]
 |===
@@ -24,13 +29,13 @@ The syntax of the database management commands is as follows:
 |
 [source, syntax, role="noheader"]
 ----
-SHOW { DATABASE name \| DATABASES \| DEFAULT DATABASE \| HOME DATABASE }
+SHOW { DATABASE[S] name \| DATABASE[S] \| DEFAULT DATABASE \| HOME DATABASE }
 [WHERE expression]
 ----
 
 [source, syntax, role="noheader"]
 ----
-SHOW { DATABASE name \| DATABASES \| DEFAULT DATABASE \| HOME DATABASE }
+SHOW { DATABASE[S] name \| DATABASE[S] \| DEFAULT DATABASE \| HOME DATABASE }
 YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]
 [WHERE expression]
 [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
@@ -41,20 +46,44 @@ YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]
 [source, syntax, role="noheader"]
 ----
 CREATE DATABASE name [IF NOT EXISTS]
+[TOPOLOGY n PRIMAR{Y\|IES} [m SECONDAR{Y\|IES}]]
 [OPTIONS "{" option: value[, ...] "}"]
 [WAIT [n [SEC[OND[S]]]]\|NOWAIT]
 ----
 
 [source, syntax, role="noheader"]
 ----
-CREATE OR REPLACE DATABASE name [WAIT [n [SEC[OND[S]]]]\|NOWAIT]
+CREATE OR REPLACE DATABASE name
+[TOPOLOGY n PRIMAR{Y\|IES} [m SECONDAR{Y\|IES}]]
+[OPTIONS "{" option: value[, ...] "}"]
+[WAIT [n [SEC[OND[S]]]]\|NOWAIT]
+----
+
+| CREATE COMPOSITE DATABASE
+|
+[source, synatx, role="noheader"]
+----
+CREATE COMPOSITE DATABASE name [IF NOT EXISTS]
+[OPTIONS "{" "}"]
+[WAIT [n [SEC[OND[S]]]]\|NOWAIT]
+----
+
+[source, syntax, role="noheader"]
+----
+CREATE OR REPLACE COMPOSITE DATABASE name
+[OPTIONS "{" "}"]
+[WAIT [n [SEC[OND[S]]]]\|NOWAIT]
 ----
 
 | ALTER DATABASE
 |
 [source, syntax, role="noheader"]
 ----
-ALTER DATABASE name [IF EXISTS] SET ACCESS {READ ONLY \| READ WRITE}
+ALTER DATABASE name [IF EXISTS]
+{
+SET ACCESS {READ ONLY \| READ WRITE} \|
+SET TOPOLOGY n PRIMAR{Y\|IES} [m SECONDAR{Y\|IES}]
+}
 ----
 
 | STOP DATABASE
@@ -75,11 +104,10 @@ START DATABASE name [WAIT [n [SEC[OND[S]]]]\|NOWAIT]
 |
 [source, syntax, role="noheader"]
 ----
-DROP DATABASE name [IF EXISTS] [{DUMP\|DESTROY} [DATA]] [WAIT [n [SEC[OND[S]]]]\|NOWAIT]
+DROP [COMPOSITE] DATABASE name [IF EXISTS] [{DUMP\|DESTROY} [DATA]] [WAIT [n [SEC[OND[S]]]]\|NOWAIT]
 ----
 
 |===
-
 
 [[administration-databases-show-databases]]
 == Listing databases
@@ -101,11 +129,19 @@ These commands return the following columns:
 | name
 | The name of the database. label:default-output[]
 
+| type
+| The type of the database: `system`, `standard`, or `composite`. label:default-output[]
+
 | aliases
 | The names of any aliases the database may have. label:default-output[]
 
 | access
 | The database access mode, either `read-write` or `read-only`. label:default-output[]
+
+[NOTE]
+====
+A database may be described as read-only when using `ALTER DATABASE ... SET ACCESS READ ONLY`.
+====
 
 | databaseID
 | The database unique ID.
@@ -120,6 +156,9 @@ The default for a standalone database is `neo4j://localhost:7687`. label:default
 
 | role
 | The current role of the database (`standalone`, `leader`, `follower`, `read_replica`, `unknown`). label:default-output[]
+
+|writer
+|`true` for the database node that accepts writes (this node is the leader for this database in a cluster or this is a standalone instance). label:default-output[]
 
 | requestedStatus
 | The expected status of the database. label:default-output[]
@@ -176,6 +215,9 @@ The value is a string formatted as:
 Number of transactions the current database is behind compared to the database on the primary instance.
 The lag is expressed in negative integers. In standalone environments, the value is always `0`.
 
+|constituents
+|The names of any constituents the database may have. label:default-output[]
+
 |===
 
 
@@ -212,8 +254,18 @@ SHOW DATABASES
 [NOTE]
 ====
 The results of this command are filtered according to the `ACCESS` privileges of the user.
-However, users with `CREATE/DROP/ALTER DATABASE`, `SET DATABASE ACCESS`, or `DATABASE MANAGEMENT` privileges can see all databases regardless of their `ACCESS` privileges.
-If a user has not been granted `ACCESS` privilege to any databases, the command can still be executed but will only return the `system` database, which is always visible.
+However, some privileges enable users to see additional databases regardless of their `ACCESS` privileges:
+
+* Users with `CREATE/DROP/ALTER DATABASE` or `SET DATABASE ACCESS` privileges can see all standard databases.
+* Users with `CREATE/DROP COMPOSITE DATABASE` or `COMPOSITE DATABASE MANAGEMENT` privileges can see all composite databases.
+* Users with `DATABASE MANAGEMENT` privilege can see all databases.
+
+If a user has not been granted `ACCESS` privilege to any databases nor any of the above special cases, the command can still be executed but will only return the `system` database, which is always visible.
+====
+[NOTE]
+====
+Databases hosted on servers that are offline are also returned by the `SHOW DATABASES` command. 
+For such databases, the `address` column displays `NULL`, the `currentStatus` column displays `unknown`, and the `statusMessage` displays `Server is unavailable`.
 ====
 
 ======
@@ -393,6 +445,22 @@ Or, during normal operation a database's `currentStatus` may be transiently diff
 The possible statuses are `initial`, `online`, `offline`, `store copying` and `unknown`.
 ====
 
+For composite databases the `constituents` column is particularly interesting as it lists the aliases that make up the composite database:
+
+.Query
+[source, cypher, indent=0]
+----
+SHOW DATABASE library YIELD name, constituents
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +name+ | +constituents+
+| +"library"+ | +["library.sci-fi","library.romance"]+
+2+d|Rows: 1
+|===
+
 ======
 
 
@@ -428,6 +496,7 @@ The following naming rules apply:
 * Database name length must be between 3 and 63 characters.
 * The first character must be an ASCII alphabetic character.
 * Subsequent characters can be ASCII alphabetic (`mydatabase`), numeric characters (`mydatabase2`), dots (`main.db`), and dashes (enclosed within backticks, e.g., `CREATE DATABASE ++`main-db`++`).
+Using database names with dots without enclosing them in backticks is deprecated.
 * Names cannot end with dots or dashes.
 * Names that begin with an underscore or with the prefix `system` are reserved for internal use.
 ====
@@ -469,12 +538,92 @@ SHOW DATABASES
 
 
 [role=enterprise-edition]
+[[administration-databases-create-database-topology]]
+=== Cluster topology
+
+In a cluster environment, it may be desirable to control the number of servers used to host a database.
+The number of primary and secondary servers can be specified using the following command.
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE DATABASE `topology-example` TOPOLOGY 1 PRIMARY 0 SECONDARIES
+----
+
+// TODO: Add result
+For more details on primary and secondary server roles, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/clustering#clustering-introduction-operational[Cluster overview].
+
+[NOTE]
+====
+`TOPOLOGY` is only available for standard databases and not composite databases.
+Composite databases are always available on all servers.
+====
+
+
+[role=enterprise-edition]
+[[administration-databases-create-composite-database]]
+=== Creating composite databases
+
+Composite databases do not contain data, but they reference to other databases that can be queried together through their constituent aliases.
+For more information about composite databases, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/composite-databases/introduction[Operations Manual -> Composite database introduction].
+
+Composite databases can be created using `CREATE COMPOSITE DATABASE`.
+
+.Query
+[source, cypher, indent=0]
+----
+CREATE COMPOSITE DATABASE inventory
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 1
+
+[NOTE]
+====
+Composite database names are subject to the same rules as standard databases.
+One difference is however that the deprecated syntax using dots without enclosing the name in backticks is not available.
+Both dots and dashes needs to be enclosed within backticks when using composite databases.
+
+
+====
+
+When a composite database has been created, it will show up in the listing provided by the command `SHOW DATABASES`.
+
+
+.Query
+[source, cypher]
+----
+SHOW DATABASES YIELD name, type, access, role, writer, constituents
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="6*<m"]
+|===
+| +name+ | +type+ | +access+ | +role+ | +writer+ | +constituents+
+| +"customers"+ | +"standard"+ | +"read-write"+ | +"primary"+ | +true+ | +[]+
+| +"inventory"+ | +"composite"+ | +"read-only"+ | +<null>+ | +false+ | +[]+
+| +"library"+ | +"composite"+ | +"read-only"+ | +<null>+ | +false+ | +["library.sci-fi","library.romance"]+
+| +"movies"+ | +"standard"+ | +"read-write"+ | +"primary"+ | +true+ | +[]+
+| +"neo4j"+ | +"standard"+ | +"read-write"+ | +"primary"+ | +true+ | +[]+
+| +"sci-fi-books"+ | +"standard"+ | +"read-write"+ | +"primary"+ | +true+ | +[]+
+| +"system"+ | +"system"+ | +"read-write"+ | +"primary"+ | +true+ | +[]+
+| +"topology-example"+ | +"standard"+ | +"read-write"+ | +"primary"+ | +true+ | +[]+
+6+d|Rows: 8
+|===
+
+In order to create database aliases in the composite database, give the composite database as namespace for the alias.
+For information about creating aliases in composite databases, see <<database-management-create-database-alias-in-composite, here>>.
+
+
+[role=enterprise-edition]
 [[administration-databases-create-database-existing]]
 === Handling Existing Databases
 
-This command is optionally idempotent, with the default behavior to fail with an error if the database already exists.
+These commands are optionally idempotent, with the default behavior to fail with an error if the database already exists.
 Appending `IF NOT EXISTS` to the command ensures that no error is returned and nothing happens should the database already exist.
 Adding `OR REPLACE` to the command will result in any existing database being deleted and a new one created.
+
+These behavior flags apply to both standard and composite databases (e.g. a composite database may replace a standard one or another composite.)
 
 
 .+CREATE DATABASE+
@@ -483,8 +632,9 @@ Adding `OR REPLACE` to the command will result in any existing database being de
 .Query
 [source, cypher, indent=0]
 ----
-CREATE DATABASE customers IF NOT EXISTS
+CREATE COMPOSITE DATABASE customers IF NOT EXISTS
 ----
+
 
 ======
 
@@ -502,7 +652,7 @@ This is equivalent to running `DROP DATABASE customers IF EXISTS` followed by `C
 
 [NOTE]
 ====
-The `IF NOT EXISTS` and `OR REPLACE` parts of this command cannot be used together.
+The `IF NOT EXISTS` and `OR REPLACE` parts of these commands cannot be used together.
 ====
 
 ======
@@ -512,7 +662,12 @@ The `IF NOT EXISTS` and `OR REPLACE` parts of this command cannot be used togeth
 [[administration-databases-create-database-options]]
 === Options
 
-The create database command can have a map of options, e.g. `OPTIONS {key: 'value'}`.
+The `CREATE DATABASE` command can have a map of options, e.g. `OPTIONS {key: 'value'}`.
+
+[NOTE]
+====
+There are no available `OPTIONS` values for composite databases.
+====
 
 
 [options="header"]
@@ -532,12 +687,28 @@ Currently this is only supported with `existingDataSeedInstance` and must be set
 Defines which instance is used for seeding the data of the created database.
 The instance id can be taken from the id column of the `dbms.cluster.overview()` procedure. Can only be used in clusters.
 
+| `seedURI`
+| URI to a backup or a dump from an existing database.
+|
+Defines an identical seed from an external source which will be used to seed all servers.
+
+| `seedConfig`
+| comma separated list of configuration values.
+|
+Defines additional configuration specified by comma separated `name=value` pairs that might be required by certain seed providers.
+
+| `seedCredentials`
+| credentials
+|
+Defines credentials that needs to be passed into certain seed providers.
+
 |===
 
 
 [NOTE]
 ====
-The `existingData` and `existingDataSeedInstance` options cannot be combined with the `OR REPLACE` part of this command.
+The `existingData`, `existingDataSeedInstance`, `seedURI`, `seedConfig` and `seedCredentials` options cannot be combined with the `OR REPLACE` part of this command.
+For details about the use of these seeding options, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/clustering/databases/#cluster-seed[Operations Manual -> Seed a cluster].
 ====
 
 
@@ -545,15 +716,26 @@ The `existingData` and `existingDataSeedInstance` options cannot be combined wit
 [[administration-databases-alter-database]]
 == Altering databases
 
-Databases can be modified using the command `ALTER DATABASE`.
-For example, a database always has read-write access mode on creation, unless the configuration parameter `dbms.databases.default_to_read_only` is set to `true`.
+Standard databases can be modified using the command `ALTER DATABASE`.
+
+[[administration-databases-alter-database-access]]
+=== Access
+
+By default, a database has read-write access mode on creation.
+The database can be limited to read-only mode on creation using the configuration parameters `dbms.databases.default_to_read_only`, `dbms.databases.read_only`, and `dbms.database.writable`.
+For details, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/manage-databases/configuration#manage_database_parameters[Configuration parameters].
+
+A database that was created with read-write access mode can be changed to read-only.
 To change it to read-only, you can use the `ALTER DATABASE` command with the sub-clause `SET ACCESS READ ONLY`.
 Subsequently, the database access mode can be switched back to read-write using the sub-clause `SET ACCESS READ WRITE`.
 Altering the database access mode is allowed at all times, whether a database is online or offline.
 
-Database access modes can also be managed using the configuration parameters `dbms.databases.default_to_read_only`, `dbms.databases.read_only`, and `dbms.database.writable`.
-For details, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/manage-databases/configuration#manage-databases-parameters[Configuration parameters].
 If conflicting modes are set by the `ALTER DATABASE` command and the configuration parameters, i.e. one says read-write and the other read-only, the database will be read-only and prevent write queries.
+
+[NOTE]
+====
+Modifying access mode is only available to standard databases and not composite databases.
+====
 
 
 .+ALTER DATABASE+
@@ -615,7 +797,7 @@ SHOW DATABASES yield name, access
 .+ALTER DATABASE+
 ======
 
-This command is optionally idempotent, with the default behavior to fail with an error if the database does not exist.
+`ALTER DATABASE` commands are optionally idempotent, with the default behavior to fail with an error if the database does not exist.
 Appending `IF EXISTS` to the command ensures that no error is returned and nothing happens should the database not exist.
 
 ////
@@ -632,6 +814,62 @@ SET ACCESS READ WRITE
 ----
 
 ======
+
+
+[[administration-databases-alter-database-topology]]
+=== Topology
+
+In a cluster environment, it may be desirable to change the number of servers used to host a database.
+The number of primary and secondary servers can be specified using the following command:
+
+.+ALTER DATABASE+
+======
+
+.Query
+[source, cypher]
+----
+ALTER DATABASE `topology-example`
+SET TOPOLOGY 3 PRIMARY 0 SECONDARIES
+----
+
+======
+
+[NOTE]
+====
+It is not possible to automatically transition to or from a topology with a single primary host.
+See the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/clustering/databases#_alter_topology[Operations Manual -> Alter topology] for more information.
+====
+
+
+.+SHOW DATABASE+
+======
+
+.Query
+[source, cypher]
+----
+SHOW DATABASES yield name, currentPrimariesCount, currentSecondariesCount, requestedPrimariesCount, requestedSecondariesCount
+----
+
+======
+
+For more details on primary and secondary server roles, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/clustering/introduction#clustering-introduction-operational[Operations Manual -> Clustering overview].
+
+[NOTE]
+====
+Modifying database topology is only available to standard databases and not composite databases.
+====
+
+`ALTER DATABASE` commands are optionally idempotent, with the default behavior to fail with an error if the database does not exist.
+Appending `IF EXISTS` to the command ensures that no error is returned and nothing happens should the database not exist.
+
+.Query
+[source, cypher]
+----
+ALTER DATABASE nonExisting IF EXISTS SET TOPOLOGY 1 PRIMARY 0 SECONDARY
+----
+
+[role="statsonlyqueryresult"]
+0 rows
 
 
 [role=enterprise-edition]
@@ -662,6 +900,11 @@ STOP DATABASE customers
 System updates: 1
 Rows: 0
 ----
+
+[NOTE]
+====
+Both standard databases and composite databases can be stopped using this command.
+====
 
 ======
 
@@ -717,6 +960,11 @@ System updates: 1
 Rows: 0
 ----
 
+[NOTE]
+====
+Both standard databases and composite databases can be stopped using this command.
+====
+
 ======
 
 
@@ -746,7 +994,7 @@ SHOW DATABASE customers
 [[administration-databases-drop-database]]
 == Deleting databases
 
-Databases can be deleted using the command `DROP DATABASE`.
+Standard and composite databases can be deleted by using the command `DROP DATABASE`.
 
 
 .+DROP DATABASE+
@@ -764,6 +1012,8 @@ DROP DATABASE customers
 System updates: 1
 Rows: 0
 ----
+
+It is also possible to ensure that only composite databases are dropped. A `DROP COMPOSITE` request would then fail if the targeted database is a standard database.
 
 ======
 
@@ -840,12 +1090,31 @@ DROP DATABASE customers IF EXISTS DUMP DATA
 
 ======
 
+It is also possible to ensure that only composite databases are dropped. A `DROP COMPOSITE` request would then fail if the targeted database is a standard database.
+
+.+DROP COMPOSITE DATABASE+
+======
+
+.Query
+[source, cypher]
+----
+DROP COMPOSITE DATABASE inventory
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 1
+
+To ensure the database to be dropped is standard and not composite, the user first needs to check the `type` column of `SHOW DATABASES` manually.
+
+======
+
 
 [role=enterprise-edition]
 [[administration-wait-nowait]]
 == Wait options
 
-Aside from `SHOW DATABASES` and `ALTER DATABASE`, all database management commands accept an optional `WAIT`/`NOWAIT` clause. The `WAIT`/`NOWAIT` clause allows you to specify a time limit in which the command must complete and return.
+Aside from `SHOW DATABASES` and `ALTER DATABASE`, all database management commands accept an optional `WAIT`/`NOWAIT` clause.
+The `WAIT`/`NOWAIT` clause allows you to specify a time limit in which the command must complete and return.
 
 The options are:
 
@@ -884,6 +1153,9 @@ CREATE DATABASE slow WAIT 5 SECONDS
 
 The `success` column provides an aggregate status of whether or not the command is considered successful and thus every row will have the same value.
 The intention of this column is to make it easy to determine, for example in a script, whether or not the command completed successfully without timing out.
+
+A command with a `WAIT` clause may be interrupted whilst it is waiting to complete.
+In this event the command will continue to execute in the background and will not be aborted.
 
 ======
 

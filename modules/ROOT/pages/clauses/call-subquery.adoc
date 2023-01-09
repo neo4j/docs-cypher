@@ -675,3 +675,48 @@ These are the restrictions on queries that use `+CALL { ... } IN TRANSACTIONS+`:
 * A `+CALL { ... } IN TRANSACTIONS+` in a `UNION` is not supported.
 * A `+CALL { ... } IN TRANSACTIONS+` after a write clause is not supported, unless that write clause is inside a `+CALL { ... } IN TRANSACTIONS+`.
 
+Additionally, there are some restrictions that apply when using an importing `WITH` clause in a `CALL` subquery:
+
+* Only variables imported with the importing `WITH` clause can be used.
+* No expressions or aliasing are allowed within the importing `WITH` clause.
+* It is not possible to follow an importing `WITH` clause with any of the following clauses: `DISTINCT`, `ORDER BY`, `WHERE`, `SKIP`, and `LIMIT`.
+
+Attempting any of the above, will throw an error. 
+For example, the following query using a `WHERE` clause after an importing `WITH` clause will throw an error:
+
+.Query
+[source, cypher, indent=0]
+----
+UNWIND [[1,2],[1,2,3,4],[1,2,3,4,5]] AS l
+CALL {
+    WITH l
+    WHERE size(l) > 2
+    RETURN l AS largeLists
+}
+RETURN largeLists
+----
+
+.Error message
+[source, output, role="noheader", indent=0]
+----
+Importing WITH should consist only of simple references to outside variables.
+WHERE is not allowed.
+----
+
+A solution to this restriction, necessary for any filtering or ordering of an importing `WITH` clause, is to declare a second `WITH` clause after the importing `WITH` clause. 
+This second `WITH` clause will act as a regular `WITH` clause.
+For example, the following query will not throw an error:
+
+.Query
+[source, cypher, indent=0]
+----
+UNWIND [[1,2],[1,2,3,4],[1,2,3,4,5]] AS l
+CALL {
+ WITH l
+ WITH size(l) AS size, l AS l
+ WHERE size > 2
+ RETURN l AS largeLists
+}
+RETURN largeLists
+----
+

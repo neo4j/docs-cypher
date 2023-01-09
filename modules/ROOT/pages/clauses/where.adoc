@@ -10,6 +10,7 @@
 
 * xref::clauses/where.adoc#where-introduction[Introduction]
 * xref::clauses/where.adoc#query-where-basic[Basic usage]
+ ** xref::clauses/where.adoc#node-pattern-predicates[Node pattern predicates]
  ** xref::clauses/where.adoc#boolean-operations[Boolean operations]
  ** xref::clauses/where.adoc#filter-on-node-label[Filter on node label]
  ** xref::clauses/where.adoc#filter-on-node-property[Filter on node property]
@@ -30,10 +31,6 @@
  ** xref::clauses/where.adoc#filter-on-patterns-using-not[Filter on patterns using `NOT`]
  ** xref::clauses/where.adoc#filter-on-patterns-with-properties[Filter on patterns with properties]
  ** xref::clauses/where.adoc#filter-on-relationship-type[Filter on relationship type]
- * xref::clauses/where.adoc#existential-subqueries[Using existential subqueries in `WHERE`]
- ** xref::clauses/where.adoc#existential-subquery-simple-case[Simple existential subquery]
- ** xref::clauses/where.adoc#existential-subquery-with-where[Existential subquery with `WHERE` clause]
- ** xref::clauses/where.adoc#existential-subquery-nesting[Nesting existential subqueries]
 * xref::clauses/where.adoc#query-where-lists[Lists]
  ** xref::clauses/where.adoc#where-in-operator[`IN` operator]
 * xref::clauses/where.adoc#missing-properties-and-values[Missing properties and values]
@@ -44,7 +41,6 @@
  ** xref::clauses/where.adoc#simple-range[Simple range]
  ** xref::clauses/where.adoc#composite-range[Composite range]
 * xref::clauses/where.adoc#pattern-element-predicates[Pattern element predicates]
- ** xref::clauses/where.adoc#node-pattern-predicates[Node pattern predicates]
  ** xref::clauses/where.adoc#relationship-pattern-predicates[Relationship pattern predicates]
 
 
@@ -87,6 +83,57 @@ CREATE (andy:Swedish:Person {name: 'Andy', age: 36, belt: 'white'}),
 
 [[query-where-basic]]
 == Basic usage
+
+[[node-pattern-predicates]]
+=== Node pattern predicates
+
+`WHERE` can appear inside a node pattern in a `MATCH` clause or a pattern comprehension:
+
+
+.+WHERE+
+======
+
+.Query
+[source, cypher, indent=0]
+----
+WITH 30 AS minAge
+MATCH (a:Person WHERE a.name = 'Andy')-[:KNOWS]->(b:Person WHERE b.age > minAge)
+RETURN b.name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +b.name+
+| +"Peter"+
+1+d|Rows: 1
+|===
+
+======
+
+When used this way, predicates in `WHERE` can reference the node variable that the `WHERE` clause belongs to, but not other elements of the `MATCH` pattern.
+
+The same rule applies to pattern comprehensions.
+
+.+WHERE+
+======
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (a:Person {name: 'Andy'})
+RETURN [(a)-->(b WHERE b:Person) | b.name] AS friends
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +friends+
+| +["Peter","Timothy"]+
+1+d|Rows: 1
+|===
+
+======
 
 [[boolean-operations]]
 === Boolean operations
@@ -235,6 +282,34 @@ The name and belt for the *'Andy'* node are returned because he is the only one 
 | +"Andy"+ | +"white"+
 2+d|Rows: 1
 |===
+
+
+[[usage-with-with-clause]]
+=== Usage with `WITH`
+
+As `WHERE` is not considered a clause in its own right, its scope is not limited by a `WITH` directly before it.
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n:Person)
+WITH n.name as name
+WHERE n.age = 25
+RETURN name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Timothy"+
+1+d|Rows: 1
+|===
+
+
+The name for the *'Timothy'* node is returned because the `WHERE` clause still acts as a filter on the `MATCH`.
+The `WITH` reduces the scope for the rest of the query moving forward.
+In this case 'name' is now the only variable in scope for the `RETURN` clause.
 
 
 [[query-where-string]]
@@ -550,107 +625,6 @@ This returns all relationships having a type whose name starts with `'K'`.
 2+d|Rows: 2
 |===
 
-An existential subquery can be used to find out if a specified pattern exists at least once in the data.
-It can be used in the same way as a path pattern but it allows you to use `MATCH` and `WHERE` clauses internally.
-A subquery has a scope, as indicated by the opening and closing braces, `{` and `}`.
-Any variable that is defined in the outside scope can be referenced inside the subquery's own scope.
-Variables introduced inside the subquery are not part of the outside scope and therefore can't be accessed on the outside.
-If the subquery evaluates even once to anything that is not null, the whole expression will become true.
-This also means that the system only needs to calculate the first occurrence where the subquery evaluates to something that is not null and can skip the rest of the work.
-
-.Syntax
-[source, cypher, role="noheader"]
-EXISTS {
-  MATCH [Pattern]
-  WHERE [Expression]
-}
-
-It is worth noting that the `MATCH` keyword can be omitted in subqueries and that the `WHERE` clause is optional.
-
-
-[[existential-subqueries]]
-== Using existential subqueries in `WHERE`
-
-[[existential-subquery-simple-case]]
-=== Simple existential subquery
-
-Variables introduced by the outside scope can be used in the inner `MATCH` clause. The following example shows this:
-
-.Query
-[source, cypher, indent=0]
-----
-MATCH (person:Person)
-WHERE EXISTS {
-  MATCH (person)-[:HAS_DOG]->(:Dog)
-}
-RETURN person.name AS name
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| +name+
-| +"Andy"+
-| +"Peter"+
-1+d|Rows: 2
-|===
-
-
-[[existential-subquery-with-where]]
-=== Existential subquery with `WHERE` clause
-
-A `WHERE` clause can be used in conjunction to the `MATCH`.
-Variables introduced by the `MATCH` clause and the outside scope can be used in this scope.
-
-.Query
-[source, cypher, indent=0]
-----
-MATCH (person:Person)
-WHERE EXISTS {
-  MATCH (person)-[:HAS_DOG]->(dog:Dog)
-  WHERE person.name = dog.name
-}
-RETURN person.name AS name
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| +name+
-| +"Andy"+
-1+d|Rows: 1
-|===
-
-
-[[existential-subquery-nesting]]
-=== Nesting existential subqueries
-
-Existential subqueries can be nested like the following example shows.
-The nesting also affects the scopes.
-That means that it is possible to access all variables from inside the subquery which are either on the outside scope or defined in the very same subquery.
-
-.Query
-[source, cypher, indent=0]
-----
-MATCH (person:Person)
-WHERE EXISTS {
-  MATCH (person)-[:HAS_DOG]->(dog:Dog)
-  WHERE EXISTS {
-    MATCH (dog)-[:HAS_TOY]->(toy:Toy)
-    WHERE toy.name = 'Banana'
-  }
-}
-RETURN person.name AS name
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| +name+
-| +"Peter"+
-1+d|Rows: 1
-|===
-
 
 [[query-where-lists]]
 == Lists
@@ -816,59 +790,6 @@ The name and age values of nodes having a name property lexicographically betwee
 == Pattern element predicates
 
 `WHERE` clauses can be added to <<cypher-patterns,pattern elements>> in order to specify additional constraints.
-
-
-[[node-pattern-predicates]]
-=== Node pattern predicates
-
-`WHERE` can appear inside a node pattern in a `MATCH` clause or a pattern comprehension:
-
-
-.+WHERE+
-======
-
-.Query
-[source, cypher, indent=0]
-----
-WITH 30 AS minAge
-MATCH (a:Person WHERE a.name = 'Andy')-[:KNOWS]->(b:Person WHERE b.age > minAge)
-RETURN b.name
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| +b.name+
-| +"Peter"+
-1+d|Rows: 1
-|===
-
-======
-
-When used this way, predicates in `WHERE` can reference the node variable that the `WHERE` clause belongs to, but not other elements of the `MATCH` pattern.
-
-The same rule applies to pattern comprehensions.
-
-.+WHERE+
-======
-
-.Query
-[source, cypher, indent=0]
-----
-MATCH (a:Person {name: 'Andy'})
-RETURN [(a)-->(b WHERE b:Person) | b.name] AS friends
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| +friends+
-| +["Peter","Timothy"]+
-1+d|Rows: 1
-|===
-
-======
-
 
 [[relationship-pattern-predicates]]
 === Relationship pattern predicates
