@@ -35,10 +35,10 @@ The `MATCH` clause is used to search for the pattern described in it.
  ** xref::clauses/match.adoc#single-shortest-path[Single shortest path]
  ** xref::clauses/match.adoc#single-shortest-path-with-predicates[Single shortest path with predicates]
  ** xref::clauses/match.adoc#all-shortest-paths[All shortest paths]
-* xref::clauses/match.adoc#get-node-rel-by-id[Get node or relationship by ID]
- ** xref::clauses/match.adoc#match-node-by-id[Node by ID]
- ** xref::clauses/match.adoc#match-rel-by-id[Relationship by ID]
- ** xref::clauses/match.adoc#match-multiple-nodes-by-id[Multiple nodes by ID]
+* xref::clauses/match.adoc#get-node-rel-by-id[Get node or relationship by elementId]
+ ** xref::clauses/match.adoc#match-node-by-id[Node by elementId]
+ ** xref::clauses/match.adoc#match-rel-by-id[Relationship by elementId]
+ ** xref::clauses/match.adoc#match-multiple-nodes-by-id[Multiple nodes by elementId]
 
 
 [[match-introduction]]
@@ -669,14 +669,16 @@ MATCH p = (michael {name: 'Michael Douglas'})-->()
 RETURN p
 ----
 
-Returns the two paths starting from *'Michael Douglas'*
+This query returns the following graph and text, showing the two paths starting from `Michael Douglas`.
+
+image:MATCH_named_path_example.svg[width="400"]
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | +p+
-| +(2)-[ACTED_IN,2]->(5)+
-| +(2)-[ACTED_IN,5]->(6)+
+| +[{"name":"Michael Douglas"},{"role":"Gordon Gekko"},{"title":"Wall Street"}]+
+| +[{"name":"Michael Douglas"},{"role":"President Andrew Shepherd"},{"title":"The American President"}]+
 1+d|Rows: 2
 |===
 
@@ -690,7 +692,7 @@ When your pattern contains a bound relationship, and that relationship pattern d
 [source, cypher, indent=0]
 ----
 MATCH (a)-[r]-(b)
-WHERE elementId(r) = 0
+WHERE split(elementId(r), ":")[2] = "0"
 RETURN a, b
 ----
 
@@ -712,7 +714,7 @@ This returns the two connected nodes, once as the start node, and once as the en
 [[single-shortest-path]]
 === Single shortest path
 
-Finding a single shortest path between two nodes is as easy as using the `shortestPath` function. It is done like this:
+Finding a single shortest path between two nodes can be done by using the `shortestPath` function. 
 
 .Query
 [source, cypher, indent=0]
@@ -724,20 +726,24 @@ MATCH
 RETURN p
 ----
 
-This means: find a single shortest path between two nodes, as long as the path is max 15 relationships long.
-Within the parentheses you define a single link of a path -- the starting node, the connecting relationship and the end node.
+This query finds the shortest path between two nodes, as long as the path is max 15 relationships long. 
+The path link (the starting node, the connecting relationships, and the end node) is defined within the parentheses. 
 Characteristics describing the relationship like relationship type, max hops and direction are all used when finding the shortest path.
 If there is a `WHERE` clause following the match of a `shortestPath`, relevant predicates will be included in the `shortestPath`.
 If the predicate is a `none()` or `all()` on the relationship elements of the path, it will be used during the search to improve performance (see xref::execution-plans/shortestpath-planning.adoc[Shortest path planning]).
+
+The query returns the following graph and text, showing the shortest possible path between the start node (`Martin Sheen`) and the end node (`Oliver Stone`):
+
+image:MATCH_shortestpath_example.svg[width="400"]
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | +p+
-| +(1)-[ACTED_IN,1]->(5)<-[DIRECTED,3]-(3)+
+| +│[{"name":"Martin Sheen"},{"role":"Carl Fox"},{"title":"Wall Street"},{│
+│"title":"Wall Street"},{},{"name":"Oliver Stone"}]                 +
 1+d|Rows: 1
 |===
-
 
 [[single-shortest-path-with-predicates]]
 === Single shortest path with predicates
@@ -755,13 +761,17 @@ WHERE none(r IN relationships(p) WHERE type(r) = 'FATHER')
 RETURN p
 ----
 
-This query will find the shortest path between *'Charlie Sheen'* and *'Martin Sheen'*, and the `WHERE` predicate will ensure that we do not consider the father/son relationship between the two.
+This query will find the shortest path between `Charlie Sheen` and `Martin Sheen`, and the `WHERE` predicate will ensure that we do not consider the father/son relationship between the two.
+
+It returns the following graph and text: 
+
+image:MATCH_shortestpath_with_predicates_example.svg[width="400"]
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | +p+
-| +(0)-[ACTED_IN,0]->(5)<-[ACTED_IN,1]-(1)+
+| +[{"name":"Charlie Sheen"},{"role":"Bud Fox"},{"title":"Wall Street"},{"title":"Wall Street"},{"role":"Carl Fox"},{"name":"Martin Sheen"}]+
 1+d|Rows: 1
 |===
 
@@ -769,7 +779,7 @@ This query will find the shortest path between *'Charlie Sheen'* and *'Martin Sh
 [[all-shortest-paths]]
 === All shortest paths
 
-Finds all the shortest paths between two nodes.
+Finding all shortest paths between two nodes can be done by using the `allShortestPaths` function. 
 
 .Query
 [source, cypher, indent=0]
@@ -781,23 +791,27 @@ MATCH
 RETURN p
 ----
 
-Finds the two shortest paths between *'Martin Sheen'* and *'Michael Douglas'*.
+This query finds the two shortest paths between `Martin Sheen` and `Michael Douglas`.
+
+It returns the following graph and text:
+
+image:MATCH_allshortestpaths_example.svg[width="400"]
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | +p+
-| +(1)-[ACTED_IN,1]->(5)<-[ACTED_IN,2]-(2)+
-| +(1)-[ACTED_IN,4]->(6)<-[ACTED_IN,5]-(2)+
+| +[{"name":"Martin Sheen"},{"role":"Carl Fox"},{"title":"Wall Street"},{"title":"Wall Street"},{"role":"Gordon Gekko"},{"name":"Michael Douglas"}]+
+| +[{"name":"Martin Sheen"},{"role":"A.J. MacInerney"},{"title":"The American President"},{"title":"The American President"},{"role":"President Andrew Shepherd"},{"name":"Michael Douglas"}]+
 1+d|Rows: 2
 |===
 
 
-[[get-node-rel-by-id]]
-== Get node or relationship by ID
+[[get-node-rel-by-elementid]]
+== Get node or relationship by elementId
 
-[[match-node-by-id]]
-=== Node by ID
+[[match-node-by-elementid]]
+=== Node by elementId
 
 Searching for nodes by ID can be done with the `elementId()` function in a predicate.
 
@@ -812,7 +826,7 @@ It is therefore recommended to rather use application-generated IDs.
 [source, cypher, indent=0]
 ----
 MATCH (n)
-WHERE elementId(n) = 0
+WHERE split(elementId(n), ":")[2] = "0"
 RETURN n
 ----
 
@@ -828,7 +842,7 @@ The corresponding node is returned.
 
 
 [[match-rel-by-id]]
-=== Relationship by ID
+=== Relationship by elementId
 
 Search for relationships by ID can be done with the `elementId()` function in a predicate.
 
@@ -839,7 +853,7 @@ See xref::clauses/match.adoc#match-node-by-id[Node by ID] for more information o
 [source, cypher, indent=0]
 ----
 MATCH ()-[r]->()
-WHERE elementId(r) = 0
+WHERE split(elementId(r), ":")[2] = "0"
 RETURN r
 ----
 
@@ -855,7 +869,7 @@ The relationship with ID `0` is returned.
 
 
 [[match-multiple-nodes-by-id]]
-=== Multiple nodes by ID
+=== Multiple nodes by elementId
 
 Multiple nodes are selected by specifying them in an `IN`-clause.
 
@@ -863,7 +877,7 @@ Multiple nodes are selected by specifying them in an `IN`-clause.
 [source, cypher, indent=0]
 ----
 MATCH (n)
-WHERE elementId(n) IN [0, 3, 5]
+WHERE split(elementId(n), ":")[2] IN ["0", "3", "5"] 
 RETURN n
 ----
 
