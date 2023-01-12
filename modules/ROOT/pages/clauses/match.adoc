@@ -358,21 +358,17 @@ Inside a single pattern, relationships will only be matched once. You can read m
 === Relationship types with uncommon characters
 
 Sometimes your database will have types with non-letter characters, or with spaces in them.
-Use `` (backtick) to quote these.
-To demonstrate this we can add an additional relationship between *'Charlie Sheen'* and *'Rob Reiner'*:
+Use ``` (backtick) to quote these.
+To demonstrate this we can add an additional relationship between `Martin Sheen` and `Rob Reiner` that contains a space:
 
 .Query
 [source, cypher, indent=0]
 ----
 MATCH
-  (charlie:Person {name: 'Charlie Sheen'}),
+  (charlie:Person {name: 'Martin Sheen'}),
   (rob:Person {name: 'Rob Reiner'})
-CREATE (rob)-[:`TYPE INCLUDING A SPACE`]->(charlie)
+CREATE (rob)-[:`OLD FRIENDS`]->(martin)
 ----
-
-Which leads to the following graph:
-
-image:graph_match_clause_backtick.svg[width="700"]
 
 ////
 CREATE
@@ -391,25 +387,23 @@ CREATE
   (michael)-[:ACTED_IN {role: 'President Andrew Shepherd'}]->(thePresident),
   (rob)-[:DIRECTED]->(thePresident)
 MATCH
-  (charlie:Person {name: 'Charlie Sheen'}),
+  (charlie:Person {name: 'Martin Sheen'}),
   (rob:Person {name: 'Rob Reiner'})
-CREATE (rob)-[:`TYPE INCLUDING A SPACE`]->(charlie)
+CREATE (rob)-[:`OLD FRIENDS`]->(martin)
 ////
 
 .Query
 [source, cypher, indent=0]
 ----
-MATCH (n {name: 'Rob Reiner'})-[r:`TYPE INCLUDING A SPACE`]->()
+MATCH (n {name: 'Rob Reiner'})-[r:`OLD FRIENDS`]->()
 RETURN type(r)
 ----
-
-Returns a relationship type with spaces in it.
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | +type(r)+
-| +"TYPE INCLUDING A SPACE"+
+| +"OLD FRIENDS"+
 1+d|Rows: 1
 |===
 
@@ -444,7 +438,7 @@ MATCH (charlie {name: 'Charlie Sheen'})-[:ACTED_IN]->(movie)<-[:DIRECTED]-(direc
 RETURN movie.title, director.name
 ----
 
-Returns the movie *'Charlie Sheen'* acted in and its director.
+Returns the movie `Charlie Sheen` acted in and its director.
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -550,9 +544,9 @@ Returns a list of relationships.
 === Match with properties on a variable length path
 
 A variable length relationship with properties defined on in it means that all relationships in the path must have the property set to the given value.
-In this query, there are two paths between *'Charlie Sheen'* and his father *'Martin Sheen'*.
-One of them includes a *'blocked'* relationship and the other does not.
-In this case we first alter the original graph by using the following query to add `BLOCKED` and `UNBLOCKED` relationships:
+
+The following query adds two new relationships between `Charlie Sheen` and his father `Martin Sheen`, where a `lead` property is added to the `:ACTED_IN` relationships.
+Thq query makes evident that both actors had a leading role in the movie *No Code of Conduct*, but only Martin Sheen had a leading role in the movie *Free Money*.
 
 .Query
 [source, cypher, indent=0]
@@ -560,8 +554,8 @@ In this case we first alter the original graph by using the following query to a
 MATCH
   (charlie:Person {name: 'Charlie Sheen'}),
   (martin:Person {name: 'Martin Sheen'})
-CREATE (charlie)-[:X {blocked: false}]->(:UNBLOCKED)<-[:X {blocked: false}]-(martin)
-CREATE (charlie)-[:X {blocked: true}]->(:BLOCKED)<-[:X {blocked: false}]-(martin)
+CREATE (charlie)-[:ACTED_IN {role: 'Bud', lead: true}]->(:Movie {title: 'Free Money'})<-[:ACTED_IN {role: 'lead:false}]-(martin)
+CREATE (charlie)-[:ACTED_IN {role: 'Jake Peterson', lead: true}]->(:Movie {title: 'No Code of Conduct})<-[:ACTED_IN {role: 'Bill Peterson', lead:true}]-(martin)
 ----
 
 This means that we are starting out with the following graph:
@@ -587,25 +581,31 @@ CREATE
 MATCH
   (charlie:Person {name: 'Charlie Sheen'}),
   (martin:Person {name: 'Martin Sheen'})
-CREATE (charlie)-[:X {blocked: false}]->(:UNBLOCKED)<-[:X {blocked: false}]-(martin);
-CREATE (charlie)-[:X {blocked: true}]->(:BLOCKED)<-[:X {blocked: false}]-(martin)
+CREATE (charlie)-[:ACTED_IN {role: 'Bud', lead: true}]->(:Movie {title: 'Free Money'})<-[:ACTED_IN {role: 'New Warden', lead:false}]-(martin);
+MATCH
+  (charlie:Person {name: 'Charlie Sheen'}),
+  (martin:Person {name: 'Martin Sheen'})
+CREATE (charlie)-[:ACTED_IN {role: 'Jake Peterson', lead: true}]->(:Movie {title: 'No Code of Conduct'})<-[:ACTED_IN {role: 'Bill Peterson', lead: true}]-(martin)
 ////
 
 .Query
 [source, cypher, indent=0]
 ----
-MATCH p = (charlie:Person)-[* {blocked:false}]-(martin:Person)
+MATCH p = (charlie:Person)-[* {lead:true}]-(martin:Person)
 WHERE charlie.name = 'Charlie Sheen' AND martin.name = 'Martin Sheen'
 RETURN p
 ----
 
-Returns the paths between *'Charlie Sheen'* and *'Martin Sheen'* where all relationships have the `blocked` property set to `false`.
+The above query finds the paths between `Charlie Sheen` and `Martin Sheen` where all relationships have the `lead` property set to `true`. 
+The following graph and text are returned:
+
+image:MATCH_properties_on_variable_length_path.svg[width="400"]
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | +p+
-| +(0)-[X,7]->(7)<-[X,8]-(1)+
+| +[{"name":"Charlie Sheen"},{"role":"Jake Peterson","lead":true},{"title":"No Code of Conduct"},{"title":"No Code of Conduct"},{"role":"Bill Peterson","lead":true},{"name":"Martin Sheen"}]+
 1+d|Rows: 1
 |===
 
@@ -702,8 +702,8 @@ This returns the two connected nodes, once as the start node, and once as the en
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
 | +a+ | +b+
-| +Node[0]{name:"Charlie Sheen"}+ | +Node[5]{title:"Wall Street"}+
-| +Node[5]{title:"Wall Street"}+ | +Node[0]{name:"Charlie Sheen"}+
+| +{name:"Charlie Sheen"}+ | +{title:"Wall Street"}+
+| +{title:"Wall Street"}+ | +{name:"Charlie Sheen"}+
 2+d|Rows: 2
 |===
 
@@ -846,9 +846,6 @@ The corresponding node is returned.
 
 Search for relationships by ID can be done with the `elementId()` function in a predicate.
 
-This is not the recommended practice.
-See xref::clauses/match.adoc#match-node-by-id[Node by ID] for more information on the use of Neo4j IDs.
-
 .Query
 [source, cypher, indent=0]
 ----
@@ -857,7 +854,7 @@ WHERE split(elementId(r), ":")[2] = "0"
 RETURN r
 ----
 
-The relationship with ID `0` is returned.
+The relationship with the elementId `0` is returned.
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
