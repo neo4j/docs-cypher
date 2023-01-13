@@ -1,32 +1,34 @@
-from functions import clean_state, extract_examples_from_asciidoc
-from neo4j import GraphDatabase
+from functions import clean_state, extract_examples_from_asciidoc, get_driver
 from neo4j.graph import Node, Relationship, Path
 from pathlib import Path
 import pytest
 
 """
 TO DO
-- command line argument for adoc files
+- command line argument for running on a list of files
+- command line argument for running on a directory
 - command line argument to specify docker image?
 - clean_state should clear everything, including indexes, alias, etc
-- make it runnable on a directory instead of a file
-- make it runnable on a list of files
+- handle result types: list, Path
 """
 
-URI = "neo4j://localhost:7687"
-AUTH = ("neo4j", "secret")
-driver = GraphDatabase.driver(URI, auth=AUTH)
-clean_state(driver)
 
-#all_files = Path('.').glob('**/*.adoc')
-filename = '../modules/ROOT/pages/clauses/where.adoc'
-asciidoc = open(filename).read()
-examples = extract_examples_from_asciidoc(asciidoc)
+filenames = Path('../').glob('**/clauses/match.adoc')
 
-@pytest.mark.parametrize(
-    "tag,query,docs_result", examples
-)
-def test_example(tag, query, docs_result):
+@pytest.mark.parametrize('filename', filenames)
+def test_file(subtests, filename):
+    # Init driver and clean test DB
+    driver = get_driver()
+    clean_state(driver)
+    asciidoc = open(filename).read()
+    examples = extract_examples_from_asciidoc(asciidoc)
+    for example in examples:
+        with subtests.test():
+            validate_example(driver, str(filename), tag=example[0], query=example[1], docs_result=example[2])
+    driver.close()
+
+
+def validate_example(driver, filename, tag, query, docs_result):
     print(f'\n== Tag `{tag}`')
     print(f'== Testing `{query}`')
     print(f'Docs result:\n{docs_result}')
@@ -43,21 +45,25 @@ def test_example(tag, query, docs_result):
     with driver.session(database='neo4j') as session:
         try:
             result = session.run(query)
-        except Exception:
-            assert 'test-fail' in tag, "Query raised exception, but it's not marked as test-fail in docs"
+        except Exception as exception:
+            assert 'test-fail' in tag, f"Query raised exception, but it's not marked as test-fail in docs\n{exception}"
             return
-                
+
+        if docs_result == None:  # no result to compare against
+            return True
+        
         records = list(result)
         for record in records:
             for (record_key, record_value) in record.items():
+                print(type(record_value))
                 if isinstance(record_value, Node):
                     assert is_node_in_result(record_value, docs_result)
                 elif isinstance(record_value, Relationship):
                     assert is_relationship_in_result(record_value, docs_result)
                 elif isinstance(record_value, Path):
                     pytest.skip(f'Example with path result\n{filename}\n{query}')
-                elif isinstance(record_value, str):
-                    assert is_property_in_result((record_key, record_value), docs_result)
+                elif isinstance(record_value, (str, int)):
+                    assert is_property_in_result((record_key, str(record_value)), docs_result)
                 elif record_value == None:  # for results where only _some_ fields are null
                     continue
                 else:
@@ -77,4 +83,4 @@ def is_property_in_result(prop, docs_result):
     return prop[1] in docs_result
 
 
-driver.close()
+#driver.close()

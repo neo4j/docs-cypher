@@ -1,4 +1,11 @@
+from neo4j import GraphDatabase
 import re
+
+def get_driver():
+    URI = "neo4j://localhost:7687"
+    AUTH = ("neo4j", "secret")
+    return GraphDatabase.driver(URI, auth=AUTH)
+    
 
 def clean_state(driver):
     print("clean database")
@@ -43,12 +50,16 @@ def extract_examples_from_asciidoc(asciidoc):
         result = result_pattern.search(asciidoc[location:])
         next_query = query_pattern.search(asciidoc[query.end():])
         
-        if result == None or result.start() > next_query.start():  # no result, or it belongs to next query
-            examples.append((query.group(1), query.group(2), None))
-            location += query.end()
-        else:  # result is of this query
+        if result != None and next_query == None:
             examples.append((query.group(1), query.group(2), result.group(1)))
             location += result.end()
+        elif result == None or result.start() > next_query.start():
+            examples.append((query.group(1), query.group(2), None))
+            location += query.end()
+        else:
+            examples.append((query.group(1), query.group(2), result.group(1)))
+            location += result.end()
+        
 
     #print(f'Found {len(examples)} examples in {filename}')
     return examples
