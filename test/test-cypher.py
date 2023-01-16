@@ -15,8 +15,7 @@ TO DO
 """
 
 
-filenames = Path('../').glob('**/clauses/match.adoc')
-filenames = Path('../').glob('**/pages/access-control/built-in-roles.adoc')
+filenames = Path('../').glob('**/clauses/*.adoc')
 
 
 @pytest.mark.parametrize('filename', filenames)  # each file spawns a TestClass
@@ -38,18 +37,12 @@ class TestClass:
         print(f'== Testing `{query}`')
         print(f'== Docs result:\n{docs_result}')
 
-        if 'test-skip' in tag:
-            pytest.skip(f'Example with role=test-skip\n{self.filename}\n{query}')
-        if '$' in query:
-            pytest.skip(f'Example with query parameters\n{self.filename}\n{query}')
-        if 'LOAD' in query and '.csv' in query:
-            pytest.skip(f'Example with csv loading\n{self.filename}\n{query}')
-        if 'elementId(' in query:
-            pytest.skip(f'Example with elementId\n{self.filename}\n{query}')
+        self.maybe_skip(tag, query)
 
         with self.driver.session(database='neo4j') as session:
             try:
-                result = session.run(query)
+                for query in query.split(';'):
+                    result = session.run(query)
             except Exception as exception:
                 assert 'test-fail' in tag, f"Query raised exception, but it's not marked as test-fail in docs\n{exception}"
                 return False
@@ -69,6 +62,19 @@ class TestClass:
                 for (record_key, record_value) in record.items():
                     self.validate_result(query, record_key, record_value, docs_result)
 
+    def maybe_skip(self, tag, query):
+        exclude_functions = ['date()', 'datetime()', 'localdatetime()', 'localtime()', 'time()', 'timestamp()', 'randomUUID()', 'elementId(']
+
+        if 'test-skip' in tag:
+            pytest.skip(f'Example with role=test-skip\n{self.filename}\n{query}')
+        if '$' in query:
+            pytest.skip(f'Example with query parameters\n{self.filename}\n{query}')
+        for function in exclude_functions:
+            if function in query:
+                pytest.skip(f'Example with {function}\n{self.filename}\n{query}')
+        if 'LOAD' in query and '.csv' in query:
+            pytest.skip(f'Example with csv loading\n{self.filename}\n{query}')
+
     # Test result by checking whether all properties values are found in docs result, somewhere.
     # For relationship, also check that relationship type is found.
     def validate_result(self, query, record_key, record_value, docs_result):
@@ -79,7 +85,7 @@ class TestClass:
         elif isinstance(record_value, neo4j.graph.Path):
             pytest.skip(f'Example with path result\n{self.filename}\n{query}')
         elif isinstance(record_value, (str, int, bool)):
-            self.is_property_in_result(record_key, str(record_value).lower(), docs_result.lower())
+            self.is_property_in_result(record_key, record_value, docs_result)
         elif isinstance(record_value, list):
             for element in record_value:
                 self.validate_result(query, record_key, element, docs_result)
@@ -88,12 +94,12 @@ class TestClass:
 
     def is_node_in_result(self, node, docs_result):
         for (key, value) in node.items():
-            assert value in docs_result
+            self.is_property_in_result(key, value, docs_result)
 
     def is_relationship_in_result(self, relationship, docs_result):
         assert relationship.type in docs_result
         for (key, value) in relationship.items():
-            assert value in docs_result
+            self.is_property_in_result(key, value, docs_result)
 
     def is_property_in_result(self, key, value, docs_result):
-        assert value in docs_result
+        assert str(value).lower() in docs_result.lower()

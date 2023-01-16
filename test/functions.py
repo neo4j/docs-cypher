@@ -13,8 +13,15 @@ def get_driver():
 def clean_database(driver):
     print("clean database")
     with driver.session(database='neo4j') as session:
-        session.run("MATCH (_) DETACH DELETE _").consume()
-        # should also delete indexes, constraints, etc
+        session.run("MATCH (_) DETACH DELETE _")
+        constraints = session.run('SHOW CONSTRAINTS')
+        for constraint in constraints:
+            print(constraint)
+            session.run(f'DROP CONSTRAINT {constraint.get("name")}')
+        constraints = session.run('SHOW INDEXES')
+        for constraint in constraints:
+            print(constraint)
+            session.run(f'DROP INDEX {constraint.get("name")}')
 
 
 def extract_examples_from_asciidoc(asciidoc):
