@@ -1,23 +1,35 @@
 from neo4j import GraphDatabase
 import re
 
+
+URI = "neo4j://localhost:7687"
+AUTH = ("neo4j", "secret")
+
+
 def get_driver():
-    URI = "neo4j://localhost:7687"
-    AUTH = ("neo4j", "secret")
     return GraphDatabase.driver(URI, auth=AUTH)
     
 
-def clean_state(driver):
+def clean_database(driver):
     print("clean database")
     with driver.session(database='neo4j') as session:
         session.run("MATCH (_) DETACH DELETE _").consume()
+        # should also delete indexes, constraints, etc
 
 
 def extract_examples_from_asciidoc(asciidoc):
-    # This pattern matches a query and a result found afterwards, skipping 
-    # any content found in between. Source page should always contain a result
-    # for each query. 
-    # Expected input is an asciidoc file from the Neo4j Cypher manual.
+    """
+    Extract a list of (tag, query, result) dicts from asciidoc input.
+
+    Example of one dict item: {
+      "tag": "[source, cypher, indent=0 role=test-skip]",
+      "query": "MATCH (director {name: 'Oliver Stone'})--(movie) RETURN movie.title",
+      "docs_result": "| +movie.title+
+                      | +'Wall Street'+
+                      1+d|Rows: 1"
+    }
+    """
+
     query_pattern = re.compile(r"""
     (?:                               # non-capturing group to match example opening
         (\[source,\s*cypher[^\]]*\])  # [source,cypher] and variations (whitespace, other attributes)
@@ -44,22 +56,39 @@ def extract_examples_from_asciidoc(asciidoc):
     """, re.MULTILINE | re.DOTALL | re.VERBOSE)
     #flat regex: (?:\[role="queryresult"[^\]]*\]\s*\|={3}\s*)(.*?)\s*\|\={3}
 
+    # Search for a query, a result, and the _next_ query.
+    # Pair query and result only if result occurs _before_ next query.
     examples = []
-    location = 0
+    location = 0  # keeps track of where the parser is
     while (query := query_pattern.search(asciidoc[location:])) is not None:
         result = result_pattern.search(asciidoc[location:])
         next_query = query_pattern.search(asciidoc[query.end():])
-        
-        if result != None and next_query == None:
-            examples.append((query.group(1), query.group(2), result.group(1)))
-            location += result.end()
-        elif result == None or result.start() > next_query.start():
-            examples.append((query.group(1), query.group(2), None))
+
+        if (result == None or
+           (next_query != None and result.start() > next_query.start())):
+            # result does not exist or does not belong to this query
+            examples.append({
+                'tag': query.group(1),
+                'query': query.group(2),
+                'docs_result': None
+            })
             location += query.end()
         else:
-            examples.append((query.group(1), query.group(2), result.group(1)))
+            # result belongs to this query
+            examples.append({
+                'tag': query.group(1),
+                'query': query.group(2),
+                'docs_result': result.group(1)
+            })
             location += result.end()
-        
 
-    #print(f'Found {len(examples)} examples in {filename}')
     return examples
+
+
+def extract_plan_operators(query_plan):
+    """
+    Extract operator list from a query plan output.
+    """
+
+    operator_pattern = re.compile(r'\+([A-Za-z]+)')
+    return operator_pattern.findall(query_plan)
