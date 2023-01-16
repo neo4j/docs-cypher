@@ -66,7 +66,6 @@ class TestClass:
             # Query was successful and there is a result to compare against -> validate result
             records = list(result)
             for record in records:
-                print(record)
                 for (record_key, record_value) in record.items():
                     self.validate_result(query, record_key, record_value, docs_result)
 
