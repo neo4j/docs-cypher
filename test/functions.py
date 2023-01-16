@@ -16,11 +16,9 @@ def clean_database(driver):
         session.run("MATCH (_) DETACH DELETE _")
         constraints = session.run('SHOW CONSTRAINTS')
         for constraint in constraints:
-            print(constraint)
             session.run(f'DROP CONSTRAINT {constraint.get("name")}')
         constraints = session.run('SHOW INDEXES')
         for constraint in constraints:
-            print(constraint)
             session.run(f'DROP INDEX {constraint.get("name")}')
 
 

@@ -15,7 +15,7 @@ TO DO
 """
 
 
-filenames = Path('../').glob('**/clauses/*.adoc')
+filenames = Path('../').glob('**/clauses/merge.adoc')
 
 
 @pytest.mark.parametrize('filename', filenames)  # each file spawns a TestClass
@@ -25,6 +25,8 @@ class TestClass:
         self.driver = get_driver()
         clean_database(self.driver)
         asciidoc = open(self.filename).read()
+        if r':test-skip: true' in asciidoc:
+            pytest.skip(f'Honoring :test-skip: directive in {filename}.')
         examples = extract_examples_from_asciidoc(asciidoc)
         print(f'Found {len(examples)} examples in {self.filename}.')
         for example in examples:

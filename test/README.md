@@ -2,6 +2,7 @@
 
 Each adoc file is a _test_, and each example contained in the file is a _subtest_. Database is cleaned up between tests (but not subtests).
 
+- If file has `:test-skip: true` directive, **skip**.
 - If example has `test-skip` in its source tag (ex. `[source, cypher, role=test-skip]`), **skip**.
 - If example has query parameters, **skip**.
 - If example has csv loading, **skip** (although we could test if csv is at a public URL).
@@ -27,8 +28,8 @@ pytest test-cypher.py -rs -v
 
 This will currently files as specified in the `filenames` var in `test-cypher.py`.
 
-**Queries that set the stage for the page examples** should appear before the examples that need the data, and **should be included in a `[source, cypher]` block**, optionally marked with `role=test-setup` (although, as of now, the marking has no special effect). 
-Hide them from display with `////` as an asciidoc comment. 
+**Queries that set the stage for the page examples** should appear before the examples that need the data, and **should be included in a `[source, cypher]` block**, optionally marked with `role=test-setup` (although, as of now, the marking has no special effect).
+Hide them from display with `////` as an asciidoc comment.
 For example,
 
 ```
