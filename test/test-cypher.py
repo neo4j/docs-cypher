@@ -16,6 +16,7 @@ TO DO
 
 
 filenames = Path('../').glob('**/clauses/match.adoc')
+filenames = Path('../').glob('**/pages/access-control/built-in-roles.adoc')
 
 
 @pytest.mark.parametrize('filename', filenames)  # each file spawns a TestClass
@@ -41,7 +42,7 @@ class TestClass:
             pytest.skip(f'Example with role=test-skip\n{self.filename}\n{query}')
         if '$' in query:
             pytest.skip(f'Example with query parameters\n{self.filename}\n{query}')
-        if '.csv' in query:
+        if 'LOAD' in query and '.csv' in query:
             pytest.skip(f'Example with csv loading\n{self.filename}\n{query}')
         if 'elementId(' in query:
             pytest.skip(f'Example with elementId\n{self.filename}\n{query}')
