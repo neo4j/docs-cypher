@@ -5,7 +5,7 @@ Each adoc file is a _test_, and each example contained in the file is a _subtest
 - If example has `test-skip` in its source tag (ex. `[source, cypher, role=test-skip]`), **skip**.
 - If example has query parameters, **skip**.
 - If example has csv loading, **skip** (although we could test if csv is at a public URL).
-- If example has `elementId` in its query, **skip**.
+- If example has any of Cypher's untestable functions (either related to current time or to random returns) in its query, **skip**. The list `['date', 'datetime', 'localdatetime', 'localtime', 'time', 'timestamp', 'randomUUID', 'elementId']`. Fixed times are tested.
 - If example has no result attached in the docs and running the example does not raise an error, **pass**.
 - If running the example fails, and example does not have `test-fail` in its source tag (ex. `[source, cypher, role=test-fail]`), **fail**.
 - If example has a result attached in the docs, **pass** if all _property values_ returned by actually running the query are found in the docs output (all lowercase). For relationship objects, check that relationship type is also present.
