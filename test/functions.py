@@ -1,9 +1,10 @@
 from neo4j import GraphDatabase
 import re
+import os
 
 
-URI = "neo4j://localhost:7687"
-AUTH = ("neo4j", "secret")
+URI = os.getenv('NEO4J_URI', 'neo4j://localhost:7687')
+AUTH = (os.getenv('NEO4J_USER', 'neo4j'), os.getenv('NEO4J_PASSWORD', 'secret'))
 
 
 def get_driver():
@@ -11,7 +12,10 @@ def get_driver():
     
 
 def clean_database(driver):
-    print("clean database")
+    """
+    Delete data, constraints, indexes, aliases.
+    """
+
     with driver.session(database='neo4j') as session:
         session.run("MATCH (_) DETACH DELETE _")
         constraints = session.run('SHOW CONSTRAINTS')
@@ -20,6 +24,9 @@ def clean_database(driver):
         constraints = session.run('SHOW INDEXES')
         for constraint in constraints:
             session.run(f'DROP INDEX {constraint.get("name")}')
+        aliases = session.run('SHOW ALIASES FOR DATABASE')
+        for alias in aliases:
+            session.run(f'DROP ALIAS {alias.get("name")} FOR DATABASE')
 
 
 def extract_examples_from_asciidoc(asciidoc):
@@ -37,7 +44,7 @@ def extract_examples_from_asciidoc(asciidoc):
 
     query_pattern = re.compile(r"""
     (?:                               # non-capturing group to match example opening
-        (\[source,\s*cypher[^\]]*\])  # [source,cypher] and variations (whitespace, other attributes)
+        (\[source,\s*cypher[^\]]*\])  # [source,cypher] and variations (whitespace, attributes)
         \s*                           # line break and any white space
         -{4}                          # 4 opening dashes
         \s*                           # line break and any white space
@@ -50,7 +57,7 @@ def extract_examples_from_asciidoc(asciidoc):
     
     result_pattern = re.compile(r"""
     (?:                               # non-capturing group to match result opening
-        \[role="queryresult"[^\]]*\]  # [role="queryresult"] and variations (whitespace, other attributes)
+        \[role="queryresult"[^\]]*\]  # [role="queryresult"] and variations (whitespace, attributes)
         \s*                           # line break and any white space
         \|={3}                        # opening |===
         \s*                           # line break and any white space

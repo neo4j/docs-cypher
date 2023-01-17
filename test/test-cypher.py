@@ -8,14 +8,11 @@ import pytest
 TO DO
 - command line argument for running on a list of files
 - command line argument for running on a directory
-- command line argument to specify docker image?
-- take neo4j credentials from ENV variables?
-- clean_database should clear everything, including indexes, alias, etc
 - handle result types: Path
 """
 
 
-filenames = Path('../').glob('**/clauses/merge.adoc')
+filenames = Path('../').glob('**/aliases.adoc')
 
 
 @pytest.mark.parametrize('filename', filenames)  # each file spawns a TestClass
@@ -35,7 +32,8 @@ class TestClass:
         self.driver.close()
 
     def run_example(self, tag, query, docs_result):
-        print(f'\n== Tag `{tag}`')
+        print(f'\n== File `{self.filename}`')
+        print(f'== Tag `{tag}`')
         print(f'== Testing `{query}`')
         print(f'== Docs result:\n{docs_result}')
 
@@ -46,7 +44,7 @@ class TestClass:
                 for query in query.split(';'):
                     result = session.run(query)
             except Exception as exception:
-                assert 'test-fail' in tag, f"Query raised exception, but it's not marked as test-fail in docs\n{exception}"
+                assert 'test-fail' in tag, f"Query {query} failed, but it's not marked as test-fail in docs.\n{exception}"
                 return False
 
             if docs_result == None:  # no result to compare against, test ends here
