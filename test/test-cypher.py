@@ -14,7 +14,7 @@ TO DO
 path = os.getenv('CYPHER_TEST_PATH', 'modules/ROOT/**/*.adoc').split(',')
 filenames = []
 for filename in path:
-    filenames += glob(filename, recursive=True)
+    filenames += glob(filename.strip(), recursive=True)
 print(f'Testing the following files: {filenames}.')
 
 

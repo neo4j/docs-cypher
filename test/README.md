@@ -1,5 +1,7 @@
 # Test criterias
 
+Same info as below, but visually: https://miro.com/app/board/uXjVPxqGnVI=/?share_link_id=353162696775
+
 Each adoc file is a _test_, and each example contained in the file is a _subtest_. Database is cleaned up between tests (but not subtests).
 
 - If file has `:test-skip: true` directive, **skip**.
@@ -28,13 +30,14 @@ pip install -r requirements.txt
 
 Set your Neo4j password in the environment variables and run tests with:
 ```bash
-cd test
 export NEO4J_PASSWORD='verysecret'
 pytest test-cypher.py --tb=short -rs
 ```
 where `--tb=short` will make the report for each error more succinct and to the point, and `-rs` displays info about skipped tests.
 
-You can provide a list paths to be tested through the environment variable `CYPHER_TEST_PATH`. By default it will test all `.adoc` files in `modules/ROOT`, recursively. For example, `export CYPHER_TEST_PATH='modules/ROOT/**/clauses/*.adoc,modules/ROOT/**/aliases.adoc'` will result in all clauses content AND the aliases page to be tested.
+By default, all `.adoc` files in `modules/ROOT` are (recursively) gathered for testing.
+You can provide a list of comma-separated paths to be tested through the environment variable `CYPHER_TEST_PATH`. Paths are recursively expanded through [`glob`](https://docs.python.org/3/library/glob.html), so you can use wildcards. Paths are either relative to the location where you run tests, or absolute.
+For example, `export CYPHER_TEST_PATH='modules/ROOT/**/clauses/*.adoc, modules/ROOT/**/aliases.adoc'` will result in all clauses content AND the aliases page to be tested.
 
 If Neo4j is not running on localhost, or if the username is not `neo4j`, you can specify different values:
 ```bash
