@@ -34,7 +34,7 @@ pytest test-cypher.py --tb=short -rs
 ```
 where `--tb=short` will make the report for each error more succinct and to the point, and `-rs` displays info about skipped tests.
 
-The list of filenames to be tested currently lives in the `filenames` var at the top of `test-cypher.py`.
+You can provide a list paths to be tested through the environment variable `CYPHER_TEST_PATH`. By default it will test all `.adoc` files in `modules/ROOT`, recursively. For example, `export CYPHER_TEST_PATH='modules/ROOT/**/clauses/*.adoc,modules/ROOT/**/aliases.adoc'` will result in all clauses content AND the aliases page to be tested.
 
 If Neo4j is not running on localhost, or if the username is not `neo4j`, you can specify different values:
 ```bash
@@ -57,6 +57,4 @@ CREATE
 ````
 
 ### TO DO
-- command line argument for running on a list of files
-- command line argument for running on a directory
-- handle result types: Path
+- handle result types: Path (,date?)

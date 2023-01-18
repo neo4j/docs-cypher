@@ -1,18 +1,21 @@
 from functions import *
 import neo4j
-from pathlib import Path
+from glob import glob
 import pytest
+import os
 
 
 """
 TO DO
-- command line argument for running on a list of files
-- command line argument for running on a directory
 - handle result types: Path
 """
 
 
-filenames = Path('../').glob('**/aliases.adoc')
+path = os.getenv('CYPHER_TEST_PATH', 'modules/ROOT/**/*.adoc').split(',')
+filenames = []
+for filename in path:
+    filenames += glob(filename, recursive=True)
+print(f'Testing the following files: {filenames}.')
 
 
 @pytest.mark.parametrize('filename', filenames)  # each file spawns a TestClass
@@ -44,7 +47,7 @@ class TestClass:
                 for query in query.split(';'):
                     result = session.run(query)
             except Exception as exception:
-                assert 'test-fail' in tag, f"Query {query} failed, but it's not marked as test-fail in docs.\n{exception}"
+                assert 'test-fail' in tag, f"Query failed, but it's not marked as test-fail in docs.\n{query}\n{exception}"
                 return False
 
             if docs_result == None:  # no result to compare against, test ends here

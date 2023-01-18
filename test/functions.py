@@ -20,13 +20,19 @@ def clean_database(driver):
         session.run("MATCH (_) DETACH DELETE _")
         constraints = session.run('SHOW CONSTRAINTS')
         for constraint in constraints:
-            session.run(f'DROP CONSTRAINT {constraint.get("name")}')
+            session.run(f'DROP CONSTRAINT `{constraint.get("name")}`')
         constraints = session.run('SHOW INDEXES')
         for constraint in constraints:
-            session.run(f'DROP INDEX {constraint.get("name")}')
+            session.run(f'DROP INDEX `{constraint.get("name")}`')
         aliases = session.run('SHOW ALIASES FOR DATABASE')
         for alias in aliases:
-            session.run(f'DROP ALIAS {alias.get("name")} FOR DATABASE')
+            session.run(f'DROP ALIAS `{alias.get("name")}` FOR DATABASE')
+        aliases = session.run('SHOW ALIASES FOR DATABASE')
+        for alias in aliases:
+            session.run(f'DROP ALIAS `{alias.get("name")}` FOR DATABASE')
+        databases = session.run('SHOW DATABASES WHERE NOT name IN ["neo4j", "system"]')
+        for database in databases:
+            session.run(f'DROP DATABASE `{database.get("name")}`')
 
 
 def extract_examples_from_asciidoc(asciidoc):
