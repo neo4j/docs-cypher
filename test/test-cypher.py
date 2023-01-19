@@ -3,6 +3,7 @@ import neo4j
 from glob import glob
 import pytest
 import os
+import warnings
 
 
 """
@@ -24,6 +25,7 @@ class TestClass:
         self.filename = filename
         self.driver = get_driver()
         clean_database(self.driver)
+        self.bookmark_manager = GraphDatabase.bookmark_manager()  # to force queries to run in sequence
         asciidoc = open(self.filename).read()
         if r':test-skip: true' in asciidoc:
             pytest.skip(f'Honoring :test-skip: directive in {filename}.')
@@ -32,6 +34,7 @@ class TestClass:
         for example in examples:
             with subtests.test():
                 self.run_example(**example)  # unwrap dict item
+                #sleep(0.2)  # for server to register changes (especially for db creations)
         self.driver.close()
 
     def run_example(self, tag, query, docs_result):
@@ -44,31 +47,28 @@ class TestClass:
 
         # Allow semicolon to split statements.
         # Don't abuse of it, only use it for setup blocks.
-        # If one setup query fails, the ones after are ignored (because of assert in except).
-        for query in query.split(';'):
-            if query == '':  # empty lines, or semicolon after last statement
+        for statement in query.split(';'):
+            statement = statement.strip()
+            if statement == '':  # empty lines, or semicolon after last statement
+                continue
+            try:
+                (records, result_summary) = self.run_statement(tag, statement)
+            except Exception as exception:
+                assert 'test-fail' in tag, f"Query failed, but it's not marked as test-fail in docs.\n{statement}\n{exception}"
                 continue
 
-            with self.driver.session(database='neo4j') as session:
-                try:
-                    result = session.run(query)
-                    records = list(result)
-                except Exception as exception:
-                    assert 'test-fail' in tag, f"Query failed, but it's not marked as test-fail in docs.\n{query}\n{exception}"
-                    continue
+            if docs_result == None:  # no result to compare against, test ends here
+                continue
 
-                if docs_result == None:  # no result to compare against, test ends here
-                    continue
-
-                # Query was successful and there is a result to compare against -> validate result
-                if 'PROFILE' in query:
-                    # profile queries are tested by comparing operators list
-                    query_plan = result.consume().profile['args']['string-representation']
-                    assert extract_plan_operators(docs_result) == extract_plan_operators(query_plan)
-                else:
-                    for record in records:
-                        for (record_key, record_value) in record.items():
-                            self.validate_result(query, record_key, record_value, docs_result)
+            # Query was successful and there is a result to compare against -> validate result
+            if 'PROFILE' in query:
+                # profile queries are tested by comparing operators list
+                query_plan = result_summary.profile['args']['string-representation']
+                assert extract_plan_operators(docs_result) == extract_plan_operators(query_plan)
+            else:
+                for record in records:
+                    for (record_key, record_value) in record.items():
+                        self.validate_result(query, record_key, record_value, docs_result)
 
     def maybe_skip(self, tag, query):
         exclude_functions = ['date()', 'datetime()', 'localdatetime()', 'localtime()', 'time()', 'timestamp()', 'randomUUID()', 'elementId(']
@@ -82,6 +82,20 @@ class TestClass:
                 pytest.skip(f'Example with {function}\n{self.filename}\n{query}')
         if 'LOAD' in query and '.csv' in query:
             pytest.skip(f'Example with csv loading\n{self.filename}\n{query}')
+
+    def run_statement(self, tag, statement):
+        with self.driver.session(database='neo4j', bookmark_manager=self.bookmark_manager) as session:
+            try:
+                result = session.run(statement)
+                records = list(result)
+                result_summary = result.consume()
+                return (records, result_summary)
+            except Exception as exception:
+                if 'test-setup' in tag:
+                    warnings.warn(UserWarning(f'Failed statement in setup block.\n{statement}\n{exception}'))
+                    return ([], None)  # fake result so next setup statement will run
+                else:
+                    raise exception
 
     # Test result by checking whether all properties values are found in docs result, somewhere.
     # For relationship, also check that relationship type is found.

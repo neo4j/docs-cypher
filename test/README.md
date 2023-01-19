@@ -29,9 +29,9 @@ pip install -r requirements.txt
 Set your Neo4j password in the environment variables and run tests with:
 ```bash
 export NEO4J_PASSWORD='verysecret'
-pytest test-cypher.py --tb=short -rs
+pytest test-cypher.py --tb=short
 ```
-where `--tb=short` will make the report for each error more succinct and to the point, and `-rs` displays info about skipped tests. For debugging, it can be useful to append `-s`, which will avoid pytest to buffer/suppress some output.
+where `--tb=short` will make the report for each error more succinct. For debugging, it can be useful to append `-s`, which will avoid pytest to buffer/suppress some output, and `-rs` to display info about skipped tests.
 
 
 ## Specify files to test
