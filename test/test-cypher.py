@@ -7,7 +7,7 @@ import os
 
 """
 TO DO
-- handle result types: Path
+- handle result types: Path, dict
 """
 
 
@@ -42,28 +42,33 @@ class TestClass:
 
         self.maybe_skip(tag, query)
 
-        with self.driver.session(database='neo4j') as session:
-            try:
-                for query in query.split(';'):
+        # Allow semicolon to split statements.
+        # Don't abuse of it, only use it for setup blocks.
+        # If one setup query fails, the ones after are ignored (because of assert in except).
+        for query in query.split(';'):
+            if query == '':  # empty lines, or semicolon after last statement
+                continue
+
+            with self.driver.session(database='neo4j') as session:
+                try:
                     result = session.run(query)
-            except Exception as exception:
-                assert 'test-fail' in tag, f"Query failed, but it's not marked as test-fail in docs.\n{query}\n{exception}"
-                return False
+                    records = list(result)
+                except Exception as exception:
+                    assert 'test-fail' in tag, f"Query failed, but it's not marked as test-fail in docs.\n{query}\n{exception}"
+                    continue
 
-            if docs_result == None:  # no result to compare against, test ends here
-                return True
+                if docs_result == None:  # no result to compare against, test ends here
+                    continue
 
-            if 'PROFILE' in query:
-                # profile queries are tested by comparing operators list
-                query_plan = result.consume().profile['args']['string-representation']
-                assert extract_plan_operators(docs_result) == extract_plan_operators(query_plan)
-                return
-
-            # Query was successful and there is a result to compare against -> validate result
-            records = list(result)
-            for record in records:
-                for (record_key, record_value) in record.items():
-                    self.validate_result(query, record_key, record_value, docs_result)
+                # Query was successful and there is a result to compare against -> validate result
+                if 'PROFILE' in query:
+                    # profile queries are tested by comparing operators list
+                    query_plan = result.consume().profile['args']['string-representation']
+                    assert extract_plan_operators(docs_result) == extract_plan_operators(query_plan)
+                else:
+                    for record in records:
+                        for (record_key, record_value) in record.items():
+                            self.validate_result(query, record_key, record_value, docs_result)
 
     def maybe_skip(self, tag, query):
         exclude_functions = ['date()', 'datetime()', 'localdatetime()', 'localtime()', 'time()', 'timestamp()', 'randomUUID()', 'elementId(']

@@ -9,7 +9,7 @@ AUTH = (os.getenv('NEO4J_USER', 'neo4j'), os.getenv('NEO4J_PASSWORD', 'secret'))
 
 def get_driver():
     return GraphDatabase.driver(URI, auth=AUTH)
-    
+
 
 def clean_database(driver):
     """
@@ -26,10 +26,12 @@ def clean_database(driver):
             session.run(f'DROP INDEX `{constraint.get("name")}`')
         aliases = session.run('SHOW ALIASES FOR DATABASE')
         for alias in aliases:
-            session.run(f'DROP ALIAS `{alias.get("name")}` FOR DATABASE')
-        aliases = session.run('SHOW ALIASES FOR DATABASE')
-        for alias in aliases:
-            session.run(f'DROP ALIAS `{alias.get("name")}` FOR DATABASE')
+            # aliases for composite databases need to be escaped separately
+            # ex. `my-composite-database-with-dashes`.`my alias with spaces`
+            escaped_name = '`'+alias.get('name')+'`'
+            if '.' in escaped_name:  # composite database alias. If not, we're screwed
+                escaped_name = '`'+'`.`'.join(alias.get('name').split('.'))+'`'
+            session.run(f'DROP ALIAS {escaped_name} FOR DATABASE')
         databases = session.run('SHOW DATABASES WHERE NOT name IN ["neo4j", "system"]')
         for database in databases:
             session.run(f'DROP DATABASE `{database.get("name")}`')
@@ -60,7 +62,7 @@ def extract_examples_from_asciidoc(asciidoc):
     -{4}                              # 4 closing dashes
     """, re.MULTILINE | re.DOTALL | re.VERBOSE)
     # flat regex: (?:\[source,\s*cypher([^\]]*)\]\s*-{4}\s*)([^\$]*?)\s*-{4}
-    
+
     result_pattern = re.compile(r"""
     (?:                               # non-capturing group to match result opening
         \[role="queryresult"[^\]]*\]  # [role="queryresult"] and variations (whitespace, attributes)

@@ -17,14 +17,12 @@ Each adoc file is a _test_, and each example contained in the file is a _subtest
 
 All in all, record types whose validation is supported are: `Node`, `Relationship`, `string`, `int`, `bool`, `list`.
 
-# Usage
-You need a running Neo4j instance.
 
-Create a local environment and install packages (once only):
+# Usage
+**You need a running Neo4j Enterprise Edition instance.**
+
+Install required packages (once only):
 ```bash
-python3 -m venv ~/virtualenvs/testing_env
-source ~/virtualenvs/testing_env/bin/activate
-python3 -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
@@ -33,7 +31,10 @@ Set your Neo4j password in the environment variables and run tests with:
 export NEO4J_PASSWORD='verysecret'
 pytest test-cypher.py --tb=short -rs
 ```
-where `--tb=short` will make the report for each error more succinct and to the point, and `-rs` displays info about skipped tests.
+where `--tb=short` will make the report for each error more succinct and to the point, and `-rs` displays info about skipped tests. For debugging, it can be useful to append `-s`, which will avoid pytest to buffer/suppress some output.
+
+
+## Specify files to test
 
 By default, all `.adoc` files in `modules/ROOT` are (recursively) gathered for testing.
 You can provide a list of comma-separated paths to be tested through the environment variable `CYPHER_TEST_PATH`. Paths are recursively expanded through [`glob`](https://docs.python.org/3/library/glob.html), so you can use wildcards. Paths are either relative to the location where you run tests, or absolute.
@@ -44,7 +45,9 @@ If Neo4j is not running on localhost, or if the username is not `neo4j`, you can
 export NEO4J_URI='neo4j+s://auradb.neo4j.com' NEO4J_USER='neo4p'
 ```
 
-**Queries that set the stage for the page examples** should appear before the examples that need the data, and **should be included in a `[source, cypher]` block**, optionally marked with `role=test-setup` (although, as of now, the marking has no special effect).
+## Setup queries
+
+**Queries that set the stage for the page examples** should appear before the examples that need the data, and **should be included in a `[source, cypher]` block**, optionally marked with `role=test-setup` (although, as of now, the marking has no special effect). Separate statements with a semicolon. If one query fails, all subsequent setup queries will be ignored, so it is important that the setup doesn't raise errors.
 Hide them from display with `////` as an asciidoc comment.
 For example,
 ```
@@ -54,10 +57,11 @@ For example,
 CREATE
   (charlie:Person {name: 'Charlie Sheen'}),
   (martin:Person {name: 'Martin Sheen'}),
-  (michael:Person {name: 'Michael Douglas'})
+  (michael:Person {name: 'Michael Douglas'});
+CREATE (matrix:Movie {name: 'Matrix'});
 ----
 ////
 ````
 
-### TO DO
-- handle result types: Path (,date?)
+# TO DO
+- handle result types: Path, dict (,date?)
