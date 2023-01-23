@@ -9,54 +9,102 @@ The `DELETE` clause is used to delete nodes, relationships or paths.
 --
 
 For removing properties and labels, see xref::clauses/remove.adoc[REMOVE].
-Remember that you cannot delete a node without also deleting relationships that start or end on said node.
-Either explicitly delete the relationships, or use `DETACH DELETE`.
+It is not possible to delete a node without also deleting the relationships connected to it.
+This can be done by either explictly deleting the relations, or by using the `DETACH DELETE` clause. 
 
-The examples start out with the following database:
+The following graph is used for the examples below. 
+It shows four actors, three of whom `ACTED_IN` the `Movie` `The Matrix` (`Keanu Reeves`, `Carrie-Anne Moss`, and `Laurence Fishburne`), and one actor who did not act in it (`Tom Hanks`).
 
-image:graph_delete_clause.svg[]
+image::graph_delete_clause.svg[width="500",role="middle"]
 
-////
+To recreate the graph, run the following query in an empty Neo4j database: 
+
+[source, cypher, role=test-setup]
+----
 CREATE
-  (a:Person {name: 'Andy', age: 36}),
-  (p:Person {name: 'Timothy', age: 25}),
-  (t:Person {name: 'Peter', age: 34}),
-  (z:Person {name: 'UNKNOWN'}),
-  (a)-[:KNOWS]->(t),
-  (a)-[:KNOWS]->(p)
-////
-
+  (keanu:Person {name: 'Keanu Reever'}),
+  (laurence:Person {name: 'Laurence Fishburne'}),
+  (carrie:Person {name: 'Carrie-Anne Moss'}),
+  (tom:Person {name: 'Tom Hanks'}),
+  (theMatrix:Movie {title: 'The Matrix'}),
+  (keanu)-[:ACTED_IN]->(theMatrix),
+  (laurence)-[:ACTED_IN]->(theMatrix),
+  (carrie)-[:ACTED_IN]->(theMatrix)
+----
 
 [[delete-delete-single-node]]
 == Delete single node
 
-To delete a node, use the `DELETE` clause.
+To delete a single node, use the `DELETE` clause.
 
 .Query
 [source, cypher, indent=0]
 ----
-MATCH (n:Person {name: 'UNKNOWN'})
+MATCH (n:Person {name: 'Tom Hanks'})
 DELETE n
 ----
 
+This deletes the `Person` node `Tom Hanks`.
+This query is only possible to run on nodes without any relationships connected to it. 
+
 .Result
 [role="queryresult",options="footer",cols="1*<m"]
-|===
-1+|(empty result)
-1+d|Rows: 0 +
-Nodes deleted: 1
-|===
+----
+Deleted 1 node
+----
+
+[[delete-delete-relationships-only]]
+== Delete relationships only
+
+It is possible to only delete relationships, leaving the node(s) connected to those relationships otherwise unaffected.
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n:Person {name: 'Laurence Fishburne'})-[r:ACTED_IN]->()
+DELETE r
+----
+
+This deletes all outgoing `ACTED_IN` relationships from the `Person` node `Laurence Fishburne`, without deleting the node. 
+
+.Result
+[role="queryresult",options="footer",cols="1*<m"]
+----
+Deleted 1 relationship
+----
+
+
+[[delete-delete-a-node-with-all-its-relationships]]
+== Delete a node with all its relationships
+
+To delete a node and any relationships connected to it, use the `DETACH DELETE` clause.
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n:Person {name: 'Carrie-Anne Moss'})
+DETACH DELETE n
+----
+
+This deletes the `Person` node `Carrie-Anne Moss` and all relationships connected to it. 
+
+.Result
+[role="queryresult",options="footer",cols="1*<m"]
+----
+Deleted 1 node, deleted 1 relationship,
+----
+
+[NOTE]
+====
+The `DETACH DELETE` clause may not be permitted to users with restricted security privileges. 
+For more information, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/access-control#detach-delete-restricted-user[Operations Manual -> Fine-grained access control].
+====
 
 
 [[delete-delete-all-nodes-and-relationships]]
 == Delete all nodes and relationships
 
-[IMPORTANT]
-====
-This query is not for deleting large amounts of data, but is useful when experimenting with small example data sets.
-
-When deleting large amounts of data, use xref::clauses/call-subquery.adoc#delete-with-call-in-transactions[`+CALL { ... } IN TRANSACTIONS+`].
-====
+It is possible to delete all nodes and relationships in a graph. 
 
 .Query
 [source, cypher, indent=0]
@@ -67,60 +115,12 @@ DETACH DELETE n
 
 .Result
 [role="queryresult",options="footer",cols="1*<m"]
-|===
-1+|(empty result)
-1+d|Rows: 0 +
-Nodes deleted: 4 +
-Relationships deleted: 2
-|===
-
-
-[[delete-delete-a-node-with-all-its-relationships]]
-== Delete a node with all its relationships
-
-When you want to delete a node and any relationship going to or from it, use `DETACH DELETE`.
-
-.Query
-[source, cypher, indent=0]
 ----
-MATCH (n {name: 'Andy'})
-DETACH DELETE n
+Deleted 3 nodes, deleted 1 relationship
 ----
-
-.Result
-[role="queryresult",options="footer",cols="1*<m"]
-|===
-1+|(empty result)
-1+d|Rows: 0 +
-Nodes deleted: 1 +
-Relationships deleted: 2
-|===
 
 [NOTE]
 ====
-For `DETACH DELETE` for users with restricted security privileges, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/access-control#detach-delete-restricted-user[Operations Manual -> Fine-grained access control].
+This query is not for deleting large amounts of data, but is useful when experimenting with small example data sets.
+When deleting large amounts of data, instead use xref::clauses/call-subquery.adoc#delete-with-call-in-transactions[`+CALL { ... } IN TRANSACTIONS+`].
 ====
-
-
-[[delete-delete-relationships-only]]
-== Delete relationships only
-
-It is also possible to delete relationships only, leaving the node(s) otherwise unaffected.
-
-.Query
-[source, cypher, indent=0]
-----
-MATCH (n {name: 'Andy'})-[r:KNOWS]->()
-DELETE r
-----
-
-This deletes all outgoing `KNOWS` relationships from the node with the name *'Andy'*.
-
-.Result
-[role="queryresult",options="footer",cols="1*<m"]
-|===
-1+|(empty result)
-1+d|Rows: 0 +
-Relationships deleted: 2
-|===
-
