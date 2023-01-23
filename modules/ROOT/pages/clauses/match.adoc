@@ -35,10 +35,10 @@ The `MATCH` clause is used to search for the pattern described in it.
  ** xref::clauses/match.adoc#single-shortest-path[Single shortest path]
  ** xref::clauses/match.adoc#single-shortest-path-with-predicates[Single shortest path with predicates]
  ** xref::clauses/match.adoc#all-shortest-paths[All shortest paths]
-* xref::clauses/match.adoc#get-node-rel-by-id[Get node or relationship by ID]
- ** xref::clauses/match.adoc#match-node-by-id[Node by ID]
- ** xref::clauses/match.adoc#match-rel-by-id[Relationship by ID]
- ** xref::clauses/match.adoc#match-multiple-nodes-by-id[Multiple nodes by ID]
+* xref::clauses/match.adoc#get-node-rel-by-id[Get node or relationship by elementId]
+ ** xref::clauses/match.adoc#match-node-by-id[Node by elementId]
+ ** xref::clauses/match.adoc#match-rel-by-id[Relationship by elementId]
+ ** xref::clauses/match.adoc#match-multiple-nodes-by-id[Multiple nodes by elementId]
 
 
 [[match-introduction]]
@@ -66,14 +66,18 @@ Read more about indexes in xref::indexes-for-search-performance.adoc[], and more
 
 [TIP]
 ====
-To understand more about the patterns used in the `MATCH` clause, read xref::syntax/patterns.adoc[Patterns]
+To understand more about the patterns used in the `MATCH` clause, read the chapter on xref::syntax/patterns.adoc[Patterns].
 ====
 
 The following graph is used for the examples below:
 
-image:graph_match_clause.svg[]
+image::graph_match_clause.svg[width="600",role="middle"]
 
-////
+
+To recreate the graph, run the following query in an empty Neo4j database: 
+
+[source, cypher, role=test-setup]
+----
 CREATE
   (charlie:Person {name: 'Charlie Sheen'}),
   (martin:Person {name: 'Martin Sheen'}),
@@ -88,8 +92,10 @@ CREATE
   (thePresident:Movie {title: 'The American President'}),
   (martin)-[:ACTED_IN {role: 'A.J. MacInerney'}]->(thePresident),
   (michael)-[:ACTED_IN {role: 'President Andrew Shepherd'}]->(thePresident),
-  (rob)-[:DIRECTED]->(thePresident)
-////
+  (rob)-[:DIRECTED]->(thePresident),
+  (martin)-[:FATHER_OF]->(charlie)
+----
+
 
 [[basic-node-finding]]
 == Basic node finding
@@ -97,7 +103,7 @@ CREATE
 [[get-all-nodes]]
 === Get all nodes
 
-By just specifying a pattern with a single node and no labels, all nodes in the graph will be returned.
+By specifying a pattern with a single node and no labels, all nodes in the graph will be returned.
 
 .Query
 [source, cypher, indent=0]
@@ -112,13 +118,13 @@ Returns all the nodes in the database.
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | +n+
-| +Node[0]{name:"Charlie Sheen"}+
-| +Node[1]{name:"Martin Sheen"}+
-| +Node[2]{name:"Michael Douglas"}+
-| +Node[3]{name:"Oliver Stone"}+
-| +Node[4]{name:"Rob Reiner"}+
-| +Node[5]{title:"Wall Street"}+
-| +Node[6]{title:"The American President"}+
+| +{"name":"Charlie Sheen"}+
+| +{"name":"Martin Sheen"}+
+| +{"name":"Michael Douglas"}+
+| +{"name":"Oliver Stone"}+
+| +{"name":"Rob Reiner"}+
+| +{"title":"Wall Street"}+
+| +{"title":"The American President"}+
 1+d|Rows: 7
 |===
 
@@ -126,7 +132,7 @@ Returns all the nodes in the database.
 [[get-all-nodes-with-label]]
 === Get all nodes with a label
 
-Getting all nodes with a label on them is done with a single node pattern where the node has a label on it.
+Find all nodes with a specific label: 
 
 .Query
 [source, cypher, indent=0]
@@ -135,7 +141,7 @@ MATCH (movie:Movie)
 RETURN movie.title
 ----
 
-Returns all the movies in the database.
+Returns all the nodes with the `Movie` label in the database.
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
@@ -159,7 +165,7 @@ MATCH (director {name: 'Oliver Stone'})--(movie)
 RETURN movie.title
 ----
 
-Returns all the movies directed by *'Oliver Stone'*.
+Returns all the movies directed by `Oliver Stone`.
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
@@ -173,7 +179,7 @@ Returns all the movies directed by *'Oliver Stone'*.
 [[match-with-labels]]
 === Match with labels
 
-To constrain your pattern with labels on nodes, you add it to your pattern nodes, using the label syntax.
+To constrain a pattern with labels on nodes, add the labels to the nodes in the pattern.
 
 .Query
 [source, cypher, indent=0]
@@ -182,7 +188,7 @@ MATCH (:Person {name: 'Oliver Stone'})--(movie:Movie)
 RETURN movie.title
 ----
 
-Returns any nodes connected with the `Person` *'Oliver'* that are labeled `Movie`.
+Returns any nodes with the `Movie` label connected to `Oliver Stone`.
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
@@ -197,24 +203,6 @@ Returns any nodes connected with the `Person` *'Oliver'* that are labeled `Movie
 === Match with a label expression for the node labels
 
 A match with an `OR` expression for the node label returns the nodes that contains both the specified labels.
-
-////
-CREATE
-  (charlie:Person {name: 'Charlie Sheen'}),
-  (martin:Person {name: 'Martin Sheen'}),
-  (michael:Person {name: 'Michael Douglas'}),
-  (oliver:Person {name: 'Oliver Stone'}),
-  (rob:Person {name: 'Rob Reiner'}),
-  (wallStreet:Movie {title: 'Wall Street'}),
-  (charlie)-[:ACTED_IN {role: 'Bud Fox'}]->(wallStreet),
-  (martin)-[:ACTED_IN {role: 'Carl Fox'}]->(wallStreet),
-  (michael)-[:ACTED_IN {role: 'Gordon Gekko'}]->(wallStreet),
-  (oliver)-[:DIRECTED]->(wallStreet),
-  (thePresident:Movie {title: 'The American President'}),
-  (martin)-[:ACTED_IN {role: 'A.J. MacInerney'}]->(thePresident),
-  (michael)-[:ACTED_IN {role: 'President Andrew Shepherd'}]->(thePresident),
-  (rob)-[:DIRECTED]->(thePresident)
-////
 
 .Query
 [source, cypher]
@@ -244,7 +232,8 @@ RETURN n.name AS name, n.title AS title
 [[outgoing-relationships]]
 === Outgoing relationships
 
-When the direction of a relationship is of interest, it is shown by using `+-->+` or `+<--+`, like this:
+When the direction of a relationship is of interest, it is shown by using `+-->+` or `+<--+`.
+For example:
 
 .Query
 [source, cypher, indent=0]
@@ -253,7 +242,7 @@ MATCH (:Person {name: 'Oliver Stone'})-->(movie)
 RETURN movie.title
 ----
 
-Returns any nodes connected with the `Person` *'Oliver'* by an outgoing relationship.
+Returns any nodes connected by an outgoing relationship to the `Person` node with the `name` property set to `Oliver Stone`.
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
@@ -267,8 +256,9 @@ Returns any nodes connected with the `Person` *'Oliver'* by an outgoing relation
 [[directed-rels-and-variable]]
 === Directed relationships and variable
 
-If a variable is required, either for filtering on properties of the relationship, or to return the relationship, this is how you introduce the variable.
+It is possible to introduce a variable to a pattern, either for filtering on relationship properties or to return a relationship. 
 
+For example: 
 .Query
 [source, cypher, indent=0]
 ----
@@ -276,7 +266,7 @@ MATCH (:Person {name: 'Oliver Stone'})-[r]->(movie)
 RETURN type(r)
 ----
 
-Returns the type of each outgoing relationship from *'Oliver'*.
+Returns the type of each outgoing relationship from `Oliver Stone`.
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
@@ -290,7 +280,7 @@ Returns the type of each outgoing relationship from *'Oliver'*.
 [[match-on-rel-type]]
 === Match on relationship type
 
-When you know the relationship type you want to match on, you can specify it by using a colon together with the relationship type.
+When the relationship type to match on is known, it is possible to specify it by using a colon (`:`) before the relationship type. 
 
 .Query
 [source, cypher, indent=0]
@@ -299,7 +289,7 @@ MATCH (wallstreet:Movie {title: 'Wall Street'})<-[:ACTED_IN]-(actor)
 RETURN actor.name
 ----
 
-Returns all actors that `ACTED_IN` *'Wall Street'*.
+Returns all actors who `ACTED_IN` the movie `Wall Street`.
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
@@ -316,7 +306,8 @@ Read more about xref:/syntax/expressions.adoc#relationship-type-expressions[rela
 [[match-on-multiple-rel-types]]
 === Match on multiple relationship types
 
-To match on one of multiple types, you can specify this by chaining them together with the pipe symbol `|`.
+It is possible to match on multiple relationship types by using the pipe symbol (`|`).
+For example:
 
 .Query
 [source, cypher, indent=0]
@@ -325,8 +316,7 @@ MATCH (wallstreet {title: 'Wall Street'})<-[:ACTED_IN|DIRECTED]-(person)
 RETURN person.name
 ----
 
-Returns nodes with an `ACTED_IN` or `DIRECTED` relationship to *'Wall Street'*.
-
+Returns nodes with an `ACTED_IN` or `DIRECTED` relationship to the movie `Wall Street`.
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
@@ -342,7 +332,8 @@ Returns nodes with an `ACTED_IN` or `DIRECTED` relationship to *'Wall Street'*.
 [[match-on-rel-type-use-variable]]
 === Match on relationship type and use a variable
 
-If you both want to introduce an variable to hold the relationship, and specify the relationship type you want, just add them both, like this:
+Variables and specific relationship types can be included in the same pattern.
+For example:
 
 .Query
 [source, cypher, indent=0]
@@ -351,7 +342,7 @@ MATCH (wallstreet {title: 'Wall Street'})<-[r:ACTED_IN]-(actor)
 RETURN r.role
 ----
 
-Returns `ACTED_IN` roles for *'Wall Street'*.
+Returns the `ACTED_IN` roles for the movie `Wall Street`.
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
@@ -369,65 +360,43 @@ Returns `ACTED_IN` roles for *'Wall Street'*.
 
 [NOTE]
 ====
-Inside a single pattern, relationships will only be matched once. You can read more about this in xref::introduction/uniqueness.adoc[].
+Relationships will only be matched once inside a single pattern.
+Read more about this in the section on xref::introduction/uniqueness.adoc[uniqueness].
 ====
 
 [[rel-types-with-uncommon-chars]]
 === Relationship types with uncommon characters
 
-Sometimes your database will have types with non-letter characters, or with spaces in them.
-Use ``` (backtick) to quote these.
-To demonstrate this we can add an additional relationship between *'Charlie Sheen'* and *'Rob Reiner'*:
+Databases occasionally contain relationship types including non-alphanumerical characters, or with spaces in them. 
+These are created using backticks (```).
+
+For example, the following query creates a relationship which contains a space (`OLD FRIENDS`) between `Martin Sheen` and `Rob Reiner`. 
 
 .Query
 [source, cypher, indent=0]
 ----
 MATCH
-  (charlie:Person {name: 'Charlie Sheen'}),
+  (charlie:Person {name: 'Martin Sheen'}),
   (rob:Person {name: 'Rob Reiner'})
-CREATE (rob)-[:`TYPE INCLUDING A SPACE`]->(charlie)
+CREATE (rob)-[:`OLD FRIENDS`]->(martin)
 ----
 
-Which leads to the following graph:
+This leads to the following graph:
 
-image:graph_match_clause_backtick.svg[]
-
-////
-CREATE
-  (charlie:Person {name: 'Charlie Sheen'}),
-  (martin:Person {name: 'Martin Sheen'}),
-  (michael:Person {name: 'Michael Douglas'}),
-  (oliver:Person {name: 'Oliver Stone'}),
-  (rob:Person {name: 'Rob Reiner'}),
-  (wallStreet:Movie {title: 'Wall Street'}),
-  (charlie)-[:ACTED_IN {role: 'Bud Fox'}]->(wallStreet),
-  (martin)-[:ACTED_IN {role: 'Carl Fox'}]->(wallStreet),
-  (michael)-[:ACTED_IN {role: 'Gordon Gekko'}]->(wallStreet),
-  (oliver)-[:DIRECTED]->(wallStreet),
-  (thePresident:Movie {title: 'The American President'}),
-  (martin)-[:ACTED_IN {role: 'A.J. MacInerney'}]->(thePresident),
-  (michael)-[:ACTED_IN {role: 'President Andrew Shepherd'}]->(thePresident),
-  (rob)-[:DIRECTED]->(thePresident)
-MATCH
-  (charlie:Person {name: 'Charlie Sheen'}),
-  (rob:Person {name: 'Rob Reiner'})
-CREATE (rob)-[:`TYPE INCLUDING A SPACE`]->(charlie)
-////
+image::graph_match_clause_backtick.svg[width="600", role="middle"]
 
 .Query
 [source, cypher, indent=0]
 ----
-MATCH (n {name: 'Rob Reiner'})-[r:`TYPE INCLUDING A SPACE`]->()
+MATCH (n {name: 'Rob Reiner'})-[r:`OLD FRIENDS`]->()
 RETURN type(r)
 ----
-
-Returns a relationship type with spaces in it.
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | +type(r)+
-| +"TYPE INCLUDING A SPACE"+
+| +"OLD FRIENDS"+
 1+d|Rows: 1
 |===
 
@@ -435,25 +404,8 @@ Returns a relationship type with spaces in it.
 [[multiple-rels]]
 === Multiple relationships
 
-Relationships can be expressed by using multiple statements in the form of `()--()`, or they can be strung together, like this:
-
-////
-CREATE
-  (charlie:Person {name: 'Charlie Sheen'}),
-  (martin:Person {name: 'Martin Sheen'}),
-  (michael:Person {name: 'Michael Douglas'}),
-  (oliver:Person {name: 'Oliver Stone'}),
-  (rob:Person {name: 'Rob Reiner'}),
-  (wallStreet:Movie {title: 'Wall Street'}),
-  (charlie)-[:ACTED_IN {role: 'Bud Fox'}]->(wallStreet),
-  (martin)-[:ACTED_IN {role: 'Carl Fox'}]->(wallStreet),
-  (michael)-[:ACTED_IN {role: 'Gordon Gekko'}]->(wallStreet),
-  (oliver)-[:DIRECTED]->(wallStreet),
-  (thePresident:Movie {title: 'The American President'}),
-  (martin)-[:ACTED_IN {role: 'A.J. MacInerney'}]->(thePresident),
-  (michael)-[:ACTED_IN {role: 'President Andrew Shepherd'}]->(thePresident),
-  (rob)-[:DIRECTED]->(thePresident)
-////
+Relationships can be expressed by using multiple statements in the form of `()--()`, or they can be strung together.
+For example:
 
 .Query
 [source, cypher, indent=0]
@@ -462,7 +414,7 @@ MATCH (charlie {name: 'Charlie Sheen'})-[:ACTED_IN]->(movie)<-[:DIRECTED]-(direc
 RETURN movie.title, director.name
 ----
 
-Returns the movie *'Charlie Sheen'* acted in and its director.
+Returns the movie in which `Charlie Sheen` acted and its director.
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -472,7 +424,6 @@ Returns the movie *'Charlie Sheen'* acted in and its director.
 2+d|Rows: 1
 |===
 
-
 [[varlength-rels]]
 === Variable length relationships
 
@@ -480,34 +431,13 @@ Nodes that are a variable number of `+relationship->node+` hops away can be foun
 `+-[:TYPE*minHops..maxHops]->+`.
 `minHops` and `maxHops` are optional and default to 1 and infinity respectively.
 When no bounds are given the dots may be omitted.
-The dots may also be omitted when setting only one bound and this implies a fixed length pattern.
+The dots may also be omitted when setting only one bound as this implies a fixed length pattern.
 
 [NOTE]
 ====
 Variable length relationships can be planned with an optimisation under certain circumstances, see xref::execution-plans/operators.adoc#query-plan-varlength-expand-pruning[VarLength Expand Pruning] query plan.
 ====
 
-
-.+Variable length relationships+
-======
-
-////
-CREATE
-  (charlie:Person {name: 'Charlie Sheen'}),
-  (martin:Person {name: 'Martin Sheen'}),
-  (michael:Person {name: 'Michael Douglas'}),
-  (oliver:Person {name: 'Oliver Stone'}),
-  (rob:Person {name: 'Rob Reiner'}),
-  (wallStreet:Movie {title: 'Wall Street'}),
-  (charlie)-[:ACTED_IN {role: 'Bud Fox'}]->(wallStreet),
-  (martin)-[:ACTED_IN {role: 'Carl Fox'}]->(wallStreet),
-  (michael)-[:ACTED_IN {role: 'Gordon Gekko'}]->(wallStreet),
-  (oliver)-[:DIRECTED]->(wallStreet),
-  (thePresident:Movie {title: 'The American President'}),
-  (martin)-[:ACTED_IN {role: 'A.J. MacInerney'}]->(thePresident),
-  (michael)-[:ACTED_IN {role: 'President Andrew Shepherd'}]->(thePresident),
-  (rob)-[:DIRECTED]->(thePresident)
-////
 
 .Query
 [source, cypher, indent=0]
@@ -519,7 +449,7 @@ RETURN movie.title
 Returns all movies related to `Charlie Sheen` by 1 to 3 hops:
 
 * `Wall Street` is found through the direct connection, whereas the other two results are found via `Michael Douglas` and `Martin Sheen` respectively.
-* As one can see from this example, variable length relationships do not impose any requirements on the intermediate nodes.
+* As this example demonstrates, variable length relationships do not impose any requirements on the intermediate nodes.
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
@@ -531,31 +461,10 @@ Returns all movies related to `Charlie Sheen` by 1 to 3 hops:
 1+d|Rows: 3
 |===
 
-======
-
-
-[[varlength-rels-multiple-types]]
 === Variable length relationships with multiple relationship types
 
-Variable length relationships can be combined with multiple relationship types. In this case the `*minHops..maxHops` applies to all relationship types as well as any combination of them.
-
-////
-CREATE
-  (charlie:Person {name: 'Charlie Sheen'}),
-  (martin:Person {name: 'Martin Sheen'}),
-  (michael:Person {name: 'Michael Douglas'}),
-  (oliver:Person {name: 'Oliver Stone'}),
-  (rob:Person {name: 'Rob Reiner'}),
-  (wallStreet:Movie {title: 'Wall Street'}),
-  (charlie)-[:ACTED_IN {role: 'Bud Fox'}]->(wallStreet),
-  (martin)-[:ACTED_IN {role: 'Carl Fox'}]->(wallStreet),
-  (michael)-[:ACTED_IN {role: 'Gordon Gekko'}]->(wallStreet),
-  (oliver)-[:DIRECTED]->(wallStreet),
-  (thePresident:Movie {title: 'The American President'}),
-  (martin)-[:ACTED_IN {role: 'A.J. MacInerney'}]->(thePresident),
-  (michael)-[:ACTED_IN {role: 'President Andrew Shepherd'}]->(thePresident),
-  (rob)-[:DIRECTED]->(thePresident)
-////
+Variable length relationships can be combined with multiple relationship types.
+In this case, `*minHops..maxHops` applies to all relationship types as well as any combination of them.
 
 .Query
 [source, cypher, indent=0]
@@ -564,7 +473,7 @@ MATCH (charlie {name: 'Charlie Sheen'})-[:ACTED_IN|DIRECTED*2]-(person:Person)
 RETURN person.name
 ----
 
-Returns all people related to *'Charlie Sheen'* by 2 hops with any combination of the relationship types `ACTED_IN` and `DIRECTED`.
+Returns all people related to `Charlie Sheen` by 2 hops with any combination of the relationship types `ACTED_IN` and `DIRECTED`.
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
@@ -582,23 +491,6 @@ Returns all people related to *'Charlie Sheen'* by 2 hops with any combination o
 
 When the connection between two nodes is of variable length, the list of relationships comprising the connection can be returned using the following syntax:
 
-////
-CREATE
-  (charlie:Person {name: 'Charlie Sheen'}),
-  (martin:Person {name: 'Martin Sheen'}),
-  (michael:Person {name: 'Michael Douglas'}),
-  (oliver:Person {name: 'Oliver Stone'}),
-  (rob:Person {name: 'Rob Reiner'}),
-  (wallStreet:Movie {title: 'Wall Street'}),
-  (charlie)-[:ACTED_IN {role: 'Bud Fox'}]->(wallStreet),
-  (martin)-[:ACTED_IN {role: 'Carl Fox'}]->(wallStreet),
-  (michael)-[:ACTED_IN {role: 'Gordon Gekko'}]->(wallStreet),
-  (oliver)-[:DIRECTED]->(wallStreet),
-  (thePresident:Movie {title: 'The American President'}),
-  (martin)-[:ACTED_IN {role: 'A.J. MacInerney'}]->(thePresident),
-  (michael)-[:ACTED_IN {role: 'President Andrew Shepherd'}]->(thePresident),
-  (rob)-[:DIRECTED]->(thePresident)
-////
 
 .Query
 [source, cypher, indent=0]
@@ -613,8 +505,8 @@ Returns a list of relationships.
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | +relationships(p)+
-| +[:ACTED_IN[0]{role:"Bud Fox"},:ACTED_IN[2]{role:"Gordon Gekko"}]+
-| +[:ACTED_IN[0]{role:"Bud Fox"},:ACTED_IN[1]{role:"Carl Fox"}]+
+| +{role:"Bud Fox"},{role:"Gordon Gekko"}+
+| +{role:"Bud Fox"},{role:"Carl Fox"}+
 1+d|Rows: 2
 |===
 
@@ -623,27 +515,9 @@ Returns a list of relationships.
 === Match with properties on a variable length path
 
 A variable length relationship with properties defined on in it means that all relationships in the path must have the property set to the given value.
-In this query, there are two paths between *'Charlie Sheen'* and his father *'Martin Sheen'*.
-One of them includes a *'blocked'* relationship and the other does not.
-In this case we first alter the original graph by using the following query to add `BLOCKED` and `UNBLOCKED` relationships:
 
-////
-CREATE
-  (charlie:Person {name: 'Charlie Sheen'}),
-  (martin:Person {name: 'Martin Sheen'}),
-  (michael:Person {name: 'Michael Douglas'}),
-  (oliver:Person {name: 'Oliver Stone'}),
-  (rob:Person {name: 'Rob Reiner'}),
-  (wallStreet:Movie {title: 'Wall Street'}),
-  (charlie)-[:ACTED_IN {role: 'Bud Fox'}]->(wallStreet),
-  (martin)-[:ACTED_IN {role: 'Carl Fox'}]->(wallStreet),
-  (michael)-[:ACTED_IN {role: 'Gordon Gekko'}]->(wallStreet),
-  (oliver)-[:DIRECTED]->(wallStreet),
-  (thePresident:Movie {title: 'The American President'}),
-  (martin)-[:ACTED_IN {role: 'A.J. MacInerney'}]->(thePresident),
-  (michael)-[:ACTED_IN {role: 'President Andrew Shepherd'}]->(thePresident),
-  (rob)-[:DIRECTED]->(thePresident)
-////
+The following query adds two new paths between `Charlie Sheen` and his father `Martin Sheen`, where a `lead` property is added to the `ACTED_IN` relationships connecting them to the `Movie` nodes `No Code of Conduct` and `Free Money`.
+The query makes evident that both actors had a leading role in the movie `No Code of Conduct`, but only `Martin Sheen` had a leading role in the movie `Free Money`.
 
 .Query
 [source, cypher, indent=0]
@@ -651,52 +525,32 @@ CREATE
 MATCH
   (charlie:Person {name: 'Charlie Sheen'}),
   (martin:Person {name: 'Martin Sheen'})
-CREATE (charlie)-[:X {blocked: false}]->(:UNBLOCKED)<-[:X {blocked: false}]-(martin)
-CREATE (charlie)-[:X {blocked: true}]->(:BLOCKED)<-[:X {blocked: false}]-(martin)
+CREATE (charlie)-[:ACTED_IN {role: 'Bud', lead: true}]->(:Movie {title: 'Free Money'})<-[:ACTED_IN {role:'New Warden', lead: false}]-(martin),
+(charlie)-[:ACTED_IN {role: 'Jake Peterson', lead: true}]->(:Movie {title: 'No Code of Conduct'})<-[:ACTED_IN {role: 'Bill Peterson', lead: true}]-(martin)
 ----
 
-This means that we are starting out with the following graph:
+This leads to the following graph:
 
-image:graph_match_clause_variable_length.svg[]
-
-////
-CREATE
-  (charlie:Person {name: 'Charlie Sheen'}),
-  (martin:Person {name: 'Martin Sheen'}),
-  (michael:Person {name: 'Michael Douglas'}),
-  (oliver:Person {name: 'Oliver Stone'}),
-  (rob:Person {name: 'Rob Reiner'}),
-  (wallStreet:Movie {title: 'Wall Street'}),
-  (charlie)-[:ACTED_IN {role: 'Bud Fox'}]->(wallStreet),
-  (martin)-[:ACTED_IN {role: 'Carl Fox'}]->(wallStreet),
-  (michael)-[:ACTED_IN {role: 'Gordon Gekko'}]->(wallStreet),
-  (oliver)-[:DIRECTED]->(wallStreet),
-  (thePresident:Movie {title: 'The American President'}),
-  (martin)-[:ACTED_IN {role: 'A.J. MacInerney'}]->(thePresident),
-  (michael)-[:ACTED_IN {role: 'President Andrew Shepherd'}]->(thePresident),
-  (rob)-[:DIRECTED]->(thePresident)
-MATCH
-  (charlie:Person {name: 'Charlie Sheen'}),
-  (martin:Person {name: 'Martin Sheen'})
-CREATE (charlie)-[:X {blocked: false}]->(:UNBLOCKED)<-[:X {blocked: false}]-(martin)
-CREATE (charlie)-[:X {blocked: true}]->(:BLOCKED)<-[:X {blocked: false}]-(martin)
-////
+image::graph_match_clause_variable_length.svg[width="600", role="middle"]
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
-MATCH p = (charlie:Person)-[* {blocked:false}]-(martin:Person)
+MATCH p = (charlie:Person)-[* {lead: true}]-(martin:Person)
 WHERE charlie.name = 'Charlie Sheen' AND martin.name = 'Martin Sheen'
 RETURN p
 ----
 
-Returns the paths between *'Charlie Sheen'* and *'Martin Sheen'* where all relationships have the `blocked` property set to `false`.
+The above query returns the paths between `Charlie Sheen` and `Martin Sheen` where all relationships have the `lead` property set to `true`. 
+The following graph and text are returned:
+
+image::MATCH_properties_on_variable_length_path.svg[width="400",role="middle"]
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | +p+
-| +(0)-[X,7]->(7)<-[X,8]-(1)+
+| +[{"name":"Charlie Sheen"},{"role":"Jake Peterson","lead":true},{"title":"No Code of Conduct"},{"title":"No Code of Conduct"},{"role":"Bill Peterson","lead":true},{"name":"Martin Sheen"}]+
 1+d|Rows: 1
 |===
 
@@ -707,24 +561,6 @@ Returns the paths between *'Charlie Sheen'* and *'Martin Sheen'* where all relat
 Using variable length paths that have the lower bound zero means that two variables can point to the same node.
 If the path length between two nodes is zero, they are by definition the same node.
 Note that when matching zero length paths the result may contain a match even when matching on a relationship type not in use.
-
-////
-CREATE
-  (charlie:Person {name: 'Charlie Sheen'}),
-  (martin:Person {name: 'Martin Sheen'}),
-  (michael:Person {name: 'Michael Douglas'}),
-  (oliver:Person {name: 'Oliver Stone'}),
-  (rob:Person {name: 'Rob Reiner'}),
-  (wallStreet:Movie {title: 'Wall Street'}),
-  (charlie)-[:ACTED_IN {role: 'Bud Fox'}]->(wallStreet),
-  (martin)-[:ACTED_IN {role: 'Carl Fox'}]->(wallStreet),
-  (michael)-[:ACTED_IN {role: 'Gordon Gekko'}]->(wallStreet),
-  (oliver)-[:DIRECTED]->(wallStreet),
-  (thePresident:Movie {title: 'The American President'}),
-  (martin)-[:ACTED_IN {role: 'A.J. MacInerney'}]->(thePresident),
-  (michael)-[:ACTED_IN {role: 'President Andrew Shepherd'}]->(thePresident),
-  (rob)-[:DIRECTED]->(thePresident)
-////
 
 .Query
 [source, cypher, indent=0]
@@ -739,11 +575,11 @@ Returns the movie itself as well as actors and directors one relationship away
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | +x+
-| +Node[5]{title:"Wall Street"}+
-| +Node[3]{name:"Oliver Stone"}+
-| +Node[2]{name:"Michael Douglas"}+
-| +Node[1]{name:"Martin Sheen"}+
-| +Node[0]{name:"Charlie Sheen"}+
+| +{title:"Wall Street"}+
+| +{name:"Oliver Stone"}+
+| +{name:"Michael Douglas"}+
+| +{name:"Martin Sheen"}+
+| +{name:"Charlie Sheen"}+
 1+d|Rows: 5
 |===
 
@@ -751,41 +587,26 @@ Returns the movie itself as well as actors and directors one relationship away
 [[named-paths]]
 === Named paths
 
-If you want to return or filter on a path in your pattern graph, you can a introduce a named path.
-
-////
-CREATE
-  (charlie:Person {name: 'Charlie Sheen'}),
-  (martin:Person {name: 'Martin Sheen'}),
-  (michael:Person {name: 'Michael Douglas'}),
-  (oliver:Person {name: 'Oliver Stone'}),
-  (rob:Person {name: 'Rob Reiner'}),
-  (wallStreet:Movie {title: 'Wall Street'}),
-  (charlie)-[:ACTED_IN {role: 'Bud Fox'}]->(wallStreet),
-  (martin)-[:ACTED_IN {role: 'Carl Fox'}]->(wallStreet),
-  (michael)-[:ACTED_IN {role: 'Gordon Gekko'}]->(wallStreet),
-  (oliver)-[:DIRECTED]->(wallStreet),
-  (thePresident:Movie {title: 'The American President'}),
-  (martin)-[:ACTED_IN {role: 'A.J. MacInerney'}]->(thePresident),
-  (michael)-[:ACTED_IN {role: 'President Andrew Shepherd'}]->(thePresident),
-  (rob)-[:DIRECTED]->(thePresident)
-////
+It is possible to introduce a named path to return or filter on a path in the pattern graph.
+For example:
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 MATCH p = (michael {name: 'Michael Douglas'})-->()
 RETURN p
 ----
 
-Returns the two paths starting from *'Michael Douglas'*
+This query returns the following graph and text, showing the two paths starting from `Michael Douglas`.
+
+image::MATCH_named_path_example.svg[width="500",role="middle"]
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | +p+
-| +(2)-[ACTED_IN,2]->(5)+
-| +(2)-[ACTED_IN,5]->(6)+
+| +[{"name":"Michael Douglas"},{"role":"Gordon Gekko"},{"title":"Wall Street"}]+
+| +[{"name":"Michael Douglas"},{"role":"President Andrew Shepherd"},{"title":"The American President"}]+
 1+d|Rows: 2
 |===
 
@@ -793,13 +614,14 @@ Returns the two paths starting from *'Michael Douglas'*
 [[match-on-bound-rel]]
 === Matching on a bound relationship
 
-When your pattern contains a bound relationship, and that relationship pattern does not specify direction, Cypher will try to match the relationship in both directions.
+When a pattern contains a bound relationship, and that relationship pattern does not specify direction, Cypher will try to match the relationship in both directions.
+For example:
 
 .Query
 [source, cypher, indent=0]
 ----
 MATCH (a)-[r]-(b)
-WHERE elementId(r) = 0
+WHERE split(elementId(r), ":")[2] = "0"
 RETURN a, b
 ----
 
@@ -809,8 +631,8 @@ This returns the two connected nodes, once as the start node, and once as the en
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
 | +a+ | +b+
-| +Node[0]{name:"Charlie Sheen"}+ | +Node[5]{title:"Wall Street"}+
-| +Node[5]{title:"Wall Street"}+ | +Node[0]{name:"Charlie Sheen"}+
+| +{name:"Charlie Sheen"}+ | +{title:"Wall Street"}+
+| +{title:"Wall Street"}+ | +{name:"Charlie Sheen"}+
 2+d|Rows: 2
 |===
 
@@ -821,10 +643,10 @@ This returns the two connected nodes, once as the start node, and once as the en
 [[single-shortest-path]]
 === Single shortest path
 
-Finding a single shortest path between two nodes is as easy as using the `shortestPath` function. It is done like this:
+Finding a single shortest path between two nodes can be done by using the `shortestPath` function. 
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 MATCH
   (martin:Person {name: 'Martin Sheen'}),
@@ -833,20 +655,23 @@ MATCH
 RETURN p
 ----
 
-This means: find a single shortest path between two nodes, as long as the path is max 15 relationships long.
-Within the parentheses you define a single link of a path -- the starting node, the connecting relationship and the end node.
+This query finds the shortest path between two nodes, as long as the path is max 15 relationships long. 
+The path link (the starting node, the connecting relationships, and the end node) is defined within the parentheses. 
 Characteristics describing the relationship like relationship type, max hops and direction are all used when finding the shortest path.
 If there is a `WHERE` clause following the match of a `shortestPath`, relevant predicates will be included in the `shortestPath`.
 If the predicate is a `none()` or `all()` on the relationship elements of the path, it will be used during the search to improve performance (see xref::execution-plans/shortestpath-planning.adoc[Shortest path planning]).
+
+The query returns the following graph and text, showing the shortest possible path between the start node (`Martin Sheen`) and the end node (`Oliver Stone`):
+
+image::MATCH_shortestpath_example.svg[width="400",role="middle"]
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | +p+
-| +(1)-[ACTED_IN,1]->(5)<-[DIRECTED,3]-(3)+
+| +[{"name":"Martin Sheen"},{"role":"Carl Fox"},{"title":"Wall Street"},{"title":"Wall Street"},{},{"name":"Oliver Stone"}]                 +
 1+d|Rows: 1
 |===
-
 
 [[single-shortest-path-with-predicates]]
 === Single shortest path with predicates
@@ -854,23 +679,27 @@ If the predicate is a `none()` or `all()` on the relationship elements of the pa
 Predicates used in the `WHERE` clause that apply to the shortest path pattern are evaluated before deciding what the shortest matching path is.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 MATCH
   (charlie:Person {name: 'Charlie Sheen'}),
   (martin:Person {name: 'Martin Sheen'}),
   p = shortestPath((charlie)-[*]-(martin))
-WHERE none(r IN relationships(p) WHERE type(r) = 'FATHER')
+WHERE none(r IN relationships(p) WHERE type(r) = 'FATHER_OF')
 RETURN p
 ----
 
-This query will find the shortest path between *'Charlie Sheen'* and *'Martin Sheen'*, and the `WHERE` predicate will ensure that we do not consider the father/son relationship between the two.
+This query will find the shortest path between `Charlie Sheen` and `Martin Sheen`, and the `WHERE` predicate will ensure that the `FATHER_OF` relationship between the two is not considered.
+
+It returns the following graph and text: 
+
+image::MATCH_shortestpath_with_predicates_example.svg[width="400",role="middle"]
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | +p+
-| +(0)-[ACTED_IN,0]->(5)<-[ACTED_IN,1]-(1)+
+| +[{"name":"Charlie Sheen"},{"role":"Bud Fox"},{"title":"Wall Street"},{"title":"Wall Street"},{"role":"Carl Fox"},{"name":"Martin Sheen"}]+
 1+d|Rows: 1
 |===
 
@@ -878,10 +707,10 @@ This query will find the shortest path between *'Charlie Sheen'* and *'Martin Sh
 [[all-shortest-paths]]
 === All shortest paths
 
-Finds all the shortest paths between two nodes.
+Finding all shortest paths between two nodes can be done by using the `allShortestPaths` function:
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 MATCH
   (martin:Person {name: 'Martin Sheen'} ),
@@ -890,23 +719,26 @@ MATCH
 RETURN p
 ----
 
-Finds the two shortest paths between *'Martin Sheen'* and *'Michael Douglas'*.
+This query finds the two shortest paths between `Martin Sheen` and `Michael Douglas`.
+It returns the following graph and text:
+
+image::MATCH_allshortestpaths_example.svg[width="400",role="middle"]
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | +p+
-| +(1)-[ACTED_IN,1]->(5)<-[ACTED_IN,2]-(2)+
-| +(1)-[ACTED_IN,4]->(6)<-[ACTED_IN,5]-(2)+
+| +[{"name":"Martin Sheen"},{"role":"Carl Fox"},{"title":"Wall Street"},{"title":"Wall Street"},{"role":"Gordon Gekko"},{"name":"Michael Douglas"}]+
+| +[{"name":"Martin Sheen"},{"role":"A.J. MacInerney"},{"title":"The American President"},{"title":"The American President"},{"role":"President Andrew Shepherd"},{"name":"Michael Douglas"}]+
 1+d|Rows: 2
 |===
 
 
-[[get-node-rel-by-id]]
-== Get node or relationship by ID
+[[get-node-rel-by-elementid]]
+== Get node or relationship by elementId
 
-[[match-node-by-id]]
-=== Node by ID
+[[match-node-by-elementid]]
+=== Node by elementId
 
 Searching for nodes by ID can be done with the `elementId()` function in a predicate.
 
@@ -921,7 +753,7 @@ It is therefore recommended to rather use application-generated IDs.
 [source, cypher, indent=0]
 ----
 MATCH (n)
-WHERE elementId(n) = 0
+WHERE split(elementId(n), ":")[2] = "0"
 RETURN n
 ----
 
@@ -931,40 +763,37 @@ The corresponding node is returned.
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | +n+
-| +Node[0]{name:"Charlie Sheen"}+
+| +{name:"Charlie Sheen"}+
 1+d|Rows: 1
 |===
 
 
 [[match-rel-by-id]]
-=== Relationship by ID
+=== Relationship by elementId
 
 Search for relationships by ID can be done with the `elementId()` function in a predicate.
-
-This is not the recommended practice.
-See xref::clauses/match.adoc#match-node-by-id[Node by ID] for more information on the use of Neo4j IDs.
 
 .Query
 [source, cypher, indent=0]
 ----
 MATCH ()-[r]->()
-WHERE elementId(r) = 0
+WHERE split(elementId(r), ":")[2] = "0"
 RETURN r
 ----
 
-The relationship with ID `0` is returned.
+The relationship with the elementId `0` is returned.
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | +r+
-| +:ACTED_IN[0]{role:"Bud Fox"}+
+| +{role:"Bud Fox"}+
 1+d|Rows: 1
 |===
 
 
 [[match-multiple-nodes-by-id]]
-=== Multiple nodes by ID
+=== Multiple nodes by elementId
 
 Multiple nodes are selected by specifying them in an `IN`-clause.
 
@@ -972,7 +801,7 @@ Multiple nodes are selected by specifying them in an `IN`-clause.
 [source, cypher, indent=0]
 ----
 MATCH (n)
-WHERE elementId(n) IN [0, 3, 5]
+WHERE split(elementId(n), ":")[2] IN ["0", "3", "5"] 
 RETURN n
 ----
 
@@ -982,9 +811,9 @@ This returns the nodes listed in the `IN`-expression.
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | +n+
-| +Node[0]{name:"Charlie Sheen"}+
-| +Node[3]{name:"Oliver Stone"}+
-| +Node[5]{title:"Wall Street"}+
+| +{name:"Charlie Sheen"}+
+| +{name:"Oliver Stone"}+
+| +{title:"Wall Street"}+
 1+d|Rows: 3
 |===
 

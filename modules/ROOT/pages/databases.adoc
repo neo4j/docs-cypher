@@ -15,6 +15,11 @@ These administrative commands are automatically routed to the `system` database 
 
 The syntax of the database management commands is as follows:
 
+[NOTE]
+====
+The syntax descriptions use xref:access-control/index.adoc#access-control-syntax[the style] from access control.
+====
+
 .Database management command syntax
 [options="header", width="100%", cols="1m,5a"]
 |===
@@ -104,7 +109,6 @@ DROP [COMPOSITE] DATABASE name [IF EXISTS] [{DUMP\|DESTROY} [DATA]] [WAIT [n [SE
 
 |===
 
-
 [[administration-databases-show-databases]]
 == Listing databases
 
@@ -151,9 +155,9 @@ Instance address in a clustered DBMS.
 The default for a standalone database is `neo4j://localhost:7687`. label:default-output[]
 
 | role
-| The current role of the database (`standalone`, `leader`, `follower`, `read_replica`, `unknown`). label:default-output[]
+| The current role of the database (`primary`, `secondary`, `unknown`). label:default-output[]
 
-|writer
+| writer
 |`true` for the database node that accepts writes (this node is the leader for this database in a cluster or this is a standalone instance). label:default-output[]
 
 | requestedStatus
@@ -182,6 +186,22 @@ Shown if this is the home database for the current user. label:default-output[]
 ====
 Not returned by `SHOW HOME DATABASE` or `SHOW DEFAULT DATABASE`.
 ====
+
+| `currentPrimariesCount`
+| Number of primaries for this database reported as running currently. 
+It is the same as the number of rows where `role=primary` and `name=this database`.
+
+| `currentSecondariesCount`
+| Number of secondaries for this database reported as running currently.
+It is the same as the number of rows where `role=secondary` and `name=this database`.
+
+| `requestedPrimariesCount`
+| The requested number of primaries for this database. 
+May be lower than current if the DBMS is currently reducing the number of copies of the database, or higher if it is currently increasing the number of copies.
+
+| `requestedSecondariesCount`
+| The requested number of secondaries for this database. 
+May be lower than current if the DBMS is currently reducing the number of copies of the database, or higher if it is currently increasing the number of copies.
 
 | creationTime
 | The date and time at which the database was created.
@@ -257,6 +277,11 @@ However, some privileges enable users to see additional databases regardless of 
 * Users with `DATABASE MANAGEMENT` privilege can see all databases.
 
 If a user has not been granted `ACCESS` privilege to any databases nor any of the above special cases, the command can still be executed but will only return the `system` database, which is always visible.
+====
+[NOTE]
+====
+Databases hosted on servers that are offline are also returned by the `SHOW DATABASES` command. 
+For such databases, the `address` column displays `NULL`, the `currentStatus` column displays `unknown`, and the `statusMessage` displays `Server is unavailable`.
 ====
 
 ======
@@ -461,6 +486,22 @@ SHOW DATABASE library YIELD name, constituents
 
 Databases can be created using `CREATE DATABASE`.
 
+Database names are subject to the xref::syntax/naming.adoc[standard Cypher restrictions on valid identifiers].
+
+The following naming rules apply:
+
+* Database name length must be between 3 and 63 characters.
+* The first character must be an ASCII alphabetic character.
+* Subsequent characters can be ASCII alphabetic (`mydatabase`), numeric characters (`mydatabase2`), dots (`main.db`), and dashes (enclosed within backticks, e.g., `CREATE DATABASE ++`main-db`++`).
+Using database names with dots without enclosing them in backticks is deprecated.
+* Names cannot end with dots or dashes.
+* Names that begin with an underscore or with the prefix `system` are reserved for internal use.
+
+[NOTE]
+====
+Having dots (`.`) in the database names is not recommended.
+This is due to the difficulty of determining if a dot is part of the database name or a delimiter for a database alias in a composite database.
+====
 
 .+CREATE DATABASE+
 ======
@@ -477,20 +518,6 @@ CREATE DATABASE customers
 System updates: 1
 Rows: 0
 ----
-
-[NOTE]
-====
-Database names are subject to the xref::syntax/naming.adoc[standard Cypher restrictions on valid identifiers].
-
-The following naming rules apply:
-
-* Database name length must be between 3 and 63 characters.
-* The first character must be an ASCII alphabetic character.
-* Subsequent characters can be ASCII alphabetic (`mydatabase`), numeric characters (`mydatabase2`), dots (`main.db`), and dashes (enclosed within backticks, e.g., `CREATE DATABASE ++`main-db`++`).
-Using database names with dots without enclosing them in backticks is deprecated.
-* Names cannot end with dots or dashes.
-* Names that begin with an underscore or with the prefix `system` are reserved for internal use.
-====
 
 ======
 
@@ -542,7 +569,7 @@ CREATE DATABASE `topology-example` TOPOLOGY 1 PRIMARY 0 SECONDARIES
 ----
 
 // TODO: Add result
-For more details on primary and secondary server roles, see link:{neo4j-docs-base-uri}/operations-manual{page-version}/clustering#clustering-introduction-operational[Cluster overview].
+For more details on primary and secondary server roles, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/clustering#clustering-introduction-operational[Cluster overview].
 
 [NOTE]
 ====
@@ -560,6 +587,16 @@ For more information about composite databases, see link:{neo4j-docs-base-uri}/o
 
 Composite databases can be created using `CREATE COMPOSITE DATABASE`.
 
+Composite database names are subject to the same rules as xref:administration-databases-create-database[standard databases].
+One difference is however that the deprecated syntax using dots without enclosing the name in backticks is not available.
+Both dots and dashes need to be enclosed within backticks when using composite databases.
+
+[NOTE]
+====
+Having dots (`.`) in the composite database names is not recommended.
+This is due to the difficulty of determining if a dot is part of the composite database name or a delimiter for a database alias in a composite database.
+====
+
 .Query
 [source, cypher, indent=0]
 ----
@@ -568,15 +605,6 @@ CREATE COMPOSITE DATABASE inventory
 
 [role="statsonlyqueryresult"]
 0 rows, System updates: 1
-
-[NOTE]
-====
-Composite database names are subject to the same rules as standard databases.
-One difference is however that the deprecated syntax using dots without enclosing the name in backticks is not available.
-Both dots and dashes needs to be enclosed within backticks when using composite databases.
-
-
-====
 
 When a composite database has been created, it will show up in the listing provided by the command `SHOW DATABASES`.
 
@@ -603,7 +631,7 @@ SHOW DATABASES YIELD name, type, access, role, writer, constituents
 |===
 
 In order to create database aliases in the composite database, give the composite database as namespace for the alias.
-For information about creating aliases in composite databases, see <<database-management-create-database-alias-in-composite, here>>.
+For information about creating aliases in composite databases, see xref:aliases.adoc#alias-management-create-composite-database-alias[here].
 
 
 [role=enterprise-edition]
@@ -678,12 +706,28 @@ Currently this is only supported with `existingDataSeedInstance` and must be set
 Defines which instance is used for seeding the data of the created database.
 The instance id can be taken from the id column of the `dbms.cluster.overview()` procedure. Can only be used in clusters.
 
+| `seedURI`
+| URI to a backup or a dump from an existing database.
+|
+Defines an identical seed from an external source which will be used to seed all servers.
+
+| `seedConfig`
+| comma separated list of configuration values.
+|
+Defines additional configuration specified by comma separated `name=value` pairs that might be required by certain seed providers.
+
+| `seedCredentials`
+| credentials
+|
+Defines credentials that needs to be passed into certain seed providers.
+
 |===
 
 
 [NOTE]
 ====
-The `existingData` and `existingDataSeedInstance` options cannot be combined with the `OR REPLACE` part of this command.
+The `existingData`, `existingDataSeedInstance`, `seedURI`, `seedConfig` and `seedCredentials` options cannot be combined with the `OR REPLACE` part of this command.
+For details about the use of these seeding options, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/clustering/databases/#cluster-seed[Operations Manual -> Seed a cluster].
 ====
 
 
@@ -698,7 +742,7 @@ Standard databases can be modified using the command `ALTER DATABASE`.
 
 By default, a database has read-write access mode on creation.
 The database can be limited to read-only mode on creation using the configuration parameters `dbms.databases.default_to_read_only`, `dbms.databases.read_only`, and `dbms.database.writable`.
-For details, see link:{neo4j-docs-base-uri}/operations-manual{page-version}/manage-databases/configuration#manage_database_parameters[Configuration parameters].
+For details, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/manage-databases/configuration#manage_database_parameters[Configuration parameters].
 
 A database that was created with read-write access mode can be changed to read-only.
 To change it to read-only, you can use the `ALTER DATABASE` command with the sub-clause `SET ACCESS READ ONLY`.
@@ -809,6 +853,12 @@ SET TOPOLOGY 3 PRIMARY 0 SECONDARIES
 
 ======
 
+[NOTE]
+====
+It is not possible to automatically transition to or from a topology with a single primary host.
+See the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/clustering/databases#_alter_topology[Operations Manual -> Alter topology] for more information.
+====
+
 
 .+SHOW DATABASE+
 ======
@@ -821,7 +871,7 @@ SHOW DATABASES yield name, currentPrimariesCount, currentSecondariesCount, reque
 
 ======
 
-For more details on primary and secondary server roles, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/clustering/inroduction#clustering-introduction-operational[Cluster overview].
+For more details on primary and secondary server roles, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/clustering/introduction#clustering-introduction-operational[Operations Manual -> Clustering overview].
 
 [NOTE]
 ====
