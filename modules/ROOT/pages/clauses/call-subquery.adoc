@@ -683,6 +683,37 @@ RETURN n.num;
 1+d|Rows: 4
 |===
 
+Note the difference in results with respect to batching in transactions of 2 rows:
+
+.Query
+[source, cypher, indent=0]
+----
+UNWIND [1, 0, 2, 4] AS i
+CALL {
+  WITH i
+  CREATE (n:Person {num: 100/i}) // Note, fails when i = 0
+  RETURN n
+} IN TRANSACTIONS
+  OF 2 ROW
+  ON ERROR CONTINUE
+RETURN n.num;
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +n.num+ |
+| null    |
+| null    |
+| 50      |
+| 25      |
+1+d|Rows: 4
+|===
+
+This happens because an inner transaction with the two first `i` elements (1 and 0)
+was created, and it fails for 0. That causes it to rolled back and the return
+variable is filled with nulls for those two elements.
+
 Example with `ON ERROR BREAK`, where after the failed inner transaction, we do not execute the remaining inner transactions and do not fail the outer transaction:
 
 .Query
@@ -704,6 +735,33 @@ RETURN n.num;
 |===
 | +n.num+ |
 | 100     |
+| null    |
+| null    |
+| null    |
+1+d|Rows: 4
+|===
+
+Note the difference in results with respect to batching in transactions of 2 rows:
+
+.Query
+[source, cypher, indent=0]
+----
+UNWIND [1, 0, 2, 4] AS i
+CALL {
+  WITH i
+  CREATE (n:Person {num: 100/i}) // Note, fails when i = 0
+  RETURN n
+} IN TRANSACTIONS
+  OF 2 ROW
+  ON ERROR BREAK
+RETURN n.num;
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +n.num+ |
+| null    |
 | null    |
 | null    |
 | null    |
