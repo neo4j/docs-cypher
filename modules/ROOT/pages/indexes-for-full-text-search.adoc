@@ -111,7 +111,7 @@ The syntax descriptions use xref:access-control/index.adoc#access-control-syntax
 |===
 | Command | Description
 
-| [source, cypher, role=noplay, indent=0]
+| [source, syntax, role=noplay, indent=0]
 ----
 CREATE FULLTEXT INDEX [index_name] [IF NOT EXISTS]
 FOR (n:LabelName["\|" ...])
@@ -120,7 +120,7 @@ ON EACH "[" n.propertyName[, ...] "]"
 ----
 | Create a full-text index on nodes.
 
-| [source, cypher, role=noplay, indent=0]
+| [source, syntax, role=noplay, indent=0]
 ----
 CREATE FULLTEXT INDEX [index_name] [IF NOT EXISTS]
 FOR ()-"["r:TYPE_NAME["\|" ...]"]"-()
@@ -154,15 +154,8 @@ It may still throw an error should a constraint with the same name exist.
 
 For instance, if we have a movie with a title.
 
-////
-CREATE (m:Movie {title: "The Matrix"}) RETURN m.title
-CREATE (:Movie {title: "Full Metal Jacket"}), (:Movie {title: "The Jacket"}), (:Movie {title: "Yellow Jacket"}), (:Movie {title: "Full Moon High"}), (:Movie {title: "Metallica Through The Never", description: "The movie follows the young roadie Trip through his surreal adventure with the band."})
-CREATE FULLTEXT INDEX titlesAndDescriptions FOR (n:Movie|Book) ON EACH [n.title, n.description]
-CALL db.awaitIndexes(1000)
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 CREATE (m:Movie {title: "The Matrix"}) RETURN m.title
 ----
@@ -173,39 +166,27 @@ CREATE (m:Movie {title: "The Matrix"}) RETURN m.title
 
 | +m.title+
 | +"The Matrix"+
-1+d|Rows: 1 +
-Nodes created: 1 +
-Properties set: 1 +
-Labels added: 1
 
 |===
 
 And we have a full-text index on the `title` and `description` properties of movies and books.
 
-////
-CREATE (m:Movie {title: "The Matrix"}) RETURN m.title
-CREATE (:Movie {title: "Full Metal Jacket"}), (:Movie {title: "The Jacket"}), (:Movie {title: "Yellow Jacket"}), (:Movie {title: "Full Moon High"}), (:Movie {title: "Metallica Through The Never", description: "The movie follows the young roadie Trip through his surreal adventure with the band."})
-CREATE FULLTEXT INDEX titlesAndDescriptions FOR (n:Movie|Book) ON EACH [n.title, n.description]
-CALL db.awaitIndexes(1000)
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 CREATE FULLTEXT INDEX titlesAndDescriptions FOR (n:Movie|Book) ON EACH [n.title, n.description]
+----
+
+.Result
+[queryresult]
+----
+Added 1 index.
 ----
 
 Then our movie node from above will be included in the index, even though it only has one of the indexed labels, and only one of the indexed properties:
 
-////
-CREATE (m:Movie {title: "The Matrix"}) RETURN m.title
-CREATE (:Movie {title: "Full Metal Jacket"}), (:Movie {title: "The Jacket"}), (:Movie {title: "Yellow Jacket"}), (:Movie {title: "Full Moon High"}), (:Movie {title: "Metallica Through The Never", description: "The movie follows the young roadie Trip through his surreal adventure with the band."})
-CREATE FULLTEXT INDEX titlesAndDescriptions FOR (n:Movie|Book) ON EACH [n.title, n.description]
-CALL db.awaitIndexes(1000)
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 CALL db.index.fulltext.queryNodes("titlesAndDescriptions", "matrix") YIELD node, score
 RETURN node.title, node.description, score
@@ -216,7 +197,7 @@ RETURN node.title, node.description, score
 |===
 
 | +node.title+ | +node.description+ | +score+
-| +"The Matrix"+ | +<null>+ | +0.7799721956253052+
+| +"The Matrix"+ | +<null>+ | +0.13076457381248474+
 3+d|Rows: 1
 
 |===
@@ -241,15 +222,8 @@ This means that updates will be applied in a background thread "as soon as possi
 .+CREATE FULLTEXT INDEX+
 ======
 
-////
-CREATE (m:Movie {title: "The Matrix"}) RETURN m.title
-CREATE (:Movie {title: "Full Metal Jacket"}), (:Movie {title: "The Jacket"}), (:Movie {title: "Yellow Jacket"}), (:Movie {title: "Full Moon High"}), (:Movie {title: "Metallica Through The Never", description: "The movie follows the young roadie Trip through his surreal adventure with the band."})
-CREATE FULLTEXT INDEX titlesAndDescriptions FOR (n:Movie|Book) ON EACH [n.title, n.description]
-CALL db.awaitIndexes(1000)
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 CREATE FULLTEXT INDEX taggedByRelationshipIndex FOR ()-[r:TAGGED_AS]-() ON EACH [r.taggedByUser]
 OPTIONS {
@@ -265,14 +239,10 @@ This could, for instance, be a system where people are assigning tags to documen
 Had it not been for the relationship index, one would have had to add artificial connective nodes between the tags and the documents in the data model, just so these nodes could be indexed.
 
 .Result
-[role="queryresult",options="footer",cols="1*<m"]
-|===
-
-1+|(empty result)
-1+d|Rows: 0 +
-Indexes added: 1
-
-|===
+[queryresult]
+----
+Added 1 index.
+----
 
 ======
 
@@ -292,14 +262,14 @@ The results are always returned in _descending score order_, where the best matc
 To illustrate, in the example below, we search our movie database for `"Full Metal Jacket"`, and even though there is an exact match as the first result, we also get three other less interesting results:
 
 ////
-CREATE (m:Movie {title: "The Matrix"}) RETURN m.title
-CREATE (:Movie {title: "Full Metal Jacket"}), (:Movie {title: "The Jacket"}), (:Movie {title: "Yellow Jacket"}), (:Movie {title: "Full Moon High"}), (:Movie {title: "Metallica Through The Never", description: "The movie follows the young roadie Trip through his surreal adventure with the band."})
-CREATE FULLTEXT INDEX titlesAndDescriptions FOR (n:Movie|Book) ON EACH [n.title, n.description]
-CALL db.awaitIndexes(1000)
+[source, cypher, role=test-setup]
+----
+CREATE (:Movie {title: "Full Metal Jacket"}), (:Movie {title: "The Jacket"}), (:Movie {title: "Yellow Jacket"}), (:Movie {title: "Full Moon High"}), (:Movie {title: "Metallica Through The Never", description: "The movie follows the young roadie Trip through his surreal adventure with the band."});
+----
 ////
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 CALL db.index.fulltext.queryNodes("titlesAndDescriptions", "Full Metal Jacket") YIELD node, score
 RETURN node.title, score
@@ -329,15 +299,8 @@ For instance, if we are only interested in exact matches, then we can quote the 
 .Query full-text
 ======
 
-////
-CREATE (m:Movie {title: "The Matrix"}) RETURN m.title
-CREATE (:Movie {title: "Full Metal Jacket"}), (:Movie {title: "The Jacket"}), (:Movie {title: "Yellow Jacket"}), (:Movie {title: "Full Moon High"}), (:Movie {title: "Metallica Through The Never", description: "The movie follows the young roadie Trip through his surreal adventure with the band."})
-CREATE FULLTEXT INDEX titlesAndDescriptions FOR (n:Movie|Book) ON EACH [n.title, n.description]
-CALL db.awaitIndexes(1000)
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 CALL db.index.fulltext.queryNodes("titlesAndDescriptions", '"Full Metal Jacket"') YIELD node, score
 RETURN node.title, score
@@ -362,15 +325,8 @@ Lucene also allows us to use logical operators, such as `AND` and `OR`, to searc
 .Query full-text
 ======
 
-////
-CREATE (m:Movie {title: "The Matrix"}) RETURN m.title
-CREATE (:Movie {title: "Full Metal Jacket"}), (:Movie {title: "The Jacket"}), (:Movie {title: "Yellow Jacket"}), (:Movie {title: "Full Moon High"}), (:Movie {title: "Metallica Through The Never", description: "The movie follows the young roadie Trip through his surreal adventure with the band."})
-CREATE FULLTEXT INDEX titlesAndDescriptions FOR (n:Movie|Book) ON EACH [n.title, n.description]
-CALL db.awaitIndexes(1000)
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 CALL db.index.fulltext.queryNodes("titlesAndDescriptions", 'full AND metal') YIELD node, score
 RETURN node.title, score
@@ -396,13 +352,6 @@ It is also possible to search for only specific properties, by putting the prope
 
 .Query full-text
 ======
-
-////
-CREATE (m:Movie {title: "The Matrix"}) RETURN m.title
-CREATE (:Movie {title: "Full Metal Jacket"}), (:Movie {title: "The Jacket"}), (:Movie {title: "Yellow Jacket"}), (:Movie {title: "Full Moon High"}), (:Movie {title: "Metallica Through The Never", description: "The movie follows the young roadie Trip through his surreal adventure with the band."})
-CREATE FULLTEXT INDEX titlesAndDescriptions FOR (n:Movie|Book) ON EACH [n.title, n.description]
-CALL db.awaitIndexes(1000)
-////
 
 .Query
 [source, cypher, indent=0]
@@ -438,37 +387,40 @@ For scoring purposes, the full-text index treats it as a single-property value, 
 ======
 
 ////
-CREATE (m:Movie {title: 'The Matrix', reviews: ['The best movie ever.', 'The movie is nonsense.']})
-
-CREATE FULLTEXT INDEX reviews FOR (n:Movie) ON EACH [n.reviews]
+[source, cypher, role=test-setup]
+----
+MATCH (m:Movie {title: 'The Matrix'})
+SET m.reviews = ['The best movie ever.', 'The movie is nonsense.'];
+CREATE FULLTEXT INDEX reviews FOR (m:Movie) ON EACH [m.reviews]
+----
 ////
 
 For example, both of the following queries match the same node while referring different elements:
 
 .Query
-[source, cypher, role="noplay"]
+[source, cypher]
 ----
-CALL db.index.fulltext.queryNodes("reviews", 'best') YIELD node, score
+CALL db.index.fulltext.queryNodes('reviews', 'best') YIELD node, score
 RETURN
   node.title AS title,
   node.reviews AS reviews,
   score
 ----
 
-.Result
-[source, result, role="noheader"]
-----
-Rows: 1
 
-+--------------+----------------------------------------------------+---------------------+
-| title        | reviews                                            | score               |
-+--------------+----------------------------------------------------+---------------------+
-| 'The Matrix' | ['The best movie ever.', 'The movie is nonsense.'] | 0.13076457381248474 |
-+--------------+----------------------------------------------------+---------------------+
-----
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+
+| +title+ | +reviews+ | +score+ 
+| +'The Matrix'+ | +['The best movie ever.', 'The movie is nonsense.']+ | + 0.13076457381248474 +
+
+3+d|Rows: 1
+
+|===
 
 .Query
-[source, cypher, role="noplay"]
+[source, cypher]
 ----
 CALL db.index.fulltext.queryNodes("reviews", 'nonsense') YIELD node, score
 RETURN
@@ -478,16 +430,15 @@ RETURN
 ----
 
 .Result
-[source, result, role="noheader"]
-----
-Rows: 1
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
 
-+--------------+----------------------------------------------------+---------------------+
-| title        | reviews                                            | score               |
-+--------------+----------------------------------------------------+---------------------+
-| 'The Matrix' | ['The best movie ever.', 'The movie is nonsense.'] | 0.13076457381248474 |
-+--------------+----------------------------------------------------+---------------------+
-----
+| +title+ | +reviews+ | +score+ 
+| +'The Matrix'+ | +['The best movie ever.', 'The movie is nonsense.']+ | + 0.13076457381248474 +
+
+3+d|Rows: 1
+
+|===
 
 ======
 
@@ -503,33 +454,17 @@ A full-text node index is dropped by using the xref::indexes-for-search-performa
 
 In the following example, we will drop the `taggedByRelationshipIndex` that we created previously:
 
-////
-CREATE (m:Movie {title: "The Matrix"}) RETURN m.title
-CREATE
-(:Movie {title: "Full Metal Jacket"}),
-(:Movie {title: "The Jacket"}),
-(:Movie {title: "Yellow Jacket"}),
-(:Movie {title: "Full Moon High"}),
-(:Movie {title: "Metallica Through The Never", description: "The movie follows the young roadie Trip through his surreal adventure with the band."})
-CREATE FULLTEXT INDEX titlesAndDescriptions FOR (n:Movie|Book) ON EACH [n.title, n.description]
-CALL db.awaitIndexes(1000)
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 DROP INDEX taggedByRelationshipIndex
 ----
 
 .Result
-[role="queryresult",options="footer",cols="1*<m"]
-|===
-
-1+|(empty result)
-1+d|Rows: 0 +
-Indexes removed: 1
-
-|===
+[queryresult]
+----
+Removed 1 index.
+----
 
 ======
 
