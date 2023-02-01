@@ -1953,10 +1953,145 @@ a|Rows: 2
 |===
 ======
 
-[[access-control-name-globbing]]
-=== Procedure and user-defined function name-globbing
 
-The name-globbing for procedure and user defined function names is a simplified version of globbing for filename expansions.
+[[access-control-dbms-administration-setting]]
+== The DBMS `SETTING` privileges
+
+The DBMS privileges for querying configuration settings can be assigned by using Cypher administrative commands.
+They can be granted, denied and revoked like other privileges.
+
+The ability to show configuration settings can be granted via the `SHOW SETTING` privilege.
+A role with this privilege is allowed to query the configuration settings matched by the xref::access-control/dbms-administration.adoc#access-control-name-globbing[name-globbing].
+
+
+[NOTE]
+====
+The syntax descriptions use xref:access-control/index.adoc#access-control-syntax[the style] from access control.
+====
+
+.Setting privileges command syntax
+[options="header", width="100%", cols="3a,2"]
+|===
+| Command
+| Description
+
+| [source, syntax, role=noheader]
+GRANT [IMMUTABLE] SHOW SETTING[S] name-globbing[, ...]
+  ON DBMS
+  TO role[, ...]
+| Enables the specified roles to query given configuration settings.
+|===
+
+The following query shows an example of how to grant this privilege:
+
+[source, cypher, role=noplay]
+----
+GRANT SHOW SETTING server.bolt.* ON DBMS TO configurationViewer
+----
+
+Users with the role `configurationViewer` can then query any setting in the `server.bolt` namespace.
+
+The resulting role has privileges that only allow querying settings in the `server.bolt` namespace.
+List all privileges for the role `configurationViewer` as commands by using the following query:
+
+[source, cypher, role=noplay]
+----
+SHOW ROLE configurationViewer PRIVILEGES AS COMMANDS
+----
+
+.Result
+[options="header,footer", width="100%", cols="m"]
+|===
+|command
+|"GRANT SHOW SETTING server.bolt.* ON DBMS TO `configurationViewer`"
+a|Rows: 1
+|===
+
+In order to allow the querying all but only a few settings, you can grant `SHOW SETTINGS *` and deny the unwanted settings.
+For example, the following queries allow the querying of all settings, except those starting with `dbms.security`:
+
+[source, cypher, role=noplay]
+----
+GRANT SHOW SETTINGS * ON DBMS TO deniedConfigurationViewer
+----
+
+[source, cypher, role=noplay]
+----
+DENY SHOW SETTING dbms.security* ON DBMS TO deniedConfigurationViewer
+----
+
+The resulting role has privileges that allow querying all settings except those starting with `dbms.security`.
+List all privileges for the role `deniedConfigurationViewer` as commands by using the following query:
+
+[source, cypher, role=noplay]
+----
+SHOW ROLE deniedConfigurationViewer PRIVILEGES AS COMMANDS
+----
+
+.Result
+[options="header,footer", width="100%", cols="m"]
+|===
+|command
+|"DENY SHOW SETTING dbms.security* ON DBMS TO `deniedConfigurationViewer`"
+|"GRANT SHOW SETTING * ON DBMS TO `deniedConfigurationViewer`"
+a|Rows: 2
+|===
+
+Access to any setting starting with `dbms.security` are blocked here, but the rest can still be queried.
+
+
+[[access-control-dbms-administration-all]]
+== Granting `ALL DBMS PRIVILEGES`
+
+The right to perform the following privileges can be achieved with a single command:
+
+* Create, drop, assign, remove, and show roles.
+* Create, alter, drop, show, and impersonate users.
+* Create, alter, and drop databases and aliases.
+* Enable, alter, rename, reallocate, deallocate, and drop servers
+* Show, assign, and remove privileges.
+* Execute all procedures with elevated privileges.
+* Execute all user defined functions with elevated privileges.
+* Show all configuration settings.
+
+[NOTE]
+====
+The syntax descriptions use xref:access-control/index.adoc#access-control-syntax[the style] from access control.
+====
+
+[source, syntax, role=noheader]
+----
+GRANT [IMMUTABLE] ALL [[DBMS] PRIVILEGES]
+    ON DBMS
+    TO role[, ...]
+----
+
+For example, to grant the role `dbmsManager` the abilities above, use the following query:
+
+[source, cypher, role=noplay]
+----
+GRANT ALL DBMS PRIVILEGES ON DBMS TO dbmsManager
+----
+
+The privileges granted can be seen using the `SHOW PRIVILEGES` command:
+
+[source, cypher, role=noplay]
+----
+SHOW ROLE dbmsManager PRIVILEGES AS COMMANDS
+----
+
+.Result
+[options="header,footer", width="100%", cols="m"]
+|===
+|command
+|"GRANT ALL DBMS PRIVILEGES ON DBMS TO `dbmsManager`"
+a|Rows: 1
+|===
+
+[[access-control-name-globbing]]
+== Procedure, user-defined function and setting name-globbing
+
+The name-globbing for procedure, user defined function and setting names is a simplified version of globbing for filename expansions.
 It only allows two wildcard characters: `+*+` and `?`, which are used for multiple and single character matches.
 In this case, `+*+` means 0 or more characters and `?` matches exactly one character.
 
@@ -1970,7 +2105,7 @@ It is also good to keep in mind that wildcard characters behave as wildcards eve
 As an example, using `++`*`++` is equivalent to using `+*+`, and thus allows executing all functions or procedures and not only the procedure or function named `+*+`.
 ====
 
-The examples below only use procedures, but the same rules apply to user defined function names:
+The examples below only use procedures, but the same rules apply to user defined function and setting names:
 
 * `mine.public.exampleProcedure`
 * `mine.public.exampleProcedure1`
@@ -2030,50 +2165,3 @@ The name-globbing may be fully or partially escaped.
 Both `+*+` and `+?+` are interpreted as wildcards either way.
 ====
 
-
-[[access-control-dbms-administration-all]]
-== Granting `ALL DBMS PRIVILEGES`
-
-The right to perform the following privileges can be achieved with a single command:
-
-* Create, drop, assign, remove, and show roles.
-* Create, alter, drop, show, and impersonate users.
-* Create, alter, and drop databases and aliases.
-* Enable, alter, rename, reallocate, deallocate, and drop servers
-* Show, assign, and remove privileges.
-* Execute all procedures with elevated privileges.
-* Execute all user defined functions with elevated privileges.
-
-[NOTE]
-====
-The syntax descriptions use xref:access-control/index.adoc#access-control-syntax[the style] from access control.
-====
-
-[source, syntax, role=noheader]
-----
-GRANT [IMMUTABLE] ALL [[DBMS] PRIVILEGES]
-    ON DBMS
-    TO role[, ...]
-----
-
-For example, to grant the role `dbmsManager` the abilities above, use the following query:
-
-[source, cypher, role=noplay]
-----
-GRANT ALL DBMS PRIVILEGES ON DBMS TO dbmsManager
-----
-
-The privileges granted can be seen using the `SHOW PRIVILEGES` command:
-
-[source, cypher, role=noplay]
-----
-SHOW ROLE dbmsManager PRIVILEGES AS COMMANDS
-----
-
-.Result
-[options="header,footer", width="100%", cols="m"]
-|===
-|command
-|"GRANT ALL DBMS PRIVILEGES ON DBMS TO `dbmsManager`"
-a|Rows: 1
-|===
