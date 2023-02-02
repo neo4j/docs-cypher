@@ -31,28 +31,32 @@ There are three types of planner hints:
 * Join hints.
 
 ////
+[source, cypher, role=test-setup]
+----
 FOREACH(i IN range(1, 100) |
   CREATE (:Scientist {born: 1800 + i})-[:RESEARCHED]->
          (:Science)<-[:INVENTED_BY {year: 530 + (i % 50), location: 'Location' + i}]-
          (:Pioneer {born: 500 + (i % 50)})-[:LIVES_IN]->
          (:City)-[:PART_OF]->
          (:Country {formed: 400 + i, name:'Country' + i})
-)
+);
 
-CREATE RANGE INDEX FOR (s:Scientist) ON (s.born)
-CREATE RANGE INDEX FOR (p:Pioneer) ON (p.born)
-CREATE RANGE INDEX FOR (c:Country) ON (c.formed)
-CREATE RANGE INDEX FOR (c:Country) ON (c.name)
-CREATE TEXT INDEX FOR (c:Country) ON (c.name)
-CREATE RANGE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.year)
-CREATE RANGE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.location)
-CREATE TEXT INDEX FOR ()-[i:INVENTED_BY]-() ON (i.location)
-CALL db.awaitIndexes
+CREATE RANGE INDEX FOR (s:Scientist) ON (s.born);
+CREATE RANGE INDEX FOR (p:Pioneer) ON (p.born);
+CREATE RANGE INDEX FOR (c:Country) ON (c.formed);
+CREATE RANGE INDEX FOR (c:Country) ON (c.name);
+CREATE TEXT INDEX FOR (c:Country) ON (c.name);
+CREATE RANGE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.year);
+CREATE RANGE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.location);
+CREATE TEXT INDEX FOR ()-[i:INVENTED_BY]-() ON (i.location);
+CALL db.awaitIndexes;
+----
 ////
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH
   (s:Scientist {born: 1850})-[:RESEARCHED]->
   (sc:Science)<-[i:INVENTED_BY {year: 560}]-
@@ -66,7 +70,7 @@ The query above will be used in some of the examples on this page.
 Without any hints, one index and no join is used.
 
 .Query plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryresult"]
 ----
 Planner COST
 
@@ -152,29 +156,10 @@ will require the use of a potentially expensive join later in the query plan.
 
 The query above can be tuned to pick a different index as the starting point.
 
-////
-FOREACH(i IN range(1, 100) |
-  CREATE (:Scientist {born: 1800 + i})-[:RESEARCHED]->
-         (:Science)<-[:INVENTED_BY {year: 530 + (i % 50), location: 'Location' + i}]-
-         (:Pioneer {born: 500 + (i % 50)})-[:LIVES_IN]->
-         (:City)-[:PART_OF]->
-         (:Country {formed: 400 + i, name:'Country' + i})
-)
-
-CREATE RANGE INDEX FOR (s:Scientist) ON (s.born)
-CREATE RANGE INDEX FOR (p:Pioneer) ON (p.born)
-CREATE RANGE INDEX FOR (c:Country) ON (c.formed)
-CREATE RANGE INDEX FOR (c:Country) ON (c.name)
-CREATE TEXT INDEX FOR (c:Country) ON (c.name)
-CREATE RANGE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.year)
-CREATE RANGE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.location)
-CREATE TEXT INDEX FOR ()-[i:INVENTED_BY]-() ON (i.location)
-CALL db.awaitIndexes
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH
   (s:Scientist {born: 1850})-[:RESEARCHED]->
   (sc:Science)<-[i:INVENTED_BY {year: 560}]-
@@ -186,7 +171,7 @@ RETURN *
 ----
 
 .Query plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryresult"]
 ----
 Planner COST
 
@@ -228,29 +213,10 @@ Total database accesses: 11, total allocated memory: 208
 
 The following query can be tuned to pick a text index.
 
-////
-FOREACH(i IN range(1, 100) |
-  CREATE (:Scientist {born: 1800 + i})-[:RESEARCHED]->
-         (:Science)<-[:INVENTED_BY {year: 530 + (i % 50), location: 'Location' + i}]-
-         (:Pioneer {born: 500 + (i % 50)})-[:LIVES_IN]->
-         (:City)-[:PART_OF]->
-         (:Country {formed: 400 + i, name:'Country' + i})
-)
-
-CREATE RANGE INDEX FOR (s:Scientist) ON (s.born)
-CREATE RANGE INDEX FOR (p:Pioneer) ON (p.born)
-CREATE RANGE INDEX FOR (c:Country) ON (c.formed)
-CREATE RANGE INDEX FOR (c:Country) ON (c.name)
-CREATE TEXT INDEX FOR (c:Country) ON (c.name)
-CREATE RANGE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.year)
-CREATE RANGE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.location)
-CREATE TEXT INDEX FOR ()-[i:INVENTED_BY]-() ON (i.location)
-CALL db.awaitIndexes
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH (c:Country)
 USING TEXT INDEX c:Country(name)
 WHERE c.name = 'Country7'
@@ -258,7 +224,7 @@ RETURN *
 ----
 
 .Query plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryresult"]
 ----
 Planner COST
 
@@ -284,29 +250,10 @@ Total database accesses: 2, total allocated memory: 184
 
 The query above can be tuned to pick a relationship index as the starting point.
 
-////
-FOREACH(i IN range(1, 100) |
-  CREATE (:Scientist {born: 1800 + i})-[:RESEARCHED]->
-         (:Science)<-[:INVENTED_BY {year: 530 + (i % 50), location: 'Location' + i}]-
-         (:Pioneer {born: 500 + (i % 50)})-[:LIVES_IN]->
-         (:City)-[:PART_OF]->
-         (:Country {formed: 400 + i, name:'Country' + i})
-)
-
-CREATE RANGE INDEX FOR (s:Scientist) ON (s.born)
-CREATE RANGE INDEX FOR (p:Pioneer) ON (p.born)
-CREATE RANGE INDEX FOR (c:Country) ON (c.formed)
-CREATE RANGE INDEX FOR (c:Country) ON (c.name)
-CREATE TEXT INDEX FOR (c:Country) ON (c.name)
-CREATE RANGE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.year)
-CREATE RANGE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.location)
-CREATE TEXT INDEX FOR ()-[i:INVENTED_BY]-() ON (i.location)
-CALL db.awaitIndexes
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH
   (s:Scientist {born: 1850})-[:RESEARCHED]->
   (sc:Science)<-[i:INVENTED_BY {year: 560}]-
@@ -318,7 +265,7 @@ RETURN *
 ----
 
 .Query plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryresult"]
 ----
 Planner COST
 
@@ -358,29 +305,10 @@ Total database accesses: 7, total allocated memory: 208
 
 The following query can be tuned to pick a text index.
 
-////
-FOREACH(i IN range(1, 100) |
-  CREATE (:Scientist {born: 1800 + i})-[:RESEARCHED]->
-         (:Science)<-[:INVENTED_BY {year: 530 + (i % 50), location: 'Location' + i}]-
-         (:Pioneer {born: 500 + (i % 50)})-[:LIVES_IN]->
-         (:City)-[:PART_OF]->
-         (:Country {formed: 400 + i, name:'Country' + i})
-)
-
-CREATE RANGE INDEX FOR (s:Scientist) ON (s.born)
-CREATE RANGE INDEX FOR (p:Pioneer) ON (p.born)
-CREATE RANGE INDEX FOR (c:Country) ON (c.formed)
-CREATE RANGE INDEX FOR (c:Country) ON (c.name)
-CREATE TEXT INDEX FOR (c:Country) ON (c.name)
-CREATE RANGE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.year)
-CREATE RANGE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.location)
-CREATE TEXT INDEX FOR ()-[i:INVENTED_BY]-() ON (i.location)
-CALL db.awaitIndexes
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH ()-[i:INVENTED_BY]->()
 USING TEXT INDEX i:INVENTED_BY(location)
 WHERE i.location = 'Location7'
@@ -388,7 +316,7 @@ RETURN *
 ----
 
 .Query plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryresult"]
 ----
 Planner COST
 
@@ -416,29 +344,10 @@ Supplying one index hint changed the starting point of the query, but the plan i
 only has one starting point. If we give the planner yet another index hint, we force it to use two starting points,
 one at each end of the match. It will then join these two branches using a join operator.
 
-////
-FOREACH(i IN range(1, 100) |
-  CREATE (:Scientist {born: 1800 + i})-[:RESEARCHED]->
-         (:Science)<-[:INVENTED_BY {year: 530 + (i % 50), location: 'Location' + i}]-
-         (:Pioneer {born: 500 + (i % 50)})-[:LIVES_IN]->
-         (:City)-[:PART_OF]->
-         (:Country {formed: 400 + i, name:'Country' + i})
-)
-
-CREATE RANGE INDEX FOR (s:Scientist) ON (s.born)
-CREATE RANGE INDEX FOR (p:Pioneer) ON (p.born)
-CREATE RANGE INDEX FOR (c:Country) ON (c.formed)
-CREATE RANGE INDEX FOR (c:Country) ON (c.name)
-CREATE TEXT INDEX FOR (c:Country) ON (c.name)
-CREATE RANGE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.year)
-CREATE RANGE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.location)
-CREATE TEXT INDEX FOR ()-[i:INVENTED_BY]-() ON (i.location)
-CALL db.awaitIndexes
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH
   (s:Scientist {born: 1850})-[:RESEARCHED]->
   (sc:Science)<-[i:INVENTED_BY {year: 560}]-
@@ -451,7 +360,7 @@ RETURN *
 ----
 
 .Query plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryresult"]
 ----
 Planner COST
 
@@ -496,29 +405,10 @@ Total database accesses: 11, total allocated memory: 768
 Supplying multiple index hints can also be useful if the query contains a disjunction (`OR`) in the `WHERE` clause.
 This makes sure that all hinted indexes are used and the results are joined together with a `Union` and a `Distinct` afterwards.
 
-////
-FOREACH(i IN range(1, 100) |
-  CREATE (:Scientist {born: 1800 + i})-[:RESEARCHED]->
-         (:Science)<-[:INVENTED_BY {year: 530 + (i % 50), location: 'Location' + i}]-
-         (:Pioneer {born: 500 + (i % 50)})-[:LIVES_IN]->
-         (:City)-[:PART_OF]->
-         (:Country {formed: 400 + i, name:'Country' + i})
-)
-
-CREATE RANGE INDEX FOR (s:Scientist) ON (s.born)
-CREATE RANGE INDEX FOR (p:Pioneer) ON (p.born)
-CREATE RANGE INDEX FOR (c:Country) ON (c.formed)
-CREATE RANGE INDEX FOR (c:Country) ON (c.name)
-CREATE TEXT INDEX FOR (c:Country) ON (c.name)
-CREATE RANGE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.year)
-CREATE RANGE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.location)
-CREATE TEXT INDEX FOR ()-[i:INVENTED_BY]-() ON (i.location)
-CALL db.awaitIndexes
-////
-
 .Query
 [source, cypher, indent=0]
 ----
+PROFILE
 MATCH (country:Country)
 USING INDEX country:Country(name)
 USING INDEX country:Country(formed)
@@ -527,7 +417,7 @@ RETURN *
 ----
 
 .Query plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryresult"]
 ----
 Planner COST
 
@@ -570,29 +460,10 @@ You can use the same hint to enforce a starting point where no index is applicab
 
 === Hinting a label scan
 
-////
-FOREACH(i IN range(1, 100) |
-  CREATE (:Scientist {born: 1800 + i})-[:RESEARCHED]->
-         (:Science)<-[:INVENTED_BY {year: 530 + (i % 50), location: 'Location' + i}]-
-         (:Pioneer {born: 500 + (i % 50)})-[:LIVES_IN]->
-         (:City)-[:PART_OF]->
-         (:Country {formed: 400 + i, name:'Country' + i})
-)
-
-CREATE RANGE INDEX FOR (s:Scientist) ON (s.born)
-CREATE RANGE INDEX FOR (p:Pioneer) ON (p.born)
-CREATE RANGE INDEX FOR (c:Country) ON (c.formed)
-CREATE RANGE INDEX FOR (c:Country) ON (c.name)
-CREATE TEXT INDEX FOR (c:Country) ON (c.name)
-CREATE RANGE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.year)
-CREATE RANGE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.location)
-CREATE TEXT INDEX FOR ()-[i:INVENTED_BY]-() ON (i.location)
-CALL db.awaitIndexes
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH
   (s:Scientist {born: 1850})-[:RESEARCHED]->
   (sc:Science)<-[i:INVENTED_BY {year: 560}]-
@@ -604,7 +475,7 @@ RETURN *
 ----
 
 .Query plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryresult"]
 ----
 Planner COST
 
@@ -646,29 +517,10 @@ Total database accesses: 309, total allocated memory: 216
 
 === Hinting a relationship type scan
 
-////
-FOREACH(i IN range(1, 100) |
-  CREATE (:Scientist {born: 1800 + i})-[:RESEARCHED]->
-         (:Science)<-[:INVENTED_BY {year: 530 + (i % 50), location: 'Location' + i}]-
-         (:Pioneer {born: 500 + (i % 50)})-[:LIVES_IN]->
-         (:City)-[:PART_OF]->
-         (:Country {formed: 400 + i, name:'Country' + i})
-)
-
-CREATE RANGE INDEX FOR (s:Scientist) ON (s.born)
-CREATE RANGE INDEX FOR (p:Pioneer) ON (p.born)
-CREATE RANGE INDEX FOR (c:Country) ON (c.formed)
-CREATE RANGE INDEX FOR (c:Country) ON (c.name)
-CREATE TEXT INDEX FOR (c:Country) ON (c.name)
-CREATE RANGE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.year)
-CREATE RANGE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.location)
-CREATE TEXT INDEX FOR ()-[i:INVENTED_BY]-() ON (i.location)
-CALL db.awaitIndexes
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH
   (s:Scientist {born: 1850})-[:RESEARCHED]->
   (sc:Science)<-[i:INVENTED_BY {year: 560}]-
@@ -680,7 +532,7 @@ RETURN *
 ----
 
 .Query plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryresult"]
 ----
 Planner COST
 
@@ -721,29 +573,10 @@ Total database accesses: 305, total allocated memory: 208
 Supplying multiple scan hints can also be useful if the query contains a disjunction (`OR`) in the `WHERE` clause.
 This makes sure that all involved label predicates are solved by a `UnionNodeByLabelsScan`.
 
-////
-FOREACH(i IN range(1, 100) |
-  CREATE (:Scientist {born: 1800 + i})-[:RESEARCHED]->
-         (:Science)<-[:INVENTED_BY {year: 530 + (i % 50), location: 'Location' + i}]-
-         (:Pioneer {born: 500 + (i % 50)})-[:LIVES_IN]->
-         (:City)-[:PART_OF]->
-         (:Country {formed: 400 + i, name:'Country' + i})
-)
-
-CREATE RANGE INDEX FOR (s:Scientist) ON (s.born)
-CREATE RANGE INDEX FOR (p:Pioneer) ON (p.born)
-CREATE RANGE INDEX FOR (c:Country) ON (c.formed)
-CREATE RANGE INDEX FOR (c:Country) ON (c.name)
-CREATE TEXT INDEX FOR (c:Country) ON (c.name)
-CREATE RANGE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.year)
-CREATE RANGE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.location)
-CREATE TEXT INDEX FOR ()-[i:INVENTED_BY]-() ON (i.location)
-CALL db.awaitIndexes
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH (person)
 USING SCAN person:Pioneer
 USING SCAN person:Scientist
@@ -752,7 +585,7 @@ RETURN *
 ----
 
 .Query plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryresult"]
 ----
 Planner COST
 
@@ -793,29 +626,10 @@ This will negatively affect query performance. In other cases, the hint might fo
 In the example above using multiple index hints, we saw that the planner chose to do a join, but not on the `p` node.
 By supplying a join hint in addition to the index hints, we can enforce the join to happen on the `p` node.
 
-////
-FOREACH(i IN range(1, 100) |
-  CREATE (:Scientist {born: 1800 + i})-[:RESEARCHED]->
-         (:Science)<-[:INVENTED_BY {year: 530 + (i % 50), location: 'Location' + i}]-
-         (:Pioneer {born: 500 + (i % 50)})-[:LIVES_IN]->
-         (:City)-[:PART_OF]->
-         (:Country {formed: 400 + i, name:'Country' + i})
-)
-
-CREATE RANGE INDEX FOR (s:Scientist) ON (s.born)
-CREATE RANGE INDEX FOR (p:Pioneer) ON (p.born)
-CREATE RANGE INDEX FOR (c:Country) ON (c.formed)
-CREATE RANGE INDEX FOR (c:Country) ON (c.name)
-CREATE TEXT INDEX FOR (c:Country) ON (c.name)
-CREATE RANGE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.year)
-CREATE RANGE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.location)
-CREATE TEXT INDEX FOR ()-[i:INVENTED_BY]-() ON (i.location)
-CALL db.awaitIndexes
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH
   (s:Scientist {born: 1850})-[:RESEARCHED]->
   (sc:Science)<-[i:INVENTED_BY {year: 560}]-
@@ -829,7 +643,7 @@ RETURN *
 ----
 
 .Query plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryresult"]
 ----
 Planner COST
 
@@ -876,29 +690,10 @@ Total database accesses: 10, total allocated memory: 768
 A join hint can also be used to force the planner to pick a `NodeLeftOuterHashJoin` or `NodeRightOuterHashJoin` to solve an `OPTIONAL MATCH`.
 In most cases, the planner will rather use an `OptionalExpand`.
 
-////
-FOREACH(i IN range(1, 100) |
-  CREATE (:Scientist {born: 1800 + i})-[:RESEARCHED]->
-         (:Science)<-[:INVENTED_BY {year: 530 + (i % 50), location: 'Location' + i}]-
-         (:Pioneer {born: 500 + (i % 50)})-[:LIVES_IN]->
-         (:City)-[:PART_OF]->
-         (:Country {formed: 400 + i, name:'Country' + i})
-)
-
-CREATE RANGE INDEX FOR (s:Scientist) ON (s.born)
-CREATE RANGE INDEX FOR (p:Pioneer) ON (p.born)
-CREATE RANGE INDEX FOR (c:Country) ON (c.formed)
-CREATE RANGE INDEX FOR (c:Country) ON (c.name)
-CREATE TEXT INDEX FOR (c:Country) ON (c.name)
-CREATE RANGE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.year)
-CREATE RANGE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.location)
-CREATE TEXT INDEX FOR ()-[i:INVENTED_BY]-() ON (i.location)
-CALL db.awaitIndexes
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH (s:Scientist {born: 1850})
 OPTIONAL MATCH (s)-[:RESEARCHED]->(sc:Science)
 RETURN *
@@ -907,7 +702,7 @@ RETURN *
 Without any hint, the planner did not use a join to solve the `OPTIONAL MATCH`.
 
 .Query plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryresult"]
 ----
 Planner COST
 
@@ -931,29 +726,10 @@ Total database accesses: 6, total allocated memory: 184
 ----
 
 
-////
-FOREACH(i IN range(1, 100) |
-  CREATE (:Scientist {born: 1800 + i})-[:RESEARCHED]->
-         (:Science)<-[:INVENTED_BY {year: 530 + (i % 50), location: 'Location' + i}]-
-         (:Pioneer {born: 500 + (i % 50)})-[:LIVES_IN]->
-         (:City)-[:PART_OF]->
-         (:Country {formed: 400 + i, name:'Country' + i})
-)
-
-CREATE RANGE INDEX FOR (s:Scientist) ON (s.born)
-CREATE RANGE INDEX FOR (p:Pioneer) ON (p.born)
-CREATE RANGE INDEX FOR (c:Country) ON (c.formed)
-CREATE RANGE INDEX FOR (c:Country) ON (c.name)
-CREATE TEXT INDEX FOR (c:Country) ON (c.name)
-CREATE RANGE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.year)
-CREATE RANGE INDEX FOR ()-[i:INVENTED_BY]-() ON (i.location)
-CREATE TEXT INDEX FOR ()-[i:INVENTED_BY]-() ON (i.location)
-CALL db.awaitIndexes
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH (s:Scientist {born: 1850})
 OPTIONAL MATCH (s)-[:RESEARCHED]->(sc:Science)
 USING JOIN ON s
@@ -963,7 +739,7 @@ RETURN *
 Now the planner uses a join to solve the `OPTIONAL MATCH`.
 
 .Query plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryresult"]
 ----
 Planner COST
 
