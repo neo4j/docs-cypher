@@ -168,7 +168,7 @@ Constraint( id=4, name='preExisting_book_published', type='UNIQUENESS', schema=(
 
 [NOTE]
 ====
-The constraint type will be updated to say `NODE_UNIQUENESS` in Neo4j version 6.0.
+The constraint type will be updated to say `NODE PROPERTY UNIQUENESS` in Neo4j version 6.0.
 ====
 
 ======
@@ -297,7 +297,7 @@ Both Node(0) and Node(1) have the label `Book` and property `title` = 'Moby Dick
 
 [NOTE]
 ====
-The constraint type will be updated to say `NODE_UNIQUENESS` in Neo4j version 6.0.
+The constraint type will be updated to say `NODE PROPERTY UNIQUENESS` in Neo4j version 6.0.
 ====
 
 ======
@@ -318,7 +318,6 @@ RETURN book1, book2
 
 [[constraints-examples-relationship-uniqueness]]
 == Relationship property uniqueness constraints
-// TODO: Remove 'test-skip' message on queries when feature is introduced
 
 A relationship property uniqueness constraint ensures that all relationships with a particular relationship type have a set of defined properties whose combined value is unique when existing.
 
@@ -331,9 +330,6 @@ A relationship property uniqueness constraint ensures that all relationships wit
 * xref::constraints/examples.adoc#constraints-create-a-relationship-that-violates-a-uniqueness-constraint[]
 * xref::constraints/examples.adoc#constraints-fail-to-create-a-uniqueness-constraint-due-to-conflicting-relationships[]
 
-// TODO: Update all relationship type and property keys to be the same in the whole section (preferably related to the actor/author/book examples in the other sections)
-// TODO: also update the result format to match browser output
-
 [discrete]
 [[constraints-create-a-relationship-uniqueness-constraints]]
 === Create a relationship property uniqueness constraint
@@ -345,19 +341,16 @@ When creating a property uniqueness constraint, a name can be provided.
 ======
 
 .Query
-[source, cypher, role=test-skip]
+[source, cypher]
 ----
-CREATE CONSTRAINT constraint_name
-FOR ()-[friend:FRIENDS_WITH]-() REQUIRE friend.nickname IS UNIQUE
+CREATE CONSTRAINT sequels
+FOR ()-[sequel:SEQUEL_OF]-() REQUIRE (sequel.order, sequel.seriesTitle) IS UNIQUE
 ----
 
 .Result
 [queryresult]
 ----
-+-------------------+
-| No data returned. |
-+-------------------+
-Relationship uniqueness constraints added: 1
+Added 1 constraint.
 ----
 
 [NOTE]
@@ -381,21 +374,18 @@ This will ensure that no error is thrown and no constraint is created if any oth
 ======
 
 .Query
-[source, cypher, role=test-skip]
+[source, cypher]
 ----
-CREATE CONSTRAINT constraint_name IF NOT EXISTS
-FOR ()-[friend:FRIENDS_WITH]-() REQUIRE friend.nickname IS UNIQUE
+CREATE CONSTRAINT sequels IF NOT EXISTS
+FOR ()-[sequel:SEQUEL_OF]-() REQUIRE (sequel.order) IS UNIQUE
 ----
 
-Assuming no constraint with the given name or other relationship property uniqueness constraint on the same schema exists:
+Assuming a constraint with the given name already exists:
 
 .Result
 [queryresult]
 ----
-+-------------------+
-| No data returned. |
-+-------------------+
-Relationship uniqueness constraints added: 1
+(no changes, no records)
 ----
 
 [NOTE]
@@ -425,22 +415,19 @@ The only valid value for the index provider is:
 ======
 
 .Query
-[source, cypher, role=test-skip]
+[source, cypher]
 ----
-CREATE CONSTRAINT constraint_with_options
-FOR ()-[friend:FRIENDS_WITH]-() REQUIRE (friend.nickname, friend.since) IS UNIQUE
+CREATE CONSTRAINT rel_constraint_with_options
+FOR ()-[sequel:SEQUEL_OF]-() REQUIRE (sequel.order, sequel.seriesTitle, sequel.number) IS UNIQUE
 OPTIONS {
-  indexProvider: 'range-1.0',
+  indexProvider: 'range-1.0'
 }
 ----
 
 .Result
 [queryresult]
 ----
-+-------------------+
-| No data returned. |
-+-------------------+
-Relationship uniqueness constraints added: 1
+Added 1 constraint.
 ----
 
 [NOTE]
@@ -461,17 +448,12 @@ There are no valid index configuration values for the constraint-backing range i
 .+CREATE CONSTRAINT+
 ======
 
-Create a property uniqueness constraint on the property `nickname` on relationships with the `FRIENDS_WITH` relationship type, when that constraint already exists.
-
-////
-Set-up to get expected behavior:
-CREATE CONSTRAINT preExistingUnique FOR ()-[friend:FRIENDS_WITH]-() REQUIRE friend.nickname IS UNIQUE
-////
+Create a property uniqueness constraint on the properties `order` and `seriesTitle` on relationships with the `SEQUEL_OF` relationship type, when that constraint already exists.
 
 .Query
-[source, cypher, role=test-skip]
+[source, cypher, role=test-fail]
 ----
-CREATE CONSTRAINT FOR ()-[friend:FRIENDS_WITH]-() REQUIRE friend.nickname IS UNIQUE
+CREATE CONSTRAINT sequel_order_seriestitle FOR ()-[sequel:SEQUEL_OF]-() REQUIRE (sequel.order, sequel.seriesTitle) IS UNIQUE
 ----
 
 In this case, the constraint cannot be created because it already exists.
@@ -480,8 +462,13 @@ In this case, the constraint cannot be created because it already exists.
 [source, error]
 ----
 Constraint already exists:
-Constraint( id=4, name='preExistingUnique', type='RELATIONSHIP_UNIQUENESS', schema=()-[:FRIENDS_WITH {nickname}]-(), ownedIndex=3 )
+Constraint( id=13, name='sequels', type='RELATIONSHIP UNIQUENESS', schema=()-[:SEQUEL_OF {order, seriesTitle}]-(), ownedIndex=12 )
 ----
+
+[NOTE]
+====
+The constraint type will be updated to say `RELATIONSHIP PROPERTY UNIQUENESS` in Neo4j version 6.0.
+====
 
 ======
 
@@ -494,17 +481,19 @@ Constraint( id=4, name='preExistingUnique', type='RELATIONSHIP_UNIQUENESS', sche
 .+CREATE CONSTRAINT+
 ======
 
-Create a property uniqueness constraint on the property `nickname` on relationships with the `FRIENDS_WITH` relationship type, when an index already exists on that relationship type and property combination.
+Create a property uniqueness constraint on the property `order` on relationships with the `SEQUEL_OF` relationship type, when an index already exists on that relationship type and property combination.
 
 ////
-Set-up to get expected behavior:
-CREATE INDEX FOR ()-[friend:FRIENDS_WITH]-() ON (friend.nickname)
+[source, cypher, role=test-setup]
+----
+CREATE INDEX sequel_order FOR ()-[sequel:SEQUEL_OF]-() ON (sequel.order)
+----
 ////
 
 .Query
-[source, cypher, role=test-skip]
+[source, cypher, role=test-fail]
 ----
-CREATE CONSTRAINT FOR ()-[friend:FRIENDS_WITH]-() REQUIRE friend.nickname IS UNIQUE
+CREATE CONSTRAINT sequel_series_title FOR ()-[sequel:SEQUEL_OF]-() REQUIRE (sequel.order) IS UNIQUE
 ----
 
 In this case, the constraint cannot be created because there already exists an index covering that schema.
@@ -512,7 +501,7 @@ In this case, the constraint cannot be created because there already exists an i
 .Error message
 [source, error]
 ----
-There already exists an index ()-[:FRIENDS_WITH {nickname}]-().
+There already exists an index ()-[:SEQUEL_OF {order}]-().
 A constraint cannot be created until the index has been dropped.
 ----
 
@@ -527,29 +516,18 @@ A constraint cannot be created until the index has been dropped.
 .+CREATE RELATIONSHIP+
 ======
 
-Create a `FRIENDS_WITH` relationship with an `nickname` that is not already in the database.
-
-////
-Set-up to get expected behavior:
-CREATE CONSTRAINT FOR ()-[friend:FRIENDS_WITH]-() REQUIRE friend.nickname IS UNIQUE
-////
+Create a `SEQUEL_OF` relationship with values for properties `order` and `seriesTitle` that is not already in the database.
 
 .Query
-[source, cypher, role=test-skip]
+[source, cypher, role=test-fail]
 ----
-CREATE (:Person {name: 'Josefin'})-[:FRIENDS_WITH {nickname: 'Mimi'}]->(:Person {name: 'Emilia'})
+CREATE (:Book {title: 'Spirit Walker'})-[:SEQUEL_OF {order: 1, seriesTitle: 'Chronicles of Ancient Darkness'}]->(:Book {title: 'Wolf Brother'})
 ----
 
 .Result
 [queryresult]
 ----
-+-------------------+
-| No data returned. |
-+-------------------+
-Nodes created: 2
-Relationships created: 1
-Properties set: 3
-Labels added: 2
+Added 2 labels, created 2 nodes, set 4 properties, created 1 relationship.
 ----
 
 ======
@@ -563,19 +541,13 @@ Labels added: 2
 .+CREATE RELATIONSHIP+
 ======
 
-Create a `FRIENDS_WITH` relationship with an `nickname` that is already used in the database.
-
-////
-Set-up to get expected behavior:
-CREATE CONSTRAINT FOR ()-[friend:FRIENDS_WITH]-() REQUIRE friend.nickname IS UNIQUE
-CREATE (:Person {name: 'Emma'}), (:Person {name: 'Josefin'})-[:FRIENDS_WITH {nickname: 'Mimi'}]->(:Person {name: 'Emilia'})
-////
+Create a `SEQUEL_OF` relationship with values for properties `order` and `seriesTitle` that is already used in the database.
 
 .Query
-[source, cypher, role=test-skip]
+[source, cypher, role=test-fail]
 ----
-MATCH (emma:Person {name: 'Emma'}), (emilia:Person {name: 'Emilia'})
-CREATE (emma)-[:FRIENDS_WITH {nickname: 'Mimi'}]->(emilia)
+MATCH (wolfBrother:Book {title: 'Wolf Brother'}), (spiritWalker:Book {title: 'Spirit Walker'})
+CREATE (spiritWalker)-[:SEQUEL_OF {order: 1, seriesTitle: 'Chronicles of Ancient Darkness'}]->(wolfBrother)
 ----
 
 In this case, the relationship is not created in the graph.
@@ -583,7 +555,7 @@ In this case, the relationship is not created in the graph.
 .Error message
 [source, error]
 ----
-Relationship(0) already exists with type `FRIENDS_WITH` and property `nickname` = 'Mimi'
+Relationship(0) already exists with type `SEQUEL_OF` and properties `order` = 1, `seriesTitle` = 'Chronicles of Ancient Darkness'
 ----
 
 ======
@@ -597,18 +569,20 @@ Relationship(0) already exists with type `FRIENDS_WITH` and property `nickname` 
 .+CREATE CONSTRAINT+
 ======
 
-Create a property uniqueness constraint on the property `nickname` on relationships with the `FRIENDS_WITH` relationship type when there are two relationships with the same `nickname`.
+Create a property uniqueness constraint on the property `seriesTitle` on relationships with the `SEQUEL_OF` relationship type when there are two relationships with the same `seriesTitle`.
 
 ////
-Set-up to get expected behavior:
-CREATE (emma:Person {name: 'Emma'}), (josefin:Person {name: 'Josefin'}), (emilia:Person {name: 'Emilia'})
-CREATE (josefin)-[:FRIENDS_WITH {nickname: 'Mimi'}]->(emilia), (emma)-[:FRIENDS_WITH {nickname: 'Mimi'}]->(emilia)
+[source, cypher, role=test-setup]
+----
+MATCH (spiritWalker:Book {title: 'Spirit Walker'})
+CREATE (:Book {title: 'Soul Eater'})-[:SEQUEL_OF {order: 2, seriesTitle: 'Chronicles of Ancient Darkness'}]->(spiritWalker)
+----
 ////
 
 .Query
-[source, cypher, role=test-skip]
+[source, cypher, role=test-fail]
 ----
-CREATE CONSTRAINT friends FOR ()-[friend:FRIENDS_WITH]-() REQUIRE friend.nickname IS UNIQUE
+CREATE CONSTRAINT series_title FOR ()-[sequel:SEQUEL_OF]-() REQUIRE (sequel.seriesTitle) IS UNIQUE
 ----
 
 In this case, the constraint cannot be created because it is violated by existing data.
@@ -617,8 +591,8 @@ Either use xref::indexes-for-search-performance.adoc[] instead, or remove the of
 .Error message
 [source, error]
 ----
-Unable to create Constraint( name='friends', type='RELATIONSHIP_UNIQUENESS', schema=()-[:FRIENDS_WITH {nickname}]-() ):
-Both Relationship(0) and Relationship(1) have the type `FRIENDS_WITH` and property `nickname` = 'Mimi'
+Unable to create Constraint( name='series_title', type='RELATIONSHIP UNIQUENESS', schema=()-[:SEQUEL_OF {seriesTitle}]-() ):
+Both Relationship(0) and Relationship(1) have the type `SEQUEL_OF` and property `seriesTitle` = 'Chronicles of Ancient Darkness'
 ----
 
 ======
