@@ -298,7 +298,7 @@ It is defined as such:
 In the example below, a node `LOOKUP` index is available.
 
 ////
-# neo4j has this by default, user don't need to run this
+// Lookup indexes exist by default
 CREATE LOOKUP INDEX node_label_lookup_index FOR (n) ON EACH labels(n)
 ////
 
@@ -340,7 +340,7 @@ Total database accesses: 43, total allocated memory: 184
 In the example below, a relationship `LOOKUP` index is available.
 
 ////
-# neo4j has this by default, user don't need to run this
+// Lookup indexes exist by default
 CREATE LOOKUP INDEX rel_type_lookup_index FOR ()-[r]-() ON EACH type(r)
 ////
 
@@ -389,7 +389,7 @@ CREATE RANGE INDEX node_range_index_name FOR (n:Person) ON (n.firstname)
 ////
 
 .Query
-[source,cypher]
+[source, cypher]
 ----
 PROFILE
 MATCH (person:Person {firstname: 'Andy'})
@@ -465,6 +465,13 @@ Total database accesses: 2, total allocated memory: 184
 [[administration-indexes-node-text-index-example]]
 === Node TEXT index
 
+////
+[source, cypher, role=test-setup]
+----
+CREATE TEXT INDEX node_text_person_surname FOR (n:Person) ON (n.surname)
+----
+////
+
 In the example below, a `Person(surname)` node `TEXT` index is available.
 
 .Query
@@ -486,17 +493,15 @@ Runtime version {neo4j-version-minor}
 
 Batch size 128
 
-+------------------+----+--------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator         | Id | Details                        | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+------------------+----+--------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults  |  0 | person                         |              1 |    0 |       0 |                |                        |           |                     |
-| |                +----+--------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Filter          |  1 | person.surname = $autostring_0 |              1 |    0 |       0 |                |                        |           |                     |
-| |                +----+--------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +NodeByLabelScan |  2 | person:Person                  |             10 |    0 |       1 |            120 |                    1/0 |     0.171 | Fused in Pipeline 0 |
-+------------------+----+--------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++-----------------+-----------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator        | Details                                                         | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-----------------+-----------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults | person                                                          |              1 |    1 |       0 |                |                        |           |                     |
+| |               +-----------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeIndexSeek  | TEXT INDEX person:Person(surname) WHERE surname = $autostring_0 |              1 |    1 |       2 |            120 |                    2/0 |     0.446 | Fused in Pipeline 0 |
++-----------------+-----------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
-Total database accesses: 1, total allocated memory: 184
+Total database accesses: 2, total allocated memory: 184
 ----
 
 
@@ -504,7 +509,14 @@ Total database accesses: 1, total allocated memory: 184
 [[administration-indexes-relationship-text-index-example]]
 === Relationship TEXT index
 
-In this example, a `KNOWS(lastMetLocation)` relationship `TEXT` index is available.
+////
+[source, cypher, role=test-setup]
+----
+CREATE TEXT INDEX rel_text_index_name FOR ()-[r:KNOWS]-() ON (r.metIn)
+----
+////
+
+In this example, a `KNOWS(metIn)` relationship `TEXT` index is available.
 
 .Query
 [source, cypher]
@@ -525,23 +537,29 @@ Runtime version {neo4j-version-minor}
 
 Batch size 128
 
-+-------------------------------+----+-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator                      | Id | Details                                 | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+-------------------------------+----+-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults               |  0 | person, friend                          |              0 |    0 |       0 |                |                        |           |                     |
-| |                             +----+-----------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Filter                       |  1 | relationship.metIn = $autostring_0      |              0 |    0 |       0 |                |                        |           |                     |
-| |                             +----+-----------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +DirectedRelationshipTypeScan |  2 | (person)-[relationship:KNOWS]->(friend) |              3 |    0 |       1 |            120 |                    1/0 |     0.163 | Fused in Pipeline 0 |
-+-------------------------------+----+-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++--------------------------------+---------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                       | Details                                                                               | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++--------------------------------+---------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults                | person, friend                                                                        |              1 |    1 |       0 |                |                        |           |                     |
+| |                              +---------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +DirectedRelationshipIndexSeek | TEXT INDEX (person)-[relationship:KNOWS(metIn)]->(friend) WHERE metIn = $autostring_0 |              1 |    1 |       2 |            120 |                    2/0 |     0.691 | Fused in Pipeline 0 |
++--------------------------------+---------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
-Total database accesses: 1, total allocated memory: 184
+Total database accesses: 2, total allocated memory: 184
 ----
 
 
 [discrete]
 [[administration-indexes-multiple-available-index-types]]
 === Multiple available index types
+
+////
+[source, cypher, role=test-setup]
+----
+CREATE RANGE INDEX node_range_person_middlename FOR (p:Person) ON (p.middlename);
+CREATE TEXT INDEX node_text_person_middlename FOR (p:Person) ON (p.middlename);
+----
+////
 
 In the example below, both a `Person(middlename)` node `TEXT` index and a `Person(middlename)` node `RANGE` index are available.
 The `RANGE` node index is chosen.
@@ -565,17 +583,15 @@ Runtime version {neo4j-version-minor}
 
 Batch size 128
 
-+------------------+----+-----------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator         | Id | Details                           | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+------------------+----+-----------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults  |  0 | person                            |              1 |    0 |       0 |                |                        |           |                     |
-| |                +----+-----------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Filter          |  1 | person.middlename = $autostring_0 |              1 |    0 |       0 |                |                        |           |                     |
-| |                +----+-----------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +NodeByLabelScan |  2 | person:Person                     |             10 |    0 |       1 |            120 |                    1/0 |     0.169 | Fused in Pipeline 0 |
-+------------------+----+-----------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++-----------------+------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator        | Details                                                                | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-----------------+------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults | person                                                                 |              1 |    1 |       0 |                |                        |           |                     |
+| |               +------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeIndexSeek  | RANGE INDEX person:Person(middlename) WHERE middlename = $autostring_0 |              1 |    1 |       2 |            120 |                    2/1 |     0.423 | Fused in Pipeline 0 |
++-----------------+------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
-Total database accesses: 1, total allocated memory: 184
+Total database accesses: 2, total allocated memory: 184
 ----
 
 
@@ -589,9 +605,8 @@ For example, if indexes exist on both `:Label(p1)` and `:Label(p2)`, `MATCH (n:L
 
 
 .Query
-[source, query plan]
+[role="queryplan"]
 ----
-PROFILE
 MATCH (person:Person)
 WHERE person.firstname = 'Andy'
 RETURN person
@@ -630,9 +645,9 @@ It can have ranges and existence predicates as well.
 But in these cases rewrites might happen depending on which properties have which predicates, see xref::indexes-for-search-performance.adoc#administration-indexes-single-vs-composite-index[composite index limitations].
 
 ////
-[source, cypher, role="test-setup"]
+[source, cypher, role=test-setup]
 ----
-CREATE (p0:`Person` {`age`:35, `country`:"UK", `firstname`:"John", `highScore`:54321, `middlename`:"Ron", `name`:"john", `surname`:"Smith"})
+CREATE RANGE INDEX node_range_age_country FOR (n:Person) ON (n.age, n.country)
 ----
 ////
 
@@ -648,28 +663,25 @@ RETURN n
 However, the query `MATCH (n:Person) WHERE n.age = 35 RETURN n` will not be backed by the composite index, as the query does not contain a predicate on the `country` property.
 It will only be backed by an index on the `Person` label and `age` property defined thus: `:Person(age)`; i.e. a single-property index.
 
-.Query Plan
-[role="queryplan"]
+[role="queryresult"]
 ----
 Planner COST
 
 Runtime PIPELINED
 
-Runtime version 5.3
+Runtime version 5.5
 
 Batch size 128
 
-+------------------+----+--------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator         | Id | Details                                          | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+------------------+----+--------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults  |  0 | n                                                |              0 |    3 |      24 |                |                        |           |                     |
-| |                +----+--------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Filter          |  1 | n.age = $autoint_0 AND n.country = $autostring_1 |              0 |    3 |      12 |                |                        |           |                     |
-| |                +----+--------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +NodeByLabelScan |  2 | n:Person                                         |             10 |    3 |       4 |            120 |                    3/0 |     0.345 | Fused in Pipeline 0 |
-+------------------+----+--------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++-----------------+----+---------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator        | Id | Details                                                                               | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-----------------+----+---------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults |  0 | n                                                                                     |              0 |    3 |      24 |                |                        |           |                     |
+| |               +----+---------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeIndexSeek  |  1 | RANGE INDEX n:Person(age, country) WHERE age = $autoint_0 AND country = $autostring_1 |              0 |    3 |       4 |            120 |                    3/0 |     0.476 | Fused in Pipeline 0 |
++-----------------+----+---------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
-Total database accesses: 40, total allocated memory: 184
+Total database accesses: 28, total allocated memory: 184
 ----
 
 
@@ -719,7 +731,6 @@ Composite indexes are also automatically used for inequality (range) comparisons
 Equality or list membership check predicates may precede the range predicate.
 However, predicates after the range predicate may be rewritten as an existence check predicate and a filter as described in xref::indexes-for-search-performance.adoc#administration-indexes-single-vs-composite-index[composite index limitations].
 
-
 .Query
 [source, cypher]
 ----
@@ -740,17 +751,18 @@ Runtime version {neo4j-version-minor}
 
 Batch size 128
 
-+-----------------------------------------+----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator                                | Id | Details                                                                                 | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+-----------------------------------------+----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults                         |  0 | `r.since`                                                                               |              0 |    0 |       0 |                |                        |           |                     |
-| |                                       +----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Projection                             |  1 | cache[r.since] AS `r.since`                                                             |              0 |    0 |       0 |                |                        |           |                     |
-| |                                       +----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Filter                                 |  2 | r.lastMet > $autoint_1                                                                  |              0 |    0 |       0 |                |                        |           |                     |
-| |                                       +----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +UndirectedRelationshipIndexSeekByRange |  3 | RANGE INDEX (anon_0)-[r:KNOWS(since)]-(anon_1) WHERE since < $autoint_0, cache[r.since] |              0 |    0 |       1 |            120 |                    1/0 |     0.274 | Fused in Pipeline 0 |
-+-----------------------------------------+----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++----------------------------------+-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                         | Details                                                                                             | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++----------------------------------+-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults                  | `r.since`                                                                                           |              2 |    2 |       0 |                |                        |           |                     |
+| |                                +-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Projection                      | cache[r.since] AS `r.since`                                                                         |              2 |    2 |       0 |                |                        |           |                     |
+| |                                +-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Filter                          | cache[r.lastMet] > $autoint_1                                                                       |              2 |    2 |       0 |                |                        |           |                     |
+| |                                +-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +UndirectedRelationshipIndexSeek | RANGE INDEX (anon_0)-[r:KNOWS(since, lastMet)]-(anon_1) WHERE since < $autoint_0 AND lastMet IS NOT |              2 |    2 |       2 |            120 |                    1/1 |     0.525 | Fused in Pipeline 0 |
+|                                  | NULL, cache[r.since], cache[r.lastMet]                                                              |                |      |         |                |                        |           |                     |
++----------------------------------+-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
 Total database accesses: 2, total allocated memory: 184
 ----
@@ -759,6 +771,13 @@ Total database accesses: 2, total allocated memory: 184
 [discrete]
 [[administration-indexes-multiple-range-comparisons-using-where-single-property-index]]
 === Multiple range comparisons using `WHERE` (single-property index)
+
+////
+[source, cypher, role=test-setup]
+----
+CREATE RANGE INDEX node_range_highscore FOR (p:Person) ON p.highScore
+----
+////
 
 When the `WHERE` clause contains multiple inequality (range) comparisons for the same property, these can be combined in a single index range seek.
 
@@ -782,17 +801,15 @@ Runtime version {neo4j-version-minor}
 
 Batch size 128
 
-+------------------+----+-------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator         | Id | Details                                                                       | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+------------------+----+-------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults  |  0 | person                                                                        |              2 |    0 |       0 |                |                        |           |                     |
-| |                +----+-------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Filter          |  1 | cache[person.highScore] > $autoint_0 AND cache[person.highScore] < $autoint_1 |              2 |    0 |       6 |                |                        |           |                     |
-| |                +----+-------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +NodeByLabelScan |  2 | person:Person                                                                 |             10 |    3 |       4 |            120 |                    3/0 |     0.263 | Fused in Pipeline 0 |
-+------------------+----+-------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++-----------------------+----------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator              | Details                                                                                      | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-----------------------+----------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults       | person                                                                                       |              1 |    1 |       0 |                |                        |           |                     |
+| |                     +----------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeIndexSeekByRange | RANGE INDEX person:Person(highScore) WHERE highScore > $autoint_0 AND highScore < $autoint_1 |              1 |    1 |       2 |            120 |                    2/1 |     0.286 | Fused in Pipeline 0 |
++-----------------------+----------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
-Total database accesses: 10, total allocated memory: 184
+Total database accesses: 2, total allocated memory: 184
 ----
 
 
@@ -806,9 +823,7 @@ That single range seek created in the following query will then use the composit
 ////
 [source, cypher, role=test-setup]
 ----
-CREATE INDEX
-FOR (p:Person) ON (p.highScore, p.name);
-CREATE (:Person)
+CREATE INDEX FOR (p:Person) ON (p.highScore, p.name);
 ----
 ////
 
@@ -852,6 +867,13 @@ Total database accesses: 2, total allocated memory: 184
 
 The `IN` predicate on `r.since` in the following query will use the single-property index `KNOWS(lastMetIn)` if it exists.
 
+////
+[source, cypher, role=test-setup]
+----
+CREATE RANGE INDEX rel_range_lastmetin FOR ()-[r:KNOWS]-() ON r.lastMetIn
+----
+////
+
 .Query
 [source, cypher]
 ----
@@ -872,23 +894,28 @@ Runtime version {neo4j-version-minor}
 
 Batch size 128
 
-+-------------------------------+----+------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator                      | Id | Details                      | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+-------------------------------+----+------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults               |  0 | person, friend               |              1 |    0 |       0 |                |                        |           |                     |
-| |                             +----+------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Filter                       |  1 | r.lastMetIn IN $autolist_0   |              1 |    0 |       0 |              0 |                        |           |                     |
-| |                             +----+------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +DirectedRelationshipTypeScan |  2 | (person)-[r:KNOWS]->(friend) |              3 |    0 |       1 |            120 |                    1/0 |     0.212 | Fused in Pipeline 0 |
-+-------------------------------+----+------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++--------------------------------+------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                       | Details                                                                            | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++--------------------------------+------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults                | person, friend                                                                     |              1 |    1 |       0 |                |                        |           |                     |
+| |                              +------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +DirectedRelationshipIndexSeek | RANGE INDEX (person)-[r:KNOWS(lastMetIn)]->(friend) WHERE lastMetIn IN $autolist_0 |              1 |    1 |       3 |            120 |                    3/1 |     0.614 | Fused in Pipeline 0 |
++--------------------------------+------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
-Total database accesses: 1, total allocated memory: 184
+Total database accesses: 3, total allocated memory: 184
 ----
 
 
 [discrete]
 [[administration-indexes-list-membership-check-using-in-composite-index]]
 === List membership check using `IN` (composite index)
+
+////
+[source, cypher, role=test-setup]
+----
+CREATE RANGE INDEX rel_range_since_lastmet FOR ()-[r:KNOWS]-() ON (r.since, r.lastMet)
+----
+////
 
 The `IN` predicates on `r.since` and `r.lastMet` in the following query will use the composite index `KNOWS(since, lastMet)` if it exists.
 
@@ -912,17 +939,16 @@ Runtime version {neo4j-version-minor}
 
 Batch size 128
 
-+--------------------------------+----+----------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator                       | Id | Details                                                                    | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+--------------------------------+----+----------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults                |  0 | person, friend                                                             |              0 |    0 |       0 |                |                        |           |                     |
-| |                              +----+----------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Filter                        |  1 | r.lastMet IN $autolist_1                                                   |              0 |    0 |       0 |              0 |                        |           |                     |
-| |                              +----+----------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +DirectedRelationshipIndexSeek |  2 | RANGE INDEX (person)-[r:KNOWS(since)]->(friend) WHERE since IN $autolist_0 |              0 |    0 |       2 |            120 |                    2/0 |     0.267 | Fused in Pipeline 0 |
-+--------------------------------+----+----------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++--------------------------------+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                       | Details                                                                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++--------------------------------+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults                | person, friend                                                                                       |              1 |    1 |       0 |                |                        |           |                     |
+| |                              +------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +DirectedRelationshipIndexSeek | RANGE INDEX (person)-[r:KNOWS(since, lastMet)]->(friend) WHERE since IN $autolist_0 AND lastMet IN $ |              1 |    1 |       5 |            120 |                    5/1 |     1.864 | Fused in Pipeline 0 |
+|                                | autolist_1                                                                                           |                |      |         |                |                        |           |                     |
++--------------------------------+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
-Total database accesses: 2, total allocated memory: 184
+Total database accesses: 5, total allocated memory: 184
 ----
 
 
@@ -968,6 +994,13 @@ Total database accesses: 2, total allocated memory: 184
 [[administration-indexes-prefix-search-using-starts-with-composite-index]]
 === Prefix search using `STARTS WITH` (composite index)
 
+////
+[source, cypher, role=test-setup]
+----
+CREATE RANGE INDEX node_text_firstname_surname FOR (p:Person) ON (p.firstname, p.surname)
+----
+////
+
 The `STARTS WITH` predicate on `person.firstname` in the following query will use the `Person(firstname,surname)` index, if it exists.
 Any (non-existence check) predicate on `person.surname` will be rewritten as existence check with a filter.
 However, if the predicate on `person.firstname` is a equality check then a `STARTS WITH` on `person.surname` would also use the index (without rewrites).
@@ -993,17 +1026,16 @@ Runtime version {neo4j-version-minor}
 
 Batch size 128
 
-+-----------------------+----+--------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator              | Id | Details                                                                        | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+-----------------------+----+--------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults       |  0 | person                                                                         |              0 |    0 |       0 |                |                        |           |                     |
-| |                     +----+--------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Filter               |  1 | person.surname IS NOT NULL                                                     |              0 |    0 |       0 |                |                        |           |                     |
-| |                     +----+--------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +NodeIndexSeekByRange |  2 | RANGE INDEX person:Person(firstname) WHERE firstname STARTS WITH $autostring_0 |              0 |    0 |       1 |            120 |                    1/0 |     0.277 | Fused in Pipeline 0 |
-+-----------------------+----+--------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++-----------------+-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator        | Details                                                                                             | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-----------------+-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults | person                                                                                              |              1 |    1 |       0 |                |                        |           |                     |
+| |               +-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeIndexSeek  | RANGE INDEX person:Person(firstname, surname) WHERE firstname STARTS WITH $autostring_0 AND surname |              1 |    1 |       2 |            120 |                    3/0 |     0.534 | Fused in Pipeline 0 |
+|                 | IS NOT NULL                                                                                         |                |      |         |                |                        |           |                     |
++-----------------+-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
-Total database accesses: 1, total allocated memory: 184
+Total database accesses: 2, total allocated memory: 184
 ----
 
 
@@ -1013,13 +1045,6 @@ Total database accesses: 1, total allocated memory: 184
 
 The `ENDS WITH` predicate on `r.metIn` in the following query uses the `KNOWS(metIn)` index, if it exists.
 Text indexes are optimized for `CONTAINS` and `ENDS WITH` and they are the only indexes that can solve those predicates.
-
-////
-[source, cypher, role=test-setup]
-----
-CREATE TEXT INDEX FOR ()-[r:KNOWS]-() ON (r.metIn)
-----
-////
 
 .Query
 [source, cypher]
@@ -1037,7 +1062,7 @@ Planner COST
 
 Runtime PIPELINED
 
-Runtime version 5.3
+Runtime version 5.5
 
 Batch size 128
 
@@ -1046,12 +1071,12 @@ Batch size 128
 +----------------------------------------+----+------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 | +ProduceResults                        |  0 | person, friend                                                                     |              0 |    0 |       0 |                |                        |           |                     |
 | |                                      +----+------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +DirectedRelationshipIndexEndsWithScan |  1 | TEXT INDEX (person)-[r:KNOWS(metIn)]->(friend) WHERE metIn ENDS WITH $autostring_0 |              0 |    0 |       1 |            120 |                    0/0 |     1.624 | Fused in Pipeline 0 |
+| +DirectedRelationshipIndexEndsWithScan |  1 | TEXT INDEX (person)-[r:KNOWS(metIn)]->(friend) WHERE metIn ENDS WITH $autostring_0 |              0 |    0 |       1 |            120 |                    0/0 |     1.135 | Fused in Pipeline 0 |
 +----------------------------------------+----+------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
 Total database accesses: 1, total allocated memory: 184
-----
 
+----
 
 Text indexes only index String values and therefore do not find other values.
 
@@ -1064,6 +1089,13 @@ The `ENDS WITH` predicate on `r.metIn` in the following query uses the `KNOWS(me
 However, it is rewritten as existence check and a filter due to the index not supporting actual suffix searches for composite indexes, this is still faster than not using an index in the first place.
 Any (non-existence check) predicate on `KNOWS.lastMetIn` is also rewritten as existence check with a filter.
 More information about how the rewriting works can be found in xref::indexes-for-search-performance.adoc#administration-indexes-single-vs-composite-index[composite index limitations].
+
+////
+[source, cypher, role=test-setup]
+----
+CREATE RANGE INDEX rel_text_metin_lastmetin FOR ()-[r:KNOWS]-() ON (r.metIn, r.lastMetIn)
+----
+////
 
 .Query
 [source, cypher]
@@ -1085,17 +1117,18 @@ Runtime version {neo4j-version-minor}
 
 Batch size 128
 
-+----------------------------------------+----+------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator                               | Id | Details                                                                            | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+----------------------------------------+----+------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults                        |  0 | person, friend                                                                     |              0 |    0 |       0 |                |                        |           |                     |
-| |                                      +----+------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Filter                                |  1 | r.lastMetIn IS NOT NULL                                                            |              0 |    0 |       0 |                |                        |           |                     |
-| |                                      +----+------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +DirectedRelationshipIndexEndsWithScan |  2 | TEXT INDEX (person)-[r:KNOWS(metIn)]->(friend) WHERE metIn ENDS WITH $autostring_0 |              0 |    0 |       1 |            120 |                    0/0 |     1.434 | Fused in Pipeline 0 |
-+----------------------------------------+----+------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++--------------------------------+-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                       | Details                                                                                             | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++--------------------------------+-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults                | person, friend                                                                                      |              0 |    1 |       0 |                |                        |           |                     |
+| |                              +-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Filter                        | cache[r.metIn] ENDS WITH $autostring_0                                                              |              0 |    1 |       0 |                |                        |           |                     |
+| |                              +-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +DirectedRelationshipIndexScan | RANGE INDEX (person)-[r:KNOWS(metIn, lastMetIn)]->(friend) WHERE metIn IS NOT NULL AND lastMetIn IS |              1 |    1 |       2 |            120 |                    2/1 |     0.317 | Fused in Pipeline 0 |
+|                                | NOT NULL, cache[r.metIn]                                                                            |                |      |         |                |                        |           |                     |
++--------------------------------+-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
-Total database accesses: 1, total allocated memory: 184
+Total database accesses: 2, total allocated memory: 184
 ----
 
 
@@ -1116,30 +1149,20 @@ WHERE person.firstname CONTAINS 'h'
 RETURN person
 ----
 
+// TODO: this should output a query plan
+
+////
 .Query Plan
-[role="queryplan"]
+[source, query plan, role="noheader"]
 ----
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version 5.3
-
-Batch size 128
-
-+-----------------+----+-------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator        | Id | Details                                                                                   | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+-----------------+----+-------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults |  0 | person                                                                                    |              0 |    2 |      16 |                |                        |           |                     |
-| |               +----+-------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Filter         |  1 | cache[person.firstname] CONTAINS $autostring_0                                            |              0 |    2 |       0 |                |                        |           |                     |
-| |               +----+-------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +NodeIndexScan  |  2 | RANGE INDEX person:Person(firstname) WHERE firstname IS NOT NULL, cache[person.firstname] |              1 |    2 |       3 |            120 |                    3/0 |     0.403 | Fused in Pipeline 0 |
-+-----------------+----+-------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-Total database accesses: 19, total allocated memory: 184
++------------------------------------------------------------------------------------------------------------+
+| person                                                                                                     |
++------------------------------------------------------------------------------------------------------------+
+| Node[0]{country:"UK",highScore:54321,firstname:"John",surname:"Smith",name:"john",middlename:"Ron",age:35} |
++------------------------------------------------------------------------------------------------------------+
+1 row
 ----
-
+////
 
 Text indexes only index String values and therefore do not find other values.
 
@@ -1173,17 +1196,18 @@ Runtime version {neo4j-version-minor}
 
 Batch size 128
 
-+------------------+----+------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator         | Id | Details                                                          | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+------------------+----+------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults  |  0 | person                                                           |              0 |    0 |       0 |                |                        |           |                     |
-| |                +----+------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Filter          |  1 | person.country CONTAINS $autostring_0 AND person.age IS NOT NULL |              0 |    0 |       8 |                |                        |           |                     |
-| |                +----+------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +NodeByLabelScan |  2 | person:Person                                                    |             10 |    4 |       5 |            120 |                    3/0 |     0.296 | Fused in Pipeline 0 |
-+------------------+----+------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++-----------------+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator        | Details                                                                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-----------------+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults | person                                                                                               |             15 |    1 |       0 |                |                        |           |                     |
+| |               +------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Filter         | cache[person.country] CONTAINS $autostring_0                                                         |             15 |    1 |       0 |                |                        |           |                     |
+| |               +------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeIndexScan  | RANGE INDEX person:Person(country, age) WHERE country IS NOT NULL AND age IS NOT NULL, cache[person. |            303 |  303 |     304 |            120 |                    5/0 |     2.309 | Fused in Pipeline 0 |
+|                 | country]                                                                                             |                |      |         |                |                        |           |                     |
++-----------------+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
-Total database accesses: 13, total allocated memory: 184
+Total database accesses: 304, total allocated memory: 184
 ----
 
 
@@ -1252,17 +1276,15 @@ Runtime version {neo4j-version-minor}
 
 Batch size 128
 
-+-----------------+----+-------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator        | Id | Details                                                     | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+-----------------+----+-------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults |  0 | p                                                           |              1 |    3 |      24 |                |                        |           |                     |
-| |               +----+-------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Filter         |  1 | p.surname IS NOT NULL                                       |              1 |    3 |       6 |                |                        |           |                     |
-| |               +----+-------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +NodeIndexScan  |  2 | RANGE INDEX p:Person(firstname) WHERE firstname IS NOT NULL |              1 |    3 |       4 |            120 |                    3/0 |     0.413 | Fused in Pipeline 0 |
-+-----------------+----+-------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++-----------------+----------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator        | Details                                                                                      | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-----------------+----------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults | p                                                                                            |              1 |    2 |       0 |                |                        |           |                     |
+| |               +----------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeIndexScan  | RANGE INDEX p:Person(firstname, surname) WHERE firstname IS NOT NULL AND surname IS NOT NULL |              1 |    2 |       3 |            120 |                    2/1 |     0.310 | Fused in Pipeline 0 |
++-----------------+----------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
-Total database accesses: 34, total allocated memory: 184
+Total database accesses: 3, total allocated memory: 184
 ----
 
 
@@ -1273,8 +1295,7 @@ Total database accesses: 34, total allocated memory: 184
 ////
 [source, cypher, role=test-setup]
 ----
-CREATE POINT INDEX
-FOR ()-[r:KNOWS]-() ON (r.lastMetPoint)
+CREATE POINT INDEX FOR ()-[r:KNOWS]-() ON (r.lastMetPoint)
 ----
 ////
 
@@ -1323,6 +1344,12 @@ Total database accesses: 10, total allocated memory: 184
 
 The ability to do index seeks on bounded ranges works even with the 2D and 3D spatial `Point` types.
 
+////
+[source, cypher, role=test-setup]
+----
+CREATE POINT INDEX FOR (p:Person) ON (p.location)
+----
+////
 
 .Query
 [source, cypher]
@@ -1344,19 +1371,17 @@ Runtime version {neo4j-version-minor}
 
 Batch size 128
 
-+------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator         | Id | Details                                                                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults  |  0 | `person.firstname`                                                                                   |              0 |    0 |       0 |                |                        |           |                     |
-| |                +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Projection      |  1 | person.firstname AS `person.firstname`                                                               |              0 |    0 |       0 |                |                        |           |                     |
-| |                +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Filter          |  2 | point.withinBBox(person.location, point({x: $autodouble_0, y: $autodouble_1}), point({x: $autodouble |              0 |    0 |       0 |                |                        |           |                     |
-| |                |    | _2, y: $autodouble_3}))                                                                              |                |      |         |                |                        |           |                     |
-| |                +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +NodeByLabelScan |  3 | person:Person                                                                                        |             10 |    4 |       5 |            120 |                    1/0 |     0.342 | Fused in Pipeline 0 |
-+------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++-----------------------+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator              | Details                                                                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-----------------------+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults       | `person.firstname`                                                                                   |              0 |    1 |       0 |                |                        |           |                     |
+| |                     +------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Projection           | person.firstname AS `person.firstname`                                                               |              0 |    1 |       2 |                |                        |           |                     |
+| |                     +------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeIndexSeekByRange | POINT INDEX person:Person(location) WHERE point.withinBBox(location, point($autodouble_0, $autodoubl |              0 |    1 |       2 |            120 |                    6/0 |     7.910 | Fused in Pipeline 0 |
+|                       | e_1), point($autodouble_2, $autodouble_3))                                                           |                |      |         |                |                        |           |                     |
++-----------------------+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
-Total database accesses: 5, total allocated memory: 184
+Total database accesses: 4, total allocated memory: 184
 ----
 
