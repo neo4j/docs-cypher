@@ -863,6 +863,237 @@ RETURN person.name AS name
 |===
 
 
+[[collect-subqueries]]
+=== `COLLECT` subqueries
+
+A `COLLECT` subquery expression can be used to collect the rows returned by the subquery into a list.
+
+Any non-writing query is allowed. `COLLECT` subqueries differ from `COUNT` and `EXISTS` subqueries in that the final `RETURN` clause is mandatory.
+The `RETURN` clause must return exactly one column.
+
+[[collect-subquery-simple-case]]
+==== Simple `COLLECT` subquery
+
+Variables introduced by the outside scope can be used in the `COLLECT` subquery without importing them.
+In this regard, `COLLECT` subqueries are different from `CALL` subqueries, xref::clauses/call-subquery.adoc#subquery-correlated-importing[which do require importing].
+The following query exemplifies this and outputs the owners of more than one dog:
+
+
+.Query
+[source, cypher]
+----
+MATCH (person:Person)
+WHERE 'Ozzy' IN COLLECT { MATCH (person)-[:HAS_DOG]->(dog:Dog) RETURN dog.name }
+RETURN person.name AS name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Peter"+
+1+d|Rows: 1
+|===
+
+
+[[collect-subquery-with-where]]
+==== `COLLECT` subquery with `WHERE` clause
+
+A `WHERE` clause can be used inside the `COLLECT` pattern.
+Variables introduced by the `MATCH` clause and the outside scope can be used in this scope.
+
+
+.Query
+[source, cypher]
+----
+MATCH (person:Person)
+RETURN person.name as name, COLLECT {
+  MATCH (person)-[r:HAS_DOG]->(dog:Dog)
+  WHERE r.since > 2017
+  RETURN dog.name
+} as youngDogs
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +name+        | +youngDogs+
+| +"Andy"+      | +[]+
+| +"Timothy"+   | +[]+
+| +"Peter"+     | +["Ozzy"]+
+2+d|Rows: 3
+|===
+
+[[collect-subquery-with-union]]
+==== `COLLECT` subquery with a `UNION`
+
+`COLLECT` can be used with a `UNION` clause.
+The below example shows the collection of pet names each person has by using a `UNION` clause:
+
+.Query
+[source, cypher]
+----
+MATCH (person:Person)
+RETURN
+    person.name AS name,
+    COLLECT {
+        MATCH (person)-[:HAS_DOG]->(dog:Dog)
+        RETURN dog.name AS petName
+        UNION
+        MATCH (person)-[:HAS_CAT]->(cat:Cat)
+        RETURN cat.name AS petName
+    } AS petNames
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +name+        | +petNames+
+| +"Andy"+      | +["Andy"]+
+| +"Timothy"+   | +["Mittens"]+
+| +"Peter"+     | +["Ozzy", "Fido"]+
+2+d|Rows: 3
+|===
+
+
+[[collect-subquery-with-with]]
+==== `COLLECT` subquery with `WITH`
+
+Variables from the outside scope are visible for the entire subquery, even when using a `WITH` clause.
+This means that shadowing of these variables is not allowed.
+An outside scope variable is shadowed when a newly introduced variable within the inner scope is defined with the same variable.
+In the below example, a `WITH` clause introduces a new variable.
+Note that the outer scope variable `person` referenced in the main query is still available after the `WITH` clause.
+
+.Query
+[source, cypher]
+----
+MATCH (person:Person)
+RETURN person.name AS name, COLLECT {
+    WITH 2018 AS yearOfTheDog
+    MATCH (person)-[r:HAS_DOG]->(d:Dog)
+    WHERE r.since = yearOfTheDog
+    RETURN d.name
+} as dogsOfTheYear
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +name+        | +dogsOfTheYear+
+| +"Andy"+      | +[]+
+| +"Timothy"+   | +[]+
+| +"Peter"+     | +["Ozzy"]+
+2+d|Rows: 3
+|===
+
+
+[[collect-subqueries-other-clauses]]
+==== Using `COLLECT` subqueries inside other clauses
+
+`COLLECT` can be used in any position in a query, with the exception of administration commands, where it is restricted.
+See a few examples below:
+
+[[collect-subqueries-with-return]]
+===== Using `COLLECT` in `RETURN`
+
+
+.Query
+[source, cypher]
+----
+MATCH (person:Person)
+RETURN person.name, COLLECT { MATCH (person)-[:HAS_DOG]->(d:Dog) RETURN d.name } as dogNames
+
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +person.name+ | +dogNames+
+| +"Andy"+      | +["Andy"]+
+| +"Timothy"+   | +[]+
+| +"Peter"+     | +["Ozzy", "Fido"]+
+2+d|Rows: 3
+|===
+
+
+[[collect-subqueries-with-set]]
+===== Using `COLLECT` in `SET`
+
+
+.Query
+[source, cypher]
+----
+MATCH (person:Person) WHERE person.name = "Peter"
+SET person.dogNames = COLLECT { MATCH (person)-[:HAS_DOG]->(d:Dog) RETURN d.name }
+RETURN person.dogNames as dogNames
+
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +dogNames+
+| +["Ozzy", "Fido"]+
+1+d|Rows: 1 +
+Properties set: 1
+|===
+
+
+[[collect-subqueries-with-case]]
+===== Using `COLLECT` in `CASE`
+
+
+.Query
+[source, cypher]
+----
+MATCH (person:Person)
+RETURN
+   CASE
+     WHEN COLLECT { MATCH (person)-[:HAS_DOG]->(d:Dog) RETURN d.name } = []  THEN "No Dogs " + person.name
+     ELSE person.name
+   END AS result
+
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +result+
+| +"Andy"+
+| +"No Dogs Timothy"+
+| +"Peter"+
+1+d|Rows: 3
+|===
+
+
+[[collect-subqueries-as-grouping-key]]
+===== Using `COLLECT` as a grouping key
+
+The following query collects all persons by their dog's names,
+and then calculates the average age for each group.
+
+
+.Query
+[source, cypher]
+----
+MATCH (person:Person)
+RETURN COLLECT { MATCH (person)-[:HAS_DOG]->(d:Dog) RETURN d.name } AS dogNames,
+       avg(person.age) AS averageAge
+ ORDER BY dogNames
+
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +dogNames+         | +averageAge+
+| +[]+               | +25.0+
+| +["Andy"]+         | +36.0+
+| +["Ozzy", "Fido"]+ | +35.0+
+2+d|Rows: 3
+|===
+
 [[label-expressions]]
 == Label expressions
 
