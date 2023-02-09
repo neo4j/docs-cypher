@@ -32,7 +32,7 @@ The different index types used for search performance are:
 * `RANGE`
 * `POINT`
 * `TEXT`
-* `BTREE` label:deprecated[]
+* `BTREE` label:removed[]
 
 [NOTE]
 ====
@@ -298,18 +298,20 @@ It is defined as such:
 In the example below, a node `LOOKUP` index is available.
 
 ////
+// Lookup indexes exist by default
 CREATE LOOKUP INDEX node_label_lookup_index FOR (n) ON EACH labels(n)
 ////
 
 .Query
 [source, cypher]
 ----
+PROFILE
 MATCH (person:Person)
 RETURN person
 ----
 
 .Query Plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryplan"]
 ----
 Planner COST
 
@@ -338,18 +340,20 @@ Total database accesses: 43, total allocated memory: 184
 In the example below, a relationship `LOOKUP` index is available.
 
 ////
+// Lookup indexes exist by default
 CREATE LOOKUP INDEX rel_type_lookup_index FOR ()-[r]-() ON EACH type(r)
 ////
 
 .Query
 [source, cypher]
 ----
+PROFILE
 MATCH ()-[r:KNOWS]->()
 RETURN r
 ----
 
 .Query Plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryplan"]
 ----
 Planner COST
 
@@ -378,18 +382,22 @@ Total database accesses: 23, total allocated memory: 184
 In the example below, a `Person(firstname)` node `RANGE` index is available.
 
 ////
+[source, cypher, role=test-setup]
+----
 CREATE RANGE INDEX node_range_index_name FOR (n:Person) ON (n.firstname)
+----
 ////
 
 .Query
-[source,cypher]
+[source, cypher]
 ----
+PROFILE
 MATCH (person:Person {firstname: 'Andy'})
 RETURN person
 ----
 
 .Query Plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryplan"]
 ----
 Planner COST
 
@@ -417,18 +425,22 @@ Total database accesses: 2, total allocated memory: 184
 In this example, a `KNOWS(since)` relationship `RANGE` index is available.
 
 ////
+[source, cypher, role=test-setup]
+----
 CREATE RANGE INDEX rel_range_index_name FOR ()-[r:KNOWS]-() ON (r.since)
+----
 ////
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH (person)-[relationship:KNOWS {since: 1992}]->(friend)
 RETURN person, friend
 ----
 
 .Query Plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryplan"]
 ----
 Planner COST
 
@@ -453,17 +465,25 @@ Total database accesses: 2, total allocated memory: 184
 [[administration-indexes-node-text-index-example]]
 === Node TEXT index
 
+////
+[source, cypher, role=test-setup]
+----
+CREATE TEXT INDEX node_text_person_surname FOR (n:Person) ON (n.surname)
+----
+////
+
 In the example below, a `Person(surname)` node `TEXT` index is available.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH (person:Person {surname: 'Smith'})
 RETURN person
 ----
 
 .Query Plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryplan"]
 ----
 Planner COST
 
@@ -489,17 +509,25 @@ Total database accesses: 2, total allocated memory: 184
 [[administration-indexes-relationship-text-index-example]]
 === Relationship TEXT index
 
-In this example, a `KNOWS(lastMetLocation)` relationship `TEXT` index is available.
+////
+[source, cypher, role=test-setup]
+----
+CREATE TEXT INDEX rel_text_index_name FOR ()-[r:KNOWS]-() ON (r.metIn)
+----
+////
+
+In this example, a `KNOWS(metIn)` relationship `TEXT` index is available.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH (person)-[relationship:KNOWS {metIn: 'Malmo'} ]->(friend)
 RETURN person, friend
 ----
 
 .Query Plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryplan"]
 ----
 Planner COST
 
@@ -525,18 +553,27 @@ Total database accesses: 2, total allocated memory: 184
 [[administration-indexes-multiple-available-index-types]]
 === Multiple available index types
 
+////
+[source, cypher, role=test-setup]
+----
+CREATE RANGE INDEX node_range_person_middlename FOR (p:Person) ON (p.middlename);
+CREATE TEXT INDEX node_text_person_middlename FOR (p:Person) ON (p.middlename);
+----
+////
+
 In the example below, both a `Person(middlename)` node `TEXT` index and a `Person(middlename)` node `RANGE` index are available.
 The `RANGE` node index is chosen.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH (person:Person {middlename: 'Ron'})
 RETURN person
 ----
 
 .Query Plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryplan"]
 ----
 Planner COST
 
@@ -568,7 +605,7 @@ For example, if indexes exist on both `:Label(p1)` and `:Label(p2)`, `MATCH (n:L
 
 
 .Query
-[source, query plan, subs="attributes+", role="noheader"]
+[source, cypher]
 ----
 MATCH (person:Person)
 WHERE person.firstname = 'Andy'
@@ -576,7 +613,7 @@ RETURN person
 ----
 
 .Query Plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryplan"]
 ----
 Planner COST
 
@@ -608,13 +645,16 @@ It can have ranges and existence predicates as well.
 But in these cases rewrites might happen depending on which properties have which predicates, see xref::indexes-for-search-performance.adoc#administration-indexes-single-vs-composite-index[composite index limitations].
 
 ////
-CREATE RANGE INDEX node_index_name FOR (n:Person) ON (n.age, n.country)
-CREATE (p0:`Person` {`age`:35, `country`:"UK", `firstname`:"John", `highScore`:54321, `middlename`:"Ron", `name`:"john", `surname`:"Smith"})
+[source, cypher, role=test-setup]
+----
+CREATE RANGE INDEX node_range_age_country FOR (n:Person) ON (n.age, n.country)
+----
 ////
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH (n:Person)
 WHERE n.age = 35 AND n.country = 'UK'
 RETURN n
@@ -623,20 +663,27 @@ RETURN n
 However, the query `MATCH (n:Person) WHERE n.age = 35 RETURN n` will not be backed by the composite index, as the query does not contain a predicate on the `country` property.
 It will only be backed by an index on the `Person` label and `age` property defined thus: `:Person(age)`; i.e. a single-property index.
 
-// TODO: this should output a query plan
+[role="queryresult"]
+----
+Planner COST
 
-////
-.Result
-[source, result, role="noheader"]
+Runtime PIPELINED
+
+Runtime version 5.5
+
+Batch size 128
+
++-----------------+----+---------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator        | Id | Details                                                                               | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-----------------+----+---------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults |  0 | n                                                                                     |              0 |    3 |      24 |                |                        |           |                     |
+| |               +----+---------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeIndexSeek  |  1 | RANGE INDEX n:Person(age, country) WHERE age = $autoint_0 AND country = $autostring_1 |              0 |    3 |       4 |            120 |                    3/0 |     0.476 | Fused in Pipeline 0 |
++-----------------+----+---------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 28, total allocated memory: 184
 ----
-+------------------------------------------------------------------------------------------------------------+
-| n                                                                                                          |
-+------------------------------------------------------------------------------------------------------------+
-| Node[0]{country:"UK",highScore:54321,firstname:"John",surname:"Smith",name:"john",middlename:"Ron",age:35} |
-+------------------------------------------------------------------------------------------------------------+
-1 row
-----
-////
+
 
 [discrete]
 [[administration-indexes-range-comparisons-using-where-single-property-index]]
@@ -645,15 +692,16 @@ It will only be backed by an index on the `Person` label and `age` property defi
 Single-property indexes are also automatically used for inequality (range) comparisons of an indexed property in the `WHERE` clause.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH (friend)<-[r:KNOWS]-(person)
 WHERE r.since < 2011
 RETURN friend, person
 ----
 
 .Query Plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryplan"]
 ----
 Planner COST
 
@@ -683,16 +731,24 @@ Composite indexes are also automatically used for inequality (range) comparisons
 Equality or list membership check predicates may precede the range predicate.
 However, predicates after the range predicate may be rewritten as an existence check predicate and a filter as described in xref::indexes-for-search-performance.adoc#administration-indexes-single-vs-composite-index[composite index limitations].
 
-.Query
-[source, cypher, indent=0]
+////
+[source, cypher, role=test-setup]
 ----
+CREATE RANGE INDEX rel_range_since_lastmet FOR ()-[r:KNOWS]-() ON (r.since, r.lastMet)
+----
+////
+
+.Query
+[source, cypher]
+----
+PROFILE
 MATCH ()-[r:KNOWS]-()
 WHERE r.since < 2011 AND r.lastMet > 2019
 RETURN r.since
 ----
 
 .Query Plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryplan"]
 ----
 Planner COST
 
@@ -723,18 +779,26 @@ Total database accesses: 2, total allocated memory: 184
 [[administration-indexes-multiple-range-comparisons-using-where-single-property-index]]
 === Multiple range comparisons using `WHERE` (single-property index)
 
+////
+[source, cypher, role=test-setup]
+----
+CREATE RANGE INDEX node_range_highscore FOR (p:Person) ON p.highScore
+----
+////
+
 When the `WHERE` clause contains multiple inequality (range) comparisons for the same property, these can be combined in a single index range seek.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH (person:Person)
 WHERE 10000 < person.highScore < 20000
 RETURN person
 ----
 
 .Query Plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryplan"]
 ----
 Planner COST
 
@@ -764,15 +828,16 @@ When the `WHERE` clause contains multiple inequality (range) comparisons for the
 That single range seek created in the following query will then use the composite index `Person(highScore, name)` if it exists.
 
 ////
-CREATE INDEX
-FOR (p:Person) ON (p.highScore, p.name)
-
-CREATE (:Person)
+[source, cypher, role=test-setup]
+----
+CREATE INDEX FOR (p:Person) ON (p.highScore, p.name);
+----
 ////
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH (person:Person)
 WHERE 10000 < person.highScore < 20000 AND person.name IS NOT NULL
 RETURN person
@@ -780,7 +845,7 @@ RETURN person
 
 
 .Query Plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryplan"]
 ----
 Planner COST
 
@@ -809,16 +874,24 @@ Total database accesses: 2, total allocated memory: 184
 
 The `IN` predicate on `r.since` in the following query will use the single-property index `KNOWS(lastMetIn)` if it exists.
 
-.Query
-[source, cypher, indent=0]
+////
+[source, cypher, role=test-setup]
 ----
+CREATE RANGE INDEX rel_range_lastmetin FOR ()-[r:KNOWS]-() ON r.lastMetIn
+----
+////
+
+.Query
+[source, cypher]
+----
+PROFILE
 MATCH (person)-[r:KNOWS]->(friend)
 WHERE r.lastMetIn IN ['Malmo', 'Stockholm']
 RETURN person, friend
 ----
 
 .Query Plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryplan"]
 ----
 Planner COST
 
@@ -847,15 +920,16 @@ Total database accesses: 3, total allocated memory: 184
 The `IN` predicates on `r.since` and `r.lastMet` in the following query will use the composite index `KNOWS(since, lastMet)` if it exists.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH (person)-[r:KNOWS]->(friend)
 WHERE r.since IN [1992, 2017] AND r.lastMet IN [2002, 2021]
 RETURN person, friend
 ----
 
 .Query Plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryplan"]
 ----
 Planner COST
 
@@ -885,15 +959,16 @@ Total database accesses: 5, total allocated memory: 184
 The `STARTS WITH` predicate on `person.firstname` in the following query will use the `Person(firstname)` index, if it exists.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH (person:Person)
 WHERE person.firstname STARTS WITH 'And'
 RETURN person
 ----
 
 .Query Plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryplan"]
 ----
 Planner COST
 
@@ -919,21 +994,29 @@ Total database accesses: 2, total allocated memory: 184
 [[administration-indexes-prefix-search-using-starts-with-composite-index]]
 === Prefix search using `STARTS WITH` (composite index)
 
+////
+[source, cypher, role=test-setup]
+----
+CREATE RANGE INDEX node_text_firstname_surname FOR (p:Person) ON (p.firstname, p.surname)
+----
+////
+
 The `STARTS WITH` predicate on `person.firstname` in the following query will use the `Person(firstname,surname)` index, if it exists.
 Any (non-existence check) predicate on `person.surname` will be rewritten as existence check with a filter.
 However, if the predicate on `person.firstname` is a equality check then a `STARTS WITH` on `person.surname` would also use the index (without rewrites).
 More information about how the rewriting works can be found in xref::indexes-for-search-performance.adoc#administration-indexes-single-vs-composite-index[composite index limitations].
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH (person:Person)
 WHERE person.firstname STARTS WITH 'And' AND person.surname IS NOT NULL
 RETURN person
 ----
 
 .Query Plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryplan"]
 ----
 Planner COST
 
@@ -963,32 +1046,37 @@ Total database accesses: 2, total allocated memory: 184
 The `ENDS WITH` predicate on `r.metIn` in the following query uses the `KNOWS(metIn)` index, if it exists.
 Text indexes are optimized for `CONTAINS` and `ENDS WITH` and they are the only indexes that can solve those predicates.
 
-////
-CREATE TEXT INDEX FOR ()-[r:KNOWS]-() ON (r.metIn)
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH (person)-[r:KNOWS]->(friend)
 WHERE r.metIn ENDS WITH 'mo'
 RETURN person, friend
 ----
 
-// TODO: this should output a query plan
-
-////
 .Query Plan
-[source, query plan, role="noheader"]
+[role="queryplan"]
 ----
-+-------------------------+
-| person     | friend     |
-+-------------------------+
-| Node[82]{} | Node[83]{} |
-+-------------------------+
-1 row
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version 5.5
+
+Batch size 128
+
++----------------------------------------+----+------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                               | Id | Details                                                                            | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++----------------------------------------+----+------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults                        |  0 | person, friend                                                                     |              0 |    0 |       0 |                |                        |           |                     |
+| |                                      +----+------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +DirectedRelationshipIndexEndsWithScan |  1 | TEXT INDEX (person)-[r:KNOWS(metIn)]->(friend) WHERE metIn ENDS WITH $autostring_0 |              0 |    0 |       1 |            120 |                    0/0 |     1.135 | Fused in Pipeline 0 |
++----------------------------------------+----+------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 1, total allocated memory: 184
+
 ----
-////
 
 Text indexes only index String values and therefore do not find other values.
 
@@ -1003,19 +1091,24 @@ Any (non-existence check) predicate on `KNOWS.lastMetIn` is also rewritten as ex
 More information about how the rewriting works can be found in xref::indexes-for-search-performance.adoc#administration-indexes-single-vs-composite-index[composite index limitations].
 
 ////
-
+[source, cypher, role=test-setup]
+----
+DROP INDEX rel_text_index_name; // TEXT indexes would take precedence over composite RANGE index
+CREATE RANGE INDEX rel_text_metin_lastmetin FOR ()-[r:KNOWS]-() ON (r.metIn, r.lastMetIn)
+----
 ////
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH (person)-[r:KNOWS]->(friend)
 WHERE r.metIn ENDS WITH 'mo' AND r.lastMetIn IS NOT NULL
 RETURN person, friend
 ----
 
 .Query Plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryplan"]
 ----
 Planner COST
 
@@ -1049,8 +1142,9 @@ Text indexes are optimized for `CONTAINS` and `ENDS WITH` and they are the only 
 Composite indexes are currently not able to support `CONTAINS`.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH (person:Person)
 WHERE person.firstname CONTAINS 'h'
 RETURN person
@@ -1084,15 +1178,16 @@ Any (non-existence check) predicate on `person.age` will also be rewritten as ex
 More information about how the rewriting works can be found in xref::indexes-for-search-performance.adoc#administration-indexes-single-vs-composite-index[composite index limitations].
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH (person:Person)
 WHERE person.country CONTAINS '300' AND person.age IS NOT NULL
 RETURN person
 ----
 
 .Query Plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryplan"]
 ----
 Planner COST
 
@@ -1124,15 +1219,16 @@ Total database accesses: 304, total allocated memory: 184
 The `r.since IS NOT NULL` predicate in the following query uses the `KNOWS(since)` index, if it exists.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH (person)-[r:KNOWS]->(friend)
 WHERE r.since IS NOT NULL
 RETURN person, friend
 ----
 
 .Query Plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryplan"]
 ----
 Planner COST
 
@@ -1162,15 +1258,16 @@ The `p.firstname IS NOT NULL` and `p.surname IS NOT NULL` predicates in the foll
 Any (non-existence check) predicate on `person.surname` will be rewritten as existence check with a filter.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH (p:Person)
 WHERE p.firstname IS NOT NULL AND p.surname IS NOT NULL
 RETURN p
 ----
 
 .Query Plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryplan"]
 ----
 Planner COST
 
@@ -1197,22 +1294,25 @@ Total database accesses: 3, total allocated memory: 184
 === Spatial distance searches (single-property index)
 
 ////
-CREATE POINT INDEX
-FOR ()-[r:KNOWS]-() ON (r.lastMetPoint)
+[source, cypher, role=test-setup]
+----
+CREATE POINT INDEX FOR ()-[r:KNOWS]-() ON (r.lastMetPoint)
+----
 ////
 
 If a property with point values is indexed, the index is used for spatial distance searches as well as for range queries.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH ()-[r:KNOWS]->()
 WHERE point.distance(r.lastMetPoint, point({x: 1, y: 2})) < 2
 RETURN r.lastMetPoint
 ----
 
 .Query Plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryplan"]
 ----
 Planner COST
 
@@ -1245,17 +1345,24 @@ Total database accesses: 10, total allocated memory: 184
 
 The ability to do index seeks on bounded ranges works even with the 2D and 3D spatial `Point` types.
 
+////
+[source, cypher, role=test-setup]
+----
+CREATE POINT INDEX FOR (p:Person) ON (p.location)
+----
+////
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
+PROFILE
 MATCH (person:Person)
 WHERE point.withinBBox(person.location, point({x: 1.2, y: 5.4}), point({x: 1.3, y: 5.5}))
 RETURN person.firstname
 ----
 
 .Query Plan
-[source, query plan, subs="attributes+", role="noheader"]
+[role="queryplan"]
 ----
 Planner COST
 
