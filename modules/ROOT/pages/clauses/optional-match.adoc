@@ -8,12 +8,12 @@
 The `OPTIONAL MATCH` clause is used to search for the pattern described in it, while using nulls for missing parts of the pattern.
 --
 
-`OPTIONAL MATCH` matches patterns against your graph database, just like `MATCH` does.
+`OPTIONAL MATCH` matches patterns against a graph database, just as `MATCH` does.
 The difference is that if no matches are found, `OPTIONAL MATCH` will use a `null` for missing parts of the pattern.
 `OPTIONAL MATCH` could be considered the Cypher equivalent of the outer join in SQL.
 
 Either the whole pattern is matched, or nothing is matched.
-Remember that `WHERE` is part of the pattern description, and the predicates will be considered while looking for matches, not after.
+The `WHERE` clause is part of the pattern description, and its predicates will be considered while looking for matches, not after.
 This matters especially in the case of multiple (`OPTIONAL`) `MATCH` clauses, where it is crucial to put `WHERE` together with the `MATCH` it belongs to.
 
 [TIP]
@@ -21,11 +21,14 @@ This matters especially in the case of multiple (`OPTIONAL`) `MATCH` clauses, wh
 To understand the patterns used in the `OPTIONAL MATCH` clause, read xref::syntax/patterns.adoc[Patterns].
 ====
 
+== Example graph
+
 The following graph is used for the examples below:
 
-image:graph_optional_match_clause.svg[]
+image:graph_optional_match_clause.svg[width="600",role="middle"]
 
-////
+To recreate the graph, run the following query in an empty Neo4j database:
+
 [source, cypher, role=test-setup]
 ----
 CREATE
@@ -43,27 +46,25 @@ CREATE
   (martin)-[:ACTED_IN]->(thePresident),
   (michael)-[:ACTED_IN]->(thePresident),
   (rob)-[:DIRECTED]->(thePresident),
-  (charlie)-[:FATHER]->(martin)
+  (martin)-[:FATHER_OF]->(charlie)
 ----
-////
 
 [[optional-relationships]]
 == Optional relationships
 
-If a relationship is optional, use the `OPTIONAL MATCH` clause.
-This is similar to how a SQL outer join works.
-If the relationship is there, it is returned.
-If it is not, `null` is returned in its place.
+If the existence of a relationship is not know, use the `OPTIONAL MATCH` clause.
+If the relationship exists, it is returned.
+If it does not, `null` is returned in its place.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 MATCH (a:Movie {title: 'Wall Street'})
 OPTIONAL MATCH (a)-->(x)
 RETURN x
 ----
 
-Returns `null`, since the node has no outgoing relationships.
+Returns `null`, since the `Movie` node `Wall Street` has no outgoing relationships.
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
@@ -73,21 +74,41 @@ Returns `null`, since the node has no outgoing relationships.
 1+d|Rows: 1
 |===
 
+The following query does not return `null`, however, since the `Person` node `Charlie Sheen` does have outgoing relationships. 
+
+.Query
+[source, cypher]
+----
+MATCH (a:Person {name: 'Charlie Sheen'})
+OPTIONAL MATCH (a)-->(x)
+RETURN x
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +x+
+| +{"name":"Martin Sheen"}+
+| +{"title":"Wall Street"}+
+1+d|Rows: 2
+|===
+
 
 [[properties-on-optional-elements]]
 == Properties on optional elements
 
-Returning a property from an optional element that is `null` will also return `null`.
+If the existence of a property is not known, use the `OPTIONAL MATCH` clause.
+Again, `null` will be returned if the specified property does not exist. 
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 MATCH (a:Movie {title: 'Wall Street'})
 OPTIONAL MATCH (a)-->(x)
 RETURN x, x.name
 ----
 
-Returns the element x (`null` in this query), and `null` as its name.
+Returns the element x (`null` in this query), and `null` for its `name` property, because the `Movie` node `Wall Street` has no outgoing relationships. 
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -97,21 +118,41 @@ Returns the element x (`null` in this query), and `null` as its name.
 2+d|Rows: 1
 |===
 
+The following query only returns `null` for the nodes which lack a `name` property.
+
+.Query
+[source, cypher]
+----
+MATCH (a:Person {title: 'Martin Sheen'})
+OPTIONAL MATCH (a)-->(x)
+RETURN x, x.name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +x+ | +x.name+
+| +{"title":"Wall Street"}+ | +<null>+
+| +{"name":"Charlie Sheen"}+ | +"Charlie Sheen"+
+| +{"title":"The American President"}+ | +<null>+
+2+d|Rows: 3
+|===
+
 
 [[optional-typed-named-relationship]]
 == Optional typed and named relationship
 
-Just as with a normal relationship, you can decide which variable it goes into, and what relationship type you need.
+It is also possible to look for specific relationship types when using `OPTIONAL MATCH`:
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 MATCH (a:Movie {title: 'Wall Street'})
-OPTIONAL MATCH (a)-[r:ACTS_IN]->()
+OPTIONAL MATCH (a)-[r:ACTED_IN]->()
 RETURN a.title, r
 ----
 
-This returns the title of the node, *'Wall Street'*, and, since the node has no outgoing `ACTS_IN` relationships, `null` is returned for the relationship denoted by `r`.
+This returns the title of `Movie` node `Wall Street`, and since this node has no outgoing `ACTED_IN` relationships, `null` is returned for the relationship denoted by the variable `r`.
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -121,3 +162,22 @@ This returns the title of the node, *'Wall Street'*, and, since the node has no 
 2+d|Rows: 1
 |===
 
+The following query does not return `null`, however, since it is looking for incoming relationships of the type `ACTED_IN` to the `Movie` node `Wall Street`.
+
+.Query
+[source, cypher]
+----
+MATCH (a:Movie {title: 'Wall Street'})
+OPTIONAL MATCH (x)-[r:ACTED_IN]->(a)
+RETURN a.title, x.name, type(r)
+----
+
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| +a.title+ | +x.name+ | +type(r)+
+| +"Wall Street"+ | +"Michael Douglas"+ | +"ACTED_IN"+
+| +"Wall Street"+ | +"Martin Sheen"+ | +"ACTED_IN"+
+| +"Wall Street"+ | +"Charlie Sheen"+ | +"ACTED_IN"+
+
+3+d|Rows: 3
+|===
