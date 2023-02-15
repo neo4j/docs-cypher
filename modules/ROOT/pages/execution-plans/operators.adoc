@@ -49,21 +49,21 @@ CREATE (me:Person {name: 'me'}),
        (executive:Team {name: 'Team Executive'}),
        (remoting:Team {name: 'Team Remoting'}),
        (other:Team {name: 'Other'}),
-       (me)-[:WORKS_IN {duration: 190, title: 'senior sales engineer'}]->(london),
-       (bob)-[:WORKS_IN {duration: 187, title: 'junior developer'}]->(london),
-       (andy)-[:WORKS_IN {duration: 150, title: ''}]->(london),
-       (mattias)-[:WORKS_IN {duration: 230, title: 'senior developer'}]->(london),
-       (lovis)-[:WORKS_IN {duration: 230, title: 'junior developer'}]->(sf),
-       (pontus)-[:WORKS_IN {duration: 230, title: 'junior developer'}]->(malmo),
-       (max)-[:WORKS_IN {duration: 230, title: 'field engineer'}]->(newyork),
-       (konstantin)-[:WORKS_IN {duration: 230, title: 'frontend developer'}]->(london),
-       (stefan)-[:WORKS_IN {duration: 230, title: 'chief architect'}]->(london),
-       (stefan)-[:WORKS_IN {duration: 230, title: 'language architect'}]->(berlin),
-       (mats)-[:WORKS_IN {duration: 230, title: 'senior developer'}]->(malmo),
-       (petra)-[:WORKS_IN {duration: 230, title: 'language architect'}]->(london),
-       (craig)-[:WORKS_IN {duration: 230, title: 'senior developer'}]->(malmo),
-       (steven)-[:WORKS_IN {duration: 230, title: 'junior developer'}]->(malmo),
-       (chris)-[:WORKS_IN {duration: 230, title: 'field engineer'}]->(madrid),
+       (me)-[:WORKS_IN {id: 0, duration: 190, title: 'senior sales engineer', badgeNumber: 4332}]->(london),
+       (bob)-[:WORKS_IN {id: 1, duration: 187, title: 'junior developer', badgeNumber: 3293}]->(london),
+       (andy)-[:WORKS_IN {id: 2, duration: 150, title: ''}]->(london),
+       (mattias)-[:WORKS_IN {id: 3, duration: 230, title: 'senior developer', badgeNumber: 7627}]->(london),
+       (lovis)-[:WORKS_IN {id: 4, duration: 230, title: 'junior developer'}]->(sf),
+       (pontus)-[:WORKS_IN {id: 5, duration: 230, title: 'junior developer', badgeNumber: 9596}]->(malmo),
+       (max)-[:WORKS_IN {id: 6, duration: 230, title: 'field engineer', badgeNumber: 4416}]->(newyork),
+       (konstantin)-[:WORKS_IN {id: 7, duration: 230, title: 'frontend developer'}]->(london),
+       (stefan)-[:WORKS_IN {id: 8, duration: 230, title: 'chief architect', badgeNumber: 2951}]->(london),
+       (stefan)-[:WORKS_IN {id: 9, duration: 230, title: 'language architect', badgeNumber: 7092}]->(berlin),
+       (mats)-[:WORKS_IN {id: 10, duration: 230, title: 'senior developer', badgeNumber: 1402}]->(malmo),
+       (petra)-[:WORKS_IN {id: 11, duration: 230, title: 'language architect'}]->(london),
+       (craig)-[:WORKS_IN {id: 12, duration: 230, title: 'senior developer'}]->(malmo),
+       (steven)-[:WORKS_IN {id: 13, duration: 230, title: 'junior developer', badgeNumber: 1515}]->(malmo),
+       (chris)-[:WORKS_IN {id: 14, duration: 230, title: 'field engineer', badgeNumber: 6828}]->(madrid),
        (london)-[:IN]->(england),
        (me)-[:FRIENDS_WITH]->(andy),
        (andy)-[:FRIENDS_WITH]->(bob),
@@ -77,6 +77,9 @@ CREATE (me:Person {name: 'me'}),
        (bob)-[:FRIENDS_WITH]->(andy),
        (steven)-[:FRIENDS_WITH]->(mats),
        (mattias)-[:FRIENDS_WITH]->(me);
+
+CREATE CONSTRAINT constraint_WORKS_IN_id_unique IF NOT EXISTS FOR ()-[r:WORKS_IN]-() REQUIRE (r.id) IS UNIQUE;
+CREATE CONSTRAINT constraint_WORKS_IN_badgeNumber_unique IF NOT EXISTS FOR ()-[r:WORKS_IN]-() REQUIRE (r.badgeNumber) IS UNIQUE;
 ----
 ////
 
@@ -2777,9 +2780,9 @@ Total database accesses: 1, total allocated memory: 200
 == Assert Same Node
 // AssertSameNode
 
-The `AssertSameNode` operator is used to ensure that no property uniqueness constraints are violated in the slotted and interpreted runtime.
-The example looks for the presence of a team with the supplied name and id, and if one does not exist, it will be created.
-Owing to the existence of two property uniqueness constraints on `:Team(name)` and `:Team(id)`, any node that would be found by the `UniqueIndexSeek` operator must be the very same node or the constraints would be violated.
+The `AssertSameNode` operator is used to ensure that no node property uniqueness constraints are violated in the slotted and interpreted runtime.
+The example looks for the presence of a team node with the supplied name and id, and if one does not exist, it will be created.
+Owing to the existence of two node property uniqueness constraints on `:Team(name)` and `:Team(id)`, any node that would be found by the `UniqueIndexSeek` operator must be the very same node or the constraints would be violated.
 
 
 .AssertSameNode
@@ -2817,6 +2820,59 @@ Runtime version {neo4j-version-minor}
 | |                               +-------------------------------------------------------+----------------+------+---------+------------------------+
 | +NodeUniqueIndexSeek(Locking)   | UNIQUE t:Team(name) WHERE name = $autostring_0        |              1 |    1 |       1 |                    0/1 |
 +---------------------------------+-------------------------------------------------------+----------------+------+---------+------------------------+
+
+Total database accesses: 2, total allocated memory: 64
+----
+
+======
+
+
+[[query-plan-assert-same-relationship]]
+== Assert Same Relationship
+// AssertSameRelationship
+
+The `AssertSameRelationship` operator is used to ensure that no relationship property uniqueness constraints are violated in the slotted and interpreted runtime.
+The example looks for the presence of a _works in_ relationship with the supplied duration and title, for a specific person and location.
+If part of the pattern can't be found, then it will be created.
+Owing to the existence of two property uniqueness constraints on `:WORKS_IN(duration)` and `:WORKS_IN(title)`, any relationship that would be found by the `DirectedRelationshipUniqueIndexSeek` operator must be the very same relationship or the constraints would be violated.
+
+
+.AssertSameRelationship
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+CYPHER runtime=slotted
+MERGE (person)-[work:WORKS_IN {id: 0, badgeNumber: 4332}]->(location)
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime SLOTTED
+
+Runtime version {neo4j-version-minor}
+
++-------------------------------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+------------------------+
+| Operator                                        | Id | Details                                                                                              | Estimated Rows | Rows | DB Hits | Page Cache Hits/Misses |
++-------------------------------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+------------------------+
+| +ProduceResults                                 |  0 |                                                                                                      |              1 |    0 |       0 |                    0/0 |
+| |                                               +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+------------------------+
+| +EmptyResult                                    |  1 |                                                                                                      |              1 |    0 |       0 |                    0/0 |
+| |                                               +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+------------------------+
+| +Merge                                          |  2 | CREATE (person), (location), (person)-[work:WORKS_IN {id: $autoint_0, badgeNumber: $autoint_1}]->(lo |              1 |    1 |       0 |                    0/0 |
+| |                                               |    | cation)                                                                                              |                |      |         |                        |
+| |                                               +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+------------------------+
+| +AssertSameRelationship                         |  3 | work                                                                                                 |              0 |    1 |       0 |                    0/0 |
+| |\                                              +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+------------------------+
+| | +DirectedRelationshipUniqueIndexSeek(Locking) |  4 | RANGE INDEX (person)-[work:WORKS_IN(badgeNumber)]->(location) WHERE badgeNumber = $autoint_1         |              1 |    1 |       1 |                    0/1 |
+| |                                               +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+------------------------+
+| +DirectedRelationshipUniqueIndexSeek(Locking)   |  5 | RANGE INDEX (person)-[work:WORKS_IN(id)]->(location) WHERE id = $autoint_0                           |              1 |    1 |       1 |                    1/1 |
++-------------------------------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+------------------------+
 
 Total database accesses: 2, total allocated memory: 64
 ----
