@@ -45,12 +45,26 @@ See xref::indexes-for-full-text-search.adoc[].
 ////
 [source, cypher, role=test-setup]
 ----
+CALL db.clearQueryCaches();
+CREATE RANGE INDEX node_range_index_name FOR (n:Person) ON (n.firstname);
+CREATE RANGE INDEX rel_range_index_name FOR ()-[r:KNOWS]-() ON (r.since);
+CREATE TEXT INDEX node_text_person_surname FOR (n:Person) ON (n.surname);
+CREATE TEXT INDEX rel_text_index_name FOR ()-[r:KNOWS]-() ON (r.metIn);
+CREATE RANGE INDEX node_range_person_middlename FOR (p:Person) ON (p.middlename);
+CREATE TEXT INDEX node_text_person_middlename FOR (p:Person) ON (p.middlename);
+CREATE RANGE INDEX node_range_age_country FOR (n:Person) ON (n.age, n.country);
+CREATE RANGE INDEX node_range_highscore FOR (p:Person) ON p.highScore;
+CREATE INDEX FOR (p:Person) ON (p.highScore, p.name);
+CREATE TEXT INDEX rel_range_lastmetin FOR ()-[r:KNOWS]-() ON r.lastMetIn;
+CREATE RANGE INDEX node_text_firstname_surname FOR (p:Person) ON (p.firstname, p.surname);
+CREATE POINT INDEX FOR ()-[r:KNOWS]-() ON (r.lastMetPoint);
+CREATE POINT INDEX FOR (p:Person) ON (p.location);
 CREATE 
 (andy:Person {name: 'Andy', age: 36, highScore: 10}),
 (timothy:Person {name: 'Timothy', age: 25, firstname: 'Peterson'}),
 (peter:Person {name: 'Peter', firstname: 'Adam', highScore: 15}),
-(andy)-[:KNOWS {since: 2012, lastMet:2020}]->(timothy),
-(andy)-[:KNOWS {since: 1999, lastMet:2005}]->(peter),
+(andy)-[:KNOWS {since: 2012, lastMet:2020, lastMetPoint:point({x: 5, y: 2})}]->(timothy),
+(andy)-[:KNOWS {since: 1999, lastMet:2005, lastMetPoint:point({x: 1, y: 2})}]->(peter),
 (timothy)-[:KNOWS {since: 1999, lastMet:2005}]->(peter),
   (a:Person {name: 'Anders', surname: 'John'}),
   (b:Person {name: 'Bossman', surname: 'Jones'}),
@@ -403,13 +417,6 @@ Total database accesses: 23, total allocated memory: 184
 
 In the example below, a `Person(firstname)` node `RANGE` index is available.
 
-////
-[source, cypher, role=test-setup]
-----
-CREATE RANGE INDEX node_range_index_name FOR (n:Person) ON (n.firstname)
-----
-////
-
 .Query
 [source, cypher]
 ----
@@ -446,13 +453,6 @@ Total database accesses: 2, total allocated memory: 184
 
 In this example, a `KNOWS(since)` relationship `RANGE` index is available.
 
-////
-[source, cypher, role=test-setup]
-----
-CREATE RANGE INDEX rel_range_index_name FOR ()-[r:KNOWS]-() ON (r.since)
-----
-////
-
 .Query
 [source, cypher]
 ----
@@ -486,13 +486,6 @@ Total database accesses: 2, total allocated memory: 184
 [discrete]
 [[administration-indexes-node-text-index-example]]
 === Node TEXT index
-
-////
-[source, cypher, role=test-setup]
-----
-CREATE TEXT INDEX node_text_person_surname FOR (n:Person) ON (n.surname)
-----
-////
 
 In the example below, a `Person(surname)` node `TEXT` index is available.
 
@@ -531,13 +524,6 @@ Total database accesses: 2, total allocated memory: 184
 [[administration-indexes-relationship-text-index-example]]
 === Relationship TEXT index
 
-////
-[source, cypher, role=test-setup]
-----
-CREATE TEXT INDEX rel_text_index_name FOR ()-[r:KNOWS]-() ON (r.metIn)
-----
-////
-
 In this example, a `KNOWS(metIn)` relationship `TEXT` index is available.
 
 .Query
@@ -574,14 +560,6 @@ Total database accesses: 2, total allocated memory: 184
 [discrete]
 [[administration-indexes-multiple-available-index-types]]
 === Multiple available index types
-
-////
-[source, cypher, role=test-setup]
-----
-CREATE RANGE INDEX node_range_person_middlename FOR (p:Person) ON (p.middlename);
-CREATE TEXT INDEX node_text_person_middlename FOR (p:Person) ON (p.middlename);
-----
-////
 
 In the example below, both a `Person(middlename)` node `TEXT` index and a `Person(middlename)` node `RANGE` index are available.
 The `RANGE` node index is chosen.
@@ -666,13 +644,6 @@ However, the query does not need to have equality on all properties.
 It can have ranges and existence predicates as well.
 But in these cases rewrites might happen depending on which properties have which predicates, see xref::indexes-for-search-performance.adoc#administration-indexes-single-vs-composite-index[composite index limitations].
 
-////
-[source, cypher, role=test-setup]
-----
-CREATE RANGE INDEX node_range_age_country FOR (n:Person) ON (n.age, n.country)
-----
-////
-
 .Query
 [source, cypher]
 ----
@@ -705,7 +676,6 @@ Batch size 128
 
 Total database accesses: 28, total allocated memory: 184
 ----
-
 
 [discrete]
 [[administration-indexes-range-comparisons-using-where-single-property-index]]
@@ -741,9 +711,16 @@ Batch size 128
 | +DirectedRelationshipIndexSeekByRange | RANGE INDEX (person)-[r:KNOWS(since)]->(friend) WHERE since < $autoint_0 |              1 |    1 |       2 |            120 |                    2/1 |     0.943 | Fused in Pipeline 0 |
 +---------------------------------------+--------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
-Total database accesses: 2, total allocated memory: 184
+Total database accesses: 20, total allocated memory: 184
 ----
-
+////
+[source, cypher, role=test-setup]
+----
+DROP INDEX rel_range_index_name;
+CREATE RANGE INDEX rel_range_since_lastmet FOR ()-[r:KNOWS]-() ON (r.since, r.lastMet);
+CALL apoc.util.sleep(5000);
+----
+////
 
 [discrete]
 [[administration-indexes-range-comparisons-using-where-composite-index]]
@@ -752,13 +729,6 @@ Total database accesses: 2, total allocated memory: 184
 Composite indexes are also automatically used for inequality (range) comparisons of indexed properties in the `WHERE` clause.
 Equality or list membership check predicates may precede the range predicate.
 However, predicates after the range predicate may be rewritten as an existence check predicate and a filter as described in xref::indexes-for-search-performance.adoc#administration-indexes-single-vs-composite-index[composite index limitations].
-
-////
-[source, cypher, role=test-setup]
-----
-CREATE RANGE INDEX rel_range_since_lastmet FOR ()-[r:KNOWS]-() ON (r.since, r.lastMet)
-----
-////
 
 .Query
 [source, cypher]
@@ -801,13 +771,6 @@ Total database accesses: 2, total allocated memory: 184
 [[administration-indexes-multiple-range-comparisons-using-where-single-property-index]]
 === Multiple range comparisons using `WHERE` (single-property index)
 
-////
-[source, cypher, role=test-setup]
-----
-CREATE RANGE INDEX node_range_highscore FOR (p:Person) ON p.highScore
-----
-////
-
 When the `WHERE` clause contains multiple inequality (range) comparisons for the same property, these can be combined in a single index range seek.
 
 .Query
@@ -849,13 +812,6 @@ Total database accesses: 2, total allocated memory: 184
 When the `WHERE` clause contains multiple inequality (range) comparisons for the same property, these can be combined in a single index range seek.
 That single range seek created in the following query will then use the composite index `Person(highScore, name)` if it exists.
 
-////
-[source, cypher, role=test-setup]
-----
-CREATE INDEX FOR (p:Person) ON (p.highScore, p.name);
-----
-////
-
 .Query
 [source, cypher]
 ----
@@ -896,13 +852,6 @@ Total database accesses: 2, total allocated memory: 184
 
 The `IN` predicate on `r.since` in the following query will use the single-property index `KNOWS(lastMetIn)` if it exists.
 
-////
-[source, cypher, role=test-setup]
-----
-CREATE TEXT INDEX rel_range_lastmetin FOR ()-[r:KNOWS]-() ON r.lastMetIn
-----
-////
-
 .Query
 [source, cypher]
 ----
@@ -933,7 +882,6 @@ Batch size 128
 
 Total database accesses: 3, total allocated memory: 184
 ----
-
 
 [discrete]
 [[administration-indexes-list-membership-check-using-in-composite-index]]
@@ -1016,12 +964,6 @@ Total database accesses: 2, total allocated memory: 184
 [[administration-indexes-prefix-search-using-starts-with-composite-index]]
 === Prefix search using `STARTS WITH` (composite index)
 
-////
-[source, cypher, role=test-setup]
-----
-CREATE RANGE INDEX node_text_firstname_surname FOR (p:Person) ON (p.firstname, p.surname)
-----
-////
 
 The `STARTS WITH` predicate on `person.firstname` in the following query will use the `Person(firstname,surname)` index, if it exists.
 Any (non-existence check) predicate on `person.surname` will be rewritten as existence check with a filter.
@@ -1140,18 +1082,19 @@ Runtime version {neo4j-version-minor}
 
 Batch size 128
 
-+--------------------------------+-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator                       | Details                                                                                             | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+--------------------------------+-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults                | person, friend                                                                                      |              0 |    1 |       0 |                |                        |           |                     |
-| |                              +-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Filter                        | cache[r.metIn] ENDS WITH $autostring_0                                                              |              0 |    1 |       0 |                |                        |           |                     |
-| |                              +-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +DirectedRelationshipIndexScan | RANGE INDEX (person)-[r:KNOWS(metIn, lastMetIn)]->(friend) WHERE metIn IS NOT NULL AND lastMetIn IS |              1 |    1 |       2 |            120 |                    2/1 |     0.317 | Fused in Pipeline 0 |
-|                                | NOT NULL, cache[r.metIn]                                                                            |                |      |         |                |                        |           |                     |
-+--------------------------------+-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++-----------------+----+-------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator        | Id | Details                                                     | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-----------------+----+-------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults |  0 | person, friend                                              |              0 |    0 |       0 |                |                        |           |                     |
+| |               +----+-------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Filter         |  1 | r.metIn ENDS WITH $autostring_0 AND r.lastMetIn IS NOT NULL |              0 |    0 |       2 |                |                        |           |                     |
+| |               +----+-------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Expand(All)    |  2 | (person)-[r:KNOWS]->(friend)                                |              7 |    7 |      14 |                |                        |           |                     |
+| |               +----+-------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +AllNodesScan   |  3 | person                                                      |             10 |    8 |       9 |            120 |                    3/0 |     0.465 | Fused in Pipeline 0 |
++-----------------+----+-------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
-Total database accesses: 2, total allocated memory: 184
+Total database accesses: 25, total allocated memory: 184
 ----
 
 
@@ -1233,6 +1176,14 @@ Batch size 128
 Total database accesses: 304, total allocated memory: 184
 ----
 
+////
+[source, cypher, role=test-setup]
+----
+Drop INDEX rel_range_since_lastmet;
+CREATE RANGE INDEX rel_range_index_name FOR ()-[r:KNOWS]-() ON (r.since);
+CALL apoc.util.sleep(5000);
+----
+////
 
 [discrete]
 [[administration-indexes-existence-check-using-is-not-null-single-property-index]]
@@ -1315,13 +1266,6 @@ Total database accesses: 3, total allocated memory: 184
 [[administration-indexes-spatial-distance-searches-single-property-index]]
 === Spatial distance searches (single-property index)
 
-////
-[source, cypher, role=test-setup]
-----
-CREATE POINT INDEX FOR ()-[r:KNOWS]-() ON (r.lastMetPoint)
-----
-////
-
 If a property with point values is indexed, the index is used for spatial distance searches as well as for range queries.
 
 .Query
@@ -1366,13 +1310,6 @@ Total database accesses: 10, total allocated memory: 184
 === Spatial bounding box searches (single-property index)
 
 The ability to do index seeks on bounded ranges works even with the 2D and 3D spatial `Point` types.
-
-////
-[source, cypher, role=test-setup]
-----
-CREATE POINT INDEX FOR (p:Person) ON (p.location)
-----
-////
 
 .Query
 [source, cypher]
