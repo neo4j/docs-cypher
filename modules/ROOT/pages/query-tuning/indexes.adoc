@@ -45,7 +45,6 @@ See xref::indexes-for-full-text-search.adoc[].
 ////
 [source, cypher, role=test-setup]
 ----
-CALL db.clearQueryCaches();
 CREATE RANGE INDEX node_range_index_name FOR (n:Person) ON (n.firstname);
 CREATE RANGE INDEX rel_range_index_name FOR ()-[r:KNOWS]-() ON (r.since);
 CREATE TEXT INDEX node_text_person_surname FOR (n:Person) ON (n.surname);
@@ -74,7 +73,8 @@ CREATE
   (a)-[:KNOWS {metIn: 'Malmo'}]->(b),
   (d)-[:KNOWS {metIn: 'Stockholm'}]->(a),
   (b)-[:KNOWS]->(e),
-  (c)-[:KNOWS]->(e)
+  (c)-[:KNOWS]->(e);
+CALL db.awaitIndexes(10);
 ----
 ////
 
@@ -718,7 +718,7 @@ Total database accesses: 20, total allocated memory: 184
 ----
 DROP INDEX rel_range_index_name;
 CREATE RANGE INDEX rel_range_since_lastmet FOR ()-[r:KNOWS]-() ON (r.since, r.lastMet);
-CALL apoc.util.sleep(5000);
+CALL db.awaitIndexes(10);
 ----
 ////
 
@@ -1058,7 +1058,8 @@ More information about how the rewriting works can be found in xref::indexes-for
 [source, cypher, role=test-setup]
 ----
 DROP INDEX rel_text_index_name; // TEXT indexes would take precedence over composite RANGE index
-CREATE RANGE INDEX rel_text_metin_lastmetin FOR ()-[r:KNOWS]-() ON (r.metIn, r.lastMetIn)
+CREATE RANGE INDEX rel_text_metin_lastmetin FOR ()-[r:KNOWS]-() ON (r.metIn, r.lastMetIn);
+CALL db.awaitIndexes(10);
 ----
 ////
 
@@ -1082,19 +1083,18 @@ Runtime version {neo4j-version-minor}
 
 Batch size 128
 
-+-----------------+----+-------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator        | Id | Details                                                     | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+-----------------+----+-------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults |  0 | person, friend                                              |              0 |    0 |       0 |                |                        |           |                     |
-| |               +----+-------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Filter         |  1 | r.metIn ENDS WITH $autostring_0 AND r.lastMetIn IS NOT NULL |              0 |    0 |       2 |                |                        |           |                     |
-| |               +----+-------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Expand(All)    |  2 | (person)-[r:KNOWS]->(friend)                                |              7 |    7 |      14 |                |                        |           |                     |
-| |               +----+-------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +AllNodesScan   |  3 | person                                                      |             10 |    8 |       9 |            120 |                    3/0 |     0.465 | Fused in Pipeline 0 |
-+-----------------+----+-------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++--------------------------------+----+-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                       | Id | Details                                                                                             | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++--------------------------------+----+-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults                |  0 | person, friend                                                                                      |              0 |    0 |       0 |                |                        |           |                     |
+| |                              +----+-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Filter                        |  1 | cache[r.metIn] ENDS WITH $autostring_0                                                              |              0 |    0 |       0 |                |                        |           |                     |
+| |                              +----+-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +DirectedRelationshipIndexScan |  2 | RANGE INDEX (person)-[r:KNOWS(metIn, lastMetIn)]->(friend) WHERE metIn IS NOT NULL AND lastMetIn IS |              0 |    0 |       1 |            120 |                    0/1 |     0.242 | Fused in Pipeline 0 |
+|                                |    | NOT NULL, cache[r.metIn]                                                                            |                |      |         |                |                        |           |                     |
++--------------------------------+----+-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
-Total database accesses: 25, total allocated memory: 184
+Total database accesses: 1, total allocated memory: 184
 ----
 
 
@@ -1181,7 +1181,7 @@ Total database accesses: 304, total allocated memory: 184
 ----
 Drop INDEX rel_range_since_lastmet;
 CREATE RANGE INDEX rel_range_index_name FOR ()-[r:KNOWS]-() ON (r.since);
-CALL apoc.util.sleep(5000);
+CALL db.awaitIndexes(10);
 ----
 ////
 
