@@ -5,71 +5,31 @@
 
 [abstract]
 --
-`WHERE` adds constraints to the patterns in a `MATCH` or `OPTIONAL MATCH` clause or filters the results of a `WITH` clause.
+The `WHERE` clause adds constraints to the patterns in a `MATCH` or `OPTIONAL MATCH` clause. 
+It can also filter the results of a `WITH` clause.
 --
-
-* xref::clauses/where.adoc#where-introduction[Introduction]
-* xref::clauses/where.adoc#query-where-basic[Basic usage]
- ** xref::clauses/where.adoc#node-pattern-predicates[Node pattern predicates]
- ** xref::clauses/where.adoc#boolean-operations[Boolean operations]
- ** xref::clauses/where.adoc#filter-on-node-label[Filter on node label]
- ** xref::clauses/where.adoc#filter-on-node-property[Filter on node property]
- ** xref::clauses/where.adoc#filter-on-relationship-property[Filter on relationship property]
- ** xref::clauses/where.adoc#filter-on-dynamic-property[Filter on dynamically-computed property]
- ** xref::clauses/where.adoc#property-existence-checking[Property existence checking]
-* xref::clauses/where.adoc#query-where-string[String matching]
- ** xref::clauses/where.adoc#match-string-start[Prefix string search using `STARTS WITH`]
- ** xref::clauses/where.adoc#match-string-end[Suffix string search using `ENDS WITH`]
- ** xref::clauses/where.adoc#match-string-contains[Substring search using `CONTAINS`]
- ** xref::clauses/where.adoc#match-string-negation[String matching negation]
-* xref::clauses/where.adoc#query-where-regex[Regular expressions]
- ** xref::clauses/where.adoc#matching-using-regular-expressions[Matching using regular expressions]
- ** xref::clauses/where.adoc#escaping-in-regular-expressions[Escaping in regular expressions]
- ** xref::clauses/where.adoc#case-insensitive-regular-expressions[Case-insensitive regular expressions]
-* xref::clauses/where.adoc#query-where-patterns[Using path patterns in `WHERE`]
- ** xref::clauses/where.adoc#filter-on-patterns[Filter on patterns]
- ** xref::clauses/where.adoc#filter-on-patterns-using-not[Filter on patterns using `NOT`]
- ** xref::clauses/where.adoc#filter-on-patterns-with-properties[Filter on patterns with properties]
- ** xref::clauses/where.adoc#filter-on-relationship-type[Filter on relationship type]
-* xref::clauses/where.adoc#query-where-lists[Lists]
- ** xref::clauses/where.adoc#where-in-operator[`IN` operator]
-* xref::clauses/where.adoc#missing-properties-and-values[Missing properties and values]
- ** xref::clauses/where.adoc#default-to-false-missing-property[Default to `false` if property is missing]
- ** xref::clauses/where.adoc#default-to-true-missing-property[Default to `true` if property is missing]
- ** xref::clauses/where.adoc#filter-on-null[Filter on `null`]
-* xref::clauses/where.adoc#query-where-ranges[Using ranges]
- ** xref::clauses/where.adoc#simple-range[Simple range]
- ** xref::clauses/where.adoc#composite-range[Composite range]
-* xref::clauses/where.adoc#pattern-element-predicates[Pattern element predicates]
- ** xref::clauses/where.adoc#relationship-pattern-predicates[Relationship pattern predicates]
-
 
 [[where-introduction]]
 == Introduction
 
-`WHERE` is not a clause in its own right -- rather, it is part of `MATCH`, `OPTIONAL MATCH`, and `WITH`.
+The `WHERE` clause is not a clause in its own right -- rather, it is part of the `MATCH`, `OPTIONAL MATCH`, and `WITH` clauses.
 
-In the case of `WITH`, `WHERE` simply filters the results.
-
-For `MATCH` and `OPTIONAL MATCH` on the other hand, `WHERE` adds constraints to the patterns described.
+When used with `MATCH` and `OPTIONAL MATCH`, `WHERE` adds constraints to the patterns described.
 _It should not be seen as a filter after the matching is finished._
 
-[IMPORTANT]
-====
+In the case of `WITH`, however, `WHERE` simply filters the results.
+
 In the case of multiple `MATCH` / `OPTIONAL MATCH` clauses, the predicate in `WHERE` is always a part of the patterns in the directly preceding `MATCH` / `OPTIONAL MATCH`.
 Both results and performance may be impacted if the `WHERE` is put inside the wrong `MATCH` clause.
-====
 
-[NOTE]
-====
 xref::indexes-for-search-performance.adoc[Indexes] may be used to optimize queries using `WHERE` in a variety of cases.
-====
 
+[[where-example-graph]]
 == Example graph 
 
 The following graph is used for the examples below:
 
-image:graph_where_clause.svg[]
+image::graph_where_clause.svg[width="600",role="middle"]
 
 To recreate the graph, run the following query in an empty Neo4j database: 
 
@@ -77,13 +37,10 @@ To recreate the graph, run the following query in an empty Neo4j database:
 ----
 CREATE 
 (andy:Swedish:Person {name: 'Andy', age: 36, belt: 'white'}),
-(timothy:Person {name: 'Timothy', age: 25, address: 'Sweden/Malmo'}),
+(timothy:Person {name: 'Timothy', age: 25}),
 (peter:Person {name: 'Peter', age: 35, email: 'peter_n@example.com'}),
 (andy)-[:KNOWS {since: 2012}]->(timothy),
-(andy)-[:KNOWS {since: 1999}]->(peter),
-(andy)-[:HAS_DOG {since: 2016}]->(:Dog {name:'Andy'}),
-(fido:Dog {name:'Fido'})<-[:HAS_DOG {since: 2010}]-(peter)-[:HAS_DOG {since: 2018}]->(:Dog {name:'Ozzy'}),
-(fido)-[:HAS_TOY]->(:Toy {name:'Banana'})
+(andy)-[:KNOWS {since: 1999}]->(peter)
 ----
 
 [[query-where-basic]]
@@ -93,10 +50,6 @@ CREATE
 === Node pattern predicates
 
 `WHERE` can appear inside a node pattern in a `MATCH` clause or a pattern comprehension:
-
-
-.+WHERE+
-======
 
 .Query
 [source, cypher, indent=0]
@@ -114,14 +67,9 @@ RETURN b.name
 1+d|Rows: 1
 |===
 
-======
-
 When used this way, predicates in `WHERE` can reference the node variable that the `WHERE` clause belongs to, but not other elements of the `MATCH` pattern.
 
 The same rule applies to pattern comprehensions.
-
-.+WHERE+
-======
 
 .Query
 [source, cypher, indent=0]
@@ -138,13 +86,11 @@ RETURN [(a)-->(b WHERE b:Person) | b.name] AS friends
 1+d|Rows: 1
 |===
 
-======
-
 [[boolean-operations]]
 === Boolean operations
 
-You can use the boolean operators `AND`, `OR`, `XOR` and `NOT`.
-See xref::syntax/working-with-null.adoc[] for more information on how this works with `null`.
+The following boolean operations can be used with the `WHERE` clause: `AND`, `OR`, `XOR`, and `NOT`.
+For more information on how operators work with `null`, see the chapter on xref::syntax/working-with-null.adoc[Working with null].
 
 .Query
 [source, cypher, indent=0]
@@ -181,7 +127,7 @@ WHERE n:Swedish
 RETURN n.name, n.age
 ----
 
-The name and age for the *'Andy'* node will be returned.
+The `name` and `age` values for `Andy` are returned.
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -205,7 +151,7 @@ WHERE n.age < 30
 RETURN n.name, n.age
 ----
 
-The name and age values for the *'Timothy'* node are returned because he is less than 30 years of age.
+The `name` and `age` values for `Timothy` are returned because he is less than 30 years of age.
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -229,7 +175,7 @@ WHERE k.since < 2000
 RETURN f.name, f.age, f.email
 ----
 
-The name, age and email values for the *'Peter'* node are returned because Andy has known him since before 2000.
+The `name`, `age` and `email` values for `Peter` are returned because `Andy` has known him since before 2000.
 
 .Result
 [role="queryresult",options="header,footer",cols="3*<m"]
@@ -254,7 +200,7 @@ WHERE n[toLower(propname)] < 30
 RETURN n.name, n.age
 ----
 
-The name and age values for the *'Timothy'* node are returned because he is less than 30 years of age.
+The `name` and `age` values for `Timothy` are returned because he is less than 30 years of age.
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -278,7 +224,7 @@ WHERE n.belt IS NOT NULL
 RETURN n.name, n.belt
 ----
 
-The name and belt for the *'Andy'* node are returned because he is the only one with a `belt` property.
+The `name` and `belt` values for `Andy` are returned because he is the only one with a `belt` property.
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -312,9 +258,9 @@ RETURN name
 |===
 
 
-The name for the *'Timothy'* node is returned because the `WHERE` clause still acts as a filter on the `MATCH`.
+The name for `Timothy` is returned because the `WHERE` clause still acts as a filter on the `MATCH`.
 The `WITH` reduces the scope for the rest of the query moving forward.
-In this case 'name' is now the only variable in scope for the `RETURN` clause.
+In this case, `name` is now the only variable in scope for the `RETURN` clause.
 
 
 [[query-where-string]]
@@ -338,7 +284,7 @@ WHERE n.name STARTS WITH 'Pet'
 RETURN n.name, n.age
 ----
 
-The name and age for the *'Peter'* node are returned because his name starts with *'Pet'*.
+The `name` and `age` values for `Peter` are returned because his name starts with 'Pet'.
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -362,7 +308,7 @@ WHERE n.name ENDS WITH 'ter'
 RETURN n.name, n.age
 ----
 
-The name and age for the *'Peter'* node are returned because his name ends with *'ter'*.
+The `name` and `age` values for `Peter` are returned because his name ends with 'ter'.
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -386,7 +332,7 @@ WHERE n.name CONTAINS 'ete'
 RETURN n.name, n.age
 ----
 
-The name and age for the *'Peter'* node are returned because his name contains with *'ete'*.
+The `name` and `age` for `Peter` are are returned because his name contains 'ete'.
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -410,7 +356,7 @@ WHERE NOT n.name ENDS WITH 'y'
 RETURN n.name, n.age
 ----
 
-The name and age for the *'Peter'* node are returned because his name does not end with *'y'*.
+The `name` and `age` values `Peter` are returned because his name does not end with 'y'.
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -445,7 +391,7 @@ WHERE n.name =~ 'Tim.*'
 RETURN n.name, n.age
 ----
 
-The name and age for the `'Timothy'` node are returned because his name starts with `'Tim'`.
+The `name` and `age` values for `Timothy` are returned because his name starts with 'Tim'.
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -470,7 +416,7 @@ WHERE n.email =~ '.*\\.com'
 RETURN n.name, n.age, n.email
 ----
 
-The name, age and email for the 'Peter' node are returned because his email ends with '.com'.
+The `name`, `age`, and `email` values for `Peter` are returned because his email ends with '.com'.
 
 .Result
 [role="queryresult",options="header,footer",cols="3*<m"]
@@ -528,7 +474,7 @@ WHERE n.name =~ '(?i)AND.*'
 RETURN n.name, n.age
 ----
 
-The name and age for the `'Andy'` node are returned because his name starts with `'AND'` irrespective of casing.
+The `name` and `age`` for `Andy` are returned because his name starts with 'AND' irrespective of casing.
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -569,7 +515,7 @@ WHERE other.name IN ['Andy', 'Peter'] AND (other)-->(timothy)
 RETURN other.name, other.age
 ----
 
-The name and age for nodes that have an outgoing relationship to the `'Timothy'` node are returned.
+The `name` and `age` values for nodes that have an outgoing relationship to `Timothy` are returned.
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -595,7 +541,7 @@ WHERE NOT (person)-->(peter)
 RETURN person.name, person.age
 ----
 
-Name and age values for nodes that do not have an outgoing relationship to the `'Peter'` node are returned.
+The `name` and `age` values for nodes that do not have an outgoing relationship to `Peter` are returned.
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -620,7 +566,7 @@ WHERE (n)-[:KNOWS]-({name: 'Timothy'})
 RETURN n.name, n.age
 ----
 
-Finds all name and age values for nodes that have a relationship with the `KNOWS`-type, to a node with the property-key `name` and value `'Timothy'`.
+Returns the `name` and `age` values for nodes that have a relationship with the type `KNOWS` connected to `Timothy`.
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -664,7 +610,8 @@ This returns all relationships having a type whose name starts with `'K'`.
 [[where-in-operator]]
 === `IN` operator
 
-To check if an element exists in a list, you can use the `IN` operator.
+To check if an element exists in a list, use the `IN` operator.
+The below query checks whether a property exists in a literal list.
 
 .Query
 [source, cypher, indent=0]
@@ -673,8 +620,6 @@ MATCH (a:Person)
 WHERE a.name IN ['Peter', 'Timothy']
 RETURN a.name, a.age
 ----
-
-This query shows how to check if a property exists in a literal list.
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -702,7 +647,7 @@ WHERE n.belt = 'white'
 RETURN n.name, n.age, n.belt
 ----
 
-Only the name, age, and belt values of nodes with white belts are returned.
+Only the `name`, `age`, and `belt` values of nodes with white belts are returned.
 
 .Result
 [role="queryresult",options="header,footer",cols="3*<m"]
@@ -716,7 +661,7 @@ Only the name, age, and belt values of nodes with white belts are returned.
 [[default-to-true-missing-property]]
 === Default to `true` if property is missing
 
-If you want to compare a property on a node or relationship, but only if it exists, you can compare the property against both the value you are looking for and `null`, like:
+To compare node or relationship properties against missing properties, use the `IS NULL` operator:
 
 .Query
 [source, cypher, indent=0]
@@ -727,7 +672,7 @@ RETURN n.name, n.age, n.belt
 ORDER BY n.name
 ----
 
-This returns all values for all nodes, even those without the belt property.
+This returns all values for all nodes, even those without the `belt` property.
 
 .Result
 [role="queryresult",options="header,footer",cols="3*<m"]
@@ -743,9 +688,8 @@ This returns all values for all nodes, even those without the belt property.
 [[filter-on-null]]
 === Filter on `null`
 
-Sometimes you might want to test if a value or a variable is `null`.
-This is done just like SQL does it, using `IS NULL`.
-Also like SQL, the negative is `IS NOT NULL`, although `NOT(IS NULL x)` also works.
+To test if a value or variable is `null`, use the `IS NULL` operator.
+To test if a value or variable is not `null`, use the `IS NOT NULL` operator (`NOT(IS NULL x)` also works).
 
 .Query
 [source, cypher, indent=0]
@@ -755,7 +699,7 @@ WHERE person.name = 'Peter' AND person.belt IS NULL
 RETURN person.name, person.age, person.belt
 ----
 
-The name and age values for nodes that have name `'Peter'` but no belt property are returned.
+The `name` and `age` values for nodes that have name `Peter` but no `belt` property are returned.
 
 .Result
 [role="queryresult",options="header,footer",cols="3*<m"]
@@ -772,7 +716,7 @@ The name and age values for nodes that have name `'Peter'` but no belt property 
 [[simple-range]]
 === Simple range
 
-To check for an element being inside a specific range, use the inequality operators `+<+`, `+<=+`, `+>=+`, `+>+`.
+To check whether an element exists within a specific range, use the inequality operators `+<+`, `+<=+`, `+>=+`, `+>+`.
 
 .Query
 [source, cypher, indent=0]
@@ -782,7 +726,7 @@ WHERE a.name >= 'Peter'
 RETURN a.name, a.age
 ----
 
-The name and age values of nodes having a name property lexicographically greater than or equal to `'Peter'` are returned.
+The `name` and `age` values of nodes having a `name` property lexicographically greater than or equal to `Peter` are returned.
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -807,7 +751,7 @@ WHERE a.name > 'Andy' AND a.name < 'Timothy'
 RETURN a.name, a.age
 ----
 
-The name and age values of nodes having a name property lexicographically between `'Andy'` and `'Timothy'` are returned.
+The `name` and `age` values of nodes having a `name` property lexicographically between `Andy` and `Timothy` are returned.
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -828,10 +772,6 @@ The name and age values of nodes having a name property lexicographically betwee
 
 `WHERE` can also appear inside a relationship pattern in a `MATCH` clause.
 
-
-.+WHERE+
-======
-
 .Query
 [source, cypher]
 ----
@@ -848,13 +788,7 @@ RETURN r.since
 1+d|Rows: 1
 |===
 
-======
-
-
 However, it cannot be used inside of variable length relationships, as this would lead to an error.
-
-.+WHERE+
-======
 
 For example:
 
@@ -872,15 +806,9 @@ RETURN r.since
 Relationship pattern predicates are not supported for variable-length relationships.
 ----
 
-======
-
 
 Putting predicates inside a relationship pattern can help with readability.
 Please note that it is strictly equivalent to using a standalone `WHERE` sub-clause.
-
-
-.+WHERE+
-======
 
 .Query
 [source, cypher]
@@ -899,14 +827,7 @@ RETURN r.since
 1+d|Rows: 1
 |===
 
-======
-
-
 Relationship pattern predicates can also be used inside pattern comprehensions, where the same caveats apply.
-
-
-.+WHERE+
-======
 
 .Query
 [source, cypher]
@@ -924,5 +845,4 @@ RETURN [(a)-[r:KNOWS WHERE r.since < minYear]->(b:Person) | r.since] AS years
 1+d|Rows: 1
 |===
 
-======
 
