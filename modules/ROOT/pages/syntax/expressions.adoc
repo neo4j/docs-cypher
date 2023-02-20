@@ -866,7 +866,7 @@ RETURN person.name AS name
 [[collect-subqueries]]
 === `COLLECT` subqueries
 
-A `COLLECT` subquery expression can be used to collect the rows returned by the subquery into a list.
+A `COLLECT` subquery expression can be used to create a list with the rows returned by a given subquery.
 
 Any non-writing query is allowed. `COLLECT` subqueries differ from `COUNT` and `EXISTS` subqueries in that the final `RETURN` clause is mandatory.
 The `RETURN` clause must return exactly one column.
@@ -962,6 +962,27 @@ RETURN
 Variables from the outside scope are visible for the entire subquery, even when using a `WITH` clause.
 This means that shadowing of these variables is not allowed.
 An outside scope variable is shadowed when a newly introduced variable within the inner scope is defined with the same variable.
+In the below example, the outer variable `name` is being shadowed and will result in an error.
+
+.Query
+[source, cypher]
+----
+WITH 'Peter' as name
+MATCH (person:Person {name: name})
+RETURN COLLECT {
+    WITH 'Ozzy' AS name
+    MATCH (person)-[r:HAS_DOG]->(d:Dog {name: name})
+    RETURN d.name
+} as dogsOfTheYear
+----
+
+.Error message
+[source, output, role="noheader"]
+----
+The variable `name` is shadowing a variable with the same name from the outer scope and needs to be renamed (line 4, column 20 (offset: 93))
+----
+
+New variables can be introduced into the subquery, as long as they use a different identifier.
 In the below example, a `WITH` clause introduces a new variable.
 Note that the outer scope variable `person` referenced in the main query is still available after the `WITH` clause.
 
@@ -1002,17 +1023,21 @@ See a few examples below:
 [source, cypher]
 ----
 MATCH (person:Person)
-RETURN person.name, COLLECT { MATCH (person)-[:HAS_DOG]->(d:Dog) RETURN d.name } as dogNames
-
+RETURN person.name,
+       COLLECT {
+            MATCH (person)-[:HAS_DOG]->(d:Dog)
+            MATCH (d)-[:HAS_TOY]->(t:Toy)
+            RETURN t.name
+       } as toyNames
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| +person.name+ | +dogNames+
-| +"Andy"+      | +["Andy"]+
+| +person.name+ | +toyNames+
+| +"Andy"+      | +[]+
 | +"Timothy"+   | +[]+
-| +"Peter"+     | +["Ozzy", "Fido"]+
+| +"Peter"+     | +["Banana"]+
 2+d|Rows: 3
 |===
 
