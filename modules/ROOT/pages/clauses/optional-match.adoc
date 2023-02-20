@@ -3,18 +3,16 @@
 [[query-optional-match]]
 = OPTIONAL MATCH
 
-[abstract]
---
-The `OPTIONAL MATCH` clause is used to search for the pattern described in it, while using nulls for missing parts of the pattern.
---
+== Introduction 
 
 `OPTIONAL MATCH` matches patterns against a graph database, just as `MATCH` does.
-The difference is that if no matches are found, `OPTIONAL MATCH` will use a `null` for missing parts of the pattern.
-`OPTIONAL MATCH` could be considered the Cypher equivalent of the outer join in SQL.
+The difference is that if no matches are found, `OPTIONAL MATCH` will use a `null` for missing parts of the pattern. 
+`OPTIONAL MATCH` could, therefore, be considered the Cypher equivalent of the outer join in SQL.
 
-Either the whole pattern is matched, or nothing is matched.
+When using `OPTIONAL MATCH`, either the whole pattern is matched, or nothing is matched.
 The `WHERE` clause is part of the pattern description, and its predicates will be considered while looking for matches, not after.
 This matters especially in the case of multiple (`OPTIONAL`) `MATCH` clauses, where it is crucial to put `WHERE` together with the `MATCH` it belongs to.
+
 
 [TIP]
 ====
@@ -25,7 +23,7 @@ To understand the patterns used in the `OPTIONAL MATCH` clause, read xref::synta
 
 The following graph is used for the examples below:
 
-image:graph_optional_match_clause.svg[width="600",role="middle"]
+image::graph_optional_match_clause.svg[width="600",role="middle"]
 
 To recreate the graph, run the following query in an empty Neo4j database:
 
@@ -49,10 +47,61 @@ CREATE
   (martin)-[:FATHER_OF]->(charlie)
 ----
 
+== OPTIONAL MATCH in more detail
+
+Cypher in many ways borrows its structure from SQL. 
+Queries are constructed using various clauses, which are then chained together to feed intermediate results between each other. 
+For example, the matching variables from one `MATCH` clause will be the context that the next clause exists in.
+
+However, there are important discrepancies between Neo4j and SQL which helps to explain `OPTIONAL MATCH` further. 
+First, unlike SQL, Neo4j is schema-less. 
+This means that nodes and/or relationships do not have to have a specific property set to them because other nodes and/or relationships in the same graph have have that property (unless there are existence constraints created on the specific property).
+Second, queries in Cypher are run in pipelines. 
+This means that if a clause returns no results, it will effectively end the query, as subsequent clauses will have no data to execute upon. 
+
+For example, the following query returns no results:
+
+.Query
+[source, cypher]
+----
+MATCH (a:Person {name: 'Martin Sheen'})
+MATCH (a)-[r:DIRECTED]->()
+RETURN a.name, r
+----
+
+.Result
+[source, result]
+----
+(no changes, no records)
+----
+
+This is because the second `MATCH` clause in the query returns no data (there are no `DIRECTED` relationships connected to `'Martin Sheen'`) to pass on to the `RETURN` clause.
+
+Replacing the second `MATCH` clause in the above query with `OPTIONAL MATCH` does, however, return results. 
+This is because unlike `MATCH`, `OPTIONAL MATCH` enables the value `null` to be passed between clauses. 
+
+[source, cypher]
+----
+MATCH (p:Person {name: 'Martin Sheen'})
+OPTIONAL MATCH (a)-[r:DIRECTED]->()
+RETURN a.name, r
+----
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +a.name+ | +r+
+
+| +"Martin Sheen"+
+| +<null>+
+2+d|Rows: 1
+|===
+
+`OPTIONAL MATCH` can, therefore, be used to check graphs for missing as well as existing values, and to pass on rows without any data to subsequent clauses in a query. 
+
 [[optional-relationships]]
 == Optional relationships
 
-If the existence of a relationship is not know, use the `OPTIONAL MATCH` clause.
+If the existence of a relationship is optional, use the `OPTIONAL MATCH` clause.
 If the relationship exists, it is returned.
 If it does not, `null` is returned in its place.
 
@@ -74,7 +123,7 @@ Returns `null`, since the `Movie` node `Wall Street` has no outgoing relationshi
 1+d|Rows: 1
 |===
 
-The following query does not return `null`, however, since the `Person` node `Charlie Sheen` does have outgoing relationships. 
+The following query does not return `null`, however, since the `Person` node `Charlie Sheen` has outgoing relationships. 
 
 .Query
 [source, cypher]
@@ -97,7 +146,7 @@ RETURN x
 [[properties-on-optional-elements]]
 == Properties on optional elements
 
-If the existence of a property is not known, use the `OPTIONAL MATCH` clause.
+If the existence of a property is optional, use the `OPTIONAL MATCH` clause.
 Again, `null` will be returned if the specified property does not exist. 
 
 .Query
