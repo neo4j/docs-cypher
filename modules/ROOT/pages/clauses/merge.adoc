@@ -3,44 +3,14 @@
 [[query-merge]]
 = MERGE
 
-[abstract]
---
-The `MERGE` clause ensures that a pattern exists in the graph.
-Either the pattern already exists, or it needs to be created.
---
-
-* xref::clauses/merge.adoc#query-merge-introduction[Introduction]
-* xref::clauses/merge.adoc#query-merge-node-derived[Merge nodes]
-** xref::clauses/merge.adoc#merge-merge-single-node-with-a-label[Merge single node with a label]
-** xref::clauses/merge.adoc#merge-merge-single-node-with-properties[Merge single node with properties]
-** xref::clauses/merge.adoc#merge-merge-single-node-specifying-both-label-and-property[Merge single node specifying both label and property]
-** xref::clauses/merge.adoc#merge-merge-single-node-derived-from-an-existing-node-property[Merge single node derived from an existing node property]
-* xref::clauses/merge.adoc#query-merge-on-create-on-match[Use `ON CREATE` and `ON MATCH`]
-** xref::clauses/merge.adoc#merge-merge-with-on-create[Merge with `ON CREATE`]
-** xref::clauses/merge.adoc#merge-merge-with-on-match[Merge with `ON MATCH`]
-** xref::clauses/merge.adoc#merge-merge-with-on-create-and-on-match[Merge with `ON CREATE` and `ON MATCH`]
-** xref::clauses/merge.adoc#merge-merge-with-on-match-setting-multiple-properties[Merge with `ON MATCH` setting multiple properties]
-* xref::clauses/merge.adoc#query-merge-relationships[Merge relationships]
-** xref::clauses/merge.adoc#merge-merge-on-a-relationship[Merge on a relationship]
-** xref::clauses/merge.adoc#merge-merge-on-multiple-relationships[Merge on multiple relationships]
-** xref::clauses/merge.adoc#merge-merge-on-an-undirected-relationship[Merge on an undirected relationship]
-** xref::clauses/merge.adoc#merge-merge-on-a-relationship-between-two-existing-nodes[Merge on a relationship between two existing nodes]
-** xref::clauses/merge.adoc#merge-merge-on-a-relationship-between-an-existing-node-and-a-merged-node-derived-from-a-node-property[Merge on a relationship between an existing node and a merged node derived from a node property]
-* xref::clauses/merge.adoc#query-merge-using-unique-constraints[Using property uniqueness constraints with `MERGE`]
-** xref::clauses/merge.adoc#merge-merge-using-unique-constraints-creates-a-new-node-if-no-node-is-found[Merge using property uniqueness constraints creates a new node if no node is found]
-** xref::clauses/merge.adoc#merge-merge-using-unique-constraints-matches-an-existing-node[Merge using property uniqueness constraints matches an existing node]
-** xref::clauses/merge.adoc#merge-merge-with-unique-constraints-and-partial-matches[Merge with property uniqueness constraints and partial matches]
-** xref::clauses/merge.adoc#merge-merge-with-unique-constraints-and-conflicting-matches[Merge with property uniqueness constraints and conflicting matches]
-* xref::clauses/merge.adoc#merge-using-map-parameters-with-merge[Using map parameters with `MERGE`]
-
 [[query-merge-introduction]]
 == Introduction
 
-`MERGE` either matches existing nodes and binds them, or it creates new data and binds that.
-It's like a combination of `MATCH` and `CREATE` that additionally allows you to specify what happens if the data was matched or created.
+The `MERGE` clause either matches existing node patterns in the graph and binds them, or if not present, creates new data and binds that.
+In this way, it acts as a combination of `MATCH` and `CREATE` that allows for specific actions depending on whether the specified data was matched or created. 
 
-For example, you can specify that the graph must contain a node for a user with a certain name.
-If there isn't a node with the correct name, a new node will be created and its name property set.
+For example, `MERGE` can be used to specify that a graph must contain a node with a `Person` label and a specific `name` property.
+If there isn't a node with the specific `name` property, a new node will be created with the specified `name` property.
 
 [NOTE]
 ====
@@ -49,27 +19,27 @@ See xref::indexes-for-search-performance.adoc[] for more information.
 ====
 
 When using `MERGE` on full patterns, the behavior is that either the whole pattern matches, or the whole pattern is created.
-`MERGE` will not partially use existing patterns -- it is all or nothing.
-If partial matches are needed, this can be accomplished by splitting a pattern up into multiple `MERGE` clauses.
+`MERGE` will not partially use existing patterns.
+If partial matches are needed, this can be accomplished by splitting a pattern into multiple `MERGE` clauses.
 
-[IMPORTANT]
+[NOTE]
 ====
-Under concurrent updates, `MERGE` only guarantees existence of the `MERGE` pattern, but not uniqueness.
+Under concurrent updates, `MERGE` only guarantees the existence of the `MERGE` pattern, but not uniqueness.
 To guarantee uniqueness of nodes with certain properties, a xref::constraints/index.adoc[property uniqueness constraint] should be used.
-See xref::clauses/merge.adoc#query-merge-using-unique-constraints[Using property uniqueness constraints with `MERGE`] to see how `MERGE` can be used in combination with a property uniqueness constraint.
+See xref::clauses/merge.adoc#query-merge-using-unique-constraints[Using property uniqueness constraints with `MERGE`] for more information on how `MERGE` can be used in combination with a property uniqueness constraint.
 ====
 
 As with `MATCH`, `MERGE` can match multiple occurrences of a pattern.
 If there are multiple matches, they will all be passed on to later stages of the query.
 
-The last part of `MERGE` is the `ON CREATE` and `ON MATCH`.
+The last part of a `MERGE` clause is the the `ON CREATE` and/or `ON MATCH` operators.
 These allow a query to express additional changes to the properties of a node or relationship, depending on if the element was matched (`MATCH`) in the database or if it was created (`CREATE`).
 
 == Example graph
 
 The following graph is used for the examples below:
 
-image:graph_merge_clause.svg[]
+image::graph_merge_clause.svg[]
 
 To recreate the graph, run the following query in an empty Neo4j database:
 
@@ -88,9 +58,8 @@ CREATE
   (michael)-[:ACTED_IN]->(wallStreet),
   (martin)-[:ACTED_IN]->(theAmericanPresident),
   (michael)-[:ACTED_IN]->(theAmericanPresident),
-  (oliver)-[:ACTED_IN]->(wallStreet),
-  (rob)-[:ACTED_IN]->(theAmericanPresident),
-  (charlie)-[:FATHER]->(martin)
+  (oliver)-[:DIRECTED]->(wallStreet),
+  (rob)-[:DIRECTED]->(theAmericanPresident)
 ----
 
 [[query-merge-node-derived]]
@@ -99,7 +68,7 @@ CREATE
 [[merge-merge-single-node-with-a-label]]
 === Merge single node with a label
 
-Merging a single node with the given label.
+Merging a single node with a given label:
 
 .Query
 [source, cypher]
@@ -108,7 +77,7 @@ MERGE (robert:Critic)
 RETURN robert, labels(robert)
 ----
 
-A new node is created because there are no nodes labeled `Critic` in the database.
+A new node is created because there are no nodes labeled `Critic` in the database:
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -121,16 +90,16 @@ A new node is created because there are no nodes labeled `Critic` in the databas
 [[merge-merge-single-node-with-properties]]
 === Merge single node with properties
 
-Merging a single node with properties where not all properties match any existing node.
+Merging a node with properties that differ from the properties on existing nodes in the graph will create a new node: 
 
 .Query
 [source, cypher]
 ----
-MERGE (charlie {name: 'Charlie Sheen', age: 10})
+MERGE (charlie:Person {name: 'Charlie Sheen', age: 10})
 RETURN charlie
 ----
 
-A new node with the name `'Charlie Sheen'` will be created since not all properties matched the existing `'Charlie Sheen'` node.
+A new node with the name `'Charlie Sheen'` is created since not all properties matched those set to the pre-existing `'Charlie Sheen'` node:
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
@@ -143,7 +112,7 @@ A new node with the name `'Charlie Sheen'` will be created since not all propert
 [[merge-merge-single-node-specifying-both-label-and-property]]
 === Merge single node specifying both label and property
 
-Merging a single node with both label and property matching an existing node.
+Merging a single node with both label and property matching an existing node will not create a new node:
 
 .Query
 [source, cypher]
@@ -152,7 +121,7 @@ MERGE (michael:Person {name: 'Michael Douglas'})
 RETURN michael.name, michael.bornIn
 ----
 
-`'Michael Douglas'` will be matched and the `name` and  `bornIn` properties returned.
+`'Michael Douglas'` is matched and the `name` and  `bornIn` properties are returned:
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -164,7 +133,7 @@ RETURN michael.name, michael.bornIn
 [[merge-merge-single-node-derived-from-an-existing-node-property]]
 === Merge single node derived from an existing node property
 
-For some property `p` in each bound node in a set of nodes, a single new node is created for each unique value for `p`.
+It is possible to merge nodes using existing node properties:
 
 .Query
 [source, cypher]
@@ -174,7 +143,7 @@ MERGE (city:City {name: person.bornIn})
 RETURN person.name, person.bornIn, city
 ----
 
-Three nodes labeled `City` are created, each of which contains a `name` property with the value of `'New York'`, `'Ohio'`, and `'New Jersey'`, respectively.
+In the above query, three nodes labeled `City` are created, each of which contains a `name` property with the value of `'New York'`, `'Ohio'`, and `'New Jersey'` respectively.
 Note that even though the `MATCH` clause results in three bound nodes having the value `'New York'` for the `bornIn` property, only a single `'New York'` node (i.e. a `City` node with a name of `'New York'`) is created.
 As the `'New York'` node is not matched for the first bound node, it is created.
 However, the newly-created `'New York'` node is matched and bound for the second and third bound nodes.
@@ -197,7 +166,7 @@ However, the newly-created `'New York'` node is matched and bound for the second
 [[merge-merge-with-on-create]]
 === Merge with `ON CREATE`
 
-Merge a node and set properties if the node needs to be created.
+Merge a node and set properties if the node needs to be created:
 
 .Query
 [source, cypher, role=test-result-skip]
@@ -222,7 +191,7 @@ It also sets a timestamp for the `created` property.
 [[merge-merge-with-on-match]]
 === Merge with `ON MATCH`
 
-Merging nodes and setting properties on found nodes.
+Merging nodes and setting properties on found nodes:
 
 .Query
 [source, cypher, indent=0]
@@ -233,7 +202,7 @@ ON MATCH
 RETURN person.name, person.found
 ----
 
-The query finds all the `Person` nodes, sets a property on them, and returns them.
+The query finds all the `Person` nodes, sets a property on them, and returns them:
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -276,7 +245,7 @@ Instead, it adds a timestamp on the `lastSeen` property.
 [[merge-merge-with-on-match-setting-multiple-properties]]
 === Merge with `ON MATCH` setting multiple properties
 
-If multiple properties should be set, simply separate them with commas.
+If multiple properties should be set, separate them with commas:
 
 .Query
 [source, cypher, role=test-result-skip]
@@ -308,7 +277,7 @@ RETURN person.name, person.found, person.lastAccessed
 [[merge-merge-on-a-relationship]]
 === Merge on a relationship
 
-`MERGE` can be used to match or create a relationship.
+`MERGE` can be used to match or create a relationship:
 
 .Query
 [source, cypher]
@@ -340,13 +309,13 @@ Note that in order to match or create a relationship when using `MERGE`, at leas
 MATCH
   (oliver:Person {name: 'Oliver Stone'}),
   (reiner:Person {name: 'Rob Reiner'})
-MERGE (oliver)-[:DIRECTED]->(movie:Movie)<-[:ACTED_IN]-(reiner)
+MERGE (oliver)-[:DIRECTED]->(movie:Movie)<-[:DIRECTED]-(reiner)
 RETURN movie
 ----
 
 In our example graph, `'Oliver Stone'` and `'Rob Reiner'` have never worked together.
 When we try to `MERGE` a "movie between them, Neo4j will not use any of the existing movies already connected to either person.
-Instead, a new `'movie'` node is created.
+Instead, a new `'Movie'` node is created.
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
@@ -372,7 +341,7 @@ MERGE (charlie)-[r:KNOWS]-(oliver)
 RETURN r
 ----
 
-As `'Charlie Sheen'` and `'Oliver Stone'` do not know each other this `MERGE` query will create a `KNOWS` relationship between them.
+As `'Charlie Sheen'` and `'Oliver Stone'` do not know each other in our example graph, this `MERGE` query will create a `KNOWS` relationship between them.
 The direction of the created relationship is arbitrary.
 
 .Result
@@ -417,7 +386,7 @@ The second `MERGE` creates a `BORN_IN` relationship between each person and a ci
 [[merge-merge-on-a-relationship-between-an-existing-node-and-a-merged-node-derived-from-a-node-property]]
 === Merge on a relationship between an existing node and a merged node derived from a node property
 
-`MERGE` can be used to simultaneously create both a new node `n` and a relationship between a bound node `m` and `n`.
+`MERGE` can be used to simultaneously create both a new node `n` and a relationship between a bound node `m` and `n`:
 
 .Query
 [source, cypher]
@@ -427,7 +396,7 @@ MERGE (person)-[r:HAS_CHAUFFEUR]->(chauffeur:Chauffeur {name: person.chauffeurNa
 RETURN person.name, person.chauffeurName, chauffeur
 ----
 
-As `MERGE` found no matches -- in our example graph, there are no nodes labeled with `Chauffeur` and no `HAS_CHAUFFEUR` relationships -- `MERGE` creates five nodes labeled with `Chauffeur`, each of which contains a `name` property whose value corresponds to each matched `Person` node's `chauffeurName` property value.
+As `MERGE` found no matches -- in our example graph, there are no nodes labeled with `Chauffeur` and no `HAS_CHAUFFEUR` relationships -- `MERGE` creates six nodes labeled with `Chauffeur`, each of which contains a `name` property whose value corresponds to each matched `Person` node's `chauffeurName` property value.
 `MERGE` also creates a `HAS_CHAUFFEUR` relationship between each `Person` node and the newly-created corresponding `Chauffeur` node.
 As `'Charlie Sheen'` and `'Michael Douglas'` both have a chauffeur with the same name -- `'John Brown'` -- a new node is created in each case, resulting in _two_ `Chauffeur` nodes having a `name` of `'John Brown'`, correctly denoting the fact that even though the `name` property may be identical, these are two separate people.
 This is in contrast to the example shown above in xref::clauses/merge.adoc#merge-merge-on-a-relationship-between-two-existing-nodes[Merge on a relationship between two existing nodes], where we used the first `MERGE` to bind the `City` nodes to prevent them from being recreated (and thus duplicated) in the second `MERGE`.
@@ -466,7 +435,7 @@ CREATE CONSTRAINT FOR (n:Person) REQUIRE n.role IS UNIQUE;
 [[merge-merge-using-unique-constraints-creates-a-new-node-if-no-node-is-found]]
 === Merge using property uniqueness constraints creates a new node if no node is found
 
-Merge using property uniqueness constraints creates a new node if no node is found.
+Merge using property uniqueness constraints creates a new node if no node is found:
 
 .Query
 [source, cypher]
@@ -475,8 +444,8 @@ MERGE (laurence:Person {name: 'Laurence Fishburne'})
 RETURN laurence.name
 ----
 
-The query creates the `'laurence'` node.
-If `'laurence'` had already existed, `MERGE` would just match the existing node.
+The query creates a `Person` node with the `name` property set to `'Laurence Fishburne'`.
+If a `'Laurence Fishburne'` node had already existed, `MERGE` would just match the existing node.
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
@@ -489,7 +458,7 @@ If `'laurence'` had already existed, `MERGE` would just match the existing node.
 [[merge-merge-using-unique-constraints-matches-an-existing-node]]
 === Merge using property uniqueness constraints matches an existing node
 
-Merge using property uniqueness constraints matches an existing node.
+Merge using property uniqueness constraints matches an existing node:
 
 .Query
 [source, cypher]
@@ -498,7 +467,7 @@ MERGE (oliver:Person {name: 'Oliver Stone'})
 RETURN oliver.name, oliver.bornIn
 ----
 
-The `'oliver'` node already exists, so `MERGE` just matches it.
+A `Person` node with the `name` `'Oliver Stone'` already exists, so `MERGE` just matches it.
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -511,7 +480,7 @@ The `'oliver'` node already exists, so `MERGE` just matches it.
 [[merge-merge-with-unique-constraints-and-partial-matches]]
 === Merge with property uniqueness constraints and partial matches
 
-Merge using property uniqueness constraints fails when finding partial matches.
+Merge using property uniqueness constraints fails when finding partial matches:
 
 .Query
 [source, cypher, role=test-fail]
@@ -520,14 +489,14 @@ MERGE (michael:Person {name: 'Michael Douglas', role: 'Gordon Gekko'})
 RETURN michael
 ----
 
-While there is a matching unique `'michael'` node with the name `'Michael Douglas'`, there is no unique node with the role of `'Gordon Gekko'` and `MERGE` fails to match.
+While there is a matching unique `Person` node with the name `'Michael Douglas'`, there is no unique node with the role of `'Gordon Gekko'` and `MERGE`, therefore, fails to match.
 
 .Error message
 ----
 Node already exists with label `Person` and property `name` = 'Michael Douglas'
 ----
 
-If we want to give Michael Douglas the role of Gordon Gekko, we can use the `SET` clause instead:
+To set the `role` of `'Gordon Gekko'` to `Michael Douglas`, use the `SET` clause instead:
 
 .Query
 [source, cypher]
@@ -545,7 +514,7 @@ Set 1 property
 [[merge-merge-with-unique-constraints-and-conflicting-matches]]
 === Merge with property uniqueness constraints and conflicting matches
 
-Merge using property uniqueness constraints fails when finding conflicting matches.
+Merge using property uniqueness constraints fails when finding conflicting matches:
 
 .Query
 [source, cypher, role=test-fail]
@@ -554,7 +523,7 @@ MERGE (oliver:Person {name: 'Oliver Stone', role: 'Gordon Gekko'})
 RETURN oliver
 ----
 
-While there is a matching unique `'oliver'` node with the name `'Oliver Stone'`, there is also another  unique node with the role of `'Gordon Gekko'` and `MERGE` fails to match.
+While there is a matching unique `Person` node with the name `'Oliver Stone'`, there is also another unique `Person` node with the role of `'Gordon Gekko'` and `MERGE` fails to match.
 
 .Error message
 ----
@@ -564,7 +533,7 @@ Node already exists with label `Person` and property `name` = 'Oliver Stone'
 [[merge-using-map-parameters-with-merge]]
 === Using map parameters with `MERGE`
 
-`MERGE` does not support map parameters the same way `CREATE` does.
+`MERGE` does not support map parameters the same way that `CREATE` does.
 To use map parameters with `MERGE`, it is necessary to explicitly use the expected properties, such as in the following example.
 For more information on parameters, see xref::syntax/parameters.adoc[].
 
