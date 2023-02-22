@@ -60,11 +60,15 @@ See link:{neo4j-docs-base-uri}/java-reference/{page-version}/extending-neo4j/pro
 This calls the built-in procedure `db.labels`, which lists all labels used in the database.
 
 ////
-CREATE (a:User:Administrator {name: 'Adrian'})
+[source, cypher, role=test-setup]
+----
+CREATE (:User);
+Create (:Administrator)
+----
 ////
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 CALL db.labels()
 ----
@@ -85,12 +89,8 @@ Cypher allows the omission of parentheses on procedures of arity-0 (no arguments
 Best practice is to use parentheses for procedures.
 ====
 
-////
-CREATE (a:User:Administrator {name: 'Adrian'})
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 CALL db.labels
 ----
@@ -120,7 +120,7 @@ To get the signature, make sure to use the `YIELD` clause.
 The following query return the signature for a particular procedure:
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 SHOW PROCEDURES YIELD name, signature
 WHERE name = 'dbms.listConfig'
@@ -138,7 +138,7 @@ The result shows that:
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | +signature+
-| +"dbms.listConfig(searchString =  :: STRING?) :: (name :: STRING?, description :: STRING?, value :: STRING?, dynamic :: BOOLEAN?)"+
+| +"dbms.listConfig(searchString =  :: STRING?) :: (name :: STRING?, description :: STRING?, value :: STRING?, dynamic :: BOOLEAN?, defaultValue :: STRING?, startupValue :: STRING?, explicitlySet :: BOOLEAN?, validValues :: STRING?)"+
 1+d|Rows: 1
 |===
 
@@ -150,50 +150,43 @@ The result shows that:
 
 This calls the built-in procedure `db.labels`, which lists all labels used in the database.
 
-////
-CREATE (a:User:Administrator {name: 'Adrian'})
-////
+.Query
+[source, cypher]
+----
+CALL db.labels()
+----
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
-CALL `db`.`labels()`
-----
-
-////
-CREATE (a:User:Administrator {name: 'Adrian'})
-////
-
-.Query
-[source, cypher, indent=0]
-----
-CALL `db`.`labels`
+CALL db.labels
 ----
 
 
 [[call-call-a-procedure-with-literal-arguments]]
 == Call a procedure with literal arguments
 
-This calls the example procedure `dbms.security.createUser` using literal arguments.
+This calls the example procedure `dbms.checkConfigValue` using literal arguments.
 The arguments are written out directly in the statement text.
 
-////
-CREATE (a:User:Administrator {name: 'Adrian'})
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
-CALL dbms.security.createUser('example_username', 'example_password', false)
+CALL dbms.checkConfigValue('server.bolt.enabled', 'true')
 ----
 
-Since our example procedure does not return any result, the result is empty.
+.Result
+[role="queryresult",options="header,footer",cols=""2*<m"]
+|===
+| +"valid"+ | +"message"+
+| +true+ | +"requires restart"+
+|===
 
 
 [[call-call-a-procedure-with-parameter-arguments]]
 == Call a procedure with parameter arguments
 
-This calls the example procedure `dbms.security.createUser` using parameters as arguments.
+This calls the example procedure `dbms.checkConfigValue` using parameters as arguments.
 Each procedure argument is taken to be the value of a corresponding statement parameter with the same name (or null if no such parameter has been given).
 
 [NOTE]
@@ -206,19 +199,24 @@ See xref::syntax/parameters.adoc[], for more about querying with parameters.
 [source,javascript, indent=0]
 ----
 {
-  "username": "example_username",
-  "password": "example_password",
-  "requirePasswordChange": false
+  "setting": "server.bolt.enabled",
+  "value": "true",
 }
 ----
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
-CALL dbms.security.createUser($username, $password, $requirePasswordChange)
+CALL dbms.checkConfigValue($setting, $value)
 ----
 
-Since our example procedure does not return any result, the result is empty.
+.Result
+[role="queryresult",options="header,footer",cols=""2*<m"]
+|===
+| +"valid"+ | +"message"+
+| +true+ | +"requires restart"+
+|===
+
 
 Cypher allows the omission of parentheses for procedures with arity-n (n arguments), Cypher implicitly passes the parameter arguments.
 
@@ -233,56 +231,72 @@ Omission of parantheses is available only in a so-called standalone procedure ca
 [source,javascript, indent=0]
 ----
 {
-  "username": "example_username",
-  "password": "example_password",
-  "requirePasswordChange": false
+  "setting": "server.bolt.enabled",
+  "value": "true",
 }
 ----
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-skip]
 ----
-CALL dbms.security.createUser
+CALL dbms.checkConfigValue
 ----
 
-Since our example procedure does not return any result, the result is empty.
+.Result
+[role="queryresult",options="header,footer",cols=""2*<m"]
+|===
+| +"valid"+ | +"message"+
+| +true+ | +"requires restart"+
+|===
+
 
 
 [[call-call-a-procedure-with-mixed-literal-and-parameter-arguments]]
 == Call a procedure with mixed literal and parameter arguments
 
-This calls the example procedure `dbms.security.createUser` using both literal and parameter arguments.
+This calls the example procedure `dbms.checkConfigValue` using both literal and parameter arguments.
 
 .Parameters
 [source,javascript, indent=0]
 ----
 {
-  "password": "example_password"
+  "setting": "server.bolt.enabled"
 }
 ----
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
-CALL dbms.security.createUser('example_username', $password, false)
+CALL dbms.checkConfigValue($setting, 'true')
 ----
 
-Since our example procedure does not return any result, the result is empty.
+.Result
+[role="queryresult",options="header,footer",cols=""2*<m"]
+|===
+| +"valid"+ | +"message"+
+| +true+ | +"requires restart"+
+|===
 
 
 [[call-call-a-procedure-with-literal-and-default-arguments]]
 == Call a procedure with literal and default arguments
 
-This calls the example procedure `dbms.security.createUser` using literal arguments.
+This calls the example procedure `dbms.checkConfigValue` using literal arguments.
 That is, arguments that are written out directly in the statement text, and a trailing default argument that is provided by the procedure itself.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
-CALL dbms.security.createUser('example_username', 'example_password')
+CALL dbms.checkConfigValue('server.bolt.enabled', 'true')
 ----
 
-Since our example procedure does not return any result, the result is empty.
+.Result
+[role="queryresult",options="header,footer",cols=""2*<m"]
+|===
+| +"valid"+ | +"message"+
+| +true+ | +"requires restart"+
+|===
+
 
 
 [[call-call-a-procedure-call-yield-star]]
@@ -290,12 +304,8 @@ Since our example procedure does not return any result, the result is empty.
 
 This calls the built-in procedure `db.labels` to count all labels used in the database.
 
-////
-CREATE (a:User:Administrator {name: 'Adrian'})
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 CALL db.labels() YIELD *
 ----
@@ -308,12 +318,8 @@ If the procedure has deprecated return columns, those columns are also returned.
 
 This calls the built-in procedure `db.labels` to count all labels used in the database.
 
-////
-CREATE (a:User:Administrator {name: 'Adrian'})
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 CALL db.labels() YIELD label
 RETURN count(label) AS numLabels
@@ -327,12 +333,8 @@ Since the procedure call is part of a larger query, all outputs must be named ex
 
 This calls the built-in procedure `db.labels` to count all in-use labels in the database that contain the string `'User'`.
 
-////
-CREATE (a:User:Administrator {name: 'Adrian'})
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 CALL db.labels() YIELD label
 WHERE label CONTAINS 'User'
@@ -347,12 +349,8 @@ Since the procedure call is part of a larger query, all outputs must be named ex
 
 This calls the built-in procedure `db.propertyKeys` as part of counting the number of nodes per property key that is currently used in the database.
 
-////
-CREATE (a:User:Administrator {name: 'Adrian'})
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 CALL db.propertyKeys() YIELD propertyKey AS prop
 MATCH (n)

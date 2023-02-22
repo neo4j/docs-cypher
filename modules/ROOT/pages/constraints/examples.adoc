@@ -35,19 +35,16 @@ When creating a property uniqueness constraint, a name can be provided.
 ======
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
-CREATE CONSTRAINT constraint_name
+CREATE CONSTRAINT book_isbn
 FOR (book:Book) REQUIRE book.isbn IS UNIQUE
 ----
 
 .Result
 [queryresult]
 ----
-+-------------------+
-| No data returned. |
-+-------------------+
-Unique constraints added: 1
+Added 1 constraint.
 ----
 
 ////
@@ -65,7 +62,8 @@ The statistics will be updated to say `Node uniqueness constraints` in Neo4j ver
 [[constraints-create-a-node-uniqueness-constraint-if-not-exist]]
 === Handling existing constraints when creating a constraint
 
-Creating an already existing constraint will fail. To avoid such an error, `IF NOT EXISTS` can be added to the `CREATE` command.
+Creating an already existing constraint will fail. 
+To avoid such an error, `IF NOT EXISTS` can be added to the `CREATE` command.
 This will ensure that no error is thrown and no constraint is created if any other constraint with the given name or another node property uniqueness constraint on the same schema already exists.
 
 
@@ -73,21 +71,18 @@ This will ensure that no error is thrown and no constraint is created if any oth
 ======
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
-CREATE CONSTRAINT constraint_name IF NOT EXISTS
-FOR (book:Book) REQUIRE book.isbn IS UNIQUE
+CREATE CONSTRAINT book_isbn2 IF NOT EXISTS
+FOR (book:Book) REQUIRE book.isbn2 IS UNIQUE
 ----
 
-Assuming no constraint with the given name or other node property uniqueness constraint on the same schema exists:
+Assuming no constraint with the given name or other node property uniqueness constraint on the same schema already exists, the query will return:
 
 .Result
 [queryresult]
 ----
-+-------------------+
-| No data returned. |
-+-------------------+
-Unique constraints added: 1
+Added 1 constraint.
 ----
 
 ////
@@ -120,22 +115,19 @@ The only valid value for the index provider is:
 ======
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 CREATE CONSTRAINT constraint_with_options
-FOR (n:Label) REQUIRE (n.prop1, n.prop2) IS UNIQUE
+FOR (book:Book) REQUIRE (book.prop1, book.prop2) IS UNIQUE
 OPTIONS {
-  indexProvider: 'range-1.0',
+  indexProvider: 'range-1.0'
 }
 ----
 
 .Result
 [queryresult]
 ----
-+-------------------+
-| No data returned. |
-+-------------------+
-Unique constraints added: 1
+Added 1 constraint.
 ----
 
 ////
@@ -159,26 +151,28 @@ There is no valid index configuration values for the constraint-backing range in
 .+CREATE CONSTRAINT+
 ======
 
-Create a property uniqueness constraint on the property `title` on nodes with the `Book` label, when that constraint already exists.
+Create a property uniqueness constraint on the property `published` on nodes with the `Book` label, when that constraint already exists.
 
 ////
-Set-up to get expected behavior:
-CREATE CONSTRAINT preExistingUnique FOR (book:Book) REQUIRE book.title IS UNIQUE
+[source, cypher, role=test-setup]
+----
+CREATE CONSTRAINT preExisting_book_published FOR (book:Book) REQUIRE book.published IS UNIQUE
+----
 ////
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-fail]
 ----
-CREATE CONSTRAINT FOR (book:Book) REQUIRE book.title IS UNIQUE
+CREATE CONSTRAINT book_published FOR (book:Book) REQUIRE book.published IS UNIQUE
 ----
 
 In this case the constraint can not be created because it already exists.
 
 .Error message
-[source, "error message", role="noheader"]
+[source, error]
 ----
 Constraint already exists:
-Constraint( id=4, name='preExistingUnique', type='UNIQUENESS', schema=(:Book {title}), ownedIndex=3 )
+Constraint( id=4, name='preExisting_book_published', type='UNIQUENESS', schema=(:Book {published}), ownedIndex=3 )
 ----
 
 ////
@@ -203,20 +197,22 @@ The constraint type will be updated to say `NODE_UNIQUENESS` in Neo4j version 6.
 Create a property uniqueness constraint on the property `wordCount` on nodes with the `Book` label, when an index already exists on that label and property combination.
 
 ////
-Set-up to get expected behavior:
-CREATE INDEX FOR (book:Book) ON (book.wordCount)
+[source, cypher, role=test-setup]
+----
+CREATE INDEX preExisting_book_word_count FOR (book:Book) ON (book.wordCount)
+----
 ////
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-fail]
 ----
-CREATE CONSTRAINT FOR (book:Book) REQUIRE book.wordCount IS UNIQUE
+CREATE CONSTRAINT book_word_count FOR (book:Book) REQUIRE book.wordCount IS UNIQUE
 ----
 
 In this case the constraint can not be created because there already exists an index covering that schema.
 
 .Error message
-[source, "error message", role="noheader"]
+[source, error]
 ----
 There already exists an index (:Book {wordCount}).
 A constraint cannot be created until the index has been dropped.
@@ -235,13 +231,8 @@ A constraint cannot be created until the index has been dropped.
 
 Create a `Book` node with an `isbn` that is not already in the database.
 
-////
-Set-up to get expected behavior:
-CREATE CONSTRAINT FOR (book:Book) REQUIRE book.isbn IS UNIQUE
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 CREATE (book:Book {isbn: '1449356265', title: 'Graph Databases'})
 ----
@@ -249,12 +240,7 @@ CREATE (book:Book {isbn: '1449356265', title: 'Graph Databases'})
 .Result
 [queryresult]
 ----
-+-------------------+
-| No data returned. |
-+-------------------+
-Nodes created: 1
-Properties set: 2
-Labels added: 1
+Added 1 label, created 1 node, set 2 properties
 ----
 
 ======
@@ -270,14 +256,8 @@ Labels added: 1
 
 Create a `Book` node with an `isbn` that is already used in the database.
 
-////
-Set-up to get expected behavior:
-CREATE CONSTRAINT FOR (book:Book) REQUIRE book.isbn IS UNIQUE
-CREATE (book:Book {isbn: '1449356265', title: 'Graph Databases'})
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-fail]
 ----
 CREATE (book:Book {isbn: '1449356265', title: 'Graph Databases'})
 ----
@@ -285,7 +265,7 @@ CREATE (book:Book {isbn: '1449356265', title: 'Graph Databases'})
 In this case the node is not created in the graph.
 
 .Error message
-[source, "error message", role="noheader"]
+[source, error]
 ----
 Node(0) already exists with label `Book` and property `isbn` = '1449356265'
 ----
@@ -301,28 +281,30 @@ Node(0) already exists with label `Book` and property `isbn` = '1449356265'
 .+CREATE CONSTRAINT+
 ======
 
-Create a property uniqueness constraint on the property `isbn` on nodes with the `Book` label when there are two nodes with the same `isbn`.
+Create a property uniqueness constraint on the property `title` on nodes with the `Book` label when there are two nodes with the same `title`.
 
 ////
-Set-up to get expected behavior:
-CREATE (book:Book {isbn: '1449356265', title: 'Graph Databases'})
-CREATE (book:Book {isbn: '1449356265', title: 'Graph Databases'})
+[source, cypher, role=test-setup]
+----
+CREATE (book:Book {isbn: '9780393972832', title: 'Moby Dick'});
+CREATE (book:Book {isbn: '9780763630188', title: 'Moby Dick'})
+----
 ////
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-fail]
 ----
-CREATE CONSTRAINT FOR (book:Book) REQUIRE book.isbn IS UNIQUE
+CREATE CONSTRAINT book_title FOR (book:Book) REQUIRE book.title IS UNIQUE
 ----
 
 In this case the constraint can not be created because it is violated by existing data.
 Either use xref::indexes-for-search-performance.adoc[] instead, or remove the offending nodes and then re-apply the constraint.
 
 .Error message
-[source, "error message", role="noheader"]
+[source, error]
 ----
-Unable to create Constraint( name='constraint_62365a16', type='UNIQUENESS', schema=(:Book {isbn}) ):
-Both Node(0) and Node(1) have the label `Book` and property `isbn` = '1449356265'
+Unable to create Constraint( name='book_title', type='UNIQUENESS', schema=(:Book {title}) ):
+Both Node(0) and Node(1) have the label `Book` and property `title` = 'Moby Dick'
 ----
 
 ////
@@ -335,8 +317,23 @@ The constraint type will be updated to say `NODE_UNIQUENESS` in Neo4j version 6.
 
 ======
 
+The constraint creation fails on the first offending nodes that are found.
+This does not guarantee that there are no other offending nodes in the data.
+Therefore, all the data should be checked and cleaned up before re-attempting the constraint creation.
+
+This is an example `MATCH` query to find all offending nodes with the non-unique property values for the constraint above:
+
+.Query
+[source, cypher]
+----
+MATCH (book1:Book), (book2:Book)
+WHERE book1.title = book2.title AND NOT book1 = book2
+RETURN book1, book2
+----
+
 ////
 TODO: Re-add this part when adding back relationship key and uniqueness constraints
+TODO: Remove 'test-skip' message on queries when feature is introduced
 [[constraints-examples-relationship-uniqueness]]
 == Relationship property uniqueness constraints
 
@@ -363,7 +360,7 @@ When creating a property uniqueness constraint, a name can be provided.
 ======
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-skip]
 ----
 CREATE CONSTRAINT constraint_name
 FOR ()-[friend:FRIENDS_WITH]-() REQUIRE friend.nickname IS UNIQUE
@@ -394,7 +391,7 @@ This will ensure that no error is thrown and no constraint is created if any oth
 ======
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-skip]
 ----
 CREATE CONSTRAINT constraint_name IF NOT EXISTS
 FOR ()-[friend:FRIENDS_WITH]-() REQUIRE friend.nickname IS UNIQUE
@@ -433,7 +430,7 @@ The only valid value for the index provider is:
 ======
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-skip]
 ----
 CREATE CONSTRAINT constraint_with_options
 FOR ()-[friend:FRIENDS_WITH]-() REQUIRE (friend.nickname, friend.since) IS UNIQUE
@@ -470,7 +467,7 @@ Create a property uniqueness constraint on the property `nickname` on relationsh
 // CREATE CONSTRAINT preExistingUnique FOR ()-[friend:FRIENDS_WITH]-() REQUIRE friend.nickname IS UNIQUE
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-skip]
 ----
 CREATE CONSTRAINT FOR ()-[friend:FRIENDS_WITH]-() REQUIRE friend.nickname IS UNIQUE
 ----
@@ -478,7 +475,7 @@ CREATE CONSTRAINT FOR ()-[friend:FRIENDS_WITH]-() REQUIRE friend.nickname IS UNI
 In this case, the constraint cannot be created because it already exists.
 
 .Error message
-[source, "error message", role="noheader"]
+[source, error]
 ----
 Constraint already exists:
 Constraint( id=4, name='preExistingUnique', type='RELATIONSHIP_UNIQUENESS', schema=()-[:FRIENDS_WITH {nickname}]-(), ownedIndex=3 )
@@ -501,7 +498,7 @@ Create a property uniqueness constraint on the property `nickname` on relationsh
 // CREATE INDEX FOR ()-[friend:FRIENDS_WITH]-() ON (friend.nickname)
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-skip]
 ----
 CREATE CONSTRAINT FOR ()-[friend:FRIENDS_WITH]-() REQUIRE friend.nickname IS UNIQUE
 ----
@@ -509,7 +506,7 @@ CREATE CONSTRAINT FOR ()-[friend:FRIENDS_WITH]-() REQUIRE friend.nickname IS UNI
 In this case, the constraint cannot be created because there already exists an index covering that schema.
 
 .Error message
-[source, "error message", role="noheader"]
+[source, error]
 ----
 There already exists an index ()-[:FRIENDS_WITH {nickname}]-().
 A constraint cannot be created until the index has been dropped.
@@ -532,7 +529,7 @@ Create a `FRIENDS_WITH` relationship with an `nickname` that is not already in t
 // CREATE CONSTRAINT FOR ()-[friend:FRIENDS_WITH]-() REQUIRE friend.nickname IS UNIQUE
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-skip]
 ----
 CREATE (:Person {name: 'Josefin'})-[:FRIENDS_WITH {nickname: 'Mimi'}]->(:Person {name: 'Emilia'})
 ----
@@ -567,7 +564,7 @@ Create a `FRIENDS_WITH` relationship with an `nickname` that is already used in 
 // CREATE (:Person {name: 'Emma'}), (:Person {name: 'Josefin'})-[:FRIENDS_WITH {nickname: 'Mimi'}]->(:Person {name: 'Emilia'})
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-skip]
 ----
 MATCH (emma:Person {name: 'Emma'}), (emilia:Person {name: 'Emilia'})
 CREATE (emma)-[:FRIENDS_WITH {nickname: 'Mimi'}]->(emilia)
@@ -576,7 +573,7 @@ CREATE (emma)-[:FRIENDS_WITH {nickname: 'Mimi'}]->(emilia)
 In this case, the relationship is not created in the graph.
 
 .Error message
-[source, "error message", role="noheader"]
+[source, error]
 ----
 Relationship(0) already exists with type `FRIENDS_WITH` and property `nickname` = 'Mimi'
 ----
@@ -599,7 +596,7 @@ Create a property uniqueness constraint on the property `nickname` on relationsh
 // CREATE (josefin)-[:FRIENDS_WITH {nickname: 'Mimi'}]->(emilia), (emma)-[:FRIENDS_WITH {nickname: 'Mimi'}]->(emilia)
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-skip]
 ----
 CREATE CONSTRAINT friends FOR ()-[friend:FRIENDS_WITH]-() REQUIRE friend.nickname IS UNIQUE
 ----
@@ -608,7 +605,7 @@ In this case, the constraint cannot be created because it is violated by existin
 Either use xref::indexes-for-search-performance.adoc[] instead, or remove the offending relationships and then re-apply the constraint.
 
 .Error message
-[source, "error message", role="noheader"]
+[source, error]
 ----
 Unable to create Constraint( name='friends', type='RELATIONSHIP_UNIQUENESS', schema=()-[:FRIENDS_WITH {nickname}]-() ):
 Both Relationship(0) and Relationship(1) have the type `FRIENDS_WITH` and property `nickname` = 'Mimi'
@@ -643,19 +640,16 @@ When creating a node property existence constraint, a name can be provided.
 ======
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
-CREATE CONSTRAINT constraint_name
-FOR (book:Book) REQUIRE book.isbn IS NOT NULL
+CREATE CONSTRAINT author_name
+FOR (author:Author) REQUIRE author.name IS NOT NULL
 ----
 
 .Result
 [queryresult]
 ----
-+-------------------+
-| No data returned. |
-+-------------------+
-Property existence constraints added: 1
+Added 1 constraint.
 ----
 
 ////
@@ -683,25 +677,26 @@ This will ensure that no error is thrown and no constraint is created if any oth
 ======
 
 ////
-Set-up to get expected behavior:
-CREATE CONSTRAINT constraint_name FOR (book:Book) REQUIRE book.isbn IS UNIQUE
+[source, cypher, role=test-setup]
+----
+CREATE CONSTRAINT author_pseudonym 
+FOR (author:Author) REQUIRE author.pseudonym IS UNIQUE
+----
 ////
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
-CREATE CONSTRAINT constraint_name IF NOT EXISTS
-FOR (book:Book) REQUIRE book.isbn IS NOT NULL
+CREATE CONSTRAINT author_pseudonym IF NOT EXISTS
+FOR (author:Author) REQUIRE author.pseudonym IS NOT NULL
 ----
 
-Assuming a constraint with the name `constraint_name` already existed:
+Assuming a constraint with the name `author_pseudonym` already existed:
 
 .Result
 [queryresult]
 ----
-+--------------------------------------------+
-| No data returned, and nothing was changed. |
-+--------------------------------------------+
+(no changes, no records)
 ----
 
 ======
@@ -715,27 +710,21 @@ Assuming a constraint with the name `constraint_name` already existed:
 .+CREATE CONSTRAINT+
 ======
 
-Create a node property existence constraint on the property `title` on nodes with the `Book` label, when that constraint already exists.
-
-////
-Set-up to get expected behavior:
-CREATE CONSTRAINT preExistingNodePropExist FOR (book:Book) REQUIRE book.title IS NOT NULL
-////
+Create a node property existence constraint on the property `name` on nodes with the `Author` label, when that constraint already exists.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-fail]
 ----
-CREATE CONSTRAINT booksShouldHaveTitles
-FOR (book:Book) REQUIRE book.title IS NOT NULL
+CREATE CONSTRAINT author_name
+FOR (author:Author) REQUIRE author.name IS NOT NULL
 ----
 
 In this case the constraint can not be created because it already exists.
 
 .Error message
-[source, "error message", role="noheader"]
+[source, error]
 ----
-Constraint already exists:
-Constraint( id=3, name='preExistingNodePropExist', type='NODE PROPERTY EXISTENCE', schema=(:Book {title}) )
+An equivalent constraint already exists, 'Constraint( id=10, name='author_name', type='NODE PROPERTY EXISTENCE', schema=(:Author {name}) )'.
 ----
 
 ======
@@ -749,28 +738,18 @@ Constraint( id=3, name='preExistingNodePropExist', type='NODE PROPERTY EXISTENCE
 .+CREATE NODE+
 ======
 
-Create a `Book` node with an `isbn` property.
-
-////
-Set-up to get expected behavior:
-CREATE CONSTRAINT FOR (book:Book) REQUIRE book.isbn IS NOT NULL
-////
+Create an `Author` node with a `name` property.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
-CREATE (book:Book {isbn: '1449356265', title: 'Graph Databases'})
+CREATE (author:Author {name:'Virginia Woolf'})
 ----
 
 .Result
 [queryresult]
 ----
-+-------------------+
-| No data returned. |
-+-------------------+
-Nodes created: 1
-Properties set: 2
-Labels added: 1
+Added 1 label, created 1 node, set 1 properties
 ----
 
 ======
@@ -784,25 +763,20 @@ Labels added: 1
 .+CREATE NODE+
 ======
 
-Trying to create a `Book` node without an `isbn` property, given a property existence constraint on `:Book(isbn)`.
-
-////
-Set-up to get expected behavior:
-CREATE CONSTRAINT FOR (book:Book) REQUIRE book.isbn IS NOT NULL
-////
+Trying to create an `Author` node without a `name` property, given a property existence constraint on `:Author(name)`.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-fail]
 ----
-CREATE (book:Book {title: 'Graph Databases'})
+CREATE (author:Author)
 ----
 
 In this case the node is not created in the graph.
 
 .Error message
-[source, "error message", role="noheader"]
+[source, error]
 ----
-Node(0) with label `Book` must have the property `isbn`
+Node(0) with label `Author` must have the property `name`
 ----
 
 ======
@@ -816,27 +790,21 @@ Node(0) with label `Book` must have the property `isbn`
 .+REMOVE PROPERTY+
 ======
 
-Trying to remove the `isbn` property from an existing node `book`, given a property existence constraint on `:Book(isbn)`.
-
-////
-Set-up to get expected behavior:
-CREATE CONSTRAINT FOR (book:Book) REQUIRE book.isbn IS NOT NULL
-CREATE (book:Book {isbn: '1449356265', title: 'Graph Databases'})
-////
+Trying to remove the `name` property from an existing node `Author`, given a property existence constraint on `:Author(name)`.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-fail]
 ----
-MATCH (book:Book {title: 'Graph Databases'})
-REMOVE book.isbn
+MATCH (author:Author {name: 'Virginia Woolf'})
+REMOVE author.name
 ----
 
 In this case the property is not removed.
 
 .Error message
-[source, "error message", role="noheader"]
+[source, error]
 ----
-Node(0) with label `Book` must have the property `isbn`
+Node(0) with label `Author` must have the property `name`
 ----
 
 ======
@@ -850,30 +818,39 @@ Node(0) with label `Book` must have the property `isbn`
 .+CREATE CONSTRAINT+
 ======
 
-Create a constraint on the property `isbn` on nodes with the `Book` label when there already exists  a node without an `isbn`.
-
-////
-Set-up to get expected behavior:
-CREATE (book:Book {title: 'Graph Databases'})
-////
+Create a constraint on the property `nationality` on nodes with the `Author` label when there already exists a node without a `nationality` property.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-fail]
 ----
-CREATE CONSTRAINT FOR (book:Book) REQUIRE book.isbn IS NOT NULL
+CREATE CONSTRAINT author_nationality FOR (author:Author) REQUIRE author.nationality IS NOT NULL
 ----
 
 In this case the constraint can't be created because it is violated by existing data.
 Remove the offending nodes and then re-apply the constraint.
 
 .Error message
-[source, "error message", role="noheader"]
+[source, error]
 ----
-Unable to create Constraint( type='NODE PROPERTY EXISTENCE', schema=(:Book {isbn}) ):
-Node(0) with label `Book` must have the property `isbn`
+Unable to create Constraint( type='NODE PROPERTY EXISTENCE', schema=(:Author {nationality}) ):
+Node(0) with label `Author` must have the property `nationality`
 ----
 
 ======
+
+The constraint creation fails on the first offending node that is found.
+This does not guarantee that there are no other offending nodes in the data.
+Therefore, all the data should be checked and cleaned up before re-attempting the constraint creation.
+
+This is an example `MATCH` query to find all offending nodes missing the property for the constraint above:
+
+.Query
+[source, cypher]
+----
+MATCH (author:Author)
+WHERE author.nationality IS NULL
+RETURN author
+----
 
 
 [role=enterprise-edition]
@@ -902,19 +879,16 @@ When creating a relationship property existence constraint, a name can be provid
 ======
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
-CREATE CONSTRAINT constraint_name
-FOR ()-[like:LIKED]-() REQUIRE like.day IS NOT NULL
+CREATE CONSTRAINT wrote_year
+FOR ()-[wrote:WROTE]-() REQUIRE wrote.year IS NOT NULL
 ----
 
 .Result
 [queryresult]
 ----
-+-------------------+
-| No data returned. |
-+-------------------+
-Property existence constraints added: 1
+Added 1 constraint.
 ----
 
 ////
@@ -941,26 +915,19 @@ This will ensure that no error is thrown and no constraint is created if any oth
 .+CREATE CONSTRAINT+
 ======
 
-////
-Set-up to get expected behavior:
-CREATE CONSTRAINT constraint_name FOR (book:Book) REQUIRE book.isbn IS NOT NULL
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
-CREATE CONSTRAINT constraint_name
-IF NOT EXISTS FOR ()-[like:LIKED]-() REQUIRE like.day IS NOT NULL
+CREATE CONSTRAINT wrote_year IF NOT EXISTS 
+FOR ()-[wrote:WROTE]-() REQUIRE wrote.year IS NOT NULL
 ----
 
-Assuming a constraint with the name `constraint_name` already existed:
+Assuming that such a constraint already existed:
 
 .Result
 [queryresult]
 ----
-+--------------------------------------------+
-| No data returned, and nothing was changed. |
-+--------------------------------------------+
+(no changes, no records)
 ----
 
 ======
@@ -974,26 +941,28 @@ Assuming a constraint with the name `constraint_name` already existed:
 .+CREATE CONSTRAINT+
 ======
 
-Create a named relationship property existence constraint on the property `week` on relationships with the `LIKED` type, when a constraint with the given name already exists.
+Create a named relationship property existence constraint on the property `locations` on relationships with the `WROTE` type, when a constraint with the given name already exists.
 
 ////
-Set-up to get expected behavior:
-CREATE CONSTRAINT relPropExist FOR ()-[like:LIKED]-() REQUIRE like.since IS NOT NULL
+[source, cypher, role=test-setup]
+----
+CREATE CONSTRAINT wrote_locations FOR ()-[wrote:WROTE]-() REQUIRE wrote.location IS NOT NULL
+----
 ////
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-fail]
 ----
-CREATE CONSTRAINT relPropExist
-FOR ()-[like:LIKED]-() REQUIRE like.week IS NOT NULL
+CREATE CONSTRAINT wrote_locations
+FOR ()-[wrote:WROTE]-() REQUIRE wrote.locations IS NOT NULL
 ----
 
 In this case the constraint can not be created because there already exists a constraint with the given name.
 
 .Error message
-[source, "error message", role="noheader"]
+[source, error]
 ----
-There already exists a constraint called 'relPropExist'.
+There already exists a constraint called 'wrote_locations'.
 ----
 
 ======
@@ -1007,29 +976,18 @@ There already exists a constraint called 'relPropExist'.
 .+CREATE RELATIONSHIP+
 ======
 
-Create a `LIKED` relationship with a `day` property.
-
-////
-Set-up to get expected behavior:
-CREATE CONSTRAINT FOR ()-[like:LIKED]-() REQUIRE like.day IS NOT NULL
-////
+Create a `WROTE` relationship with a `year` and `location` property, given property existence constraints on `:WROTE(year)` and `:WROTE(location)`.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
-CREATE (user:User)-[like:LIKED {day: 'yesterday'}]->(book:Book)
+CREATE (author:Author {name: 'Emily Brontë'})-[wrote:WROTE {year: 1847, location: 'Haworth, United Kingdom'}]->(book:Book {title:'Wuthering Heights', isbn: 9789186579296})
 ----
 
 .Result
 [queryresult]
 ----
-+-------------------+
-| No data returned. |
-+-------------------+
-Nodes created: 2
-Relationships created: 1
-Properties set: 1
-Labels added: 2
+Added 2 labels, created 2 nodes, set 5 properties, created 1 relationship
 ----
 
 ======
@@ -1043,25 +1001,20 @@ Labels added: 2
 .+CREATE RELATIONSHIP+
 ======
 
-Trying to create a `LIKED` relationship without a `day` property, given a property existence constraint `:LIKED(day)`.
-
-////
-Set-up to get expected behavior:
-CREATE CONSTRAINT FOR ()-[like:LIKED]-() REQUIRE like.day IS NOT NULL
-////
+Trying to create a `WROTE` relationship without a `location` property, given a property existence constraint `:WROTE(location)`.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-fail]
 ----
-CREATE (user:User)-[like:LIKED]->(book:Book)
+CREATE (author:Author {name: 'Charlotte Brontë'})-[wrote:WROTE {year: 1847}]->(book:Book {title: 'Jane Eyre', isbn:9780194241762})
 ----
 
 In this case the relationship is not created in the graph.
 
 .Error message
-[source, "error message", role="noheader"]
+[source, error]
 ----
-Relationship(0) with type `LIKED` must have the property `day`
+Relationship(0) with type `WROTE` must have the property `location`
 ----
 
 ======
@@ -1075,26 +1028,20 @@ Relationship(0) with type `LIKED` must have the property `day`
 .+REMOVE PROPERTY+
 ======
 
-Trying to remove the `day` property from an existing relationship `like` of type `LIKED`, given a property existence constraint `:LIKED(day)`.
-
-////
-Set-up to get expected behavior:
-CREATE CONSTRAINT FOR ()-[like:LIKED]-() REQUIRE like.day IS NOT NULL
-CREATE (user:User)-[like:LIKED {day: 'yesterday'}]->(book:Book)
-////
+Trying to remove the `location` property from an existing relationship of type `WROTE`, given a property existence constraint `:WROTE(location)`.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-fail]
 ----
-MATCH (user:User)-[like:LIKED]->(book:Book) REMOVE like.day
+MATCH (author:Author)-[wrote:WROTE]->(book:Book) REMOVE wrote.location
 ----
 
 In this case the property is not removed.
 
 .Error message
-[source, "error message", role="noheader"]
+[source, error]
 ----
-Relationship(0) with type `LIKED` must have the property `day`
+Relationship(0) with type `WROTE` must have the property `location`
 ----
 
 ======
@@ -1108,30 +1055,39 @@ Relationship(0) with type `LIKED` must have the property `day`
 .+CREATE CONSTRAINT+
 ======
 
-Create a constraint on the property `day` on relationships with the `LIKED` type when there already exists a relationship without a property named `day`.
-
-////
-Set-up to get expected behavior:
-CREATE (user:User)-[like:LIKED]->(book:Book)
-////
+Create a constraint on the property `language` on relationships with the `WROTE` type when there already exists a relationship without a property named `language`.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-fail]
 ----
-CREATE CONSTRAINT FOR ()-[like:LIKED]-() REQUIRE like.day IS NOT NULL
+CREATE CONSTRAINT wrote_language FOR ()-[wrote:WROTE]-() REQUIRE wrote.language IS NOT NULL
 ----
 
 In this case the constraint can not be created because it is violated by existing data.
 Remove the offending relationships and then re-apply the constraint.
 
 .Error message
-[source, "error message", role="noheader"]
+[source, error]
 ----
-Unable to create Constraint( type='RELATIONSHIP PROPERTY EXISTENCE', schema=-[:LIKED {day}]- ):
-Relationship(0) with type `LIKED` must have the property `day`
+Unable to create Constraint( type='RELATIONSHIP PROPERTY EXISTENCE', schema=()-[:WROTE {language}]-() ):
+Relationship(0) with type `WROTE` must have the property `language`
 ----
 
 ======
+
+The constraint creation fails on the first offending relationship that are found.
+This does not guarantee that there are no other offending relationships in the data.
+Therefore, all the data should be checked and cleaned up before re-attempting the constraint creation.
+
+This is an example `MATCH` query to find all offending relationships missing the property for the constraint above:
+
+.Query
+[source, cypher]
+----
+MATCH ()-[wrote:WROTE]-()
+WHERE wrote.language IS NULL
+RETURN wrote
+----
 
 
 [role=enterprise-edition]
@@ -1162,19 +1118,16 @@ When creating a node key constraint, a name can be provided.
 ======
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
-CREATE CONSTRAINT constraint_name
-FOR (n:Person) REQUIRE (n.firstname, n.surname) IS NODE KEY
+CREATE CONSTRAINT actor_fullname
+FOR (actor:Actor) REQUIRE (actor.firstname, actor.surname) IS NODE KEY
 ----
 
 .Result
 [queryresult]
 ----
-+-------------------+
-| No data returned. |
-+-------------------+
-Node key constraints added: 1
+Added 1 constraint.
 ----
 
 ======
@@ -1192,26 +1145,19 @@ This will ensure that no error is thrown and no constraint is created if any oth
 .+CREATE CONSTRAINT+
 ======
 
-////
-Set-up to get expected behavior:
-CREATE CONSTRAINT FOR (n:Person) REQUIRE (n.firstname, n.surname) IS NODE KEY
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
-CREATE CONSTRAINT constraint_name IF NOT EXISTS
-FOR (n:Person) REQUIRE (n.firstname, n.surname) IS NODE KEY
+CREATE CONSTRAINT actor_names IF NOT EXISTS
+FOR (actor:Actor) REQUIRE (actor.firstname, actor.surname) IS NODE KEY
 ----
 
-Assuming a node key constraint on `(:Person {firstname, surname})` already existed:
+Assuming a node key constraint on `(:Actor {firstname, surname})` already existed:
 
 .Result
 [queryresult]
 ----
-+--------------------------------------------+
-| No data returned, and nothing was changed. |
-+--------------------------------------------+
+(no changes, no records)
 ----
 
 ======
@@ -1234,10 +1180,10 @@ The only valid value for the index provider is:
 ======
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 CREATE CONSTRAINT constraint_with_provider
-FOR (n:Label) REQUIRE (n.prop1) IS NODE KEY
+FOR (actor:Actor) REQUIRE (actor.surname) IS NODE KEY
 OPTIONS {
   indexProvider: 'range-1.0'
 }
@@ -1246,10 +1192,7 @@ OPTIONS {
 .Result
 [queryresult]
 ----
-+-------------------+
-| No data returned. |
-+-------------------+
-Node key constraints added: 1
+Added 1 constraint.
 ----
 
 ======
@@ -1265,26 +1208,28 @@ There is no valid index configuration values for the constraint-backing range in
 .+CREATE CONSTRAINT+
 ======
 
-Create a node key constraint on the properties `firstname` and `age` on nodes with the `Person` label, when a property uniqueness constraint already exists on the same label and property combination.
+Create a node key constraint on the properties `firstname` and `age` on nodes with the `Actor` label, when a property uniqueness constraint already exists on the same label and property combination.
 
 ////
-Set-up to get expected behavior:
-CREATE CONSTRAINT preExistingUnique FOR (p:Person) REQUIRE (p.firstname, p.age) IS UNIQUE
+[source, cypher, role=test-setup]
+----
+CREATE CONSTRAINT preExisting_actor_name_age FOR (actor:Actor) REQUIRE (actor.firstname, actor.age) IS UNIQUE
+----
 ////
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-fail]
 ----
-CREATE CONSTRAINT FOR (p:Person) REQUIRE (p.firstname, p.age) IS NODE KEY
+CREATE CONSTRAINT actor_name_age FOR (actor:Actor) REQUIRE (actor.firstname, actor.age) IS NODE KEY
 ----
 
 In this case the constraint can not be created because there already exist a conflicting constraint on that label and property combination.
 
 .Error message
-[source, "error message", role="noheader"]
+[source, error]
 ----
 Constraint already exists:
-Constraint( id=4, name='preExistingUnique', type='UNIQUENESS', schema=(:Person {firstname, age}), ownedIndex=3 )
+Constraint( id=10, name='preExisting_actor_name_age', type='UNIQUENESS', schema=(:Actor {firstname, age}), ownedIndex=9 )
 ----
 
 ======
@@ -1298,26 +1243,28 @@ Constraint( id=4, name='preExistingUnique', type='UNIQUENESS', schema=(:Person {
 .+CREATE CONSTRAINT+
 ======
 
-Create a named node key constraint on the property `title` on nodes with the `Book` label, when an index already exists with the given name.
+Create a named node key constraint on the property `citizenship` on nodes with the `Actor` label, when an index already exists with the given name.
 
 ////
-Set-up to get expected behavior:
-CREATE INDEX bookTitle FOR (book:ComicBook) ON (book.title)
+[source, cypher, role=test-setup]
+----
+CREATE INDEX citizenship FOR (person:Person) ON (person.citizenship)
+----
 ////
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-fail]
 ----
-CREATE CONSTRAINT bookTitle
-FOR (book:Book) REQUIRE book.title IS NODE KEY
+CREATE CONSTRAINT citizenship
+FOR (actor:Actor) REQUIRE actor.citizenship IS NODE KEY
 ----
 
 In this case the constraint can't be created because there already exists an index with the given name.
 
 .Error message
-[source, "error message", role="noheader"]
+[source, error]
 ----
-There already exists an index called 'bookTitle'.
+There already exists an index called 'citizenship'.
 ----
 
 ======
@@ -1331,28 +1278,18 @@ There already exists an index called 'bookTitle'.
 .+CREATE NODE+
 ======
 
-Create a `Person` node with both a `firstname` and `surname` property.
-
-////
-Set-up to get expected behavior:
-CREATE CONSTRAINT FOR (n:Person) REQUIRE (n.firstname, n.surname) IS NODE KEY
-////
+Create an `Actor` node with a `firstname` and `surname` property.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
-CREATE (p:Person {firstname: 'John', surname: 'Wood', age: 55})
+CREATE (actor:Actor {firstname: 'Keanu', surname: 'Reeves'})
 ----
 
 .Result
 [queryresult]
 ----
-+-------------------+
-| No data returned. |
-+-------------------+
-Nodes created: 1
-Properties set: 3
-Labels added: 1
+Added 1 label, created 1 node, set 2 properties.
 ----
 
 ======
@@ -1366,25 +1303,21 @@ Labels added: 1
 .+CREATE NODE+
 ======
 
-Trying to create a `Person` node without a `surname` property, given a node key constraint on `:Person(firstname, surname)`, will fail.
+Trying to create an `Actor` node without a `firstname` property, given a node key constraint on `:Actor(firstname, surname)`, will fail.
 
-////
-Set-up to get expected behavior:
-CREATE CONSTRAINT FOR (n:Person) REQUIRE (n.firstname, n.surname) IS NODE KEY
-////
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-fail]
 ----
-CREATE (p:Person {firstname: 'Jane', age: 34})
+CREATE (actor:Actor {surname: 'Wood'})
 ----
 
 In this case the node is not created in the graph.
 
 .Error message
-[source, "error message", role="noheader"]
+[source, error]
 ----
-Node(0) with label `Person` must have the properties (`firstname`, `surname`)
+Node(0) with label `Actor` must have the properties (`firstname`, `surname`)
 ----
 
 ======
@@ -1398,26 +1331,20 @@ Node(0) with label `Person` must have the properties (`firstname`, `surname`)
 .+REMOVE PROPERTY+
 ======
 
-Trying to remove the `surname` property from an existing node `Person`, given a `NODE KEY` constraint on `:Person(firstname, surname)`.
-
-////
-Set-up to get expected behavior:
-CREATE CONSTRAINT FOR (n:Person) REQUIRE (n.firstname, n.surname) IS NODE KEY
-CREATE (p:Person {firstname: 'John', surname: 'Wood', age: 55})
-////
+Trying to remove the `firstname` property from an existing node `Actor`, given a `NODE KEY` constraint on `:Actor(firstname, surname)`.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-fail]
 ----
-MATCH (p:Person {firstname: 'John', surname: 'Wood'}) REMOVE p.surname
+MATCH (actor:Actor {firstname: 'Keanu', surname: 'Reeves'}) REMOVE actor.firstname
 ----
 
 In this case the property is not removed.
 
 .Error message
-[source, "error message", role="noheader"]
+[source, error]
 ----
-Node(0) with label `Person` must have the properties (`firstname`, `surname`)
+Node(0) with label `Actor` must have the properties (`firstname`, `surname`)
 ----
 
 ======
@@ -1431,34 +1358,51 @@ Node(0) with label `Person` must have the properties (`firstname`, `surname`)
 .+CREATE CONSTRAINT+
 ======
 
-Trying to create a node key constraint on the property `surname` on nodes with the `Person` label will fail when a node without a `surname` already exists in the database.
-
-////
-Set-up to get expected behavior:
-CREATE (p:Person {firstname: 'John', age: 55})
-////
+Trying to create a node key constraint on the property `born` on nodes with the `Actor` label will fail when a node without a `born` property already exists in the database.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-fail]
 ----
-CREATE CONSTRAINT FOR (n:Person) REQUIRE (n.firstname, n.surname) IS NODE KEY
+CREATE CONSTRAINT actor_born FOR (actor:Actor) REQUIRE (actor.born) IS NODE KEY
 ----
 
 In this case the node key constraint can not be created because it is violated by existing data.
 Either use xref::indexes-for-search-performance.adoc[] instead, or remove the offending nodes and then re-apply the constraint.
 
 .Error message
-[source, "error message", role="noheader"]
+[source, error]
 ----
-Unable to create Constraint( type='NODE KEY', schema=(:Person {firstname, surname}) ):
-Node(0) with label `Person` must have the properties (`firstname`, `surname`)
+Unable to create Constraint( type='NODE KEY', schema=(:Actor {born}) ):
+Node(0) with label `Actor` must have the property `born`
 ----
 
 ======
 
+The constraint creation fails on the first offending nodes that are found.
+This does not guarantee that there are no other offending nodes in the data.
+Therefore, all the data should be checked and cleaned up before re-attempting the constraint creation.
+
+This is an example `MATCH` query to find all offending nodes for the constraint above:
+
+.Query
+[source, cypher]
+----
+MATCH (actor1:Actor), (actor2:Actor)
+WHERE actor1.born = actor2.born AND NOT actor1 = actor2
+UNWIND [actor1, actor2] AS actor
+RETURN actor, 'non-unique' AS reason
+
+UNION
+
+MATCH (actor:Actor)
+WHERE actor.born IS NULL
+RETURN actor, 'non-existing' AS reason
+----
+
 ////
 TODO: Re-add this part when adding back relationship key and uniqueness constraints
 [role=enterprise-edition]
+TODO: Remove role=skip-test from queries once feature is introduced
 [[constraints-examples-relationship-key]]
 == Relationship key constraints
 
@@ -1487,7 +1431,7 @@ When creating a relationship key constraint, a name can be provided.
 ======
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-skip]
 ----
 CREATE CONSTRAINT constraint_name
 FOR ()-[r:ROAD]-() REQUIRE (r.startPoint, r.endPoint) IS RELATIONSHIP KEY
@@ -1521,7 +1465,7 @@ This will ensure that no error is thrown and no constraint is created if any oth
 // CREATE CONSTRAINT FOR ()-[r:ROAD]-() REQUIRE (r.startPoint, r.endPoint) IS RELATIONSHIP KEY
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-skip]
 ----
 CREATE CONSTRAINT constraint_name IF NOT EXISTS
 FOR ()-[r:ROAD]-() REQUIRE (r.startPoint, r.endPoint) IS RELATIONSHIP KEY
@@ -1557,7 +1501,7 @@ The only valid value for the index provider is:
 ======
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-skip]
 ----
 CREATE CONSTRAINT constraint_with_provider
 FOR ()-[r:ROAD]-() REQUIRE (r.startPoint, r.endPoint) IS REL KEY
@@ -1594,7 +1538,7 @@ Create a relationship key constraint on the properties `startPoint` and `endPoin
 // CREATE CONSTRAINT preExistingUnique FOR ()-[r:ROAD]-() REQUIRE (r.startPoint, r.endPoint) IS UNIQUE
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-skip]
 ----
 CREATE CONSTRAINT FOR ()-[r:ROAD]-() REQUIRE (r.startPoint, r.endPoint) IS REL KEY
 ----
@@ -1602,7 +1546,7 @@ CREATE CONSTRAINT FOR ()-[r:ROAD]-() REQUIRE (r.startPoint, r.endPoint) IS REL K
 In this case, the constraint cannot be created because there already exists a conflicting constraint on that relationship type and property combination.
 
 .Error message
-[source, "error message", role="noheader"]
+[source, error]
 ----
 Constraint already exists:
 Constraint( id=4, name='preExistingUnique', type='RELATIONSHIP_UNIQUENESS', schema=()-[:ROAD {startPoint, endPoint}]-(), ownedIndex=3 )
@@ -1625,7 +1569,7 @@ Create a named relationship key constraint on the property `coordinates` on rela
 // CREATE INDEX intersections FOR ()-[intersect:Roundabout]-() ON (intersect.coordinates)
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-skip]
 ----
 CREATE CONSTRAINT intersections
 FOR ()-[r:INTERSECTION]-() REQUIRE (r.coordinates) IS REL KEY
@@ -1634,7 +1578,7 @@ FOR ()-[r:INTERSECTION]-() REQUIRE (r.coordinates) IS REL KEY
 In this case, the constraint cannot be created because there already exists an index with the given name.
 
 .Error message
-[source, "error message", role="noheader"]
+[source, error]
 ----
 There already exists an index called 'intersections'.
 ----
@@ -1657,7 +1601,7 @@ Create a `ROAD` relationship with both a `startPoint` and `endPoint` property.
 // CREATE (:Intersection {name: 'a', coordinates: point({x: 1, y:2})}), (:Intersection {name: 'b', coordinates: point({x: 2, y:5})})
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-skip]
 ----
 MATCH (a:Intersection {name: 'a'}), (b:Intersection {name: 'b'})
 CREATE (a)-[:ROAD {startPoint: a.coordinates, endPoint: b.coordinates}]->(b)
@@ -1691,7 +1635,7 @@ Trying to create a `INTERSECTION` relationship without a `coordinates` property,
 // CREATE (:Road {name: 'a'}), (:Road {name: 'b'})
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-skip]
 ----
 MATCH (a:Road {name: 'a'}), (b:Road {name: 'b'})
 CREATE (a)-[:INTERSECTION]->(b)
@@ -1700,7 +1644,7 @@ CREATE (a)-[:INTERSECTION]->(b)
 In this case, the relationship is not created in the graph.
 
 .Error message
-[source, "error message", role="noheader"]
+[source, error]
 ----
 Relationship(0) with type `INTERSECTION` must have the property `coordinates`
 ----
@@ -1724,7 +1668,7 @@ Trying to remove the `endPoint` property from an existing relationship `ROAD`, g
 // CREATE (a)-[:ROAD {startPoint: a.coordinates, endPoint: b.coordinates}]->(b)
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-skip]
 ----
 MATCH ()-[r:ROAD {startPoint: point({x: 1, y:2}), endPoint: point({x: 2, y:5})}]->() REMOVE r.endPoint
 ----
@@ -1732,7 +1676,7 @@ MATCH ()-[r:ROAD {startPoint: point({x: 1, y:2}), endPoint: point({x: 2, y:5})}]
 In this case, the property is not removed.
 
 .Error message
-[source, "error message", role="noheader"]
+[source, error]
 ----
 Relationship(0) with type `ROAD` must have the properties (`startPoint`, `endPoint`)
 ----
@@ -1756,7 +1700,7 @@ Trying to create a relationship key constraint on the property `coordinates` on 
 // CREATE (a)<-[:INTERSECTION {coordinates: point({x:1, y:2})}]-(b)
 
 .Query
-[source, cypher, indent=0]
+[source, cypher, role=test-skip]
 ----
 CREATE CONSTRAINT intersectionConstraint FOR ()-[r:INTERSECTION]-() REQUIRE (r.coordinates) IS REL KEY
 ----
@@ -1765,7 +1709,7 @@ In this case, the relationship key constraint cannot be created because it is vi
 Either use xref::indexes-for-search-performance.adoc[] instead, or remove the offending relationships and then re-apply the constraint.
 
 .Error message
-[source, "error message", role="noheader"]
+[source, error]
 ----
 Unable to create Constraint( name='intersectionConstraint', type='RELATIONSHIP KEY', schema=()-[:INTERSECTION {coordinates}]-() ):
 Both Relationship(0) and Relationship(1) have the type `INTERSECTION` and property `coordinates` = {geometry: {type: "Point", coordinates: [1.0, 2.0], crs: {type: link, properties: {href: "http://spatialreference.org/ref/sr-org/7203/", code: 7203}}}}
@@ -1795,24 +1739,16 @@ The name of the constraint can be found using the xref::constraints/syntax.adoc#
 .+DROP CONSTRAINT+
 ======
 
-////
-Set-up to get expected behavior:
-CREATE CONSTRAINT constraint_name FOR (n:Person) REQUIRE (n.name) IS NOT NULL
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
-DROP CONSTRAINT constraint_name
+DROP CONSTRAINT book_isbn
 ----
 
 .Result
 [queryresult]
 ----
-+-------------------+
-| No data returned. |
-+-------------------+
-Named constraints removed: 1
+Removed 1 constraint.
 ----
 
 ======
@@ -1831,7 +1767,7 @@ It is the same command for uniqueness, property existence, and node constraints.
 ======
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 DROP CONSTRAINT missing_constraint_name IF EXISTS
 ----
@@ -1839,9 +1775,7 @@ DROP CONSTRAINT missing_constraint_name IF EXISTS
 .Result
 [queryresult]
 ----
-+--------------------------------------------+
-| No data returned, and nothing was changed. |
-+--------------------------------------------+
+(no changes, no records)
 ----
 
 ======
@@ -1871,40 +1805,42 @@ This can be used to drop the constraint with the xref::constraints/syntax.adoc#c
 .+SHOW CONSTRAINTS+
 ======
 
-////
-Set-up to get expected behavior:
-CREATE CONSTRAINT isbnConstraint FOR (n:Book) REQUIRE (n.isbn) IS UNIQUE
-(TODO: not relevant until the constraint is re-added) CREATE CONSTRAINT roadConstraint FOR ()-[r:ROAD]-() REQUIRE (r.startPoint, r.endPoint) IS UNIQUE
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 SHOW CONSTRAINTS
 ----
 
 [queryresult]
 ----
-+---------------------------------------------------------------------------------------------------+
-| id | name             | type         | entityType | labelsOrTypes | properties | ownedIndex       |
-+---------------------------------------------------------------------------------------------------+
-| 4  | "isbnConstraint" | "UNIQUENESS" | "NODE"     | ["Book"]      | ["isbn"]   | "isbnConstraint" |
-+---------------------------------------------------------------------------------------------------+
-2 rows
+╒════╤════════════════════════════╤═════════════════════════════════╤══════════════╤═══════════════╤═══════════════════════╤════════════════════════════╕
+│"id"│"name"                      │"type"                           │"entityType"  │"labelsOrTypes"│"properties"           │"ownedIndex"                │
+╞════╪════════════════════════════╪═════════════════════════════════╪══════════════╪═══════════════╪═══════════════════════╪════════════════════════════╡
+│16  │"actor_fullname"            │"NODE_KEY"                       │"NODE"        │["Actor"]      │["firstname","surname"]│"actor_fullname"            │
+├────┼────────────────────────────┼─────────────────────────────────┼──────────────┼───────────────┼───────────────────────┼────────────────────────────┤
+│10  │"author_name"               │"NODE_PROPERTY_EXISTENCE"        │"NODE"        │["Author"]     │["name"]               │null                        │
+├────┼────────────────────────────┼─────────────────────────────────┼──────────────┼───────────────┼───────────────────────┼────────────────────────────┤
+│12  │"author_pseudonym"          │"UNIQUENESS"                     │"NODE"        │["Author"]     │["pseudonym"]          │"author_pseudonym"          │
+├────┼────────────────────────────┼─────────────────────────────────┼──────────────┼───────────────┼───────────────────────┼────────────────────────────┤
+│4   │"book_isbn2"                │"UNIQUENESS"                     │"NODE"        │["Book"]       │["isbn2"]              │"book_isbn2"                │
+├────┼────────────────────────────┼─────────────────────────────────┼──────────────┼───────────────┼───────────────────────┼────────────────────────────┤
+│6   │"constraint_with_options"   │"UNIQUENESS"                     │"NODE"        │["Book"]       │["prop1","prop2"]      │"constraint_with_options"   │
+├────┼────────────────────────────┼─────────────────────────────────┼──────────────┼───────────────┼───────────────────────┼────────────────────────────┤
+│18  │"constraint_with_provider"  │"NODE_KEY"                       │"NODE"        │["Actor"]      │["surname"]            │"constraint_with_provider"  │
+├────┼────────────────────────────┼─────────────────────────────────┼──────────────┼───────────────┼───────────────────────┼────────────────────────────┤
+│20  │"preExisting_actor_name_age"│"UNIQUENESS"                     │"NODE"        │["Actor"]      │["firstname","age"]    │"preExisting_actor_name_age"│
+├────┼────────────────────────────┼─────────────────────────────────┼──────────────┼───────────────┼───────────────────────┼────────────────────────────┤
+│8   │"preExisting_book_published"│"UNIQUENESS"                     │"NODE"        │["Book"]       │["published"]          │"preExisting_book_published"│
+├────┼────────────────────────────┼─────────────────────────────────┼──────────────┼───────────────┼───────────────────────┼────────────────────────────┤
+│14  │"wrote_locations"           │"RELATIONSHIP_PROPERTY_EXISTENCE"│"RELATIONSHIP"│["WROTE"]      │["location"]           │null                        │
+├────┼────────────────────────────┼─────────────────────────────────┼──────────────┼───────────────┼───────────────────────┼────────────────────────────┤
+│13  │"wrote_year"                │"RELATIONSHIP_PROPERTY_EXISTENCE"│"RELATIONSHIP"│["WROTE"]      │["year"]               │null                        │
+└────┴────────────────────────────┴─────────────────────────────────┴──────────────┴───────────────┴───────────────────────┴────────────────────────────┘
+10 rows
 ----
 
 ////
-TODO: Switch the result above to the one below when adding back relationship key and uniqueness constraints
-[queryresult]
-----
-+------------------------------------------------------------------------------------------------------------------------------------+
-| id | name             | type                      | entityType     | labelsOrTypes | properties                 | ownedIndex       |
-+------------------------------------------------------------------------------------------------------------------------------------+
-| 4  | "isbnConstraint" | "UNIQUENESS"              | "NODE"         | ["Book"]      | ["isbn"]                   | "isbnConstraint" |
-| 6  | "roadConstraint" | "RELATIONSHIP_UNIQUENESS" | "RELATIONSHIP" | ["ROAD"]      | ["startPoint", "endPoint"] | "roadConstraint" |
-+------------------------------------------------------------------------------------------------------------------------------------+
-2 rows
-----
+TODO: Update the above table of constraints once the relationship key and uniqueness constraints are no longer behind a feature flag. 
 ////
 
 ////
@@ -1933,15 +1869,8 @@ An example is to only show constraints on relationships.
 .+SHOW CONSTRAINTS+
 ======
 
-////
-Set-up to get expected behavior:
-CREATE CONSTRAINT FOR (n:Book) REQUIRE (n.isbn) IS UNIQUE
-CREATE CONSTRAINT FOR (book:Book) REQUIRE book.title IS NOT NULL
-CREATE CONSTRAINT `constraint_f076a74d` FOR ()-[r:KNOWS]-() REQUIRE r.since IS NOT NULL
-////
-
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 SHOW EXISTENCE CONSTRAINTS
 WHERE entityType = 'RELATIONSHIP'
@@ -1952,12 +1881,14 @@ To get all columns, use `+SHOW INDEXES YIELD * WHERE ...+`.
 
 [queryresult]
 ----
-+---------------------------------------------------------------------------------------------------------------------------+
-| id | name                  | type                              | entityType     | labelsOrTypes | properties | ownedIndex |
-+---------------------------------------------------------------------------------------------------------------------------+
-| 7  | "constraint_f076a74d" | "RELATIONSHIP_PROPERTY_EXISTENCE" | "RELATIONSHIP" | ["KNOWS"]     | ["since"]  | <null>     |
-+---------------------------------------------------------------------------------------------------------------------------+
-1 row
+╒════╤═════════════════╤═════════════════════════════════╤══════════════╤═══════════════╤════════════╤════════════╕
+│"id"│"name"           │"type"                           │"entityType"  │"labelsOrTypes"│"properties"│"ownedIndex"│
+╞════╪═════════════════╪═════════════════════════════════╪══════════════╪═══════════════╪════════════╪════════════╡
+│14  │"wrote_locations"│"RELATIONSHIP_PROPERTY_EXISTENCE"│"RELATIONSHIP"│["WROTE"]      │["location"]│null        │
+├────┼─────────────────┼─────────────────────────────────┼──────────────┼───────────────┼────────────┼────────────┤
+│13  │"wrote_year"     │"RELATIONSHIP_PROPERTY_EXISTENCE"│"RELATIONSHIP"│["WROTE"]      │["year"]    │null        │
+└────┴─────────────────┴─────────────────────────────────┴──────────────┴───────────────┴────────────┴────────────┘
+2 rows
 ----
 
 ======
