@@ -3,31 +3,28 @@
 [[query-functions-aggregating]]
 = Aggregating functions
 
-[abstract]
---
+== Introduction 
+
 Aggregating functions take a set of values and calculate an aggregated value over them.
---
-
 Aggregation can be computed over all the matching paths, or it can be further divided by introducing grouping keys.
-Grouping keys are non-aggregate expressions, that are used to group the values going into the aggregate functions.
+Grouping keys are non-aggregate expressions that are used to group the values going into the aggregate functions.
 
-Assume we have the following return statement:
+For example, given the following query containing two return expressions, `n` and `+count(*)+`:
 
 [source, cypher, role=test-skip]
 ----
 RETURN n, count(*)
 ----
 
-We have two return expressions: `n`, and `+count(*)+`.
-The first, `n`, is not an aggregate function, so it will be the grouping key.
+The first, `n` is not an aggregate function, so it will be the grouping key.
 The latter, `+count(*)+` is an aggregate expression.
 The matching paths will be divided into different buckets, depending on the grouping key.
 The aggregate function will then be run on these buckets, calculating an aggregate value per bucket.
 
 The input expression of an aggregation function can contain any expression, including expressions that are not grouping keys.
 However, not all expressions can be composed with aggregation functions.
-The example below will throw an error since we compose `n.x`, which is not a grouping key, with the aggregation expression `+count(*)+`.
-For more information see xref:functions/aggregating.adoc#grouping-keys[Grouping keys].
+The example below will throw an error since `n.x`, which is not a grouping key, is combined with the aggregation expression `+count(*)+`.
+For more information, see xref:functions/aggregating.adoc#grouping-keys[Grouping keys].
 
 [source, cypher, role=test-skip]
 ----
@@ -38,29 +35,31 @@ To use aggregations to sort the result set, the aggregation must be included in 
 
 The `DISTINCT` operator works in conjunction with aggregation.
 It is used to make all values unique before running them through an aggregate function.
-More information about `DISTINCT` may be found in xref::syntax/operators.adoc#query-operators-aggregation[Syntax -> Aggregation operators].
+More information about `DISTINCT` can be found in xref::syntax/operators.adoc#query-operators-aggregation[Syntax -> Aggregation operators].
+
+== Example graph
 
 The following graph is used for the examples below:
 
-image:graph_aggregating_functions.svg[]
+image::graph_aggregating_functions.svg[]
 
-To recreate the graph, run the following query in an empty Neo4j database:
+To recreate the graph, run the following query against an empty Neo4j database:
 
 [source, cypher, role=test-setup]
 ----
 CREATE
-  (a:Person {name: 'A', age: 13}),
-  (b:Person {name: 'B', age: 33, eyes: 'blue'}),
-  (c:Person {name: 'C', age: 44, eyes: 'blue'}),
-  (d1:Person {name: 'D', eyes: 'brown'}),
-  (d2:Person {name: 'D'}),
-  (book:Book {name: 'Cypher'}),
-  (a)-[:READS]->(book),
-  (a)-[:KNOWS]->(d1),
-  (a)-[:KNOWS]->(c),
-  (a)-[:KNOWS]->(b),
-  (c)-[:KNOWS]->(d2),
-  (b)-[:KNOWS]->(d2)
+  (keanu:Person {name: 'Keanu Reeves', age: 58}),
+  (liam:Person {name: 'Liam Neeson', age: 70}),
+  (carrie:Person {name: 'Carrie Anne Moss', age: 55}),
+  (guy:Person {name: 'Guy Pearce', age: 55}),
+  (kathryn:Person {name: 'Kathryn Bigelow', age: 71}),
+  (speed:Movie {title: 'Speed'}),
+  (keanu)-[:ACTED_IN]->(speed),
+  (keanu)-[:KNOWS]->(carrie),
+  (keanu)-[:KNOWS]->(liam),
+  (keanu)-[:KNOWS]->(kathryn),
+  (carrie)-[:KNOWS]->(guy),
+  (liam)-[:KNOWS]->(guy)
 ----
 
 [[functions-avg]]
@@ -108,18 +107,18 @@ avg(expression)
 .Query
 [source, cypher]
 ----
-MATCH (n:Person)
-RETURN avg(n.age)
+MATCH (p:Person)
+RETURN avg(p.age)
 ----
 
-The average of all the values in the property `age` is returned.
+The average of all the values in the property `age` is returned:
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 
-| +avg(n.age)+
-| +30.0+
+| +avg(p.age)+
+| +61.8+
 1+d|Rows: 1
 
 |===
@@ -178,7 +177,7 @@ UNWIND [duration('P2DT3H'), duration('PT1H45S')] AS dur
 RETURN avg(dur)
 ----
 
-The average of the two supplied Durations is returned.
+The average of the two supplied Durations is returned:
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
@@ -240,18 +239,18 @@ collect(expression)
 .Query
 [source, cypher]
 ----
-MATCH (n:Person)
-RETURN collect(n.age)
+MATCH (p:Person)
+RETURN collect(p.age)
 ----
 
-All the values are collected and returned in a single list.
+All the values are collected and returned in a single list:
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 
-| +collect(n.age)+
-| +[13,33,44]+
+| +collect(p.age)+
+| +[58, 70, 55, 55, 71]+
 1+d|Rows: 1
 
 |===
@@ -304,7 +303,7 @@ count(expression)
 
 === Using `count(*)` to return the number of nodes
 
-The function `count(*)` can be used to return the number of nodes; for example, the number of nodes connected to some node `n`.
+The function `count(*)` can be used to return the number of nodes; for example, the number of nodes connected to a node `n`.
 
 .+count()+
 ======
@@ -312,18 +311,18 @@ The function `count(*)` can be used to return the number of nodes; for example, 
 .Query
 [source, cypher]
 ----
-MATCH (n {name: 'A'})-->(x)
-RETURN labels(n), n.age, count(*)
+MATCH (p:Person {name: 'Keanu Reeves'})-->(x)
+RETURN labels(p), p.age, count(*)
 ----
 
-The labels and `age` property of the start node `n` and the number of nodes related to `n` are returned.
+The labels and `age` property of the start node `Keanu Reeves` and the number of nodes related to it are returned:
 
 .Result
 [role="queryresult",options="header,footer",cols="3*<m"]
 |===
 
-| +labels(n)+ | +n.age+ | +count(*)+
-| +["Person"]+ | +13+ | +4+
+| +labels(p)+ | +p.age+ | +count(*)+
+| +["Person"]+ | +58+ | +4+
 3+d|Rows: 1
 
 |===
@@ -333,7 +332,7 @@ The labels and `age` property of the start node `n` and the number of nodes rela
 
 === Using `count(*)` to group and count relationship types
 
-The function `count(*)` can be used to group the type of matched relationships and return the number.
+The function `count(*)` can be used to group the type of matched relationships and return the number of types.
 
 .+count()+
 ======
@@ -341,18 +340,18 @@ The function `count(*)` can be used to group the type of matched relationships a
 .Query
 [source, cypher]
 ----
-MATCH (n {name: 'A'})-[r]->()
+MATCH (p:Person {name: 'Keanu Reeves'})-[r]->()
 RETURN type(r), count(*)
 ----
 
-The type of matched relationships are grouped and the group count are returned.
+The type of matched relationships are grouped and the group count of relationship types is returned:
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
 
 | +type(r)+ | +count(*)+
-| +"READS"+ | +1+
+| +"ACTED_IN"+ | +1+
 | +"KNOWS"+ | +3+
 2+d|Rows: 2
 
@@ -371,18 +370,19 @@ Instead of simply returning the number of rows with `count(*)`, the function `co
 .Query
 [source, cypher]
 ----
-MATCH (n:Person)
-RETURN count(n.age)
+MATCH (p:Person)
+RETURN count(p.age)
 ----
 
-The number of nodes with the label `Person` and a property `age` is returned. (If you want the sum, use `sum(n.age)`)
+The number of nodes with the label `Person` and a property `age` is returned:
+(To calculate the sum, use `sum(n.age)`)
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 
-| +count(n.age)+
-| +3+
+| +count(p.age)+
+| +5+
 1+d|Rows: 1
 
 |===
@@ -392,10 +392,10 @@ The number of nodes with the label `Person` and a property `age` is returned. (I
 
 === Counting with and without duplicates
 
-In this example we are trying to find all our friends of friends, and count them:
+This example tries to find all friends of friends of `Keanu Reeves` and count them. 
 
-`count(DISTINCT friend_of_friend)`:: Will only count a `friend_of_friend` once, as `DISTINCT` removes the duplicates.
-`count(friend_of_friend)`:: Will consider the same `friend_of_friend` multiple times.
+`count(DISTINCT friendOfFriend)`:: Will only count a `friendOfFriend` once, as `DISTINCT` removes the duplicates.
+`count(friendOfFriend)`:: Will consider the same `friendOfFriend` multiple times.
 
 .+count()+
 ======
@@ -403,19 +403,20 @@ In this example we are trying to find all our friends of friends, and count them
 .Query
 [source, cypher]
 ----
-MATCH (me:Person)-->(friend:Person)-->(friend_of_friend:Person)
-WHERE me.name = 'A'
-RETURN count(DISTINCT friend_of_friend), count(friend_of_friend)
+MATCH (p:Person)-->(friend:Person)-->(friendOfFriend:Person)
+WHERE p.name = 'Keanu Reeves'
+RETURN friendOfFriend.name, count(DISTINCT friendOfFriend), count(friendOfFriend)
 ----
 
-Both `B` and `C` know `D` and thus `D` will get counted twice when not using `DISTINCT`.
+The nodes `Carrie Anne Moss` and `Liam Neeson` both have an outgoing `KNOWS` relationship to `Guy Pearce`.
+The `Guy Pearce` node will, therefore, get counted twice when not using `DISTINCT`.
 
 .Result
-[role="queryresult",options="header,footer",cols="2*<m"]
+[role="queryresult",options="header,footer",cols="3*<m"]
 |===
 
-| +count(DISTINCT friend_of_friend)+ | +count(friend_of_friend)+
-| +1+ | +2+
+| +friendOfFriend.name+ | +count(DISTINCT friendOfFriend)+ | +count(friendOfFriend)+
+| +"Guy Pearce"+ | +1+ | +2+
 2+d|Rows: 1
 
 |===
@@ -474,7 +475,7 @@ UNWIND [1, 'a', null, 0.2, 'b', '1', '99'] AS val
 RETURN max(val)
 ----
 
-The highest of all the values in the mixed set -- in this case, the numeric value `1` -- is returned.
+The highest of all the values in the mixed set -- in this case, the numeric value `1` -- is returned:
 
 [NOTE]
 ====
@@ -523,18 +524,18 @@ The highest of all the lists in the set -- in this case, the list `[1, 2]` -- is
 .Query
 [source, cypher]
 ----
-MATCH (n:Person)
-RETURN max(n.age)
+MATCH (p:Person)
+RETURN max(p.age)
 ----
 
-The highest of all the values in the property `age` is returned.
+The highest of all the values in the property `age` is returned:
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 
-| +max(n.age)+
-| +44+
+| +max(p.age)+
+| +71+
 1+d|Rows: 1
 
 |===
@@ -639,18 +640,18 @@ The lowest of all the values in the set -- in this case, the list `['a', 'c', 23
 .Query
 [source, cypher]
 ----
-MATCH (n:Person)
-RETURN min(n.age)
+MATCH (p:Person)
+RETURN min(p.age)
 ----
 
-The lowest of all the values in the property `age` is returned.
+The lowest of all the values in the property `age` is returned:
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 
-| +min(n.age)+
-| +13+
+| +min(p.age)+
+| +55+
 1+d|Rows: 1
 
 |===
@@ -707,18 +708,18 @@ percentileCont(expression, percentile)
 .Query
 [source, cypher]
 ----
-MATCH (n:Person)
-RETURN percentileCont(n.age, 0.4)
+MATCH (p:Person)
+RETURN percentileCont(p.age, 0.4)
 ----
 
-The 40th percentile of the values in the property `age` is returned, calculated with a weighted average.
+The 40th percentile of the values in the property `age` is returned, calculated with a weighted average:
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 
-| +percentileCont(n.age, 0.4)+
-| +29.0+
+| +percentileCont(p.age, 0.4)+
+| +56.8+
 1+d|Rows: 1
 
 |===
@@ -776,18 +777,18 @@ percentileDisc(expression, percentile)
 .Query
 [source, cypher]
 ----
-MATCH (n:Person)
-RETURN percentileDisc(n.age, 0.5)
+MATCH (p:Person)
+RETURN percentileDisc(p.age, 0.5)
 ----
 
-The 50th percentile of the values in the property `age` is returned.
+The 50th percentile of the values in the property `age` is returned:
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 
-| +percentileDisc(n.age, 0.5)+
-| +33+
+| +percentileDisc(p.age, 0.5)+
+| +58+
 1+d|Rows: 1
 
 |===
@@ -841,19 +842,19 @@ stDev(expression)
 .Query
 [source, cypher]
 ----
-MATCH (n)
-WHERE n.name IN ['A', 'B', 'C']
-RETURN stDev(n.age)
+MATCH (p:Person)
+WHERE p.name IN ['Keanu Reeves', 'Liam Neeson', 'Carrie Anne Moss']
+RETURN stDev(p.age)
 ----
 
-The standard deviation of the values in the property `age` is returned.
+The standard deviation of the values in the property `age` is returned:
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 
-| +stDev(n.age)+
-| +15.716233645501712+
+| +stDev(p.age)+
+| +7.937253933193772+
 1+d|Rows: 1
 
 |===
@@ -908,19 +909,19 @@ stDevP(expression)
 .Query
 [source, cypher]
 ----
-MATCH (n)
-WHERE n.name IN ['A', 'B', 'C']
-RETURN stDevP(n.age)
+MATCH (p:Person)
+WHERE p.name IN ['Keanu Reeves', 'Liam Neeson', 'Carrie Anne Moss']
+RETURN stDevP(p.age)
 ----
 
-The population standard deviation of the values in the property `age` is returned.
+The population standard deviation of the values in the property `age` is returned:
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 
-| +stDevP(n.age)+
-| +12.832251036613439+
+| +stDevP(p.age)+
+| +6.48074069840786+
 1+d|Rows: 1
 
 |===
@@ -973,18 +974,18 @@ sum(expression)
 .Query
 [source, cypher]
 ----
-MATCH (n:Person)
-RETURN sum(n.age)
+MATCH (p:Person)
+RETURN sum(p.age)
 ----
 
-The sum of all the values in the property `age` is returned.
+The sum of all the values in the property `age` is returned:
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 
-| +sum(n.age)+
-| +90+
+| +sum(p.age)+
+| +309+
 1+d|Rows: 1
 
 |===
@@ -1039,7 +1040,7 @@ UNWIND [duration('P2DT3H'), duration('PT1H45S')] AS dur
 RETURN sum(dur)
 ----
 
-The sum of the two supplied Durations is returned.
+The sum of the two supplied Durations is returned:
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
@@ -1060,10 +1061,8 @@ The sum of the two supplied Durations is returned.
 Aggregation expressions are expressions which contain one or more aggregation functions.
 A simple aggregation expression consists of a single aggregation function.
 For instance, `SUM(x.a)` is an aggregation expression that only consists of the aggregation function `SUM( )` with `x.a` as its argument.
-Aggregation expressions are also allowed to be more complex, where the result of one or more aggregation functions
-are input arguments to other expressions.
-For instance, `0.1 * (SUM(x.a) / COUNT(x.b))` is an aggregation expression that contains two aggregation functions,
-`SUM( )` with `x.a` as its argument and `COUNT( )` with `x.b` as its argument.
+Aggregation expressions are also allowed to be more complex, where the result of one or more aggregation functions are input arguments to other expressions.
+For instance, `0.1 * (SUM(x.a) / COUNT(x.b))` is an aggregation expression that contains two aggregation functions, `SUM( )` with `x.a` as its argument and `COUNT( )` with `x.b` as its argument.
 Both are input arguments to the division expression.
 
 
@@ -1088,14 +1087,15 @@ Specifically, each sub expression in an aggregation expression has to be either:
 .Query
 [source, cypher]
 ----
-MATCH (p: Person) RETURN max(p.age)
+MATCH (p:Person)
+RETURN max(p.age)
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | +max(p.age)+
-| +44+
+| +71+
 1+d|Rows: 1
 |===
 
@@ -1108,7 +1108,7 @@ MATCH (p: Person) RETURN max(p.age)
 .Query
 [source, cypher]
 ----
-MATCH (p: Person)
+MATCH (p:Person)
 RETURN max(p.age) + 1
 ----
 
@@ -1116,7 +1116,7 @@ RETURN max(p.age) + 1
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | +max(p.age) + 1+
-| +45+
+| +72+
 1+d|Rows: 1
 |===
 
@@ -1126,20 +1126,20 @@ RETURN max(p.age) + 1
 .Subtraction of a property access and an aggregation.
 ======
 
-Note that `n` is a grouping key:
+Note that `p` is a grouping key:
 
 .Query
 [source, cypher]
 ----
-MATCH (n: Person{name:"A"})-[:KNOWS]-(f:Person)
-RETURN n, n.age - max(f.age)
+MATCH (p:Person{name:'Keanu Reeves'})-[:KNOWS]-(f:Person)
+RETURN p, p.age - max(f.age)
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| +n+ | +n.age - max(f.age)+
-| +{"name":"A","age":13}+ | +-31+
+| +p+ | +p.age - max(f.age)+
+| +{{"name":"Keanu Reeves","age":58}}+ | +-13+
 2+d|Rows: 1
 |===
 
@@ -1149,20 +1149,20 @@ RETURN n, n.age - max(f.age)
 .Subtraction of a property access and an aggregation.
 ======
 
-Note that `n.age` is a grouping key:
+Note that `p.age` is a grouping key:
 
 .Query
 [source, cypher]
 ----
-MATCH (n: Person{name:"A"})-[:KNOWS]-(f:Person)
-RETURN n.age, n.age - max(f.age)
+MATCH (p:Person {name:'Keanu Reeves'})-[:KNOWS]-(f:Person)
+RETURN p.age, p.age - max(f.age)
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| +n.age+ | +n.age - max(f.age)+
-| +13+ | +-31+
+| +p.age+ | +p.age - max(f.age)+
+| +58+ | +-13+
 2+d|Rows: 1
 |===
 
@@ -1171,28 +1171,28 @@ RETURN n.age, n.age - max(f.age)
 Grouping keys themselves can be complex expressions.
 For better query readability, Cypher only recognizes a sub-expression in aggregation expressions as a grouping key if the grouping key is either:
 
-- A variable - e.g. the `n` in `RETURN n, n.age - max(f.age)`
-- A property access - e.g. the `n.age` in `RETURN n.age, n.age - max(f.age)`
-- A map access - e.g. the `n.age` in `WITH {age: 34, name:Chris} AS n RETURN n.age, n.age - max(n.age)`
+- A variable - e.g. the `p` in `RETURN p, p.age - max(f.age)`
+- A property access - e.g. the `p.age` in `RETURN p.age, p.age - max(f.age)`
+- A map access - e.g. the `p.age` in `WITH {name:'Keanu Reeves', age:58} AS p RETURN p.age, p.age - max(p.age)`
 
 If more complex grouping keys are needed as operands in aggregation expression, it is always possible to project them in advance with `WITH`.
 
-Using the property `n.age` will throw an exception, since `n.age` is not a grouping key. 
-It can, therefore, not be used in the expressions which contain the aggregating function. 
+Using the property `p.age` will throw an exception, since `p.age` is not a grouping key. 
+Therefore, it cannot be used in the expressions which contain the aggregating function. 
 The below two queries would consequently return the same error message: 
 
 .Query
 [source, cypher, role=test-fail]
 ----
-MATCH (n: Person{name:"A"})-[:KNOWS]-(f:Person)
-RETURN n.age - max(f.age)
+MATCH (p:Person {name:'Keanu Reeves'})-[:KNOWS]-(f:Person)
+RETURN p.age - max(f.age)
 ----
 
 .Query
 [source, cypher, role=test-fail]
 ----
-MATCH (n: Person{name:"A"})-[:KNOWS]-(f:Person)
-RETURN n.age + n.age, n.age + n.age - max(f.age)
+MATCH (p:Person {name:'Keanu Reeves'})-[:KNOWS]-(f:Person)
+RETURN p.age + p.age, p.age + p.age - max(f.age)
 ----
 
 .Error message
@@ -1201,13 +1201,13 @@ RETURN n.age + n.age, n.age + n.age - max(f.age)
 Aggregation column contains implicit grouping expressions. For example, in 'RETURN n.a, n.a + n.b + count(*)' the aggregation expression 'n.a + n.b + count(*)' includes the implicit grouping key 'n.b'. It may be possible to rewrite the query by extracting these grouping/aggregation expressions into a preceding WITH clause. Illegal expression(s): n.age
 ----
 
-The latter query would, however, work if rewritten to:
+However, the latter query would work if rewritten to:
 
 .Query
 [source, cypher]
 ----
-MATCH (n: Person{name:"A"})-[:KNOWS]-(f:Person)
-WITH n.age + n.age AS groupingKey, f 
+MATCH (p:Person {name:'Keanu Reeves'})-[:KNOWS]-(f:Person)
+WITH p.age + p.age AS groupingKey, f 
 RETURN groupingKey, groupingKey - max(f.age)
 ----
 
@@ -1215,7 +1215,7 @@ RETURN groupingKey, groupingKey - max(f.age)
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
 | +groupingKey+ | +groupingKey - max(f.age)+
-| +26+ | +-18+
+| +116+ | +45+
 2+d|Rows: 1
 |===
 ======
