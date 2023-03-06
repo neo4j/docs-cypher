@@ -80,6 +80,21 @@ If this is not necessary, then the name may be omitted, as follows:
 (a)-->()<--(c)
 ----
 
+=== Equijoins
+
+If a node variable is declared more than once in the query, this is called an _equijoin_. 
+This is an operation that requires each node pattern with the same node variable to be bound to the same node. 
+For example, the following pattern refers to the same node twice with the variable `a`, forming a cycle:
+[source, role=noplay, indent=0]
+----
+(a)-->(b)-->(c)-->(a)
+----
+
+The following pattern refers twice to the same node with the variable `b`, forming a T-shaped pattern:
+[source, role=noplay, indent=0]
+----
+(a)-->(b)-->(c), (b)-->(e)
+----
 
 [[cypher-pattern-label]]
 == Patterns for labels
@@ -180,14 +195,20 @@ As with nodes, the name of the relationship can always be omitted, as exemplifie
 (a)-[:REL_TYPE]->(b)
 ----
 
-It is not possible to use the same name for a relationship multiple times within a pattern due to xref::introduction/uniqueness.adoc#relationship-isomorphism[relationship isomorphism].
+To specify additional constraints, introduce a xref::clauses/where.adoc#relationship-pattern-predicates[relationship pattern predicate].
+
+=== Equijoins
+
+Similar to nodes, it is possible to use the same name for a relationship multiple times within a pattern. 
+However, due to xref::introduction/uniqueness.adoc#relationship-isomorphism[relationship isomorphism], this will not yield any results if done in the same pattern.
+It can be useful across separate `MATCH` statements, though.
 
 .Relationship isomorphism
 ======
 
-Using the same variable name for relationships multiple times within a pattern is not allowed.
+Using the same variable name for relationships multiple times in a query would require that particular relationship to be traversed several times.
 
-The following example is therefore not allowed.
+Therefore, the following example will lead to no results:
 
 [source, syntax]
 ----
@@ -196,8 +217,16 @@ The following example is therefore not allowed.
 
 ======
 
-You can specify additional constraints by introducing a xref::clauses/where.adoc#relationship-pattern-predicates[relationship pattern predicate].
+If, on the other hand, the two relationships are spread over two `MATCH`-clauses, then the relationship isomorphism does not pose an obstacle any longer.
+The following query would, therefore, return results:
 
+[source, syntax]
+----
+MATCH ()-[r:REL_TYPE]-()
+MATCH ()-[r:REL_TYPE]-()
+----
+
+Note, that the two instances of `r` refer to the same relationship.
 
 [[cypher-pattern-varlength]]
 == Variable-length pattern matching
@@ -296,8 +325,71 @@ This is a typical example of finding first and second degree friends.
 
 Note that variable length relationships cannot be used with `CREATE` and `MERGE`.
 
-Under certain circumstances variable length relationships can be planned with an optimisation, see xref::execution-plans/operators.adoc#query-plan-varlength-expand-pruning[VarLength Expand Pruning] query plan.
+Under certain circumstances, variable-length relationships can be planned with an optimisation, see xref::execution-plans/operators.adoc#query-plan-varlength-expand-pruning[VarLength Expand Pruning] query plan.
 
+=== Equijoins
+
+Like simple relationships, the variable of variable-length relationships can be used more than once to refer to the same variable-length relationship. Just as with simple relationships, this yields no results if used in the same `MATCH` statement.
+
+In addition, the results must observe the bounds of both declarations of that variable.
+In the following example, the bounds of `r` require it to be of length 2 and therefore only `'Anders'` is returned:
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (me {name: 'Filipa'})-[r:KNOWS*1..2]-(remote_friend)
+MATCH ()-[r:KNOWS*2..3]-()
+RETURN remote_friend.name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +remote_friend.name+
+| +"Anders"+
+1+d|Rows: 1
+|===
+
+Also note that for variable-length relationships of length 2 or greater, the direction of the variable-length relationship must match between the different occurrences.
+Otherwise, these two occurrences are considered different.
+For example, the following query will not return any results, even though the first `MATCH` would find several matching paths.
+This is because the variable-length relationship in the second `MATCH` goes in the opposite direction.
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (me {name: 'Filipa'})<-[r:KNOWS*2..3]-(remote_friend)
+MATCH (remote_friend)-[r:KNOWS*2..3]->(me)
+RETURN remote_friend.name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +remote_friend.name+
+1+d|Rows: 0
+|===
+
+This can be mitigated by using the `reverse()` function:
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (me {name: 'Filipa'})<-[r:KNOWS*2..3]-(remote_friend)
+WITH reverse(r) AS r2
+MATCH (remote_friend)-[r2:KNOWS*2..3]->(me)
+RETURN remote_friend.name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +remote_friend.name+
+| +"Anders"+
+| +"Becky"+
+| +"Cesar"+
+1+d|Rows: 3
+|===
 
 [[cypher-pattern-path-variables]]
 == Assigning to path variables
