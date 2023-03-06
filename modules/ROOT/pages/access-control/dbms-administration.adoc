@@ -55,6 +55,8 @@ CREATE ROLE globbing4 IF NOT EXISTS;
 CREATE ROLE globbing5 IF NOT EXISTS;
 CREATE ROLE globbing6 IF NOT EXISTS;
 CREATE ROLE dbmsManager IF NOT EXISTS;
+CREATE ROLE configurationViewer IF NOT EXISTS;
+CREATE ROLE deniedConfigurationViewer IF NOT EXISTS;
 ----
 ////
 
@@ -1953,82 +1955,88 @@ a|Rows: 2
 |===
 ======
 
-[[access-control-name-globbing]]
-=== Procedure and user-defined function name-globbing
 
-The name-globbing for procedure and user defined function names is a simplified version of globbing for filename expansions.
-It only allows two wildcard characters: `+*+` and `?`, which are used for multiple and single character matches.
-In this case, `+*+` means 0 or more characters and `?` matches exactly one character.
+[[access-control-dbms-administration-setting]]
+== The DBMS `SETTING` privileges
 
-[NOTE]
-====
-The name-globbing is subject to the xref::syntax/naming.adoc[standard Cypher restrictions on valid identifiers],
-with the exception that it may include dots, stars, and question marks without the need for escaping using backticks.
+The ability to show configuration settings can be granted via the `SHOW SETTING` privilege.
+A role with this privilege is allowed to query the configuration settings matched by the xref::access-control/dbms-administration.adoc#access-control-name-globbing[name-globbing].
 
-Each part of the name-globbing separated by dots may be individually escaped, for example, `++mine.`procedureWith%`++` but not `++mine.procedure`With%`++`.
-It is also good to keep in mind that wildcard characters behave as wildcards even when escaped.
-As an example, using `++`*`++` is equivalent to using `+*+`, and thus allows executing all functions or procedures and not only the procedure or function named `+*+`.
-====
-
-The examples below only use procedures, but the same rules apply to user defined function names:
-
-* `mine.public.exampleProcedure`
-* `mine.public.exampleProcedure1`
-* `mine.public.exampleProcedure2`
-* `mine.public.with#Special§Characters`
-* `mine.private.exampleProcedure`
-* `mine.private.exampleProcedure1`
-* `mine.private.exampleProcedure2`
-* `mine.private.with#Special§Characters`
-* `your.exampleProcedure`
-
-[source, cypher, role=noplay]
-----
-GRANT EXECUTE PROCEDURE * ON DBMS TO globbing1
-----
-
-Users with the role `globbing1` can thus run all the procedures.
-
-[source, cypher, role=noplay]
-----
-GRANT EXECUTE PROCEDURE mine.*.exampleProcedure ON DBMS TO globbing2
-----
-
-Users with the role `globbing2` can thus run procedures `mine.public.exampleProcedure` and `mine.private.exampleProcedure`, but none of the others.
-
-[source, cypher, role=noplay]
-----
-GRANT EXECUTE PROCEDURE mine.*.exampleProcedure? ON DBMS TO globbing3
-----
-
-Users with the role `globbing3` can thus run procedures `mine.public.exampleProcedure1`, `mine.private.exampleProcedure1` and `mine.private.exampleProcedure2`, but none of the others.
-
-[source, cypher, role=noplay]
-----
-GRANT EXECUTE PROCEDURE *.exampleProcedure ON DBMS TO globbing4
-----
-
-Users with the role `globbing4` can thus run procedures `your.exampleProcedure`, `mine.public.exampleProcedure` and `mine.private.exampleProcedure`, but none of the others.
-
-[source, cypher, role=noplay]
-----
-GRANT EXECUTE PROCEDURE mine.public.exampleProcedure* ON DBMS TO globbing5
-----
-
-Users with the role `globbing5` can thus run procedures `mine.public.exampleProcedure`, `mine.public.exampleProcedure1` and `mine.public.exampleProcedure42`, but none of the others.
-
-[source, cypher, role=noplay]
-----
-GRANT EXECUTE PROCEDURE `mine.public.with#*§Characters`, mine.private.`with#Spec???§Characters` ON DBMS TO globbing6
-----
-
-Users with the role `globbing6` can thus run procedures `mine.public.with#Special§Characters` and `mine.private.with#Special§Characters`, but none of the others.
 
 [NOTE]
 ====
-The name-globbing may be fully or partially escaped.
-Both `+*+` and `+?+` are interpreted as wildcards either way.
+The syntax descriptions use xref:access-control/index.adoc#access-control-syntax[the style] from access control.
 ====
+
+.Setting privileges command syntax
+[options="header", width="100%", cols="3a,2"]
+|===
+| Command
+| Description
+
+| [source, syntax, role=noheader]
+GRANT [IMMUTABLE] SHOW SETTING[S] name-globbing[, ...]
+  ON DBMS
+  TO role[, ...]
+| Enables the specified roles to query given configuration settings.
+|===
+
+The following query shows an example of how to grant this privilege:
+
+[source, cypher, role=noplay]
+----
+GRANT SHOW SETTING server.bolt.* ON DBMS TO configurationViewer
+----
+
+Users with the role `configurationViewer` can then query any setting in the `server.bolt` namespace.
+
+The updated role `configurationViewer` has privileges that only allow querying settings in the `server.bolt` namespace.
+List all privileges for the role `configurationViewer` as commands by using the following query:
+
+[source, cypher, role=noplay]
+----
+SHOW ROLE configurationViewer PRIVILEGES AS COMMANDS
+----
+
+.Result
+[options="header,footer", width="100%", cols="m"]
+|===
+|command
+|"GRANT SHOW SETTING server.bolt.* ON DBMS TO `configurationViewer`"
+a|Rows: 1
+|===
+
+To deny a specific setting from a role, first grant `SHOW SETTINGS *`, and then deny the unwanted setting.
+For example, the following queries allow the querying of all settings, except those starting with `dbms.security`:
+
+[source, cypher, role=noplay]
+----
+GRANT SHOW SETTINGS * ON DBMS TO deniedConfigurationViewer
+----
+
+[source, cypher, role=noplay]
+----
+DENY SHOW SETTING dbms.security* ON DBMS TO deniedConfigurationViewer
+----
+
+The resulting role has privileges that allow querying all settings except those starting with `dbms.security`.
+List all privileges for the role `deniedConfigurationViewer` as commands by using the following query:
+
+[source, cypher, role=noplay]
+----
+SHOW ROLE deniedConfigurationViewer PRIVILEGES AS COMMANDS
+----
+
+.Result
+[options="header,footer", width="100%", cols="m"]
+|===
+|command
+|"DENY SHOW SETTING dbms.security* ON DBMS TO `deniedConfigurationViewer`"
+|"GRANT SHOW SETTING * ON DBMS TO `deniedConfigurationViewer`"
+a|Rows: 2
+|===
+
+As the query result shows, access to any setting starting with `dbms.security` are blocked, but the rest can still be queried.
 
 
 [[access-control-dbms-administration-all]]
@@ -2043,6 +2051,7 @@ The right to perform the following privileges can be achieved with a single comm
 * Show, assign, and remove privileges.
 * Execute all procedures with elevated privileges.
 * Execute all user defined functions with elevated privileges.
+* Show all configuration settings.
 
 [NOTE]
 ====
@@ -2077,3 +2086,85 @@ SHOW ROLE dbmsManager PRIVILEGES AS COMMANDS
 |"GRANT ALL DBMS PRIVILEGES ON DBMS TO `dbmsManager`"
 a|Rows: 1
 |===
+
+[[access-control-name-globbing]]
+== Name-globbing for procedures, user-defined functions, and settings
+
+The name-globbing for procedure, user defined function, and setting names is a simplified version of globbing for filename expansions.
+It only allows two wildcard characters: `+*+` and `?`, which are used for multiple and single character matches.
+In this case, `+*+` means 0 or more characters and `?` matches exactly one character.
+
+[NOTE]
+====
+The name-globbing is subject to the xref::syntax/naming.adoc[standard Cypher restrictions on valid identifiers],
+with the exception that it may include dots, stars, and question marks without the need for escaping using backticks.
+
+Each part of the name-globbing separated by dots may be individually escaped.
+For example, `++mine.`procedureWith%`++` is allowed, but not `++mine.procedure`With%`++`.
+Also, note that wildcard characters behave as wildcards even when escaped.
+For example, using `++`*`++` is equivalent to using `+*+`, and thus allows executing all functions or procedures and not only the procedure or function named `+*+`.
+====
+
+Given the following list of procedures:
+
+* `mine.public.exampleProcedure`
+* `mine.public.exampleProcedure1`
+* `mine.public.exampleProcedure2`
+* `mine.public.with#Special§Characters`
+* `mine.private.exampleProcedure`
+* `mine.private.exampleProcedure1`
+* `mine.private.exampleProcedure2`
+* `mine.private.with#Special§Characters`
+* `your.exampleProcedure`
+
+The following examples demonstrate how name-globbing patterns can be used in controlling access to procedures.
+Note that the same rules apply to user-defined functions and settings.
+
+[source, cypher, role=noplay]
+----
+GRANT EXECUTE PROCEDURE * ON DBMS TO globbing1
+----
+
+Users with the role `globbing1` can run all the procedures.
+
+[source, cypher, role=noplay]
+----
+GRANT EXECUTE PROCEDURE mine.*.exampleProcedure ON DBMS TO globbing2
+----
+
+Users with the role `globbing2` can run procedures `mine.public.exampleProcedure` and `mine.private.exampleProcedure`, but no other procedures.
+
+[source, cypher, role=noplay]
+----
+GRANT EXECUTE PROCEDURE mine.*.exampleProcedure? ON DBMS TO globbing3
+----
+
+Users with the role `globbing3` can run procedures `mine.public.exampleProcedure1`, `mine.private.exampleProcedure1`, and `mine.private.exampleProcedure2`, but no other procedures.
+
+[source, cypher, role=noplay]
+----
+GRANT EXECUTE PROCEDURE *.exampleProcedure ON DBMS TO globbing4
+----
+
+Users with the role `globbing4` can run procedures `your.exampleProcedure`, `mine.public.exampleProcedure`, and `mine.private.exampleProcedure`, but no other procedures.
+
+[source, cypher, role=noplay]
+----
+GRANT EXECUTE PROCEDURE mine.public.exampleProcedure* ON DBMS TO globbing5
+----
+
+Users with the role `globbing5` can run procedures `mine.public.exampleProcedure`, `mine.public.exampleProcedure1` and `mine.public.exampleProcedure42`, but no other procedures.
+
+[source, cypher, role=noplay]
+----
+GRANT EXECUTE PROCEDURE `mine.public.with#*§Characters`, mine.private.`with#Spec???§Characters` ON DBMS TO globbing6
+----
+
+Users with the role `globbing6` can run procedures `mine.public.with#Special§Characters`, and `mine.private.with#Special§Characters`, but no other procedures.
+
+[NOTE]
+====
+The name-globbing may be fully or partially escaped.
+Both `+*+` and `+?+` are interpreted as wildcards in both cases.
+====
+
