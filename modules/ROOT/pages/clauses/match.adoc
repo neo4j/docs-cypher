@@ -218,11 +218,11 @@ Returns any nodes connected by an outgoing relationship to the `Person` node wit
 
 
 [[directed-rels-and-variable]]
-=== Directed relationships and variable
+=== Relationship variables 
 
 It is possible to introduce a variable to a pattern, either for filtering on relationship properties or to return a relationship. 
-
 For example: 
+
 .Query
 [source, cypher, indent=0]
 ----
@@ -238,6 +238,31 @@ Returns the type of each outgoing relationship from `Oliver Stone`.
 | +type(r)+
 | +"DIRECTED"+
 1+d|Rows: 1
+|===
+
+=== Match on an undirected relationship
+
+When a pattern contains a bound relationship, and that relationship pattern does not specify direction, Cypher will try to match the relationship in both directions.
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (a)-[:ACTED_IN {role: 'Bud Fox'}]-(b) 
+RETURN a, b
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +a+ | +b+
+
+| +{"title":"Wall Street"}+
+| +{"name":"Charlie Sheen"}+
+
+| +{"name":"Charlie Sheen"}+
+| +{"title":"Wall Street"}+
+
+2+d|Rows: 2
 |===
 
 
@@ -575,33 +600,6 @@ image::MATCH_named_path_example.svg[width="500",role="middle"]
 1+d|Rows: 2
 |===
 
-
-[[match-on-bound-rel]]
-=== Matching on a bound relationship
-
-When a pattern contains a bound relationship, and that relationship pattern does not specify direction, Cypher will try to match the relationship in both directions.
-For example:
-
-.Query
-[source, cypher, indent=0]
-----
-MATCH (a)-[r]-(b)
-WHERE split(elementId(r), ":")[2] = "0"
-RETURN a, b
-----
-
-This returns the two connected nodes, once as the start node, and once as the end node
-
-.Result
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| +a+ | +b+
-| +{name:"Charlie Sheen"}+ | +{title:"Wall Street"}+
-| +{title:"Wall Street"}+ | +{name:"Charlie Sheen"}+
-2+d|Rows: 2
-|===
-
-
 [[query-shortest-path]]
 == Shortest path
 
@@ -634,7 +632,7 @@ image::MATCH_shortestpath_example.svg[width="400",role="middle"]
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | +p+
-| +[{"name":"Martin Sheen"},{"role":"Carl Fox"},{"title":"Wall Street"},{"title":"Wall Street"},{},{"name":"Oliver Stone"}]                 +
+| +[{"name":"Martin Sheen"},{"role":"Carl Fox"},{"title":"Wall Street"},{"title":"Wall Street"},{},{"name":"Oliver Stone"}]+
 1+d|Rows: 1
 |===
 
@@ -648,13 +646,13 @@ Predicates used in the `WHERE` clause that apply to the shortest path pattern ar
 ----
 MATCH
   (rob:Person {name: 'Rob Reiner'}),
-  (michael:Person {name: 'Michael Douglas'}),
-  p = shortestPath((rob)-[*]-(michael))
+  (thePresident:Movie {title: 'The American President'}),
+  p = shortestPath((rob)-[*]-(thePresident))
 WHERE none(r IN relationships(p) WHERE type(r) = 'DIRECTED')
 RETURN p
 ----
 
-This query will find the shortest path between `Rob Reiner` and `Michael Douglas`, and the `WHERE` predicate will ensure that any relationship with the type `DIRECTED` is not considered.
+This query will find the shortest path between `Person` node `Rob Reiner` and the `Movie` node `The American President`, and the `WHERE` predicate will ensure that any relationship with the type `DIRECTED` is not considered.
 
 It returns the following graph and text: 
 
@@ -664,7 +662,7 @@ image::MATCH_shortestpath_with_predicates_example.svg[width="400",role="middle"]
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | +p+
-| +│[{"name":"Rob Reiner"},{},{"name":"Martin Sheen"},{"name":"Martin Sheen"},{"role":"A.J. MacInerney"},{"title":"The American President"},{"title":"The American President"},{"role":"President Andrew Shepherd"},{"name":"Michael Douglas"}]+│
+|+[{"name":"Rob Reiner"},{},{"name":"Martin Sheen"},{"name":"Martin Sheen"},{"role":"A.J. MacInerney"},{"title":"The American President"}]+│
 1+d|Rows: 1
 |===
 
@@ -696,89 +694,5 @@ image::MATCH_allshortestpaths_example.svg[width="400",role="middle"]
 | +[{"name":"Martin Sheen"},{"role":"Carl Fox"},{"title":"Wall Street"},{"title":"Wall Street"},{"role":"Gordon Gekko"},{"name":"Michael Douglas"}]+
 | +[{"name":"Martin Sheen"},{"role":"A.J. MacInerney"},{"title":"The American President"},{"title":"The American President"},{"role":"President Andrew Shepherd"},{"name":"Michael Douglas"}]+
 1+d|Rows: 2
-|===
-
-
-[[get-node-rel-by-elementid]]
-== Get node or relationship by elementId
-
-[[match-node-by-elementid]]
-=== Node by elementId
-
-Searching for nodes by ID can be done with the `elementId()` function in a predicate.
-
-[NOTE]
-====
-Neo4j reuses its internal IDs when nodes and relationships are deleted.
-This means that applications using, and relying on internal Neo4j IDs, are brittle or at risk of making mistakes.
-It is therefore recommended to rather use application-generated IDs.
-====
-
-.Query
-[source, cypher, indent=0]
-----
-MATCH (n)
-WHERE split(elementId(n), ":")[2] = "0"
-RETURN n
-----
-
-The corresponding node is returned.
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| +n+
-| +{name:"Charlie Sheen"}+
-1+d|Rows: 1
-|===
-
-
-[[match-rel-by-id]]
-=== Relationship by elementId
-
-Search for relationships by ID can be done with the `elementId()` function in a predicate.
-
-.Query
-[source, cypher, indent=0]
-----
-MATCH ()-[r]->()
-WHERE split(elementId(r), ":")[2] = "0"
-RETURN r
-----
-
-The relationship with the elementId `0` is returned.
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| +r+
-| +{role:"Bud Fox"}+
-1+d|Rows: 1
-|===
-
-
-[[match-multiple-nodes-by-id]]
-=== Multiple nodes by elementId
-
-Multiple nodes are selected by specifying them in an `IN`-clause.
-
-.Query
-[source, cypher, indent=0]
-----
-MATCH (n)
-WHERE split(elementId(n), ":")[2] IN ["0", "3", "5"] 
-RETURN n
-----
-
-This returns the nodes listed in the `IN`-expression.
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| +n+
-| +{name:"Charlie Sheen"}+
-| +{name:"Oliver Stone"}+
-| +{title:"Wall Street"}+
-1+d|Rows: 3
 |===
 
