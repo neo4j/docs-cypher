@@ -1,5 +1,5 @@
 :description: Example of some more subtle optimizations based on native index capabilities.
-:test-skip: true
+
 
 [[advanced-query-tuning-example]]
 = Advanced query tuning example
@@ -562,26 +562,14 @@ ON CREATE SET
   m.tagline = line.tagline
 ----
 
-////
-[source, cypher-shell, role="nocopy,norun", indent=0]
-----
-bin/cypher-shell --database=neo4j --user=neo4j
-"LOAD CSV WITH HEADERS FROM 'file:///movies.csv' AS line
-MERGE (m:Movie {title: line.title})
-ON CREATE SET
-  m.released = toInteger(line.released),
-  m.tagline = line.tagline"
-----
-////
-
-[source, output, role="noheader", indent=0]
+.Result
+[role="queryresult"]
 ----
 Added 38 nodes, Set 114 properties, Added 38 labels
 ----
 
 
 Import the _actors.csv_ file::
-
 [source, cypher, indent=0]
 ----
 LOAD CSV WITH HEADERS FROM 'file:///actors.csv' AS line
@@ -591,19 +579,8 @@ ON CREATE SET p.born = toInteger(line.born)
 MERGE (p)-[:ACTED_IN {roles:split(line.roles, ';')}]->(m)
 ----
 
-////
-[source, cypher-shell, role="nocopy,norun", indent=0]
-----
-bin/cypher-shell --database=neo4j --user=neo4j
-"LOAD CSV WITH HEADERS FROM 'file:///actors.csv' AS line
-MATCH (m:Movie {title: line.title})
-MERGE (p:Person {name: line.name})
-ON CREATE SET p.born = toInteger(line.born)
-MERGE (p)-[:ACTED_IN {roles:split(line.roles, ';')}]->(m)"
-----
-////
-
-[source, output, role="noheader", indent=0]
+.Result
+[role="queryresult"]
 ----
 Added 102 nodes, Created 172 relationships, Set 375 properties, Added 102 labels
 ----
@@ -619,19 +596,8 @@ ON CREATE SET p.born = toInteger(line.born)
 MERGE (p)-[:DIRECTED]->(m)
 ----
 
-////
-[source, cypher-shell, role="nocopy,norun", indent=0]
-----
-bin/cypher-shell --database=neo4j --user=neo4j
-"LOAD CSV WITH HEADERS FROM 'file:///directors.csv' AS line
-MATCH (m:Movie {title: line.title})
-MERGE (p:Person {name: line.name})
-ON CREATE SET p.born = toInteger(line.born)
-MERGE (p)-[:DIRECTED]->(m)"
-----
-////
-
-[source, output, role="noheader", indent=0]
+.Result
+[role="queryresult"]
 ----
 Added 23 nodes, Created 44 relationships, Set 46 properties, Added 23 labels
 ----
@@ -644,7 +610,8 @@ CREATE INDEX FOR (p:Person)
 ON (p.name)
 ----
 
-[source, output, role="noheader", indent=0]
+.Result
+[role="queryresult"]
 ----
 Added 1 indexes
 ----
@@ -669,29 +636,15 @@ RETURN
   count(m) AS count
 ----
 
-////
-[source, cypher-shell, role="nocopy,norun", indent=0]
-----
-bin/cypher-shell --database=neo4j --user=neo4j
-"MATCH (p:Person)-[:ACTED_IN]->(m:Movie)
-WHERE p.name STARTS WITH 'Tom'
-RETURN
-  p.name AS name,
-  count(m) AS count"
-----
-////
-
-[source, output, role="noheader", indent=0]
-----
-+---------------------------+
-| name           | count    |
-+---------------------------+
-| "Tom Cruise"   | 3        |
-| "Tom Hanks"    | 12       |
-| "Tom Skerritt" | 1        |
-+---------------------------+
-3 rows
-----
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +name+ | +count+ 
+| +"Tom Cruise"+ |  +3+
+| +"Tom Hanks"+ | +12+
+| +"Tom Skerritt"+ | +1+
+2+d|Rows:3
+|===
 
 The query request the database to return all the actors with the first name 'Tom'.
 There are three of them: _'Tom Cruise'_, _'Tom Skerritt'_ and _'Tom Hanks'_.
@@ -714,49 +667,32 @@ RETURN
   count(m) AS count
 ----
 
-////
-[source, cypher-shell, role="nocopy,norun", indent=0]
+.Query Plan
+[role="queryplan", subs="attributes+"]
 ----
-bin/cypher-shell --database=neo4j --user=neo4j
-"PROFILE
-MATCH (p:Person)-[:ACTED_IN]->(m:Movie)
-WHERE p.name STARTS WITH 'Tom'
-RETURN
-  p.name AS name,
-  count(m) AS count"
-----
-////
+Planner COST
 
-[source, output, role="noheader", indent=0]
-----
-+------------------------+
-| name           | count |
-+------------------------+
-| "Tom Cruise"   | 3     |
-| "Tom Hanks"    | 12    |
-| "Tom Skerritt" | 1     |
-+------------------------+
+Runtime PIPELINED
 
-+--------------------------------------------------------------------------------------------------------+
-| Plan      | Statement   | Version      | Planner | Runtime     | Time | DbHits | Rows | Memory (Bytes) |
-+--------------------------------------------------------------------------------------------------------+
-| "PROFILE" | "READ_ONLY" | "CYPHER 4.3" | "COST"  | "PIPELINED" | 2    | 43     | 3    | 1768           |
-+--------------------------------------------------------------------------------------------------------+
+Runtime version {neo4j-version-minor}
 
+Batch size 128
 
-+-----------------------------+--------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
-| Operator                    | Details                                                            | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Ordered by | Other               |
-+-----------------------------+--------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
-| +ProduceResults@neo4j       | name, count                                                        |              1 |    3 |       0 |                |                    0/0 |     0.049 | name ASC   | In Pipeline 1       |
-| |                           +--------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
-| +OrderedAggregation@neo4j   | cache[p.name] AS name, count(m) AS count                           |              1 |    3 |       0 |           1688 |                    0/0 |     0.188 | name ASC   | In Pipeline 1       |
-| |                           +--------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
-| +Filter@neo4j               | m:Movie                                                            |              1 |   16 |      16 |                |                        |           | p.name ASC | Fused in Pipeline 0 |
-| |                           +--------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
-| +Expand(All)@neo4j          | (p)-[anon_16:ACTED_IN]->(m)                                        |              1 |   16 |      22 |                |                        |           | p.name ASC | Fused in Pipeline 0 |
-| |                           +--------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
-| +NodeIndexSeekByRange@neo4j | p:Person(name) WHERE name STARTS WITH $autostring_0, cache[p.name] |              1 |    4 |       5 |             72 |                    4/0 |     0.340 | p.name ASC | Fused in Pipeline 0 |
-+-----------------------------+--------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
++-----------------------+----+--------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
+| Operator              | Id | Details                                                                        | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Ordered by | Pipeline            |
++-----------------------+----+--------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
+| +ProduceResults       |  0 | name, count                                                                    |              1 |    3 |       0 |                |                    0/0 |     0.060 |            |                     |
+| |                     +----+--------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+            |                     |
+| +OrderedAggregation   |  1 | cache[p.name] AS name, count(m) AS count                                       |              1 |    3 |       0 |           1520 |                    0/0 |     3.119 | name ASC   | In Pipeline 1       |
+| |                     +----+--------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
+| +Filter               |  2 | m:Movie                                                                        |              1 |   16 |      32 |                |                        |           |            |                     |
+| |                     +----+--------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |            |                     |
+| +Expand(All)          |  3 | (p)-[anon_0:ACTED_IN]->(m)                                                     |              1 |   16 |      22 |                |                        |           |            |                     |
+| |                     +----+--------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |            |                     |
+| +NodeIndexSeekByRange |  4 | RANGE INDEX p:Person(name) WHERE name STARTS WITH $autostring_0, cache[p.name] |              0 |    4 |       5 |            120 |                    7/0 |     0.611 | p.name ASC | Fused in Pipeline 0 |
++-----------------------+----+--------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
+
+Total database accesses: 59, total allocated memory: 1600
 
 3 rows
 ----
@@ -773,147 +709,32 @@ RETURN
   count(m) AS count
 ----
 
-////
-[source, cypher-shell, role="nocopy,norun", indent=0]
+.Query Plan
+[role="queryplan", subs="attributes+"]
 ----
-bin/cypher-shell --database=neo4j --user=neo4j
-"PROFILE
-MATCH (p:Person)-[:ACTED_IN]->(m:Movie)
-RETURN
-  p.name AS name,
-  count(m) AS count"
-----
-////
+Planner COST
 
-[source, output, role="noheader", indent=0]
-----
-+----------------------------------+
-| name                     | count |
-+----------------------------------+
-| "Diane Keaton"           | 1     |
-| "Jack Nicholson"         | 5     |
-| "Keanu Reeves"           | 7     |
-| "Ice-T"                  | 1     |
-| "Takeshi Kitano"         | 1     |
-| "Dina Meyer"             | 1     |
-| "Brooke Langton"         | 1     |
-| "Gene Hackman"           | 3     |
-| "Orlando Jones"          | 1     |
-| "Al Pacino"              | 1     |
-| "Charlize Theron"        | 2     |
-| "Hugo Weaving"           | 5     |
-| "Laurence Fishburne"     | 3     |
-| "Carrie-Anne Moss"       | 3     |
-| "Emil Eifrem"            | 1     |
-| "John Hurt"              | 1     |
-| "Stephen Rea"            | 1     |
-| "Natalie Portman"        | 1     |
-| "Ben Miles"              | 3     |
-| "Jim Broadbent"          | 1     |
-| "Tom Hanks"              | 12    |
-| "Halle Berry"            | 1     |
-| "John Goodman"           | 1     |
-| "Susan Sarandon"         | 1     |
-| "Christina Ricci"        | 1     |
-| "Rain"                   | 2     |
-| "Emile Hirsch"           | 1     |
-| "Matthew Fox"            | 1     |
-| "Rick Yune"              | 2     |
-| "Naomie Harris"          | 1     |
-| "Liv Tyler"              | 1     |
-| "Kelly Preston"          | 1     |
-| "Bonnie Hunt"            | 2     |
-| "Jerry O'Connell"        | 2     |
-| "Renee Zellweger"        | 1     |
-| "Jay Mohr"               | 1     |
-| "Jonathan Lipnicki"      | 1     |
-| "Cuba Gooding Jr."       | 4     |
-| "Regina King"            | 1     |
-| "Tom Cruise"             | 3     |
-| "Kelly McGillis"         | 1     |
-| "Anthony Edwards"        | 1     |
-| "Tom Skerritt"           | 1     |
-| "Meg Ryan"               | 5     |
-| "Val Kilmer"             | 1     |
-| "Kiefer Sutherland"      | 2     |
-| "Kevin Bacon"            | 3     |
-| "Aaron Sorkin"           | 1     |
-| "Christopher Guest"      | 1     |
-| "Noah Wyle"              | 1     |
-| "James Marshall"         | 1     |
-| "Kevin Pollak"           | 1     |
-| "J.T. Walsh"             | 2     |
-| "Demi Moore"             | 1     |
-| "Danny DeVito"           | 2     |
-| "John C. Reilly"         | 1     |
-| "Helen Hunt"             | 3     |
-| "Greg Kinnear"           | 2     |
-| "Ed Harris"              | 1     |
-| "Bill Paxton"            | 3     |
-| "Gary Sinise"            | 2     |
-| "Oliver Platt"           | 2     |
-| "Frank Langella"         | 1     |
-| "Michael Sheen"          | 1     |
-| "Sam Rockwell"           | 2     |
-| "John Cusack"            | 1     |
-| "Wil Wheaton"            | 1     |
-| "Corey Feldman"          | 1     |
-| "River Phoenix"          | 1     |
-| "Marshall Bell"          | 2     |
-| "Max von Sydow"          | 2     |
-| "Annabella Sciorra"      | 1     |
-| "Werner Herzog"          | 1     |
-| "Robin Williams"         | 3     |
-| "Billy Crystal"          | 1     |
-| "Carrie Fisher"          | 1     |
-| "Bruno Kirby"            | 1     |
-| "Nathan Lane"            | 2     |
-| "Rita Wilson"            | 1     |
-| "Rosie O'Donnell"        | 2     |
-| "Bill Pullman"           | 1     |
-| "Victor Garber"          | 1     |
-| "Steve Zahn"             | 2     |
-| "Dave Chappelle"         | 1     |
-| "Parker Posey"           | 1     |
-| "James Cromwell"         | 2     |
-| "Patricia Clarkson"      | 1     |
-| "Michael Clarke Duncan"  | 1     |
-| "David Morse"            | 1     |
-| "Zach Grenier"           | 2     |
-| "Christian Bale"         | 1     |
-| "Philip Seymour Hoffman" | 2     |
-| "Ethan Hawke"            | 1     |
-| "Geena Davis"            | 1     |
-| "Madonna"                | 1     |
-| "Lori Petty"             | 1     |
-| "Julia Roberts"          | 1     |
-| "Ian McKellen"           | 1     |
-| "Paul Bettany"           | 1     |
-| "Audrey Tautou"          | 1     |
-| "Clint Eastwood"         | 1     |
-| "Richard Harris"         | 1     |
-+----------------------------------+
+Runtime PIPELINED
 
-+--------------------------------------------------------------------------------------------------------+
-| Plan      | Statement   | Version      | Planner | Runtime     | Time | DbHits | Rows | Memory (Bytes) |
-+--------------------------------------------------------------------------------------------------------+
-| "PROFILE" | "READ_ONLY" | "CYPHER 4.3" | "COST"  | "PIPELINED" | 70   | 809    | 102  | 17376          |
-+--------------------------------------------------------------------------------------------------------+
+Runtime version {neo4j-version-minor}
 
+Batch size 128
 
-+-------------------------+-----------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator                | Details                           | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Other               |
-+-------------------------+-----------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults@neo4j   | name, count                       |             13 |  102 |       0 |                |                    0/0 |     0.536 | In Pipeline 1       |
-| |                       +-----------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +EagerAggregation@neo4j | p.name AS name, count(m) AS count |             13 |  102 |     344 |          17296 |                        |           | Fused in Pipeline 0 |
-| |                       +-----------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +Filter@neo4j           | p:Person                          |            172 |  172 |     172 |                |                        |           | Fused in Pipeline 0 |
-| |                       +-----------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +Expand(All)@neo4j      | (m)<-[anon_16:ACTED_IN]-(p)       |            172 |  172 |     254 |                |                        |           | Fused in Pipeline 0 |
-| |                       +-----------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +NodeByLabelScan@neo4j  | m:Movie                           |             38 |   38 |      39 |             72 |                    5/0 |    12.818 | Fused in Pipeline 0 |
-+-------------------------+-----------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++-------------------+----+-----------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator          | Id | Details                           | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-------------------+----+-----------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults   |  0 | name, count                       |             13 |  102 |       0 |                |                    0/0 |     0.155 | In Pipeline 1       |
+| |                 +----+-----------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +EagerAggregation |  1 | p.name AS name, count(m) AS count |             13 |  102 |     344 |          17296 |                        |           |                     |
+| |                 +----+-----------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Filter           |  2 | p:Person                          |            172 |  172 |     344 |                |                        |           |                     |
+| |                 +----+-----------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Expand(All)      |  3 | (m)<-[anon_0:ACTED_IN]-(p)        |            172 |  172 |     254 |                |                        |           |                     |
+| |                 +----+-----------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeByLabelScan  |  4 | m:Movie                           |             38 |   38 |      39 |            120 |                   29/0 |     1.444 | Fused in Pipeline 0 |
++-------------------+----+-----------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 981, total allocated memory: 17376
 
 102 rows
 ----
@@ -952,40 +773,29 @@ MATCH (p:Person)
 RETURN count(DISTINCT p.name) AS numberOfNames
 ----
 
-////
-[source, cypher-shell, role="nocopy,norun", indent=0]
+.Query Plan
+[role="queryplan", subs="attributes+"]
 ----
-bin/cypher-shell --database=neo4j --user=neo4j
-"PROFILE
-MATCH (p:Person)
-RETURN count(DISTINCT p.name) AS numberOfNames"
-----
-////
 
-[source, output, role="noheader", indent=0]
-----
-+---------------+
-| numberOfNames |
-+---------------+
-| 125           |
-+---------------+
+Planner COST
 
-+--------------------------------------------------------------------------------------------------------+
-| Plan      | Statement   | Version      | Planner | Runtime     | Time | DbHits | Rows | Memory (Bytes) |
-+--------------------------------------------------------------------------------------------------------+
-| "PROFILE" | "READ_ONLY" | "CYPHER 4.3" | "COST"  | "PIPELINED" | 45   | 126    | 1    | 9952           |
-+--------------------------------------------------------------------------------------------------------+
+Runtime PIPELINED
 
+Runtime version {neo4j-version-minor}
 
-+-------------------------+------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator                | Details                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Other               |
-+-------------------------+------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults@neo4j   | numberOfNames                                        |              1 |    1 |       0 |                |                    0/0 |     0.048 | In Pipeline 1       |
-| |                       +------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +EagerAggregation@neo4j | count(DISTINCT cache[p.name]) AS numberOfNames       |              1 |    1 |       0 |           9888 |                        |           | Fused in Pipeline 0 |
-| |                       +------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +NodeIndexScan@neo4j    | p:Person(name) WHERE name IS NOT NULL, cache[p.name] |            125 |  125 |     126 |             72 |                    1/0 |     1.569 | Fused in Pipeline 0 |
-+-------------------------+------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+Batch size 128
+
++-------------------+----+------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator          | Id | Details                                                          | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-------------------+----+------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults   |  0 | numberOfNames                                                    |              1 |    1 |       0 |                |                    0/0 |     0.026 | In Pipeline 1       |
+| |                 +----+------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +EagerAggregation |  1 | count(DISTINCT cache[p.name]) AS numberOfNames                   |              1 |    1 |       0 |           9888 |                        |           |                     |
+| |                 +----+------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeIndexScan    |  2 | RANGE INDEX p:Person(name) WHERE name IS NOT NULL, cache[p.name] |            125 |  125 |     126 |            120 |                    1/0 |     1.400 | Fused in Pipeline 0 |
++-------------------+----+------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 126, total allocated memory: 9952
 
 1 row
 ----
@@ -1010,52 +820,31 @@ RETURN
 ORDER BY name
 ----
 
-////
-[source, cypher-shell, role="nocopy,norun", indent=0]
+.Query Plan
+[role="queryplan", subs="attributes+"]
 ----
-bin/cypher-shell --database=neo4j --user=neo4j
-"PROFILE
-MATCH (p:Person)-[:ACTED_IN]->(m:Movie)
-WHERE p.name STARTS WITH 'Tom'
-RETURN
-  p.name AS name,
-  count(m) AS count
-ORDER BY name"
-----
-////
 
-[source, output, role="noheader", indent=0]
-----
-+------------------------+
-| name           | count |
-+------------------------+
-| "Tom Cruise"   | 3     |
-| "Tom Hanks"    | 12    |
-| "Tom Skerritt" | 1     |
-+------------------------+
+Planner COST
 
-+--------------------------------------------------------------------------------------------------------+
-| Plan      | Statement   | Version      | Planner | Runtime     | Time | DbHits | Rows | Memory (Bytes) |
-+--------------------------------------------------------------------------------------------------------+
-| "PROFILE" | "READ_ONLY" | "CYPHER 4.3" | "COST"  | "PIPELINED" | 48   | 43     | 3    | 1768           |
-+--------------------------------------------------------------------------------------------------------+
+Runtime PIPELINED
 
+Runtime version {neo4j-version-minor}
 
-+-----------------------------+--------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
-| Operator                    | Details                                                            | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Ordered by | Other               |
-+-----------------------------+--------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
-| +ProduceResults@neo4j       | name, count                                                        |              1 |    3 |       0 |                |                    0/0 |     0.045 | name ASC   | In Pipeline 1       |
-| |                           +--------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
-| +OrderedAggregation@neo4j   | cache[p.name] AS name, count(m) AS count                           |              1 |    3 |       0 |           1688 |                    0/0 |     0.173 | name ASC   | In Pipeline 1       |
-| |                           +--------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
-| +Filter@neo4j               | m:Movie                                                            |              1 |   16 |      16 |                |                        |           | p.name ASC | Fused in Pipeline 0 |
-| |                           +--------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
-| +Expand(All)@neo4j          | (p)-[anon_16:ACTED_IN]->(m)                                        |              1 |   16 |      22 |                |                        |           | p.name ASC | Fused in Pipeline 0 |
-| |                           +--------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
-| +NodeIndexSeekByRange@neo4j | p:Person(name) WHERE name STARTS WITH $autostring_0, cache[p.name] |              1 |    4 |       5 |             72 |                    4/0 |     0.459 | p.name ASC | Fused in Pipeline 0 |
-+-----------------------------+--------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
+Batch size 128
 
-3 rows
++-----------------------+----+--------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
+| Operator              | Id | Details                                                                        | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Ordered by | Pipeline            |
++-----------------------+----+--------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
+| +ProduceResults       |  0 | name, count                                                                    |              1 |    3 |       0 |                |                    0/0 |     0.025 |            |                     |
+| |                     +----+--------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+            |                     |
+| +OrderedAggregation   |  1 | cache[p.name] AS name, count(m) AS count                                       |              1 |    3 |       0 |           1520 |                    0/0 |     0.097 | name ASC   | In Pipeline 1       |
+| |                     +----+--------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
+| +Filter               |  2 | m:Movie                                                                        |              1 |   16 |      32 |                |                        |           |            |                     |
+| |                     +----+--------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |            |                     |
+| +Expand(All)          |  3 | (p)-[anon_0:ACTED_IN]->(m)                                                     |              1 |   16 |      22 |                |                        |           |            |                     |
+| |                     +----+--------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |            |                     |
+| +NodeIndexSeekByRange |  4 | RANGE INDEX p:Person(name) WHERE name STARTS WITH $autostring_0, cache[p.name] |              0 |    4 |       5 |            120 |                    7/0 |     0.406 | p.name ASC | Fused in Pipeline 0 |
++-----------------------+----+--------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
 ----
 
 We are asking for the results in ascending alphabetical order.
@@ -1086,44 +875,33 @@ MATCH (p:Person)-[:ACTED_IN]->(m:Movie)
 RETURN min(p.name) AS name
 ----
 
-////
-[source, cypher-shell, role="nocopy,norun", indent=0]
+.Query Plan
+[role="queryplan", subs="attributes+"]
 ----
-bin/cypher-shell --database=neo4j --user=neo4j
-"PROFILE
-MATCH (p:Person)-[:ACTED_IN]->(m:Movie)
-RETURN min(p.name) AS name"
-----
-////
 
-[source, output, role="noheader", indent=0]
-----
-+----------------+
-| name           |
-+----------------+
-| "Aaron Sorkin" |
-+----------------+
+Planner COST
 
-+--------------------------------------------------------------------------------------------------------+
-| Plan      | Statement   | Version      | Planner | Runtime     | Time | DbHits | Rows | Memory (Bytes) |
-+--------------------------------------------------------------------------------------------------------+
-| "PROFILE" | "READ_ONLY" | "CYPHER 4.3" | "COST"  | "PIPELINED" | 38   | 809    | 1    | 184            |
-+--------------------------------------------------------------------------------------------------------+
+Runtime PIPELINED
 
+Runtime version {neo4j-version-minor}
 
-+-------------------------+-----------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator                | Details                     | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Other               |
-+-------------------------+-----------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults@neo4j   | name                        |              1 |    1 |       0 |                |                    0/0 |     0.041 | In Pipeline 1       |
-| |                       +-----------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +EagerAggregation@neo4j | min(p.name) AS name         |              1 |    1 |     344 |             32 |                        |           | Fused in Pipeline 0 |
-| |                       +-----------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +Filter@neo4j           | p:Person                    |            172 |  172 |     172 |                |                        |           | Fused in Pipeline 0 |
-| |                       +-----------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +Expand(All)@neo4j      | (m)<-[anon_16:ACTED_IN]-(p) |            172 |  172 |     254 |                |                        |           | Fused in Pipeline 0 |
-| |                       +-----------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +NodeByLabelScan@neo4j  | m:Movie                     |             38 |   38 |      39 |             72 |                    5/0 |     1.636 | Fused in Pipeline 0 |
-+-------------------------+-----------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+Batch size 128
+
++-------------------+----+----------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator          | Id | Details                    | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-------------------+----+----------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults   |  0 | name                       |              1 |    1 |       0 |                |                    0/0 |     0.027 | In Pipeline 1       |
+| |                 +----+----------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +EagerAggregation |  1 | min(p.name) AS name        |              1 |    1 |     344 |             32 |                        |           |                     |
+| |                 +----+----------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Filter           |  2 | p:Person                   |            172 |  172 |     344 |                |                        |           |                     |
+| |                 +----+----------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Expand(All)      |  3 | (m)<-[anon_0:ACTED_IN]-(p) |            172 |  172 |     254 |                |                        |           |                     |
+| |                 +----+----------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeByLabelScan  |  4 | m:Movie                    |             38 |   38 |      39 |            120 |                   29/0 |     0.990 | Fused in Pipeline 0 |
++-------------------+----+----------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 981, total allocated memory: 232
 
 1 row
 ----
