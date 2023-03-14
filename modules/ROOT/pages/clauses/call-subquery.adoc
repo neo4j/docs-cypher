@@ -415,6 +415,11 @@ RETURN p.name, youngerPersonsCount
 Subqueries can be made to execute in separate, inner transactions, producing intermediate commits.
 This can come in handy when doing large write operations, like batch updates, imports, and deletes.
 To execute a subquery in separate transactions, you add the modifier `IN TRANSACTIONS` after the subquery.
+An outer transaction is opened to report back the accumulated statistics for the inner transactions
+(created and deleted nodes, relationships, etc) and it will succeed or fail depending on the results
+of those inner transactions.
+For more information, see <<txs_error_behaviour, error behaviour>>.
+Canceling that outer transaction will cancel the inner ones.
 
 The following example uses a CSV file and the `LOAD CSV` clause to import more data to the example graph.
 It creates nodes in separate transactions using `+CALL { ... } IN TRANSACTIONS+`:
@@ -435,7 +440,7 @@ It creates nodes in separate transactions using `+CALL { ... } IN TRANSACTIONS+`
 LOAD CSV FROM 'file:///friends.csv' AS line
 CALL {
   WITH line
-  CREATE (:PERSON {name: line[1], age: toInteger(line[2])})
+  CREATE (:Person {name: line[1], age: toInteger(line[2])})
 } IN TRANSACTIONS
 ----
 
@@ -601,15 +606,20 @@ The batch size of `2 ROWS` is an example given the small data set used here.
 For larger data sets, you might want to use larger batch sizes, such as `10000 ROWS`.
 ====
 
+=== Error behaviour [[txs_error_behaviour]]
+Users can choose one of three different option flags to control the behaviour
+in case of an error occurring in any of the inner transactions of `+CALL { ... } IN TRANSACTIONS+`:
 
-=== Errors
-
-If an error occurs in `+CALL { ... } IN TRANSACTIONS+` the entire query fails and
-both the current inner transaction and the outer transaction are rolled back.
+* `ON ERROR CONTINUE` to ignore a recoverable error and continue the execution of subsequent inner transactions. 
+The outer transaction succeeds.
+It will cause the expected variables from the failed inner query to be bound as null for that specific transaction.
+* `ON ERROR BREAK` to ignore a recoverable error and stop the execution of subsequent inner transactions. The outer transaction succeeds. 
+It will cause expected variables from the failed inner query to be bound as null for all onward transactions (including the failed one).
+* `ON ERROR FAIL` to acknowledge a recoverable error and stop the execution of subsequent inner transactions. The outer transaction fails. This is the default behaviour if no flag is explicitly specified.
 
 [IMPORTANT]
 ====
-On error, any previously committed inner transactions remain committed, and are not rolled back.
+On error, any previously committed inner transactions remain committed, and are not rolled back. Any failed inner transactions are rolled back.
 ====
 
 In the following example, the last subquery execution in the second inner transaction fails
@@ -621,7 +631,7 @@ due to division by zero.
 UNWIND [4, 2, 1, 0] AS i
 CALL {
   WITH i
-  CREATE (:Example {num: 100/i})
+  CREATE (:Person {num: 100/i})
 } IN TRANSACTIONS OF 2 ROWS
 RETURN i
 ----
@@ -637,7 +647,7 @@ When the failure occurred, the first transaction had already been committed, so 
 .Query
 [source, cypher]
 ----
-MATCH (e:Example)
+MATCH (e:Person)
 RETURN e.num
 ----
 
@@ -650,6 +660,235 @@ RETURN e.num
 1+d|Rows: 2
 |===
 
+In the following example, `ON ERROR CONTINUE` is used after a failed inner transaction to execute the remaining inner transactions and not fail the outer transaction:
+
+.Query
+[source, cypher]
+----
+UNWIND [1, 0, 2, 4] AS i
+CALL {
+  WITH i
+  CREATE (n:Person {num: 100/i}) // Note, fails when i = 0
+  RETURN n
+} IN TRANSACTIONS
+  OF 1 ROW
+  ON ERROR CONTINUE
+RETURN n.num;
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +n.num+ |
+| 100     |
+| null    |
+| 50      |
+| 25      |
+1+d|Rows: 4
+|===
+
+Note the difference in results when batching in transactions of 2 rows:
+
+.Query
+[source, cypher, indent=0]
+----
+UNWIND [1, 0, 2, 4] AS i
+CALL {
+  WITH i
+  CREATE (n:Person {num: 100/i}) // Note, fails when i = 0
+  RETURN n
+} IN TRANSACTIONS
+  OF 2 ROWS
+  ON ERROR CONTINUE
+RETURN n.num;
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +n.num+ |
+| null    |
+| null    |
+| 50      |
+| 25      |
+1+d|Rows: 4
+|===
+
+This happens because an inner transaction with the two first `i` elements (1 and 0)
+was created, and it fails for 0. 
+This causes it to be rolled back and the return
+variable is filled with nulls for those two elements.
+
+In the following example, `ON ERROR BREAK` is used after a failed inner transaction to not execute the remaining inner transaction and not fail the outer transaction:
+
+.Query
+[source, cypher, indent=0]
+----
+UNWIND [1, 0, 2, 4] AS i
+CALL {
+  WITH i
+  CREATE (n:Person {num: 100/i}) // Note, fails when i = 0
+  RETURN n
+} IN TRANSACTIONS
+  OF 1 ROW
+  ON ERROR BREAK
+RETURN n.num;
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +n.num+ |
+| 100     |
+| null    |
+| null    |
+| null    |
+1+d|Rows: 4
+|===
+
+Note the difference in results when batching in transactions of 2 rows:
+
+.Query
+[source, cypher, indent=0]
+----
+UNWIND [1, 0, 2, 4] AS i
+CALL {
+  WITH i
+  CREATE (n:Person {num: 100/i}) // Note, fails when i = 0
+  RETURN n
+} IN TRANSACTIONS
+  OF 2 ROWS
+  ON ERROR BREAK
+RETURN n.num;
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +n.num+ |
+| null    |
+| null    |
+| null    |
+| null    |
+1+d|Rows: 4
+|===
+
+In the following example, `ON ERROR FAIL` is used after the failed inner transaction, to not execute the remaining inner transactions and to fail the outer transaction:
+
+.Query
+[source, cypher, indent=0]
+----
+UNWIND [1, 0, 2, 4] AS i
+CALL {
+  WITH i
+  CREATE (n:Person {num: 100/i}) // Note, fails when i = 0
+  RETURN n
+} IN TRANSACTIONS
+  OF 1 ROW
+  ON ERROR FAIL
+RETURN n.num;
+----
+
+.Error message
+[source, error, role=test-fail]
+----
+/ by zero (Transactions committed: 1)
+----
+
+=== Status report
+Users can also report the execution status of the inner transactions by using `REPORT STATUS AS var`.
+This flag is disallowed for `ON ERROR FAIL`. For more information, see <<txs_error_behaviour, error behaviour>>.
+
+After each execution of the inner query finishes (successfully or not), a status value is created that records information about the execution and the transaction that executed it:
+
+* If the inner execution produces one or more rows as output, then a binding to this status value is added to each row, under the selected variable name.
+* If the inner execution fails then a single row is produced containing a binding to this status value under the selected variable, and null bindings for all variables that should have been returned by the inner query (if any).
+
+The status value is a map value with the following fields:
+
+* `started`: `true` when the inner transaction was started, `false` otherwise.
+* `committed`, true when the inner transaction changes were successfully committed, false otherwise.
+* `transactionId`: the inner transaction id, or null if the transaction was not started.
+* `errorMessage`, the inner transaction error message, or null in case of no error.
+
+Example of reporting status with `ON ERROR CONTINUE`:
+
+.Query
+[source, cypher, indent=0]
+----
+UNWIND [1, 0, 2, 4] AS i
+CALL {
+  WITH i
+  CREATE (n:Person {num: 100/i}) // Note, fails when i = 0
+  RETURN n
+} IN TRANSACTIONS
+  OF 1 ROW
+  ON ERROR CONTINUE
+  REPORT STATUS AS s
+RETURN n.num, s;
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +n.num+ | +s+
+| 100     | +{"committed": true, "errorMessage": null, "started": true, "transactionId": "neo4j-transaction-835" }+
+| null    | +{"committed": false, "errorMessage": "/ by zero", "started": true, "transactionId": "neo4j-transaction-836" }+
+| 50      | +{"committed": true, "errorMessage": null, "started": true, "transactionId": "neo4j-transaction-837" }+
+| 25      | +{"committed": true, "errorMessage": null, "started": true, "transactionId": "neo4j-transaction-838" }+
+2+d|Rows: 4
+|===
+
+Example of reporting status with `ON ERROR BREAK`:
+
+.Query
+[source, cypher, indent=0]
+----
+UNWIND [1, 0, 2, 4] AS i
+CALL {
+  WITH i
+  CREATE (n:Person {num: 100/i}) // Note, fails when i = 0
+  RETURN n
+} IN TRANSACTIONS
+  OF 1 ROW
+  ON ERROR BREAK
+  REPORT STATUS AS s
+RETURN n.num, s.started, s.committed, s.errorMessage;
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="4*<m"]
+|===
+| +n.num+ | +s.started+ | +s.committed+ | +s.errorMessage+
+| 100     | true        | true          | null
+| null    | true        | false         | "/ by zero"
+| null    | false       | false         | null
+| null    | false       | false         | null
+4+d|Rows: 4
+|===
+
+Reporting status with `ON ERROR FAIL` is disallowed:
+
+.Query
+[source, cypher, role=test-fail]
+----
+UNWIND [1, 0, 2, 4] AS i
+CALL {
+  WITH i
+  CREATE (n:Person {num: 100/i}) // Note, fails when i = 0
+  RETURN n
+} IN TRANSACTIONS
+  OF 1 ROW
+  ON ERROR FAIL
+  REPORT STATUS AS s
+RETURN n.num, s.errorMessage;
+----
+
+.Error
+[source, error, role="noheader"]
+----
+REPORT STATUS can only be used when specifying ON ERROR CONTINUE or ON ERROR BREAK
+----
 
 === Restrictions
 
