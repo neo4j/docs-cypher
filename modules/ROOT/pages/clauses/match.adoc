@@ -3,44 +3,6 @@
 [[query-match]]
 = MATCH
 
-[abstract]
---
-The `MATCH` clause is used to search for the pattern described in it.
---
-
-* xref::clauses/match.adoc#match-introduction[Introduction]
-* xref::clauses/match.adoc#basic-node-finding[Basic node finding]
- ** xref::clauses/match.adoc#get-all-nodes[Get all nodes]
- ** xref::clauses/match.adoc#get-all-nodes-with-label[Get all nodes with a label]
- ** xref::clauses/match.adoc#related-nodes[Related nodes]
- ** xref::clauses/match.adoc#match-with-labels[Match with labels]
- ** xref::clauses/match.adoc#label-expression-match-or-expression[Match with a label expression for the node labels]
-* xref::clauses/match.adoc#relationship-basics[Relationship basics]
- ** xref::clauses/match.adoc#outgoing-relationships[Outgoing relationships]
- ** xref::clauses/match.adoc#directed-rels-and-variable[Directed relationships and variable]
- ** xref::clauses/match.adoc#match-on-rel-type[Match on relationship type]
- ** xref::clauses/match.adoc#match-on-multiple-rel-types[Match on multiple relationship types]
- ** xref::clauses/match.adoc#match-on-rel-type-use-variable[Match on relationship type and use a variable]
-* xref::clauses/match.adoc#relationships-in-depth[Relationships in depth]
- ** xref::clauses/match.adoc#rel-types-with-uncommon-chars[Relationship types with uncommon characters]
- ** xref::clauses/match.adoc#multiple-rels[Multiple relationships]
- ** xref::clauses/match.adoc#varlength-rels[Variable length relationships]
- ** xref::clauses/match.adoc#varlength-rels-multiple-types[Variable length relationships with multiple relationship types]
- ** xref::clauses/match.adoc#rel-variable-in-varlength-rels[Relationship variable in variable length relationships]
- ** xref::clauses/match.adoc#match-props-on-varlength-path[Match with properties on a variable length path]
- ** xref::clauses/match.adoc#zero-length-paths[Zero length paths]
- ** xref::clauses/match.adoc#named-paths[Named paths]
- ** xref::clauses/match.adoc#match-on-bound-rel[Matching on a bound relationship]
-* xref::clauses/match.adoc#query-shortest-path[Shortest path]
- ** xref::clauses/match.adoc#single-shortest-path[Single shortest path]
- ** xref::clauses/match.adoc#single-shortest-path-with-predicates[Single shortest path with predicates]
- ** xref::clauses/match.adoc#all-shortest-paths[All shortest paths]
-* xref::clauses/match.adoc#get-node-rel-by-id[Get node or relationship by elementId]
- ** xref::clauses/match.adoc#match-node-by-id[Node by elementId]
- ** xref::clauses/match.adoc#match-rel-by-id[Relationship by elementId]
- ** xref::clauses/match.adoc#match-multiple-nodes-by-id[Multiple nodes by elementId]
-
-
 [[match-introduction]]
 == Introduction
 
@@ -69,12 +31,14 @@ Read more about indexes in xref::indexes-for-search-performance.adoc[], and more
 To understand more about the patterns used in the `MATCH` clause, read the chapter on xref::syntax/patterns.adoc[Patterns].
 ====
 
+[[match-example-graph]]
+== Example graph
+
 The following graph is used for the examples below:
 
 image::graph_match_clause.svg[width="600",role="middle"]
 
-
-To recreate the graph, run the following query in an empty Neo4j database:
+To recreate the graph, run the following query against an empty Neo4j database:
 
 [source, cypher, role=test-setup]
 ----
@@ -254,11 +218,11 @@ Returns any nodes connected by an outgoing relationship to the `Person` node wit
 
 
 [[directed-rels-and-variable]]
-=== Directed relationships and variable
+=== Relationship variables 
 
 It is possible to introduce a variable to a pattern, either for filtering on relationship properties or to return a relationship. 
-
 For example: 
+
 .Query
 [source, cypher, indent=0]
 ----
@@ -274,6 +238,31 @@ Returns the type of each outgoing relationship from `Oliver Stone`.
 | +type(r)+
 | +"DIRECTED"+
 1+d|Rows: 1
+|===
+
+=== Match on an undirected relationship
+
+When a pattern contains a bound relationship, and that relationship pattern does not specify direction, Cypher will try to match the relationship in both directions.
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (a)-[:ACTED_IN {role: 'Bud Fox'}]-(b) 
+RETURN a, b
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +a+ | +b+
+
+| +{"title":"Wall Street"}+
+| +{"name":"Charlie Sheen"}+
+
+| +{"name":"Charlie Sheen"}+
+| +{"title":"Wall Street"}+
+
+2+d|Rows: 2
 |===
 
 
@@ -317,6 +306,7 @@ RETURN person.name
 ----
 
 Returns nodes with an `ACTED_IN` or `DIRECTED` relationship to the movie `Wall Street`.
+
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
@@ -376,7 +366,7 @@ For example, the following query creates a relationship which contains a space (
 [source, cypher, indent=0]
 ----
 MATCH
-  (charlie:Person {name: 'Martin Sheen'}),
+  (martin:Person {name: 'Martin Sheen'}),
   (rob:Person {name: 'Rob Reiner'})
 CREATE (rob)-[:`OLD FRIENDS`]->(martin)
 ----
@@ -520,7 +510,7 @@ The following query adds two new paths between `Charlie Sheen` and his father `M
 The query makes evident that both actors had a leading role in the movie `No Code of Conduct`, but only `Martin Sheen` had a leading role in the movie `Free Money`.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 MATCH
   (charlie:Person {name: 'Charlie Sheen'}),
@@ -610,33 +600,6 @@ image::MATCH_named_path_example.svg[width="500",role="middle"]
 1+d|Rows: 2
 |===
 
-
-[[match-on-bound-rel]]
-=== Matching on a bound relationship
-
-When a pattern contains a bound relationship, and that relationship pattern does not specify direction, Cypher will try to match the relationship in both directions.
-For example:
-
-.Query
-[source, cypher, indent=0]
-----
-MATCH (a)-[r]-(b)
-WHERE split(elementId(r), ":")[2] = "0"
-RETURN a, b
-----
-
-This returns the two connected nodes, once as the start node, and once as the end node
-
-.Result
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| +a+ | +b+
-| +{name:"Charlie Sheen"}+ | +{title:"Wall Street"}+
-| +{title:"Wall Street"}+ | +{name:"Charlie Sheen"}+
-2+d|Rows: 2
-|===
-
-
 [[query-shortest-path]]
 == Shortest path
 
@@ -669,7 +632,7 @@ image::MATCH_shortestpath_example.svg[width="400",role="middle"]
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | +p+
-| +[{"name":"Martin Sheen"},{"role":"Carl Fox"},{"title":"Wall Street"},{"title":"Wall Street"},{},{"name":"Oliver Stone"}]                 +
+| +[{"name":"Martin Sheen"},{"role":"Carl Fox"},{"title":"Wall Street"},{"title":"Wall Street"},{},{"name":"Oliver Stone"}]+
 1+d|Rows: 1
 |===
 
@@ -682,14 +645,14 @@ Predicates used in the `WHERE` clause that apply to the shortest path pattern ar
 [source, cypher]
 ----
 MATCH
-  (charlie:Person {name: 'Charlie Sheen'}),
-  (martin:Person {name: 'Martin Sheen'}),
-  p = shortestPath((charlie)-[*]-(martin))
-WHERE none(r IN relationships(p) WHERE type(r) = 'FATHER_OF')
+  (rob:Person {name: 'Rob Reiner'}),
+  (thePresident:Movie {title: 'The American President'}),
+  p = shortestPath((rob)-[*]-(thePresident))
+WHERE none(r IN relationships(p) WHERE type(r) = 'DIRECTED')
 RETURN p
 ----
 
-This query will find the shortest path between `Charlie Sheen` and `Martin Sheen`, and the `WHERE` predicate will ensure that the `FATHER_OF` relationship between the two is not considered.
+This query will find the shortest path between `Person` node `Rob Reiner` and the `Movie` node `The American President`, and the `WHERE` predicate will ensure that any relationship with the type `DIRECTED` is not considered.
 
 It returns the following graph and text: 
 
@@ -699,7 +662,7 @@ image::MATCH_shortestpath_with_predicates_example.svg[width="400",role="middle"]
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | +p+
-| +[{"name":"Charlie Sheen"},{"role":"Bud Fox"},{"title":"Wall Street"},{"title":"Wall Street"},{"role":"Carl Fox"},{"name":"Martin Sheen"}]+
+|+[{"name":"Rob Reiner"},{},{"name":"Martin Sheen"},{"name":"Martin Sheen"},{"role":"A.J. MacInerney"},{"title":"The American President"}]+│
 1+d|Rows: 1
 |===
 
@@ -731,89 +694,5 @@ image::MATCH_allshortestpaths_example.svg[width="400",role="middle"]
 | +[{"name":"Martin Sheen"},{"role":"Carl Fox"},{"title":"Wall Street"},{"title":"Wall Street"},{"role":"Gordon Gekko"},{"name":"Michael Douglas"}]+
 | +[{"name":"Martin Sheen"},{"role":"A.J. MacInerney"},{"title":"The American President"},{"title":"The American President"},{"role":"President Andrew Shepherd"},{"name":"Michael Douglas"}]+
 1+d|Rows: 2
-|===
-
-
-[[get-node-rel-by-elementid]]
-== Get node or relationship by elementId
-
-[[match-node-by-elementid]]
-=== Node by elementId
-
-Searching for nodes by ID can be done with the `elementId()` function in a predicate.
-
-[NOTE]
-====
-Neo4j reuses its internal IDs when nodes and relationships are deleted.
-This means that applications using, and relying on internal Neo4j IDs, are brittle or at risk of making mistakes.
-It is therefore recommended to rather use application-generated IDs.
-====
-
-.Query
-[source, cypher, indent=0]
-----
-MATCH (n)
-WHERE split(elementId(n), ":")[2] = "0"
-RETURN n
-----
-
-The corresponding node is returned.
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| +n+
-| +{name:"Charlie Sheen"}+
-1+d|Rows: 1
-|===
-
-
-[[match-rel-by-id]]
-=== Relationship by elementId
-
-Search for relationships by ID can be done with the `elementId()` function in a predicate.
-
-.Query
-[source, cypher, indent=0]
-----
-MATCH ()-[r]->()
-WHERE split(elementId(r), ":")[2] = "0"
-RETURN r
-----
-
-The relationship with the elementId `0` is returned.
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| +r+
-| +{role:"Bud Fox"}+
-1+d|Rows: 1
-|===
-
-
-[[match-multiple-nodes-by-id]]
-=== Multiple nodes by elementId
-
-Multiple nodes are selected by specifying them in an `IN`-clause.
-
-.Query
-[source, cypher, indent=0]
-----
-MATCH (n)
-WHERE split(elementId(n), ":")[2] IN ["0", "3", "5"] 
-RETURN n
-----
-
-This returns the nodes listed in the `IN`-expression.
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| +n+
-| +{name:"Charlie Sheen"}+
-| +{name:"Oliver Stone"}+
-| +{title:"Wall Street"}+
-1+d|Rows: 3
 |===
 

@@ -3,42 +3,38 @@
 [[query-functions-predicate]]
 = Predicate functions
 
-[abstract]
---
+== Introduction 
+
 Predicates are boolean functions that return `true` or `false` for a given set of non-`null` input.
 They are most commonly used to filter out paths in the `WHERE` part of a query.
---
 
-Functions:
+== Example graph
 
-* xref::functions/predicate.adoc#functions-all[all()]
-* xref::functions/predicate.adoc#functions-any[any()]
-* xref::functions/predicate.adoc#functions-exists[exists()]
-* xref::functions/predicate.adoc#functions-isempty[isEmpty()]
-* xref::functions/predicate.adoc#functions-none[none()]
-* xref::functions/predicate.adoc#functions-single[single()]
+The following graph is used for the examples below:
 
-image:graph_predicate_functions.svg[]
+image::graph_predicate_functions.svg[[width="600",role="middle"]
 
-////
+To recreate it, run the following query against an empty Neo4j database:
+
 [source, cypher, role=test-setup]
 ----
 CREATE
-  (alice {name:'Alice', age: 38, eyes: 'brown'}),
-  (bob {name: 'Bob', age: 25, eyes: 'blue'}),
-  (charlie {name: 'Charlie', age: 53, eyes: 'green'}),
-  (daniel {name: 'Daniel', age: 54, eyes: 'brown', liked_colors: []}),
-  (eskil {name: 'Eskil', age: 41, eyes: 'blue', liked_colors: ['pink', 'yellow', 'black']}),
-  (frank {alias: 'Frank', age: 61, eyes: '', liked_colors: ['blue', 'green']}),
-  (alice)-[:KNOWS]->(bob),
-  (grace:Person),
-  (alice)-[:KNOWS]->(charlie),
-  (bob)-[:KNOWS]->(daniel),
-  (charlie)-[:KNOWS]->(daniel),
-  (bob)-[:MARRIED]->(eskil)
+  (keanu:Person {name:'Keanu Reeves', age:58, nationality:'Canadian'}),
+  (carrie:Person {name:'Carrie Anne Moss', age:55, nationality:'American'}),
+  (liam:Person {name:'Liam Neeson', age:70, nationality:'Northern Irish'}),
+  (guy:Person {name:'Guy Pearce', age:55, nationality:'Australian'}),
+  (kathryn:Person {name:'Kathryn Bigelow', age:71, nationality:'American'}),
+  (jessica:Person {name:'Jessica Chastain', age:45, address:''}),
+  (theMatrix:Movie {title:'The Matrix'}),
+  (keanu)-[:KNOWS]->(carrie),
+  (keanu)-[:KNOWS]->(liam),
+  (keanu)-[:KNOWS]->(kathryn),
+  (kathryn)-[:KNOWS]->(jessica),
+  (carrie)-[:KNOWS]->(guy),
+  (liam)-[:KNOWS]->(guy),
+  (keanu)-[:ACTED_IN]->(theMatrix),
+  (carrie)-[:ACTED_IN]->(theMatrix)
 ----
-////
-
 
 [[functions-all]]
 == all()
@@ -90,22 +86,24 @@ However, an implicit conversion will happen for single elements when passing nod
 .Query
 [source, cypher, indent=0]
 ----
-MATCH p = (a)-[*1..3]->(b)
+MATCH p = (a)-[*]->(b)
 WHERE
-  a.name = 'Alice'
-  AND b.name = 'Daniel'
-  AND all(x IN nodes(p) WHERE x.age > 30)
+  a.name = 'Keanu Reeves'
+  AND b.name = 'Guy Pearce'
+  AND all(x IN nodes(p) WHERE x.age < 60)
 RETURN p
 ----
 
-All nodes in the returned paths will have a property `age` with a value larger than `30`.
+All nodes in the returned paths will have a property `age` with a value lower than `60`:
+
+image::predicate_function_example.svg[width="300",role="middle"]
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 
 | +p+
-| +[{"name":"Alice","eyes":"brown","age":38},{},{"name":"Charlie","eyes":"green","age":53},{"name":"Charlie","eyes":"green","age":53},{},{"liked_colors":[],"name":"Daniel","eyes":"brown","age":54}]+
+| +[{"nationality":"Canadian","name":"Keanu Reeves","age":58},{},{"nationality":"American","name":"Carrie Anne Moss","age":55},{"nationality":"American","name":"Carrie Anne Moss","age":55},{},{"nationality":"Australian","name":"Guy Pearce","age":55}]+
 1+d|Rows: 1
 
 |===
@@ -162,20 +160,22 @@ However, an implicit conversion will happen for single elements when passing nod
 .Query
 [source, cypher, indent=0]
 ----
-MATCH (n)
-WHERE any(color IN n.liked_colors WHERE color = 'yellow')
-RETURN n
+MATCH (p:Person)
+WHERE any(nationality IN p.nationality WHERE nationality = 'American')
+RETURN p
 ----
 
-The query returns nodes with the property `liked_colors` (as a list), where at least one element has the value `'yellow'`.
+The query returns the `Person` nodes with the `nationality` property value `American`:
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 
-| +n+
-| +Node[4]{eyes:'blue',liked_colors:['pink', 'yellow', 'black'],name:'Eskil',age:41}+
-1+d|Rows: 1
+| +p+
+| +{"nationality":"American","name":"Carrie Anne Moss","age":55}+
+| +{"nationality":"American","name":"Kathryn Bigelow","age":71}+
+
+1+d|Rows: 2
 
 |===
 
@@ -227,26 +227,26 @@ exists(pattern)
 .Query
 [source, cypher, indent=0]
 ----
-MATCH (n)
-WHERE n.name IS NOT NULL
+MATCH (p:Person)
 RETURN
-  n.name AS name,
-  exists((n)-[:MARRIED]->()) AS is_married
+  p.name AS name,
+  exists((p)-[:ACTED_IN]->()) AS has_acted_in_rel
 ----
 
-The names of all nodes with the `name` property are returned, along with a boolean (`true` or `false`) indicating if they are married.
+This query returns the `name` property of every `Person` node, along with a boolean (`true` or `false`) indicating if those nodes have an `ACTED_IN` relationship in the graph.
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
 
-| +name+ | +is_married+
-| +"Alice"+ | +false+
-| +"Bob"+ | +true+
-| +"Charlie"+ | +false+
-| +"Daniel"+ | +false+
-| +"Eskil"+ | +false+
-2+d|Rows: 5
+| +name+ | +has_acted_in_rel+
+| +"Carrie Anne Moss"+ | +true+
+| +"Keanu Reeves"+ | +true+
+| +"Liam Neeson"+ | +false+
+| +"Guy Pearce"+ | +false+
+| +"Kathryn Bigelow"+ | +false+
+| +"Jessica Chastain"+ | +false+
+2+d|Rows: 6
 
 |===
 
@@ -263,7 +263,7 @@ See xref::clauses/where.adoc#existential-subqueries[Using EXISTS subqueries] for
 [[functions-isempty]]
 == isEmpty()
 
-The function `isEmpty()` returns `true` if the given list or map contains no elements or if the given string contains no characters.
+The function `isEmpty()` returns `true` if the given list or map contains no elements, or if the given string contains no characters.
 
 *Syntax:*
 
@@ -298,20 +298,23 @@ isEmpty(list)
 .Query
 [source, cypher]
 ----
-MATCH (n)
-WHERE NOT isEmpty(n.liked_colors)
-RETURN n
+MATCH (p:Person)
+WHERE NOT isEmpty(p.nationality)
+RETURN p.name, p.nationality
 ----
 
-The nodes with the property `liked_colors` being non-empty are returned.
+This query returns every `Person` node in the graph with a set `nationality` property value (i.e., all `Person` nodes except for `Jessica Chastain`):
 
 .Result
-[role="queryresult",options="header,footer",cols="1*<m"]
+[role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| +n+
-| +Node[4]{eyes:'blue',liked_colors:['pink', 'yellow', 'black'],name:'Eskil',age:41}+
-| +Node[5]{eyes:'',liked_colors:['blue', 'green'],alias:'Frank',age:61}+
-1+d|Rows: 2
+| +p.name+ | +p.nationality+
+| +Keanu Reeves+ | +Canadian+
+| +Carrie Anne Moss+ | +American+
+| +Liam Neeson+ | +Northern Irish+
+| +Guy Pearce+ | +Australian+
+| +Kathryn Bigelow+ | +American+
+2+d|Rows: 5
 |===
 
 ======
@@ -355,17 +358,12 @@ WHERE isEmpty(properties(n))
 RETURN n
 ----
 
-Nodes that does not have any properties are returned.
+Because the example graph contains no empty nodes, nothing is returned:
 
 .Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-
-| +n+
-| +Node[6]{}+
-1+d|Rows: 1
-
-|===
+----
+(no changes, no records)
+----
 
 ======
 
@@ -402,19 +400,19 @@ isEmpty(string)
 .Query
 [source, cypher, indent=0]
 ----
-MATCH (n)
-WHERE isEmpty(n.eyes)
-RETURN n.age AS age
+MATCH (p:Person)
+WHERE isEmpty(p.address)
+RETURN p.name AS name
 ----
 
-The age are returned for each node that has a property `eyes` where the value evaulates to be empty (empty string).
+The `name` property of each node that has an empty (empty string) `address` property is returned: 
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 
-| +age+
-| +61+
+| +name+
+| +"Jessica Chastain"+
 1+d|Rows: 1
 
 |===
@@ -424,7 +422,7 @@ The age are returned for each node that has a property `eyes` where the value ev
 [NOTE]
 ====
 The function `isEmpty()`, like most other Cypher functions, returns `null` if `null` is passed in to the function.
-That means that a predicate `isEmpty(n.eyes)` will filter out all nodes where the `eyes` property is not set.
+That means that a predicate `isEmpty(n.address)` will filter out all nodes where the `address` property is not set.
 Thus, `isEmpty()` is not suited to test for `null`-values.
 `IS NULL` or `IS NOT NULL` should be used for that purpose.
 ====
@@ -478,22 +476,25 @@ However, an implicit conversion will happen for single elements when passing nod
 .Query
 [source, cypher, indent=0]
 ----
-MATCH p = (n)-[*1..3]->(b)
+MATCH p = (n)-[*]->(b)
 WHERE
-  n.name = 'Alice'
-  AND none(x IN nodes(p) WHERE x.age = 25)
+  n.name = 'Keanu Reeves'
+  AND none(x IN nodes(p) WHERE x.age > 60)
 RETURN p
 ----
 
-No node in the returned paths has a property `age` with the value `25`.
+No node in the returned path has an `age` property with a greater value than `60`:
+
+image::predicate_function_example.svg[width="300",role="middle"]
+
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 
 | +p+
-| +[{"name":"Alice","eyes":"brown","age":38},{},{"name":"Charlie","eyes":"green","age":53}]+
-| +[{"name":"Alice","eyes":"brown","age":38},{},{"name":"Charlie","eyes":"green","age":53},{"name":"Charlie","eyes":"green","age":53},{},{"liked_colors":[],"name":"Daniel","eyes":"brown","age":54}]+
+| +[{"nationality":"Canadian","name":"Keanu Reeves","age":58},{},{"nationality":"American","name":"Carrie Anne Moss","age":55}]+
+| +[{"nationality":"Canadian","name":"Keanu Reeves","age":58},{},{"nationality":"American","name":"Carrie Anne Moss","age":55},{"nationality":"American","name":"Carrie Anne Moss","age":55},{},{"nationality":"Australian","name":"Guy Pearce","age":55}]+
 1+d|Rows: 2
 
 |===
@@ -547,19 +548,19 @@ single(variable IN list WHERE predicate)
 ----
 MATCH p = (n)-->(b)
 WHERE
-  n.name = 'Alice'
-  AND single(var IN nodes(p) WHERE var.eyes = 'blue')
+  n.name = 'Keanu Reeves'
+  AND single(x IN nodes(p) WHERE x.nationality = 'Northern Irish')
 RETURN p
 ----
 
-In every returned path there is exactly one node that has a property `eyes` with the value `'blue'`.
+In every returned path there is exactly one node which the `nationality` property value `Northern Irish`:
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 
 | +p+
-| +[{"name":"Alice","eyes":"brown","age":38},{},{"name":"Bob","eyes":"blue","age":25}]  +
+| +[{"nationality":"Canadian","name":"Keanu Reeves","age":58},{},{"nationality":"Northern Irish","name":"Liam Neeson","age":70}]  +
 1+d|Rows: 1
 
 |===
