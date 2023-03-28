@@ -1,0 +1,456 @@
+= Syntax and semantics
+
+This section contains reference material for looking up the syntax and semantics of specific elements of Graph Pattern Matching. 
+
+[[reference-node-pattern]]
+== Node pattern
+
+A node pattern is a pattern that matches a single node.
+It can be used on its own in a clause such as `MATCH` or `EXIST`, or form part of a xref:patterns/reference.adoc#reference-path-pattern[path pattern]. 
+
+See also xref:patterns/concepts.adoc#node-patterns[node pattern concepts].
+
+=== Syntax
+
+[source, syntax, role=noheader]
+----
+nodePattern ::= "(" [ nodeVariable ] [ labelExpression ] 
+    [ propertyKeyValueExpression ] [ "WHERE" booleanExpression ] ")"
+----
+
+For rules on valid node variable names, see the xref:syntax/naming.adoc[Cypher naming rules].
+
+=== Rules
+
+==== Predicates
+
+Three types of predicate can be specified inside a node pattern:
+
+* xref:patterns/reference.adoc#reference-label-expression[label expression]
+* xref:patterns/reference.adoc#reference-property-key-value-expression[property key-value expression] 
+* xref:clauses/where.adoc[WHERE clause]
+
+The boolean expression of the `WHERE` clause can reference any variables within scope of the node pattern.
+A node variable needs to be declared in the node pattern in order to reference it in the boolean expression.
+
+If no predicates are specified, then the node pattern matches any node.
+
+==== Variable binding
+
+If a variable has not been declared elsewhere in the query, it will become bound to nodes when the matching of its containing path pattern is executed.
+If it has been bound in a previous clause, then no new nodes will be bound to the variable; any previously bound nodes that do not match in the current path pattern will lead to the match being eliminated from the results. 
+See the chapter on xref:introduction/clause_composition.adoc[clause composition] for more details on the passing of results between clauses.
+
+=== Examples 
+
+Matches all nodes with the label `Station`:
+
+[source, syntax, role=noheader]
+----
+(:Station)
+----
+
+Matches all nodes with the label `Stop` and a property `departs` with the `time` value `11:11`:
+
+[source, syntax, role=noheader]
+----
+(:Stop { departs: time("11:11") })
+----
+
+Matches all nodes with the property `departs` with a value equal to the current time plus 30 minutes:
+
+[source, syntax, role=noheader]
+----
+(n WHERE n.departs > time() + duration("PT30M"))
+----
+
+[[reference-rel-pattern]]
+== Relationship pattern
+
+A relationship pattern is a pattern that matches a single relationship.
+It can only be used with node patterns on either side of it.
+////
+TODO: add below sentence when feature becomes available:
+A relationship pattern followed immediately by a quantifier is an abbreviated quantified path pattern called a quantified relationship.
+////
+
+See also xref:patterns/concepts.adoc#rel-patterns[relationship pattern concepts].
+
+=== Syntax 
+
+[source, syntax, role=noheader]
+----
+relationshipPattern ::= fullPattern | abbreviatedRelationship
+
+fullPattern ::= 
+    "<-[" patternFiller "]-" 
+  | "-[" patternFiller "]->"
+  | "-[" patternFiller "]-"
+
+abbreviatedRelationship ::= "<--" | "--" | "-->"
+
+patternFiller ::= [ relationshipVariable ] [ typeExpression ] 
+    [ propertyKeyValueExpression ] [ "WHERE" booleanExpression ]
+----
+
+Note that the syntax for type expressions in relationship patterns is the same as for label expressions in node patterns.
+
+For rules on valid relationship variable names, see the xref:syntax/naming.adoc[Cypher naming rules].
+
+=== Rules
+
+==== Predicates
+
+The following three types of predicate can be specified in the pattern filler of a full relationship pattern (i.e. a pattern with the square brackets):
+
+* xref:patterns/reference.adoc#reference-label-expression[label expression]
+* xref:patterns/reference.adoc#reference-property-key-value-expression[property key-value expression] 
+* xref:clauses/where.adoc[WHERE clause]
+
+A fourth type of predicate specifies the directionality of the relationship with respect to the overall path pattern, using the less-than or greater-than symbols to form arrows (`<` and `>`). 
+If a relationship pattern has no arrows, it will match relationships of any direction. 
+
+The boolean expression of the `WHERE` clause can reference any variables within scope of the relationship pattern.
+A relationship variable needs to be declared in the pattern in order to reference in the boolean expression.
+
+If no predicates are specified then the pattern matches all relationships.
+
+==== Variable binding
+
+If the variable has not been declared elsewhere in the query, it will become bound to relationships when the matching of its containing path pattern is executed.
+If it has been bound in a previous clause, then no new relationships will be bound to the variable; if any previously bound relationships do not match in the current path pattern, then those matches will be eliminated from the results.
+
+See the chapter on xref:introduction/clause_composition.adoc[clause composition] for more details on the passing of results between clauses.
+
+=== Examples 
+
+Matches all relationships with the type `A`:
+
+[source, syntax, role=noheader]
+----
+()-[:A]->()
+----
+
+Matches all relationships and binds them to variable `r`:
+
+[source, syntax, role=noheader]
+----
+()-[r]->()
+----
+
+Matches all relationships with the type `CALLS_AT` and the property `p` set to between `10` and `100`:
+
+[source, syntax, role=noheader]
+----
+()-[r:CALLS_AT WHERE 10 < r.p < 100]->()
+----
+
+Matches all relationships with label `A` nodes as their source, and nodes with label `B` as their target:
+
+[source, syntax, role=noheader]
+----
+(:A)-->(:B)
+----
+
+Matches all relationships that connect nodes with label `A` and nodes with label `B`, irrespective of their direction:
+
+[source, syntax, role=noheader]
+----
+(:A)--(:B)
+----
+
+[[reference-label-expression]]
+== Label expression
+
+The following applies to both the label expressions of node patterns and the type expressions of relationship patterns.
+
+A label expression is a boolean predicate composed from label names and a wildcard symbol using disjunction, conjunction, negation and grouping. 
+A label expression returns true when it matches the set of labels for a node.
+
+Although relationships have a type rather than labels, the syntax for expressions matching a relationship type is identical to that of label expressions. 
+
+=== Syntax
+
+[source, syntax, role=noheader]
+----
+labelExpression ::= ":" labelTerm
+
+labelTerm ::=
+    labelIdentifier
+  | labelTerm "&" labelTerm
+  | labelTerm "|" labelTerm
+  | "!" labelTerm 
+  | "%" 
+  | "(" labelTerm ")"
+----
+
+For valid label identifiers, see the xref:syntax/naming.adoc[Cypher naming rules].
+
+=== Rules
+
+The following table lists the symbols used in label expressions:
+
+[options="header",cols="a,3a,a"]
+|===
+| Symbol | Description | Precedence
+
+| `%` 
+| Wildcard.
+Evaluates to `true` if the label set is non-empty 
+| 
+
+| `()`
+| Contained expression is evaluated before evaluating the outer expression the group is contained in. 
+| 1 (hightest)
+
+| `!`
+| Negation
+| 2
+
+| `&`
+| Conjunction
+| 3
+
+| `&#124;` 
+| Disjunction
+| 4 (lowest)
+
+|===
+
+Associativity is left-to-right.
+
+=== Examples
+
+In the following table, a tick is shown where the label expression matches the node with the labels shown: 
+
+|===
+
+| 8+^|  *Node* 
+|*Node pattern*
+|`()`
+|`(:A)`
+|`(:B)`
+|`(:C)`
+|`(:A:B)`
+|`(:A:C)`
+|`(:B:C)`
+|`(:A:B:C)`
+
+|`()` | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705;
+
+|`(:A)` | | &#x2705; | | | &#x2705; | &#x2705; | | &#x2705;
+
+|`(:A&B)` | | | | | &#x2705; | | | &#x2705;
+
+|`(:A&#124;B)` | | &#x2705; | &#x2705; | | &#x2705; | &#x2705; | &#x2705; | &#x2705;
+
+|`(:!A)` | &#x2705; | | &#x2705; | &#x2705;| | | &#x2705; | 
+
+|`(:!!A)` | | &#x2705; | | | &#x2705; | &#x2705; | | &#x2705;
+
+|`(:A&!A)` | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705;
+
+|`(:%)` | | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705;
+
+|`(:!%)` | &#x2705; | | | | | | | 
+
+|`(:%&#124;!%)` | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705;
+
+| `(:%&!%)` | | | | | | | | 
+
+| `(:A&%)` | | &#x2705; | | | &#x2705; | &#x2705; | | &#x2705;
+
+| `(:A&#124;%)` | | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705;
+
+| `(:(A&B)&!(B&C))` | | | | | &#x2705; | | | 
+
+| `(:!(A&%)&%)` | | |  &#x2705;  |  &#x2705;  | | |  &#x2705; | 
+
+|===
+
+As relationships have exactly one type each, this expression will never match a relationship:
+
+[source, syntax, role=noheader]
+----
+-[:A&B]->
+----
+
+Similarly, the following will always match a relationship:
+
+[source, syntax, role=noheader]
+----
+-[:%]->
+----
+
+The use of negation can make the conjunction useful in relationship patterns. 
+The following matches relationships that have type that is neither A nor B:
+
+[source, syntax, role=noheader]
+----
+-[:!A&!B]->
+----
+
+[[reference-property-key-value-expression]]
+== Property key-value expression
+
+=== Syntax
+
+[source, syntax, role=noheader]
+----
+propertyKeyValueExpression ::= 
+  "{" propertyKeyValuePairList "}"
+
+propertyKeyValuePairList ::= 
+  propertyKeyValuePair [ "," propertyKeyValuePair ]
+
+propertyKeyValuePair ::= propertyName ":" valueExpression
+----
+
+=== Rules
+
+The property key-value expression is treated as a conjunction of equalities on the properties of the element that the containing pattern matches. 
+
+For example, the following node pattern:
+
+[source, syntax, role=noheader]
+----
+({ p: valueExp1, q: valueExp2 })
+----
+
+Is equivalent to the following node pattern with a `WHERE` clause:
+
+[source, syntax, role=noheader]
+----
+(n WHERE n.p = valueExp1 AND n.q: valueExp2)
+----
+
+The value expression can be any expression as listed in the chapter on xref:syntax/expressions.adoc[expressions], except for path patterns (which will throw a syntax error) and regular expressions (which will be treated as string literals).
+An empty property key-value expression matches all elements.
+
+=== Examples
+
+The following matches all nodes with property `p` = `10`:
+
+[source, syntax, role=noheader]
+----
+({ p: 10 })
+----
+
+The following matches all relationships with property `p` = `10` and `q` equal to date `2023-02-10`:
+[source, syntax, role=noheader]
+----
+()-[({ p: 10, q: date("2023-02-10") }]-()
+----
+
+The following matches all relationships with its property `p` equal to the property `p` of its source node:
+
+[source, syntax, role=noheader]
+----
+(s)-[({ p: s.p }]-()
+----
+
+Property key-value expressions can be combined with a `WHERE` clause.
+The following matches all nodes with property `p` = 10 and property `q` greater than `100`:
+
+[source, syntax, role=noheader]
+----
+(n { p: 10 } WHERE n.q > 100)
+----
+
+
+[[reference-path-pattern]]
+== Path pattern
+
+A path pattern is the top level pattern that is matched against paths in a graph.
+
+=== Syntax
+
+//TODO: Fix below syntax for path patterns without qpps:
+[source, syntax, role=noheader]
+----
+pathPattern ::= [{ simplePathPattern | quantifiedPathPattern }]+
+simplePathPattern ::= nodePattern 
+  [ { relationshipPattern | quantifiedRelationship } nodePattern ]*
+----
+
+=== Rules
+
+The minimum number of elements in the path pattern must be greater than zero.
+
+////
+TODO: add when QPPs have been released:
+For example, a path pattern that is a quantified path pattern with a quantifier that has a lower bound of zero is not allowed:
+((n)-[r]->(m)){0,10}
+////
+
+
+A path pattern must always begin and end with a node pattern.
+The following is not allowed:
+
+[source, syntax, role=noheader]
+----
+(n)-[r]->(m)-[s]-
+----
+
+
+////
+TODO: add when QPPs have been released:
+
+A path pattern may be composed of a concatenation of simple and quantified path patterns. Two simple path patterns, however, may not be placed next to each other. For example, the following is not allowed:
+(a)<-[s]-(b) (c)-[t]->(d)
+////
+
+When a path pattern is matched to paths in a graph, nodes can be revisited but relationships can't.
+
+=== Examples
+
+A single node pattern is allowed as it has at least one element:
+
+[source, syntax, role=noheader]
+----
+(n)
+----
+
+A simple path pattern with more than one element:
+
+[source, syntax, role=noheader]
+----
+(a:A)<-[{p: 30}]-(b)-[t WHERE t.q > 0]->(c:C)
+----
+
+////
+TODO: add when QPPs have been released:
+A quantified path pattern can have a lower bound of zero in its quantifier as long as it abuts other patterns that have at least one element:
+(:A)((:X)-[:R]-())*(:B)
+
+A quantified relationship can also have a lower bound of zero as long as the overall path pattern has at least one element:
+(:A)-[:R]->*(:B)
+
+A concatenation of simple and quantified path patterns:
+(a)<-[s]-(b)-[t]->(c) ((n)-[r]->(m)){0,10} (:X)
+////
+
+
+Referencing non-local node variable in a simple path pattern:
+
+[source, syntax, role=noheader]
+----
+(a)<-[s:X WHERE a.p = s.p]-(b)
+----
+
+////
+TODO: add when QPPs have been released:
+Referencing a non-local relationship variable within a quantified path pattern:
+(:A)((a)<-[s:X WHERE a.p = s.p]-(b)){,5}
+
+Singleton variables bound in a previous clause can be referenced anywhere in a path pattern:
+MATCH (n)
+MATCH ()-[r WHERE r.q = n.q]-()(()<-[s:X WHERE n.p = s.p]-()){2,3}
+////
+
+
+
+
+
+
+
