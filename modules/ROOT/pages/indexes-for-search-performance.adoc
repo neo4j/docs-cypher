@@ -323,74 +323,6 @@ listing indexes require xref::administration/access-control/database-administrat
 xref:query-tuning/using.adoc[Planner hints and the USING keyword] describes how to make the Cypher planner use specific indexes (especially in cases where the planner would not necessarily have used them).
 
 
-[[indexes-single-vs-composite-index]]
-== Composite index limitations
-
-Like single-property range indexes, composite range indexes support all predicates:
-
-* equality check: `n.prop = value`
-* list membership check: `n.prop IN list`
-* existence check: `n.prop IS NOT NULL`
-* range search: `n.prop > value`
-* prefix search: `STARTS WITH`
-
-[NOTE]
-====
-For details about each operator, see xref::syntax/operators.adoc[Operators].
-====
-
-However, predicates might be planned as existence check and a filter.
-For most predicates, this can be avoided by following these restrictions:
-
-* If there is any `equality check` and `list membership check` predicates,
-they need to be for the first properties defined by the index.
-* There can be up to one `range search` or `prefix search` predicate.
-* There can be any number of `existence check` predicates.
-* Any predicate after a `range search`, `prefix search` or `existence check` predicate has to be an `existence check` predicate.
-
-[NOTE]
-====
-The `suffix search` (`ENDS WITH`) and `substring search` (`CONTAINS`) predicates can utilize the index as well.
-However, they are always planned as an existence check and a filter and any predicates following after will therefore also be planned as such.
-====
-
-For example, an index on nodes with `:Label(prop1,prop2,prop3,prop4,prop5,prop6)` and predicates:
-
-[source, cypher, role=test-skip]
-----
-WHERE n.prop1 = 'x' AND n.prop2 = 1 AND n.prop3 > 5 AND n.prop4 < 'e' AND n.prop5 = true AND n.prop6 IS NOT NULL
-----
-
-will be planned as:
-
-[source, cypher, role=test-skip]
-----
-WHERE n.prop1 = 'x' AND n.prop2 = 1 AND n.prop3 > 5 AND n.prop4 IS NOT NULL AND n.prop5 IS NOT NULL AND n.prop6 IS NOT NULL
-----
-
-with filters on `n.prop4 < 'e'` and `n.prop5 = true`, since `n.prop3` has a `range search` predicate.
-
-And an index on nodes with `:Label(prop1,prop2)` with predicates:
-
-[source, cypher, role=test-skip]
-----
-WHERE n.prop1 ENDS WITH 'x' AND n.prop2 = false
-----
-
-will be planned as:
-
-[source, cypher, role=test-skip]
-----
-WHERE n.prop1 IS NOT NULL AND n.prop2 IS NOT NULL
-----
-
-with filters on `n.prop1 ENDS WITH 'x'` and `n.prop2 = false`, since `n.prop1` has a `suffix search` predicate.
-
-Composite indexes require predicates on all properties indexed.
-If there are predicates on only a subset of the indexed properties, it will not be possible to use the composite index.
-To get this kind of fallback behavior, it is necessary to create additional indexes on the relevant sub-set of properties or on single properties.
-
-
 [[indexes-create-indexes]]
 == +CREATE INDEX+
 
@@ -421,36 +353,6 @@ Creating an index requires xref::administration/access-control/database-administ
 ====
 The new index is not immediately available, but is created in the background.
 ====
-
-*Examples:*
-
-* xref::indexes-for-search-performance.adoc#indexes-create-range-index[]
-** xref::indexes-for-search-performance.adoc#indexes-create-a-single-property-range-index-for-nodes[]
-** xref::indexes-for-search-performance.adoc#indexes-create-a-single-property-range-index-for-relationships[]
-** xref::indexes-for-search-performance.adoc#indexes-create-a-composite-range-index-for-nodes[]
-** xref::indexes-for-search-performance.adoc#indexes-create-a-composite-range-index-for-relationships[]
-** xref::indexes-for-search-performance.adoc#indexes-create-a-range-index-only-if-it-does-not-already-exist[]
-* xref::indexes-for-search-performance.adoc#indexes-create-token-index[]
-** xref::indexes-for-search-performance.adoc#indexes-create-a-node-label-lookup-index[]
-** xref::indexes-for-search-performance.adoc#indexes-create-a-relationship-type-lookup-index[]
-** xref::indexes-for-search-performance.adoc#indexes-create-a-lookup-index-only-if-it-does-not-already-exist[]
-* xref::indexes-for-search-performance.adoc#indexes-create-point-index[]
-** xref::indexes-for-search-performance.adoc#indexes-create-a-node-point-index[]
-** xref::indexes-for-search-performance.adoc#indexes-create-a-relationship-point-index[]
-** xref::indexes-for-search-performance.adoc#indexes-create-a-point-index-only-if-it-does-not-already-exist[]
-** xref::indexes-for-search-performance.adoc#indexes-create-a-point-index-specifying-the-index-configuration[]
-** xref::indexes-for-search-performance.adoc#indexes-create-a-point-index-specifying-both-the-index-provider-and-configuration[]
-* xref::indexes-for-search-performance.adoc#indexes-create-text-index[]
-** xref::indexes-for-search-performance.adoc#indexes-create-a-node-text-index[]
-** xref::indexes-for-search-performance.adoc#indexes-create-a-relationship-text-index[]
-** xref::indexes-for-search-performance.adoc#indexes-create-a-text-index-only-if-it-does-not-already-exist[]
-** xref::indexes-for-search-performance.adoc#indexes-create-a-text-index-specifying-the-index-provider[]
-* xref::indexes-for-search-performance.adoc#indexes-create-conflicting-index[]
-** xref::indexes-for-search-performance.adoc#indexes-failure-to-create-an-already-existing-index[]
-** xref::indexes-for-search-performance.adoc#indexes-failure-to-create-an-index-with-the-same-name-as-an-already-existing-index[]
-** xref::indexes-for-search-performance.adoc#indexes-failure-to-create-an-index-when-a-constraint-already-exists[]
-** xref::indexes-for-search-performance.adoc#indexes-failure-to-create-an-index-with-the-same-name-as-an-already-existing-constraint[]
-
 
 [[indexes-create-range-index]]
 === Creating a range index
@@ -893,53 +795,6 @@ Added 1 index.
 
 Specifying the index configuration can be combined with specifying index provider.
 Though only one valid value exists for the index provider, `point-1.0`, which is the default value.
-
-[discrete]
-[[indexes-create-a-point-index-specifying-both-the-index-provider-and-configuration]]
-==== Create a point index specifying both the index provider and configuration
-
-To create a point index with a specific index provider and configuration, the `OPTIONS` clause is used.
-Only one valid value exists for the index provider, `point-1.0`, which is the default value.
-
-The valid configuration settings are:
-
-* `spatial.cartesian.min`
-* `spatial.cartesian.max`
-* `spatial.cartesian-3d.min`
-* `spatial.cartesian-3d.max`
-* `spatial.wgs-84.min`
-* `spatial.wgs-84.max`
-* `spatial.wgs-84-3d.min`
-* `spatial.wgs-84-3d.max`
-
-Non-specified settings have their respective default values.
-
-.+Creating a point index with index provider and configuration+
-======
-
-.Query
-[source, cypher]
-----
-CREATE POINT INDEX index_with_options
-FOR ()-[r:TYPE]-() ON (r.prop1)
-OPTIONS {
- indexProvider: 'point-1.0',
- indexConfig: {
-   `spatial.wgs-84.min`: [-100.0, -80.0],
-   `spatial.wgs-84.max`: [100.0, 80.0]
-  }
-}
-----
-
-.Result
-[queryresult]
-----
-Added 1 index.
-----
-
-======
-
-Index provider and configuration can also be specified separately.
 
 
 [[indexes-create-text-index]]
@@ -1474,4 +1329,72 @@ DROP INDEX missing_index_name IF EXISTS
 ----
 
 ======
+
+
+[[indexes-single-vs-composite-index]]
+== Composite index limitations
+
+Like single-property range indexes, composite range indexes support all predicates:
+
+* equality check: `n.prop = value`
+* list membership check: `n.prop IN list`
+* existence check: `n.prop IS NOT NULL`
+* range search: `n.prop > value`
+* prefix search: `STARTS WITH`
+
+[NOTE]
+====
+For details about each operator, see xref::syntax/operators.adoc[Operators].
+====
+
+However, predicates might be planned as existence check and a filter.
+For most predicates, this can be avoided by following these restrictions:
+
+* If there is any `equality check` and `list membership check` predicates,
+they need to be for the first properties defined by the index.
+* There can be up to one `range search` or `prefix search` predicate.
+* There can be any number of `existence check` predicates.
+* Any predicate after a `range search`, `prefix search` or `existence check` predicate has to be an `existence check` predicate.
+
+[NOTE]
+====
+The `suffix search` (`ENDS WITH`) and `substring search` (`CONTAINS`) predicates can utilize the index as well.
+However, they are always planned as an existence check and a filter and any predicates following after will therefore also be planned as such.
+====
+
+For example, an index on nodes with `:Label(prop1,prop2,prop3,prop4,prop5,prop6)` and predicates:
+
+[source, cypher, role=test-skip]
+----
+WHERE n.prop1 = 'x' AND n.prop2 = 1 AND n.prop3 > 5 AND n.prop4 < 'e' AND n.prop5 = true AND n.prop6 IS NOT NULL
+----
+
+will be planned as:
+
+[source, cypher, role=test-skip]
+----
+WHERE n.prop1 = 'x' AND n.prop2 = 1 AND n.prop3 > 5 AND n.prop4 IS NOT NULL AND n.prop5 IS NOT NULL AND n.prop6 IS NOT NULL
+----
+
+with filters on `n.prop4 < 'e'` and `n.prop5 = true`, since `n.prop3` has a `range search` predicate.
+
+And an index on nodes with `:Label(prop1,prop2)` with predicates:
+
+[source, cypher, role=test-skip]
+----
+WHERE n.prop1 ENDS WITH 'x' AND n.prop2 = false
+----
+
+will be planned as:
+
+[source, cypher, role=test-skip]
+----
+WHERE n.prop1 IS NOT NULL AND n.prop2 IS NOT NULL
+----
+
+with filters on `n.prop1 ENDS WITH 'x'` and `n.prop2 = false`, since `n.prop1` has a `suffix search` predicate.
+
+Composite indexes require predicates on all properties indexed.
+If there are predicates on only a subset of the indexed properties, it will not be possible to use the composite index.
+To get this kind of fallback behavior, it is necessary to create additional indexes on the relevant sub-set of properties or on single properties.
 
