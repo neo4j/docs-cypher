@@ -1,0 +1,277 @@
+:description: Cypher has built-in support for handling spatial values (points), and the underlying database supports storing these point values as properties on nodes and relationships.
+
+[[spatial-values]]
+= Spatial values
+
+Cypher has built-in support for handling spatial values (points), which are stored as properties on nodes and relationships in Neo4j databases. 
+
+This section begins with an explanation the `Point` type.
+It then proceeds to discuss Cypher's support of Coordinate Reference Systems, and how to work with spatial instants in Cypher, including how spatial points instants work with Cypher indexing. 
+Finally, it briefly explains comparability and orderability with regard to spatial instants. 
+
+[NOTE]
+====
+For more information about spatial functions, allowing for the creation and manipulation of spatial values, see the section on xref::functions/spatial.adoc[Spatial functions]. 
+
+For more information about the comparison and ordering of spatial values, see the section on the xref::syntax/operators.adoc#cypher-ordering[ordering and comparison of values].
+====
+
+[[spatial-values-point-type]]
+== The Point type
+
+Neo4j supports the `Point` type for values of spatial geometry.
+
+Values with the `Point` type have the following characteristics:
+
+* Each point can have either 2 or 3 dimensions. 
+This means it contains either 2 or 3 64-bit floating point values, which together are called the _Coordinate_.
+* Each point will also be associated with a specific xref::values-and-types/spatial.adoc#cypher-spatial-crs[Coordinate Reference System] (CRS) that determines the meaning of the values in the _Coordinate_.
+* Instances of `Point` and lists of `Point` can be assigned to node and relationship properties.
+* Nodes with `Point` or `List(Point)` properties can be indexed using a xref::indexes-for-search-performance.adoc#administration-indexes-create-a-node-point-index
+[point index]. 
+This is true for all CRS (and for both 2D and 3D).
+* The xref::functions/spatial.adoc#functions-distance[distance function] will work on points in all CRS and in both 2D and 3D, but only if the two points have the same CRS (and therefore also same dimension).
+
+
+[[spatial-values-crs]]
+== Coordinate Reference Systems
+
+Four Coordinate Reference Systems (CRS) are supported, each of which falls within one of two types: _geographic coordinates_, modeling points on the earth, or _Cartesian coordinates_, modeling points in euclidean space:
+
+Data within different coordinate systems are entirely incomparable, and cannot be implicitly converted from one to the other.
+This is true even if they are both Cartesian or both geographic. 
+For example, if you search for 3D points using a 2D range, you will get no results.
+However, they can be ordered, as discussed in more detail in the section about xref::syntax/operators.adoc#cypher-ordering[ordering and comparison of values].
+
+
+[[spatial-values-crs-geographic]]
+=== Geographic coordinate reference systems
+
+Two Geographic Coordinate Reference Systems (CRS) are supported, modeling points on the earth:
+
+* link:https://spatialreference.org/ref/epsg/4326/[WGS 84 2D]
+ ** A 2D geographic point in the _WGS 84_ CRS is specified in one of two ways:
+  *** `longitude` and `latitude` (if these are specified, and the `crs` is not, then the `crs` is assumed to be `WGS-84`).
+  *** `x` and `y` (in this case the `crs` must be specified, or will be assumed to be Cartesian).
+ ** Specifying this CRS can be done using either the name 'wgs-84' or the SRID 4326 as described in xref::functions/spatial.adoc#functions-point-wgs84-2d[Point(WGS-84)].
+* link:https://spatialreference.org/ref/epsg/4979/[WGS 84 3D]
+ ** A 3D geographic point in the _WGS 84_ CRS is specified one of in two ways:
+  *** `longitude`, `latitude` and either `height` or `z` (if these are specified, and the `crs` is not, then the `crs` is assumed to be `WGS-84-3D`).
+  *** `x`, `y` and `z` (in this case the `crs` must be specified, or will be assumed to be Cartesian-3D).
+ ** Specifying this CRS can be done using either the name 'wgs-84-3d' or the SRID 4979 as described in xref::functions/spatial.adoc#functions-point-wgs84-3d[Point(WGS-84-3D)].
+
+[[spatial-values-converting-coordinates]]
+=== Converting coordinate units
+
+The units of the `latitude` and `longitude` fields are in decimal degrees, and need to be specified as floating point numbers using Cypher literals.
+It is not possible to use any other format, such as 'degrees, minutes, seconds'.
+The units of the `height` field are in meters.
+When geographic points are passed to the xref::functions/spatial.adoc#functions-distance[distance function], the result will always be in meters.
+If the coordinates are in any other format or unit than those supported, it is necessary to explicitly convert them. 
+
+For example, if the incoming `$height` is a string field in kilometers, it would be necessary to add `height: toFloat($height) * 1000` to the query.
+Likewise if the results of the `distance` function are expected to be returned in kilometers, an explicit conversion is required.
+The below query is an example of this conversion: 
+
+.Query
+[source, cypher, indent=0]
+----
+WITH
+  point({latitude:toFloat('13.43'), longitude:toFloat('56.21')}) AS p1,
+  point({latitude:toFloat('13.10'), longitude:toFloat('56.41')}) AS p2
+RETURN toInteger(point.distance(p1, p2)/1000) AS km
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +km+
+| +42+
+1+d|Rows: 1
+|===
+
+
+[[spatial-values-crs-cartesian]]
+=== Cartesian coordinate reference systems
+
+Two Cartesian Coordinate Reference Systems (CRS) are supported, modeling points in euclidean space:
+
+* link:https://spatialreference.org/ref/sr-org/7203/[Cartesian 2D]
+ ** A 2D point in the _Cartesian_ CRS is specified with a map containing `x` and `y` coordinate values
+ ** Specifying this CRS can be done using either the name 'cartesian' or the SRID 7203 as described in xref::functions/spatial.adoc#functions-point-cartesian-2d[Point(Cartesian)]
+* link:https://spatialreference.org/ref/sr-org/9157/[Cartesian 3D]
+ ** A 3D point in the _Cartesian_ CRS is specified with a map containing `x`, `y` and `z` coordinate values
+ ** Specifying this CRS can be done using either the name 'cartesian-3d' or the SRID 9157 as described in xref::functions/spatial.adoc#functions-point-cartesian-3d[Point(Cartesian-3D)]
+
+The units of the `x`, `y`, and `z` fields are unspecified. 
+This  means that when two Cartesian points are passed to the `distance` function, the resulting value will be in the same units as the original coordinates.
+This is true for both 2D and 3D points, as the _pythagoras_ equation used is generalized to any number of dimensions. 
+However, just as you cannot compare geographic points to Cartesian points, you cannot calculate the distance between a 2D point and a 3D point.
+If you need to do that, explicitly transform the one type into the other.
+For example:
+
+.Query
+[source, cypher, indent=0]
+----
+WITH
+  point({x: 3, y: 0}) AS p2d,
+  point({x: 0, y: 4, z: 1}) AS p3d
+RETURN
+  point.distance(p2d, p3d) AS bad,
+  point.distance(p2d, point({x: p3d.x, y: p3d.y})) AS good
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +bad+ | +good+
+| +<null>+ | +5.0+
+2+d|Rows: 1
+|===
+
+
+[[spatial-values-spatial-instants]]
+== Spatial instants
+
+
+All point types are created from two components:
+
+* The _Coordinate_ containing either 2 or 3 floating point values (64-bit).
+* The Coordinate Reference System (or CRS) defining the meaning (and possibly units) of the values in the _Coordinate_.
+
+For most use cases, it is not necessary to specify the CRS explicitly as it will be deduced from the keys used to specify the coordinate. 
+Two rules are applied to deduce the CRS from the coordinate:
+
+* Choice of keys:
+  ** If the coordinate is specified using the keys `latitude` and `longitude` the CRS will be assumed to be _Geographic_ and therefor either `WGS-84` or `WGS-84-3D`.
+  ** If instead `x` and `y` are used, then the default CRS would be `Cartesian` or `Cartesian-3D`.
+* Number of dimensions:
+  ** If there are 2 dimensions in the coordinate, `x` & `y` or `longitude` & `latitude` the CRS will be a 2D CRS.
+  ** If there is a third dimensions in the coordinate, `z` or `height` the CRS will be a 3D CRS.
+
+All fields are provided to the `point` function in the form of a map of explicitly named arguments. 
+Neo4j does not support an ordered list of coordinate fields because of the contradictory conventions between geographic and cartesian coordinates, where geographic coordinates normally
+list `y` before `x` (`latitude` before `longitude`).
+
+The following query which returns points created in each of the four supported CRS.
+Take particular note of the order and keys of the coordinates in the original `point` function, and how those values are displayed in the results:
+
+.Query
+[source, cypher, indent=0]
+----
+RETURN
+  point({x: 3, y: 0}) AS cartesian_2d,
+  point({x: 0, y: 4, z: 1}) AS cartesian_3d,
+  point({latitude: 12, longitude: 56}) AS geo_2d,
+  point({latitude: 12, longitude: 56, height: 1000}) AS geo_3d
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="4*<m"]
+|===
+| +cartesian_2d+ | +cartesian_3d+ | +geo_2d+ | +geo_3d+
+| +point({srid:7203, x: 3.0, y: 0.0})+ | +point({srid:9157, x: 0.0, y: 4.0, z: 1.0})+ | +point({srid:4326, x: 56.0, y: 12.0})+ | +point({rid:4979, x: 56.0, y: 12.0, z: 1000.0})+
+4+d|Rows: 1
+|===
+
+For the geographic coordinates, it is important to note that the `latitude` value should always lie in the interval `[-90, 90]`. 
+Any other value outside this range will throw an exception.
+The `longitude` value should always lie in the interval `[-180, 180]`. 
+Any other value outside this range will be wrapped around to fit in this range.
+The `height` value and any Cartesian coordinates are not explicitly restricted.
+Any value within the allowed range of the signed 64-bit floating point type will be accepted.
+
+
+[[spatial-values-spatial-instants-accessing-components]]
+=== Components of points
+
+Components of point values can be accessed as properties. 
+
+.Components of point instances and where they are supported
+[options="header"]
+|===
+| Component      | Description  | Type | Range/Format   | WGS-84 | WGS-84-3D | Cartesian | Cartesian-3D
+| `instant.x` | The first element of the _Coordinate_ | Float | Number literal, range depends on CRS | {check-mark} | {check-mark} | {check-mark} | {check-mark}
+| `instant.y` | The second element of the _Coordinate_ | Float | Number literal, range depends on CRS | {check-mark} | {check-mark} | {check-mark} | {check-mark}
+| `instant.z` | The third element of the _Coordinate_ | Float | Number literal, range depends on CRS |  | {check-mark} |  | {check-mark}
+| `instant.latitude` | The _second_ element of the _Coordinate_ for geographic CRS, degrees North of the equator | Float | Number literal, `-90.0` to `90.0` | {check-mark} | {check-mark} |   |
+| `instant.longitude` | The _first_ element of the _Coordinate_ for geographic CRS, degrees East of the prime meridian | Float | Number literal, `-180.0` to `180.0` | {check-mark} | {check-mark} |  |
+| `instant.height` | The third element of the _Coordinate_ for geographic CRS, meters above the ellipsoid defined by the datum (WGS-84) | Float | Number literal, range limited only by the underlying 64-bit floating point type |  | {check-mark} |  |
+| `instant.crs` | The name of the CRS | String | One of `wgs-84`, `wgs-84-3d`, `cartesian`, `cartesian-3d` | {check-mark} | {check-mark} | {check-mark} | {check-mark}
+| `instant.srid` | The internal Neo4j ID for the CRS | Integer | One of `4326`, `4979`, `7203`, `9157` | {check-mark} | {check-mark} | {check-mark} | {check-mark}
+|===
+
+=== Examples
+
+The following query shows how to extract the components of a _Cartesian 2D_ point value:
+
+.Query
+[source, cypher, indent=0]
+----
+WITH point({x: 3, y: 4}) AS p
+RETURN
+  p.x AS x,
+  p.y AS y,
+  p.crs AS crs,
+  p.srid AS srid
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="4*<m"]
+|===
+| +x+ | +y+ | +crs+ | +srid+
+| +3.0+ | +4.0+ | +"cartesian"+ | +7203+
+4+d|Rows: 1
+|===
+
+The following query shows how to extract the components of a _WGS-84 3D_ point value:
+
+.Query
+[source, cypher, indent=0]
+----
+WITH point({latitude: 3, longitude: 4, height: 4321}) AS p
+RETURN
+  p.latitude AS latitude,
+  p.longitude AS longitude,
+  p.height AS height,
+  p.x AS x,
+  p.y AS y,
+  p.z AS z,
+  p.crs AS crs,
+  p.srid AS srid
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="8*<m"]
+|===
+| +latitude+ | +longitude+ | +height+ | +x+ | +y+ | +z+ | +crs+ | +srid+
+| +3.0+ | +4.0+ | +4321.0+ | +4.0+ | +3.0+ | +4321.0+ | +"wgs-84-3d"+ | +4979+
+8+d|Rows: 1
+|===
+
+
+[[spatial-values-point-index]]
+== Spatial values and indexes
+// POINT INDEX new in Neo4j 5.0
+
+<<<<<<< HEAD:modules/ROOT/pages/syntax/spatial.adoc
+If there is a xref::indexes-for-search-performance.adoc#indexes-create-a-node-point-index[index] on a particular `:Label(property)` combination, and a spatial point is assigned to that property on a node with that label, the node will be indexed in a point index.
+=======
+If there is a RANGE or POINT index on a particular `:Label(property) combination`, and a spatial point is assigned to that property on a node with that label, the node will be indexed.
+>>>>>>> 06c228ca86be81eda9d91e2821333ff2d80c8da0:modules/ROOT/pages/values-and-types/spatial.adoc
+
+In a POINT index, Neo4j uses space filling curves in 2D or 3D over an underlying generalized B+Tree. This index has support for xref::query-tuning/indexes.adoc#administration-indexes-equality-check-using-where-single-property-index[equality], xref::query-tuning/indexes.adoc#administration-indexes-spatial-distance-searches-single-property-index[distance], and xref::query-tuning/indexes.adoc#administration-indexes-spatial-bounding-box-searches-single-property-index[bounding box] queries. 
+
+In a RANGE index, the points will be sorted according to their lexicographic ordering per coordinate reference system. For point values, this index has support for xref::query-tuning/indexes.adoc#administration-indexes-equality-check-using-where-single-property-index[equality].
+
+[[spatial-values-comparability-orderability]]
+== Comparability and orderability
+
+//New for Neo4j v.5.0
+
+Cypher does not support comparing spatial values using the inequality operators, `+<+`, `+<=+`, `+>+`, and `+>=+`. 
+Attempting to do so will return `null`.
+
+To compare spatial points within a specific range, instead use the spatial functions xref::functions/spatial.adoc#functions-distance[point.distance] or xref::functions/spatial.adoc#functions-withinBBox[point.withinBBox]. 
+
+
