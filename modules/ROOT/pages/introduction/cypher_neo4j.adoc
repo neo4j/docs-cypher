@@ -1,0 +1,153 @@
+= Cypher and Neo4j
+:description: This section discusses aspects of Neo4j (different editions, key terms & transactions) that are important to consider when using Cypher.
+
+This section discusses aspects of Neo4j that are important to consider when using Cypher.
+
+[[cypher-neo4j-editions]]
+== Cypher and the different editions of Neo4j
+
+Neo4j consists of two editions: a commercial Enterprise Edition, and a Community Edition. 
+
+Cypher works almost identically between the two editions, but there are key areas in which they differ:
+
+[options="header"]
+|===
+| Feature | Enterprise Edition | Community Edition
+
+| xref::administration/databases.adoc[Multi-database]
+a|
+Any number of user databases.
+a|
+Only `system` and one user database.
+
+| Role-based security
+a|
+User, role, and privilege management for flexible xref::administration/access-control/index.adoc[access control] and xref::administration/access-control/manage-privileges.adoc[sub-graph access control].
+a|
+xref::administration/access-control/manage-users.adoc[Multi-user management].
+All users have full access rights.
+
+| Constraints
+a|
+All constraints:
+xref::constraints/examples.adoc#constraints-examples-node-property-existence[node existence constraints],
+xref::constraints/examples.adoc#constraints-examples-relationship-property-existence[relationship existence constraints],
+xref::constraints/examples.adoc#constraints-examples-node-uniqueness[node property uniqueness constraints],
+xref::constraints/examples.adoc#constraints-examples-node-key[node key constraints].
+a|
+Only xref::constraints/examples.adoc#constraints-examples-node-uniqueness[node] property uniqueness constraints.
+
+|===
+
+[[neo4j-terminology]]
+== Key Neo4j terminology
+
+Cypher queries are executed against a Neo4j database, but normally apply to specific graphs. It is important to understand the meaning of these terms and exactly when a graph is not a database.
+
+
+*DBMS*:: A Neo4j Database Management System is capable of containing and managing multiple graphs contained in databases. Client applications will connect to the DBMS and open sessions against it. 
+A client session provides access to any graph in the DBMS.
+
+*Graph*:: Refers to a data model within a database. 
+This is a data model within a database. Normally there is only one graph within each database, and many administrative commands that refer to a specific graph do so using the database name.
+Cypher queries executed in a session may declare which graph they apply to, or use a default, given by the session.
+In Neo4j Fabric it is possible to refer to multiple graphs within the same query.
+
+*Database*:: A database is a storage and retrieval mechanism for collecting data in a defined space on disk and in memory.
+
+[[built-in-databases]]
+== Built-in databases in Neo4j
+
+All Neo4j servers contain a built-in database called `system`, which behaves differently than all other databases.
+The `system` database stores system data and you can not perform graph queries against it.
+
+A fresh installation of Neo4j includes two databases:
+
+* `system` - the system database described above, containing meta-data on the DBMS and security configuration.
+* `neo4j` - the default database, named using the config option `dbms.default_database=neo4j`.
+
+For more information about the _system_ database, see the sections on xref::administration/databases.adoc[Database management] and xref::administration/access-control/index.adoc[Access control].
+
+=== Query considerations 
+
+Most of the time Cypher queries are reading or updating queries, which are run against a graph. 
+There are also administrative commands that apply to a database, or to the entire DBMS.
+Administrative commands cannot be run in a session connected to a normal user database, but instead need to be run within a session connected to the `system` database. 
+Administrative commands execute on the `system` database. 
+If an administrative command is submitted to a user database, it is rerouted to the system database.
+
+[[cypher-neo4j-transactions]]
+== Cypher and Neo4j transactions
+
+All Cypher queries run within transactions.
+Modifications done by updating queries are held in memory by the transaction until it is committed, at which point the changes are persisted to disk and become visible to other transactions.
+If an error occurs - either during query evaluation, such as division by zero, or during commit, such as constraint violations - the transaction is automatically rolled back, and no changes are persisted in the graph.
+
+In short, an updating query always either fully succeeds or does not succeed at all.
+
+[NOTE]
+====
+A query that makes a large number of updates consequently uses large amounts of memory since the transaction holds changes in memory.
+For memory configuration in Neo4j, see the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/performance/memory-configuration[Neo4j Operations Manual -> Memory configuration].
+====
+
+[[explicit-implicit-transactions]]
+=== Explicit and implicit transactions
+
+Transactions in Neo4j can be either explicit or implicit.
+
+[options="header"]
+|===
+| Explicit | Implicit
+
+| Opened by the user.
+| Opened automatically.
+
+| Can execute multiple Cypher queries in sequence.
+| Can execute a single Cypher query.
+
+| Committed, or rolled back, by the user.
+| Committed automatically when a transactions finishes successfully. 
+|===
+
+Queries that start separate transactions themselves, such as queries using xref::clauses/call-subquery.adoc#subquery-call-in-transactions[`CALL { ... } IN TRANSACTIONS`] or xref::query-tuning/using.adoc#query-using-periodic-commit-hint[`PERIODIC COMMIT`] are only allowed in _implicit_ mode.
+Explicit transactions cannot be managed directly from queries, they must be managed via APIs or tools. 
+
+For examples of the API, or the commands used to start and commit transactions, refer to the API or tool-specific documentation:
+
+* For information on using transactions with a Neo4j driver, see _The session API_ in the link:{docs-base-uri}[Neo4j Driver manuals].
+* For information on using transactions over the HTTP API, see the link:{neo4j-docs-base-uri}/http-api/{page-version}/actions#http-api-actions[HTTP API documentation -> Using the HTTP API].
+* For information on using transactions within the embedded Core API, see the link:{neo4j-docs-base-uri}/java-reference/{page-version}/java-embedded/cypher-java#cypher-java[Java Reference -> Executing Cypher queries from Java].
+* For information on using transactions within the Neo4j Browser or Cypher-shell, see the link:{neo4j-docs-base-uri}/browser-manual/current/reference-commands/[Neo4j Browser documentation] or the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/tools/cypher-shell/#cypher-shell-commands[Cypher-shell documentation].
+
+When writing procedures or using Neo4j embedded, remember that all iterators returned from an execution result should be either fully exhausted or closed.
+This ensures that the resources bound to them are properly released.
+
+=== DBMS transactions
+
+Beginning a transaction while connected to a DBMS will start a DBMS-level transaction.
+A DBMS-level transaction is a container for database transactions.
+
+A database transaction is started when the first query to a specific database is issued.
+Database transactions opened inside a DBMS-level transaction are committed or rolled back when the DBMS-level transaction is committed or rolled back.
+
+DBMS transactions have the following limitations:
+
+* Only one database can be written to in a DBMS transaction.
+* Cypher operations fall into the following main categories:
+
+** Operations on graphs.
+** Schema commands.
+** Administration commands.
+
+It is not possible to combine any of these workloads in a single DBMS transaction.
+
+=== ACID compliance 
+
+Neo4j is fully ACID compliant.
+This means that:
+
+* Atomicity - If a part of a transaction fails, the database state is left unchanged.
+* Consistency — Every transaction leaves the database in a consistent state.
+* Isolation — During a transaction, modified data cannot be accessed by other operations.
+* Durability — The DBMS can always recover the results of a committed transaction.
