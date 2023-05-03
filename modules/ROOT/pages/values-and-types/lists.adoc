@@ -1,0 +1,379 @@
+:description: Cypher has comprehensive support for lists.
+
+[[cypher-lists]]
+= Lists
+
+Cypher includes comprehensive support for lists. 
+This section first describes lists in general, and then discusses how to use list comprehension and pattern comprehension in lists. 
+
+[NOTE]
+====
+Information regarding operators, such as list concatenation (`+`), element existence checking (`IN`), and access (`[]`) can be found xref::syntax/operators.adoc#query-operators-list[here].
+The behavior of the `IN` and `[]` operators with respect to `null` is detailed xref::values-and-types/working-with-null.adoc[here].
+====
+
+
+[[cypher-lists-general]]
+== Lists in general
+
+A literal list is created by using brackets and separating the elements in the list with commas.
+
+.Query
+[source, cypher]
+----
+RETURN [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] AS list
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +list+
+| +[0,1,2,3,4,5,6,7,8,9]+
+1+d|Rows: 1
+|===
+
+A list can consist of different value types.
+
+.Query
+[source, cypher]
+----
+RETURN [0, "hello", 3.14, null] AS list
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +list+
+| +[0, "hello", 3.14, null]+
+1+d|Rows: 1
+|===
+
+Lists are indexed by 0 in Cypher.
+To access individual elements in a list, use square brackets.
+This extracts from the start index and up to, but not including, the end index.
+
+For example:
+
+.Query
+[source, cypher]
+---
+WITH [5,1,7] AS list
+RETURN list[2]
+---
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +list[2]+
+| +7+
+1+d|Rows: 1
+|===
+
+=== List range and size 
+
+The below examples use the xref::functions/list.adoc#functions-range[`range`] function to create lists.
+This function returns a list containing all numbers between given start and end numbers.
+The range is inclusive in both ends.
+
+.Query
+[source, cypher]
+----
+RETURN range(0, 10)[3] AS list
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +list+
+| +3+
+1+d|Rows: 1
+|===
+
+It is also possible to use negative numbers, to start from the end of the list instead.
+
+.Query
+[source, cypher]
+----
+RETURN range(0, 10)[-3] AS list
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +list+
+| +8+
+1+d|Rows: 1
+|===
+
+Finally, it is possible to use ranges inside the brackets to return ranges of the list.
+The list range operator (`[]`) is inclusive of the first value, but exclusive of the last value. 
+
+.Query
+[source, cypher]
+----
+RETURN range(0, 10)[0..3] AS list
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +list+
+| +[0,1,2]+
+1+d|Rows: 1
+|===
+
+.Query
+[source, cypher]
+----
+RETURN range(0, 10)[0..-5] AS list
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +list+
+| +[0,1,2,3,4,5]+
+1+d|Rows: 1
+|===
+
+.Query
+[source, cypher]
+----
+RETURN range(0, 10)[-5..] AS list
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +list+
+| +[6,7,8,9,10]+
+1+d|Rows: 1
+|===
+
+.Query
+[source, cypher]
+----
+RETURN range(0, 10)[..4] AS list
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +list+
+| +[0,1,2,3]+
+1+d|Rows: 1
+|===
+
+Out-of-bound slices are simply truncated, but out-of-bound single elements return `null`.
+
+.Query
+[source, cypher]
+----
+RETURN range(0, 10)[15] AS list
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +list+
+| +<null>+
+1+d|Rows: 1
+|===
+
+.Query
+[source, cypher]
+----
+RETURN range(0, 10)[5..15] AS list
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +list+
+| +[5,6,7,8,9,10]+
+1+d|Rows: 1
+|===
+
+The xref::functions/scalar.adoc#functions-size[`size`] of a list can be obtained as follows:
+
+.Query
+[source, cypher]
+----
+RETURN size(range(0, 10)[0..3]) AS list
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +list+
+| +3+
+1+d|Rows: 1
+|===
+
+
+[[cypher-pattern-comprehension]]
+== Pattern comprehension
+
+Pattern comprehension is a syntactic construct available in Cypher for creating a list based on matchings of a pattern.
+A pattern comprehension matches the specified pattern like a normal `MATCH` clause, with predicates like a normal `WHERE` clause, but yields a custom projection as specified.
+
+=== Example graph
+
+The following graph is used for examples below:
+
+image::values_and_types_lists_graph.svg[]
+
+To recreate the graph, run the following query against an empty Neo4j database:
+
+[source, cypher, role=test-setup]
+----
+CREATE
+  (keanu:Person {name: 'Keanu Reeves'}),
+  (johnnyMnemonic:Movie {title: 'Johnny Mnemonic', released: 1995}),
+  (theMatrixRevolutions:Movie {title: 'The Matrix Revolutions', released: 2003}),
+  (theMatrixReloaded:Movie {title: 'The Matrix Reloaded', released: 2003}),
+  (theReplacements:Movie {title: 'The Replacements', released: 2000}),
+  (theMatrix:Movie {title: 'The Matrix', released: 1999}),
+  (theDevilsAdvocate:Movie {title: 'The Devils Advocate', released: 1997}),
+  (theMatrixResurrections:Movie {title: 'The Matrix Resurrections', released: 2021}),
+  (keanu)-[:ACTED_IN]->(johnnyMnemonic),
+  (keanu)-[:ACTED_IN]->(theMatrixRevolutions),
+  (keanu)-[:ACTED_IN]->(theMatrixReloaded),
+  (keanu)-[:ACTED_IN]->(theReplacements),
+  (keanu)-[:ACTED_IN]->(theMatrix),
+  (keanu)-[:ACTED_IN]->(theDevilsAdvocate),
+  (keanu)-[:ACTED_IN]->(theMatrixResurrections)
+----
+
+=== Examples
+
+This example returns a list that contains the year when the movies were released.
+The pattern matching in the pattern comprehension looks for `Matrix` in the movie title and that the node `keanu` (`Person` node with the name `Keanu Reeves`) has a relationship with the movie.
+
+.Query
+[source, cypher]
+----
+MATCH (keanu:Person {name: 'Keanu Reeves'})
+RETURN [(keanu)-->(b:Movie) WHERE b.title CONTAINS 'Matrix' | b.released] AS years
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +years+
+| +[2021,2003,2003,1999]+
+1+d|Rows: 1
+|===
+
+The whole predicate, including the `WHERE` keyword, is optional and may be omitted.
+
+==== Storing lists as properties 
+
+It is possible to store homogenous lists of simple values as properties. 
+For example, the following query creates a list from the `title` properties of the `Movie` nodes connected to `Keanu Reeves`. 
+It then sets that list as a `resume` property on `Keanu Reeves`.
+
+.Query
+[source, cypher]
+----
+MATCH (keanu:Person {name: 'Keanu Reeves'})
+WITH keanu,[(keanu)-->(b:Movie) | b.title] AS movieTitles
+SET keanu.resume = movieTitles
+RETURN keanu.resume
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +keanu.resume+
+| +["The Matrix Resurrections", "The Devils Advocate", "The Matrix", "The Replacements", "The Matrix Reloaded", "The Matrix Revolutions", "Johnny Mnemonic"]+
+1+d|Rows: 1
+|===
+
+It is not, however, possible to store heterogenous lists as properties.
+For example, the following query, which tries to set a list including both the `title` and the `released` properties as the `resume` property of `Keanu Reeves` will fail. 
+This is because the `title` property values are stored as strings, while the `released` property values are stored as integers. 
+
+.Query
+[source, cypher, role=test-fail]
+----
+MATCH (keanu:Person {name: 'Keanu Reeves'})
+WITH keanu,[(keanu)-->(b:Movie) | b.title]  + [(keanu)-->(b:Movie) | b.released] AS movieTitles
+SET keanu.resume = movieTitles
+RETURN keanu.resume
+----
+
+[source,error]
+----
+Neo4j only supports a subset of Cypher types for storage as singleton or array properties. Please refer to section cypher/syntax/values of the manual for more details.
+----
+
+
+[[cypher-list-comprehension]]
+== List comprehension
+
+List comprehension is a syntactic construct available in Cypher for creating a list based on existing lists.
+
+For example, the following query returns a new list from the previously created `resume` property (a list of strings) of `Keanu Reeves`:
+
+.Query
+[source, cypher]
+----
+MATCH (keanu:Person {name:'Keanu Reeves'})
+RETURN [x IN keanu.resume WHERE x contains 'The Matrix'] AS matrixList
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +matrixList+
+| +["The Matrix Resurrections", "The Matrix", "The Matrix Reloaded", "The Matrix Revolutions"]+
+1+d|Rows: 1
+|===
+
+List comprehension follows the form of the mathematical set-builder notation (set comprehension) instead of the use of map and filter functions.
+
+.Query
+[source, cypher]
+----
+RETURN [x IN range(0,10) WHERE x % 2 = 0 | x^3 ] AS result
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +result+
+| +[0.0,8.0,64.0,216.0,512.0,1000.0]+
+1+d|Rows: 1
+|===
+
+Either the `WHERE` part, or the expression, can be omitted, if you only want to filter or map respectively.
+
+.Query
+[source, cypher]
+----
+RETURN [x IN range(0,10) WHERE x % 2 = 0 ] AS result
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +result+
+| +[0,2,4,6,8,10]+
+1+d|Rows: 1
+|===
+
+.Query
+[source, cypher]
+----
+RETURN [x IN range(0,10) | x^3 ] AS result
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +result+
+| +[0.0,1.0,8.0,27.0,64.0,125.0,216.0,343.0,512.0,729.0,1000.0]+
+1+d|Rows: 1
+|===
+
