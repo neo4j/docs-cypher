@@ -442,7 +442,7 @@ A quantified path pattern can have a lower bound of zero in its quantifier as lo
 
 [source, role=noheader]
 ----
-(:A)((:X)-[:R]-())*(:B)
+(:A) ((:X)-[:R]-()) *(:B)
 ----
 
 A quantified relationship can also have a lower bound of zero as long as the overall path pattern has at least one element:
@@ -469,7 +469,7 @@ Referencing a non-local relationship variable within a quantified path pattern:
 
 [source, role=noheader]
 ----
-(:A)((a)<-[s:X WHERE a.p = s.p]-(b)){,5}
+(:A) ((a)<-[s:X WHERE a.p = s.p]-(b)){,5}
 ----
 
 Singleton variables bound in a previous clause can be referenced anywhere in a path pattern:
@@ -477,7 +477,7 @@ Singleton variables bound in a previous clause can be referenced anywhere in a p
 [source, role=noheader]
 ----
 MATCH (n)
-MATCH ()-[r WHERE r.q = n.q]-()(()<-[s:X WHERE n.p = s.p]-()){2,3}
+MATCH ()-[r WHERE r.q = n.q]-() (()<-[s:X WHERE n.p = s.p]-()){2,3}
 ----
 
 [[quantified-path-patterns]]
@@ -524,7 +524,7 @@ For example, the following nesting of a quantified relationship in a quantified 
 
 [source, role=noheader]
 ----
-(:A)(()-[:R]->+()){2,3}(:B)
+(:A) (()-[:R]->+()){2,3} (:B)
 ----
 
 A quantified path pattern that is part of the boolean expression within a quantified path pattern would not count as nested and is permitted. 
@@ -715,7 +715,7 @@ This is equivalent to the following:
 
 [source, role=noheader]
 ----
-(:A)(()-[r:R]->()){2,3}(:B)
+(:A) (()-[r:R]->()){2,3} (:B)
 ----
 
 The following pattern matches cycles that include nodes that have property `p` = `$param`, and that traverse one or more relationships of any direction:
@@ -729,7 +729,7 @@ This is equivalent to the following:
 
 [source, role=noheader]
 ----
-(n {p: $param})(()-[]-())+(n)
+(n {p: $param}) (()-[]-())+ (n)
 ----
 
 [[variable-length-relationships]]
@@ -806,11 +806,11 @@ This table shows some examples:
 |===
 | *Variable-length relationship* | *Equivalent quantified path pattern*
 
-| (a)-[*2]->(b) | (a)(()-[]->()){2,2}(b)
+| (a)-[*2]->(b) | (a) (()-[]->()){2,2} (b)
 
-| (a)-[:KNOWS*3..5]->(b) | (a)(()-[:KNOWS]->()){3,5}(b)
+| (a)-[:KNOWS*3..5]->(b) | (a) (()-[:KNOWS]->()){3,5} (b)
 
-| (a)-[r*..5 {name: 'Filipa'}]->(b) | (a)(()-[r {name: 'Filipa'}]->()){1,5}(b)
+| (a)-[r*..5 {name: 'Filipa'}]->(b) | (a) (()-[r {name: 'Filipa'}]->()){1,5} (b)
 |===
 
 [[variable-length-relationships-equijoins]]
@@ -1058,7 +1058,7 @@ But this is not allowed:
 
 [source, role=noheader]
 ----
-(n)-->(m:A)-->(:B), (m)(()-[r WHERE r.p <> n.p]->())+(:C)
+(n)-->(m:A)-->(:B), (m) (()-[r WHERE r.p <> n.p]->())+ (:C)
 ----
 
 A variable can be referred to inside a quantified path pattern if it has already been bound in a previous `MATCH` clause.
@@ -1130,7 +1130,7 @@ The `WHERE` clause can refer to variables inside and outside of quantified path 
 
 [source, role=noheader]
 ----
-(a)-->(b)-->(c), (b)((d)-->(e))+ WHERE any(n in d WHERE n.p = a.p)
+(a)-->(b)-->(c), (b) ((d)-->(e))+ WHERE any(n in d WHERE n.p = a.p)
 ----
 
 An equijoin can be formed to match "H" shaped graphs:
@@ -1159,7 +1159,7 @@ Variables declared in a previous `MATCH` can be referenced inside of a quantifie
 [source, role=noheader]
 ----
 MATCH (n {p = 'ABC'})
-MATCH (n)-->(m:A)-->(:B), (m)(()-[r WHERE r.p <> n.p]->())+(:C)
+MATCH (n)-->(m:A)-->(:B), (m) (()-[r WHERE r.p <> n.p]->())+ (:C)
 ----
 
 The repetition of a relationship variable in the following yields no solutions due to Cypher enforcing relationship uniqueness within a match for a graph pattern:
@@ -1172,21 +1172,48 @@ MATCH ()-[r]->()-->(), ()-[r]-()
 [[juxtaposition]]
 == Juxtaposition
 
-Juxtaposition is the operation whereby node patterns that are adjacent to each other in a path pattern are merged
+[[juxtaposition-iterations]]
+=== Iterations of quantified path patterns
+
+Juxtaposition is the operation whereby node patterns that are adjacent to each other in a path pattern are merged.
 Directly writing node patterns next to each other in a path pattern is not permitted, but instead results indirectly as a result of chaining together the iterations of a quantified path pattern.
 The end node patterns of each iteration are then merged with any adjacent node patterns, which could be either node patterns from another path pattern, or from a node pattern from another iteration of the same quantified path pattern.
-When two iterations of a quantified path pattern, A and B, are placed side by side, with A on the left of B, the rightmost node of A is merged with the leftmost node in B.
-The variables defined inside each of the nodes being merged will become bound to the same node, and their respective predicates are combined conjunctively.
+Take the following quantified path pattern as an example:
 
-When a path pattern A is juxtaposed with a quantified path pattern Q, the rightmost node in A is merged with the leftmost node of the first iteration of Q.
+[source, role=noheader]
+----
+((x:X)<--(y:Y)){3}
+----
+
+
+Conceptually, the above is expanded as part of the matching process by repeating the path pattern contained in the outer parentheses three times is as follows:
+
+[source, role=noheader]
+----
+(x1:X)<--(y1:Y)(x2:X)<--(y2:Y)(x3:X)<--(y3:Y)
+----
+
+As a result two pairs of node patterns end up juxtaposed with each other: `(y1:Y)(x2:X)` and `(y2:Y)(x3:X)`.
+During the matching process, each pair of juxtaposed node patterns will match the same nodes, and those nodes will satisfy the conjunction of the predicates in the node patterns.
+For the first pair, both `y1` and `x2` will bind to the same node, and that node will both have label `X` and label `Y`.
+
+This expansion and juxtaposition is depicted in the following diagram:
+
+image::patterns_juxtaposition.svg[width="500", role="middle"]
+
+[[juxtaposition-simple-path-patterns-and-quantified-path-patterns]]
+=== Simple path patterns and quantified path patterns
+
+Juxtaposition also comes about when a simple path pattern is placed next to a quantified path.
 For example, consider the following path pattern:
 
 [source, role=noheader]
 ----
-(:A)-[:R]->(:B)((:X)<--(:Y)){1,2}
+(:A)-[:R]->(:B) ((:X)<--(:Y)){1,2}
 ----
 
-It will match the same paths as the union of matches of the following two path patterns:
+After expanding the iterations of the quantified path pattern, the right-hand node pattern `(:B)` is juxtaposed with the left-hand node pattern `(:X)`.
+The result will match the same paths as the union of matches of the following two path patterns:
 
 [source, role=noheader]
 ----
@@ -1197,15 +1224,15 @@ It will match the same paths as the union of matches of the following two path p
 (:A)-[:R]->(:B&X)<--(:Y&X)<--(:Y)
 ----
 
-Likewise, if Q is juxtaposed with a simple path pattern B on its right, the rightmost node of the last iteration of Q is merged with the leftmost node in B.
-For example, consider the following juxtaposition:
+If the simple path pattern is on the right of the quantified path pattern, its leftmost node `(:A)` is merged with the rightmost node `(:Y)` of the last iteration of the quantified path pattern.
+For example, the following:
 
 [source, role=noheader]
 ----
-((:X)<--(:Y)){1,2}(:A)-[:R]->(:B)
+((:X)<--(:Y)){1,2} (:A)-[:R]->(:B)
 ----
 
-This will match the same paths as the union of the following two path patterns:
+will match the same paths as the union of the following two path patterns:
 
 [source, role=noheader]
 ----
@@ -1216,12 +1243,14 @@ This will match the same paths as the union of the following two path patterns:
 (:X)<--(:Y&X)<--(:Y&A)-[:R]->(:B)
 ----
 
+[[juxtaposition-adjacent-quantified-path-patterns]]
+=== Adjacent quantified path patterns
 When two quantified path patterns are juxtaposed, the rightmost node of the last iteration of the first pattern is merged with the leftmost node of the first iteration of the second pattern.
 For example, the following juxtaposition:
 
-[source, role=noheader, subs="-attributes"]
+[source, role=noheader]
 ----
-((:A)-[:R]->(:B)){2}((:X)<--(:Y)){1,2}
+((:A)-[:R]->(:B)){2} ((:X)<--(:Y)){1,2}
 ----
 
 will match the same set of paths as the union of the paths matched by these two path patterns:
@@ -1240,7 +1269,7 @@ For example, the following path pattern:
 
 [source, role=noheader]
 ----
-(:X)((a:A)-[:R]->(b:B)){0,1}(:Y)
+(:X) ((a:A)-[:R]->(b:B)){0,1} (:Y)
 ----
 
 will match the same set of paths as the union of the paths matched by the following two path patterns:
@@ -1254,8 +1283,10 @@ will match the same set of paths as the union of the paths matched by the follow
 (:X&A)-[:R]->(:B&Y)
 ----
 
-Juxtaposition is only permitted when at least one of the path patterns being juxtaposed is a quantified path pattern.
-The following juxtapositions are not valid:
+[[juxtaposition-forbidden-juxtapositions]]
+=== Forbidden juxtapositions
+
+Juxtaposition is only permitted when at least one of the path patterns being juxtaposed is a quantified path pattern. The following juxtapositions of simple path patterns are not valid:
 
 [source, role=noheader]
 ----
