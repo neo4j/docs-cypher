@@ -1,0 +1,288 @@
+:description: tutorial to show the fundamental features of graph pattern matching with Cypher. 
+= Primer
+
+This section contains a primer covering some fundamental features of graph pattern matching with Cypher queries.
+
+[[example-graph]]
+== Example graph
+
+The example graph used in this tutorial is a model of train `Stations`, and different train services with `Stops` that call at the `Stations`.
+
+image::patterns_primer.svg[width="700",role="middle"]
+
+To recreate the graph, run the following query against an empty Neo4j database:
+
+.Query
+[source, cypher, role=test-setup]
+----
+CREATE (n1:Station {name: "DENMARK HILL"}),
+(n5:Station {name: "BATTERSEA PARK"}), 
+(n6:Station {name: "WANDSWORTH ROAD"}),
+(n15:Station {name: "CLAPHAM HIGH STREET"}),
+(n16:Station {name: "PECKHAM RYE"}),
+(n17:Station {name: "BRIXTON"}),
+(n14:Station {name: "LONDON VICTORIA"}),
+(n18:Station {name: "CLAPHAM JUNCTION"}),
+(p10:Stop {departs: time("22:37"), arrives: time("22:36")}),
+(p0:Stop {departs: time("22:41"), arrives: time("22:41")}),
+(p2:Stop {departs: time("22:43"), arrives: time("22:43")}),
+(p17:Stop {arrives: time("22:50"), departs: time("22:50")}),
+(p18:Stop {arrives: time("22:46"), departs: time("22:46")}),
+(p19:Stop {departs: time("22:33"), arrives: time("22:31")}),
+(p21:Stop {arrives: time("22:55")}),
+(p20:Stop {departs: time("22:44"), arrives: time("22:43")}),
+(p22:Stop {arrives: time("22:55")}),
+(p23:Stop {arrives: time("22:48")}),
+(n15)-[:LINK {distance: 1.96}]->(n1)-[:LINK {distance: 0.86}]->(n16),
+(n15)-[:LINK {distance: 0.39}]->(n6)<-[:LINK {distance: 0.7}]-(n5)-[:LINK {distance: 1.24}]->(n14), (n5)-[:LINK {distance: 1.45}]->(n18),
+(n14)<-[:LINK {distance: 3.18}]-(n17)-[:LINK {distance: 1.11}]->(n1),
+(p2)-[:CALLS_AT]->(n6), (p17)-[:CALLS_AT]->(n5), (p19)-[:CALLS_AT]->(n16),
+(p22)-[:CALLS_AT]->(n14), (p18)-[:CALLS_AT]->(n18), (p0)-[:CALLS_AT]->(n15), (p23)-[:CALLS_AT]->(n5), (p20)-[:CALLS_AT]->(n1),
+(p21)-[:CALLS_AT]->(n14), (p10)-[:CALLS_AT]->(n1), (p19)-[:NEXT]->(p10)-[:NEXT]->(p0)-[:NEXT]->(p2)-[:NEXT]->(p23),
+(p22)<-[:NEXT]-(p17)<-[:NEXT]-(p18), (p21)<-[:NEXT]-(p20)
+----
+
+[[fixed-length-paths]]
+== Matching fixed length paths
+
+An empty pair of parentheses is a xref::patterns/concepts.adoc#node-patterns[node pattern] that will match any node.
+This example gets a count of all the nodes in the graph:
+[source, cypher]
+----
+MATCH ()
+RETURN count(*) AS numNodes
+----
+
+.Result
+[role="queryresult",options="footer",cols="1*<m"]
+|===
+| numNodes
+
+| 18
+1+d|Rows: 1
+
+|===
+
+Adding a label to the node pattern will filter on nodes with that label (see xref::patterns/reference.adoc#label-expressions[label expressions]).
+The following query gets a count of all the nodes with the label `Stop`:
+
+[source, cypher]
+----
+MATCH (:Stop)
+RETURN count(*) AS numStops
+----
+
+.Result
+[role="queryresult",options="footer",cols="1*<m"]
+|===
+| numStops
+
+| 10
+1+d|Rows: 1
+
+|===
+
+xref::patterns/concepts.adoc#path-patterns[Path patterns] can match relationships and the nodes they connect. 
+The following query gets the arrival time of all trains calling at Denmark Hill:
+
+[source, cypher]
+----
+MATCH (s:Stop)-[:CALLS_AT]->(:Station {name: "DENMARK HILL"})
+RETURN s.arrives AS arrivalTime
+----
+
+.Result
+[role="queryresult",options="footer",cols="1*<m"]
+|===
+| arrivalTime
+
+| "22:36:00Z"
+| "22:43:00Z"
+1+d|Rows: 2
+
+|===
+
+Path patterns can include inline `WHERE` clauses.
+The following query gets the next calling point of the service that departs Denmark Hill at `22:37`:
+
+[source, cypher]
+----
+MATCH (n:Station {name: "DENMARK HILL"})<-[:CALLS_AT]-
+        (s:Stop WHERE s.departs = time("22:37"))-[:NEXT]->
+        (:Stop)-[:CALLS_AT]->(d:Station)
+RETURN d.name AS nextCallingPoint
+----
+
+.Result
+[role="queryresult",options="footer",cols="1*<m"]
+|===
+| nextCallingPoint
+
+| "CLAPHAM HIGH STREET"
+1+d|Rows: 1
+
+|===
+
+[[variable-length-paths]]
+== Matching variable length paths
+
+Variable-length paths that only traverse relationships with a specified type can be matched with xref::patterns/concepts.adoc#quantified-relationships[quantified relationships].
+Any variable declared in the relationship pattern will return a list of the relationships traversed.
+The following query returns the total distance traveled via all `LINK`s connecting the stations Peckham Rye and Clapham Junction:
+
+.Query
+[source, cypher]
+----
+MATCH (:Station {name: "PECKHAM RYE"})-[link:LINK]-+
+        (:Station {name: "CLAPHAM JUNCTION"})
+RETURN reduce(acc = 0.0, l IN link | round(acc + l.distance, 2)) AS   
+         totalDistance
+----
+
+.Result
+[role="queryresult",options="footer",cols="1*<m"]
+|===
+|  totalDistance
+
+| 7.84
+| 5.36
+
+1+d|Rows: 2
+|===
+
+
+
+Variable-length paths can also be matched with xref::patterns/concepts.adoc#quantified-path-patterns[quantified path patterns], which allow both `WHERE` clauses and accessing the nodes traversed by the path.
+The following query returns a list of calling points on routes from Peckham Rye to London Victoria, where no distance between stations is greater than two miles:
+
+
+.Query
+[source, cypher]
+----
+MATCH (:Station {name: "PECKHAM RYE"})
+      (()-[link:LINK]-(s) WHERE link.distance <= 2)+
+      (:Station {name: "LONDON VICTORIA"})
+UNWIND s AS station
+RETURN station.name AS callingPoint
+----
+
+.Result
+[role="queryresult",options="footer",cols="1*<m"]
+|===
+|  callingPoint
+
+| "DENMARK HILL"
+| "CLAPHAM HIGH STREET"
+| "WANDSWORTH ROAD"
+| "BATTERSEA PARK"
+| "LONDON VICTORIA"
+1+d|Rows: 5
+
+|===
+
+`WHERE` clauses inside node patterns can themselves include path patterns.
+The following query using an xref::syntax/expressions.adoc#existential-subqueries[EXISTS subquery] to anchor on the last `Stop` in a sequence of `Stops`, and returns the departure times, arrival times and final destination of all services calling at Denmark Hill:
+
+.Query
+[source, cypher]
+----
+MATCH (:Station {name: 'DENMARK HILL'})<-[:CALLS_AT]-(s1:Stop)-[:NEXT]->+
+        (sN:Stop WHERE NOT EXISTS { (sN)-[:NEXT]->(:Stop) })-[:CALLS_AT]->
+        (d:Station)
+RETURN s1.departs AS departure, sN.arrives AS arrival, 
+       d.name AS finalDestination
+----
+
+.Result
+[role="queryresult",options="footer",cols="3*<m"]
+|===
+| departure | arrival | finalDestination
+
+| "22:37:00Z" | "22:48:00Z" | "BATTERSEA PARK"
+| "22:44:00Z" | "22:55:00Z" | "LONDON VICTORIA"
+3+d|Rows: 2
+
+|===
+
+Node variables declared inside quantified path patterns become bound to lists of nodes, which can be unwound and used in subsequent `MATCH` clauses.
+The following query lists the calling points of the Peckham Rye to Battersea Park train service:
+
+.Query
+[source, cypher]
+----
+MATCH (:Station {name: "PECKHAM RYE"})<-[:CALLS_AT]-(:Stop)
+      (()-[:NEXT]->(s:Stop))+ 
+      ()-[:CALLS_AT]->(:Station {name: "BATTERSEA PARK"})
+UNWIND s AS stop
+MATCH (stop)-[:CALLS_AT]->(station:Station) 
+RETURN stop.arrives AS arrival, station.name AS callingPoint
+----
+
+.Result
+.Result
+[role="queryresult",options="footer",cols="2*<m"]
+|===
+| arrival | callingPoint
+
+| "22:36:00Z" | "DENMARK HILL"
+| "22:41:00Z" | "CLAPHAM HIGH STREET"
+| "22:43:00Z" | "WANDSWORTH ROAD"
+| "22:48:00Z" | "BATTERSEA PARK"
+2+d|Rows: 4
+
+|===
+
+Repeating a node variable in a path pattern enables the same node to be bound more than once in a path (see xref::patterns/concepts.adoc#equijoins[equijoins]).
+The following query finds all stations that are on a cycle (i.e., pass through the same `Station` more than once) formed by the `LINK`s between `Stations`:
+
+.Query
+[source, cypher]
+----
+MATCH (n:Station)-[:LINK]-+(n)         
+RETURN DISTINCT n.name AS station
+----
+
+.Result
+[role="queryresult",options="footer",cols="1*<m"]
+|===
+|  station
+
+| "DENMARK HILL"
+| "BATTERSEA PARK"
+| "WANDSWORTH ROAD"
+| "CLAPHAM HIGH STREET"
+| "BRIXTON"
+| "LONDON VICTORIA"
+1+d|Rows: 6
+
+|===
+
+Complex, non-linear paths can be matched using xref::patterns/concepts.adoc#graph-patterns[graph patterns], a comma separated list of path patterns that are connected via repeated node variables, i.e. equijoins.
+For example, a passenger is traveling from Denmark Hill and wants to join the train service to London Victoria that leaves Clapham Junction at `22:46`.
+The following query finds the departure time from Denmark Hill as well as the changeover `Station` and time of arrival:
+
+.Query
+[source, cypher]
+----
+MATCH (:Station {name: "DENMARK HILL"})<-[:CALLS_AT]-
+        (s1:Stop)-[:NEXT]->+(s2:Stop)-[:CALLS_AT]->
+        (c:Station)<-[:CALLS_AT]-(x:Stop),
+       (:Station {name: "CLAPHAM JUNCTION"})<-[:CALLS_AT]-
+         (t1:Stop)-[:NEXT]->+(x)-[:NEXT]->+(:Stop)-[:CALLS_AT]->
+         (:Station {name: "LONDON VICTORIA"})
+WHERE t1.departs = time('22:46')
+      AND s2.arrives < x.departs 
+RETURN s1.departs AS departure, s2.arrives AS changeArrival,
+       c.name AS changeAt
+----
+
+.Result
+[role="queryresult",options="footer",cols="3*<m"]
+|===
+| departure | changeArrival | changeAt
+
+| "22:37:00Z" | "22:48:00Z" | "BATTERSEA PARK"
+3+d|Rows: 1
+
+|===
+

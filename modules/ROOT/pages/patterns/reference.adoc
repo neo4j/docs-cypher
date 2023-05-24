@@ -297,7 +297,7 @@ Similarly, the following will always match a relationship:
 ----
 
 The use of negation can make the conjunction useful in relationship patterns. 
-The following matches relationships that have type that is neither `A` nor `B`:
+The following matches relationships that have a type that is neither `A` nor `B`:
 
 [source, role=noheader]
 ----
@@ -730,257 +730,10 @@ Matches paths with one or more relationships of any direction and any type:
 ()--+()
 ----
 
-[[variable-length-relationships]]
-== Variable-length relationships
-
-Prior to the introduction of the syntax for quantified path patterns and quantified relationships, the only way in Cypher to match paths of variable length was with a variable-length relationship.
-This syntax is still available.
-It is equivalent to the syntax for quantified relationships, with the following differences:
-
-* Position and syntax of quantifier.
-* Semantics of the asterisk symbol.
-* Type expressions are limited to the xref::syntax/operators.adoc#query-operators-boolean[disjunction operator].
-* The xref:clauses/where.adoc[WHERE] clause is not allowed.
-
-[[variable-length-relationships-syntax]]
-=== Syntax
-
-[source, syntax, role=noheader]
-----
-varLengthRelationship ::=
-    "<-[" varLengthFiller "]-" 
-  | "-[" varLengthFiller "]->"
-  | "-[" varLengthFiller "]-"
-varLengthFiller ::= [ relationshipVariable ] [ varLengthTypeExpression ] 
-    [ varLengthQuantifier ] [ propertyKeyValueExpression ]
-
-varLengthTypeExpression ::= ":" varLengthTypeTerm
-
-varLengthTypeTerm ::=
-    typeIdentifier
-  | varLengthTypeTerm "|" varLengthTypeTerm
-
-varLengthQuantifier ::= varLengthVariable | varLengthFixed
-
-varLengthVariable ::= "*" [ [ lowerBound ] ".." [ upperBound ] ]
-
-varLengthFixed ::= "*" fixedBound
-
-fixedBound ::= unsignedInteger
-lowerBound ::= unsignedInteger
-upperBound ::= unsignedInteger
-unsignedInteger ::= [0-9]+
-----
-
-For rules on valid relationship variable names, see xref:syntax/naming.adoc[Cypher naming rules].
-
-[[variable-length-relationships-rules]]
-=== Rules
-
-The following table shows variants of the variable-length quantifier syntax and their equivalent canonical xref:patterns/reference.adoc#quantifier[quantifier] form (the form used by xref:patterns/reference.adoc#quantified-path-pattern[quantified path patterns]):
-
-[options="header",cols="1m,1a"]
-|===
-| *Variant* | *Description*
-
-| * | 1 or more iterations.
-
-| *n | Exactly n iterations.
-
-| *m..n | Between m and n iterations.
-
-| *m.. | m or more iterations.
-
-|*..n | Between 1 and n iterations.
-|===
-
-Note that `*` used here on its own is not the same as the Kleene star (an operator that represents 0 or more repetitions), as the Kleene star has a lower bound of zero.
-The above table can be used to translate the quantifier used in variable-length relationships.
-The rules given for xref:patterns/reference.adoc#quantified-path-pattern[quantified path patterns] would apply to the translation.
-
-This table shows some examples:
-
-[options="header",cols="1m,1m"]
-|===
-| *Variable-length relationship* | *Equivalent quantified path pattern*
-
-| (a)-[*2]\->(b) | (a) \(()-[]\->()){2,2} (b)
-
-| (a)-[:KNOWS*3..5]\->(b) | (a) \(()-[:KNOWS]\->()){3,5} (b)
-
-|  (a)-[r*..5 {name: 'Filipa'}]\->(b) | (a) \(()-[r {name: 'Filipa'}]\->()){1,5} (b)
-|===
-
-[[variable-length-relationships-equijoins]]
-=== Equijoins
-
-_This feature was introduced in Neo4j 5.7._
-
-The variable of a variable-length relationship can be used in subsequent patterns to refer to the list of relationships the variable is bound to.
-This is the same as the xref:patterns/reference.adoc#graph-patterns-rules-equijoin[equijoin] for variables bound to single nodes or relationships. 
-
-Take this example graph:
-
-////
-[source, cypher, role=test-setup]
-----
-CREATE (filipa: Person {name: 'Filipa'}),
-  (anders: Person {name: 'Anders'}),
-  (dishad: Person {name: 'Dishad'}),
-  (filipa)-[:KNOWS]->(anders),
-  (anders)-[:KNOWS]->(dishad)
-----
-////
-
-image::patterns_equijoin_reference.svg[width="500", role="middle"]
-
-In the following query, the node variables will be bound to the same nodes:
-
-.Query
-[source, cypher]
-----
-MATCH (a {name: 'Filipa'})<-[r*1..2]-(b)
-MATCH (c)<-[r*1..2]-(d)
-RETURN a = c, b = d, size(r)
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="3*<m"]
-|===
-
-| a = c | b = d | size(r)
-
-| TRUE | TRUE | 1
-| TRUE | TRUE | 2
-
-3+d|Rows: 2
-|===
-
-The list of relationships keeps its order.
-This means that in the following query, where the direction of the variable-length relationship in the second `MATCH` is switched, the equijoin will only match once, when there is a single relationship:
-
-.Query
-[source, cypher]
-----
-MATCH (a {name: 'Filipa'})<-[r*1..2]-(b)
-MATCH (c)-[r*1..2]->(d)
-RETURN a = c, b = d, size(r)
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="3*<m"]
-|===
-
-| a = c | b = d | size(r)
-
-| FALSE | FALSE | 1
-
-3+d|Rows: 1
-|===
-
-The variable `r` can be reversed in order like any list, and made to match the switch in relationship pattern direction:
-
-.Query
-[source, cypher]
-----
-MATCH (a {name: 'Filipa'})<-[r*1..2]-(b)
-WITH a, b, reverse(r) AS s
-MATCH (c)-[s*1..2]->(d)
-RETURN a = d, b = c, size(s)
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="3*<m"]
-|===
-
-| a = d | b = c | size()
-
-| TRUE | TRUE | 1
-| TRUE | TRUE | 2
-
-3+d|Rows: 2
-
-|===
-
-Changing the bounds on subsequent `MATCH` statements will mean that only the overlapping lengths of the quantifier bounds will produce results:
-
-.Query
-[source, cypher]
-----
-MATCH (a {name: 'Filipa'})<-[r*1..2]-(b)
-MATCH (c)<-[r*2..3]-(d)
-RETURN a = c, b = d, size(r)
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="3*<m"]
-|===
-
-| a = c | b = d | size(r)
-
-| TRUE | TRUE | 2
-
-3+d|Rows: 1
-
-|===
-
-Because Cypher only allows paths to traverse a relationship once (see xref:patterns/reference.adoc#graph-patterns-rules-relationship-uniqueness[relationship uniqueness]), repeating a variable-length relationship in the same graph pattern will yield no results.
-For example, this `MATCH` clause will never pass on any intermediate results to subsequent clauses:
-
-[source, role=noheader]
-----
-MATCH (x)-[r*1..2]->(y)-[r*1..2]->(z)
-----
-
-Attempting to repeat a variable-length relationship in a single relationship pattern will raise an error.
-For example, this is not valid:
-
-[source, role=noheader]
-----
-MATCH (x)-[r*1..2]->(y)-[r]->(z)
-----
-
-[[variable-length-relationships-examples]]
-=== Examples
-
-The following pattern matches paths starting with nodes labeled `A` and ending with nodes labeled `B`, that traverse between two and three relationships of type `R`:
-
-[source, role=noheader]
-----
-(:A)-[r:R*2..3]->(:B)
-----
-
-The following traverses relationships of type `R` or `S` or `T` exactly five times:
-
-[source, role=noheader]
-----
-()-[r:R|S|T*5]->()
-----
-
-The following traverses any relationship between zero and five times, with the path beginning at nodes labeled `A` and ending at nodes labeled `B`.
-Note that this will also return all nodes that have both labels `A` and `B` for the case where zero relationships are traversed:
-
-[source, role=noheader]
-----
-(:A)-[*0..5]->(:B)
-----
-
-If the lower bound is removed, it will default to one, and will no longer return paths of length zero, i.e. single nodes:
-
-[source, role=noheader]
-----
-(:A)-[*..5]->(:B)
-----
-
-The following pattern traverses one or more relationships of any direction that have property `p` = `$param`:
-
-[source, syntax, role=noheader]
-----
-()-[* {p: $param}]-()
-----
-
 [[quantifiers]]
 == Quantifiers
+
+The quantifiers here only refer to those used in xref::patterns/reference.adoc#quantified-path-patterns[quantified path patterns] and xref::patterns/reference.adoc#quantified-relationships[quantified relationships].
 
 [[quantifiers-syntax]]
 === Syntax
@@ -1318,3 +1071,247 @@ will match the same set of paths as the union of the paths matched by the follow
 (:X&A)-[:R]->(:B&Y)
 ----
 
+[[variable-length-relationships]]
+== Variable-length relationships
+
+Prior to the introduction of the syntax for quantified path patterns and quantified relationships, the only way in Cypher to match paths of variable length was with a variable-length relationship.
+This syntax is still available.
+It is equivalent to the syntax for quantified relationships, with the following differences:
+
+* Position and syntax of quantifier.
+* Semantics of the asterisk symbol.
+* Type expressions are limited to the xref::syntax/operators.adoc#query-operators-boolean[disjunction operator].
+* The xref:clauses/where.adoc[WHERE] clause is not allowed.
+
+[[variable-length-relationships-syntax]]
+=== Syntax
+
+[source, syntax, role=noheader]
+----
+varLengthRelationship ::=
+    "<-[" varLengthFiller "]-" 
+  | "-[" varLengthFiller "]->"
+  | "-[" varLengthFiller "]-"
+varLengthFiller ::= [ relationshipVariable ] [ varLengthTypeExpression ] 
+    [ varLengthQuantifier ] [ propertyKeyValueExpression ]
+
+varLengthTypeExpression ::= ":" varLengthTypeTerm
+
+varLengthTypeTerm ::=
+    typeIdentifier
+  | varLengthTypeTerm "|" varLengthTypeTerm
+
+varLengthQuantifier ::= varLengthVariable | varLengthFixed
+
+varLengthVariable ::= "*" [ [ lowerBound ] ".." [ upperBound ] ]
+
+varLengthFixed ::= "*" fixedBound
+
+fixedBound ::= unsignedInteger
+lowerBound ::= unsignedInteger
+upperBound ::= unsignedInteger
+unsignedInteger ::= [0-9]+
+----
+
+For rules on valid relationship variable names, see xref:syntax/naming.adoc[Cypher naming rules].
+
+[[variable-length-relationships-rules]]
+=== Rules
+
+The following table shows variants of the variable-length quantifier syntax and their equivalent canonical xref:patterns/reference.adoc#quantifier[quantifier] form (the form used by xref:patterns/reference.adoc#quantified-path-pattern[quantified path patterns]):
+
+[options="header",cols="1m,1a"]
+|===
+| *Variant* | *Description*
+
+| * | 1 or more iterations.
+
+| *n | Exactly n iterations.
+
+| *m..n | Between m and n iterations.
+
+| *m.. | m or more iterations.
+
+|*..n | Between 1 and n iterations.
+|===
+
+Note that `*` used here on its own is not the same as the Kleene star (an operator that represents zero or more repetitions), as the Kleene star has a lower bound of zero.
+The above table can be used to translate the quantifier used in variable-length relationships.
+The rules given for xref:patterns/reference.adoc#quantified-path-pattern[quantified path patterns] would apply to the translation.
+
+This table shows some examples:
+
+[options="header",cols="1m,1m"]
+|===
+| *Variable-length relationship* | *Equivalent quantified path pattern*
+
+| (a)-[*2]\->(b) | (a) \(()-[]\->()){2,2} (b)
+
+| (a)-[:KNOWS*3..5]\->(b) | (a) \(()-[:KNOWS]\->()){3,5} (b)
+
+|  (a)-[r*..5 {name: 'Filipa'}]\->(b) | (a) \(()-[r {name: 'Filipa'}]\->()){1,5} (b)
+|===
+
+[[variable-length-relationships-equijoins]]
+=== Equijoins
+
+The variable of a variable-length relationship can be used in subsequent patterns to refer to the list of relationships the variable is bound to.
+This is the same as the xref:patterns/reference.adoc#graph-patterns-rules-equijoin[equijoin] for variables bound to single nodes or relationships. 
+
+This section uses the following graph: 
+
+image::patterns_equijoin_reference.svg[width="500", role="middle"]
+
+To recreate the graph, run the following query against an empty Neo4j database:
+
+.Query
+[source, cypher, role=test-setup]
+----
+CREATE ({name: 'Filipa'})-[:KNOWS]->({name:'Anders'})-[:KNOWS]->
+         ({name:'Dilshad'})
+----
+
+In the following query, the node variables will be bound to the same nodes:
+
+.Query
+[source, cypher]
+----
+MATCH (a {name: 'Dilshad'})<-[r*1..2]-(b)
+MATCH (c)<-[r*1..2]-(d)
+RETURN a = c, b = d, size(r)
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+
+| a = c | b = d | size(r)
+
+| true | true | 1
+| true | true | 2
+
+3+d|Rows: 2
+|===
+
+The list of relationships keeps its order.
+This means that in the following query, where the direction of the variable-length relationship in the second `MATCH` is switched, the equijoin will only match once, when there is a single relationship:
+
+.Query
+[source, cypher]
+----
+MATCH (a {name: 'Dilshad'})<-[r*1..2]-(b)
+MATCH (c)-[r*1..2]->(d)
+RETURN a = c, b = d, size(r)
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+
+| a = c | b = d | size(r)
+
+| false | false | 1
+
+3+d|Rows: 1
+|===
+
+The variable `r` can be reversed in order like any list, and made to match the switch in relationship pattern direction:
+
+.Query
+[source, cypher]
+----
+MATCH (a {name: 'Dilshad'})<-[r*1..2]-(b)
+WITH a, b, reverse(r) AS s
+MATCH (c)-[s*1..2]->(d)
+RETURN a = d, b = c, size(s)
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+
+| a = d | b = c | size()
+
+| true | true | 1
+| true | true | 2
+
+3+d|Rows: 2
+
+|===
+
+Changing the bounds on subsequent `MATCH` statements will mean that only the overlapping lengths of the quantifier bounds will produce results:
+
+.Query
+[source, cypher]
+----
+MATCH (a {name: 'Dilshad'})<-[r*1..2]-(b)
+MATCH (c)<-[r*2..3]-(d)
+RETURN a = c, b = d, size(r)
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+
+| a = c | b = d | size(r)
+
+| true | true | 2
+
+3+d|Rows: 1
+
+|===
+
+Because Cypher only allows paths to traverse a relationship once (see xref:patterns/reference.adoc#graph-patterns-rules-relationship-uniqueness[relationship uniqueness]), repeating a variable-length relationship in the same graph pattern will yield no results.
+For example, this `MATCH` clause will never pass on any intermediate results to subsequent clauses:
+
+[source, role=noheader]
+----
+MATCH (x)-[r*1..2]->(y)-[r*1..2]->(z)
+----
+
+Attempting to repeat a variable-length relationship in a single relationship pattern will raise an error.
+For example, the following pattern raises an error because the variable `r` appears in both a variable-length relationship and a fixed-length relationship:
+
+[source, role=noheader]
+----
+MATCH (x)-[r*1..2]->(y)-[r]->(z)
+----
+
+[[variable-length-relationships-examples]]
+=== Examples
+
+The following pattern matches paths starting with nodes labeled `A` and ending with nodes labeled `B`, that traverse between two and three relationships of type `R`:
+
+[source, role=noheader]
+----
+(:A)-[r:R*2..3]->(:B)
+----
+
+The following traverses relationships of type `R` or `S` or `T` exactly five times:
+
+[source, role=noheader]
+----
+()-[r:R|S|T*5]->()
+----
+
+The following traverses any relationship between zero and five times, with the path beginning at nodes labeled `A` and ending at nodes labeled `B`.
+Note that this will also return all nodes that have both labels `A` and `B` for the case where zero relationships are traversed:
+
+[source, role=noheader]
+----
+(:A)-[*0..5]->(:B)
+----
+
+If the lower bound is removed, it will default to one, and will no longer return paths of length zero, i.e. single nodes:
+
+[source, role=noheader]
+----
+(:A)-[*..5]->(:B)
+----
+
+The following pattern traverses one or more relationships of any direction that have property `p` = `$param`:
+
+[source, syntax, role=noheader]
+----
+()-[* {p: $param}]-()
+----
