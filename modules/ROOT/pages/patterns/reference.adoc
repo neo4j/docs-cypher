@@ -1,0 +1,1305 @@
+:description: this section contains the reference material for graph pattern matching. 
+[[syntax-and-semantics]]
+= Syntax and semantics
+
+This section contains reference material for looking up the syntax and semantics of specific elements of graph pattern matching. 
+
+[[node-patterns]]
+== Node patterns
+
+A node pattern is a pattern that matches a single node.
+It can be used on its own in a clause such as `MATCH` or `EXIST`, or form part of a xref:patterns/reference.adoc#path-patterns[path pattern]. 
+
+See also xref:patterns/concepts.adoc#node-patterns[node pattern concepts].
+
+[[node-patterns-syntax]]
+=== Syntax
+
+[source, syntax, role=noheader]
+----
+nodePattern ::= "(" [ nodeVariable ] [ labelExpression ] 
+    [ propertyKeyValueExpression ] [ "WHERE" booleanExpression ] ")" 
+----
+
+For rules on valid node variable names, see the xref:syntax/naming.adoc[Cypher naming rules].
+
+[[node-patterns-rules]]
+=== Rules
+
+[[node-patterns-rules-predicates]]
+==== Predicates
+
+Three types of predicate can be specified inside a node pattern:
+
+* xref:patterns/reference.adoc#label-expressions[label expressions]
+* xref:patterns/reference.adoc#property-key-value-expressions[property key-value expressions] 
+* xref:clauses/where.adoc[WHERE clauses]
+
+The boolean expression of the `WHERE` clause can reference any variables within scope of the node pattern.
+A node variable needs to be declared in the node pattern in order to reference it in the boolean expression.
+
+If no predicates are specified, then the node pattern matches any node.
+
+[[node-patterns-rules-variable-binding]]
+==== Variable binding
+
+If a variable has not been declared elsewhere in the query, it will become bound to nodes when the matching of its containing path pattern is executed.
+If it has been bound in a previous clause, then no new nodes will be bound to the variable; any previously bound nodes that do not match in the current path pattern will lead to the match being eliminated from the results. 
+See the section on xref:clauses/clause_composition.adoc[clause composition] for more details on the passing of results between clauses.
+
+[[node-patterns-examples]]
+=== Examples 
+
+Matches all nodes with the label `A` and binds them to the variable `n`:
+[source, role=noheader]
+----
+(n:A)
+----
+
+Matches all nodes with the label `B` and a property `departs` with the `time` value `11:11`:
+
+[source, role=noheader]
+----
+(:B { departs: time('11:11') })
+----
+
+Matches all nodes with the property `departs` with a value equal to the current time plus 30 minutes:
+
+[source, role=noheader]
+----
+(n WHERE n.departs > time() + duration('PT30M'))
+----
+
+[[relationship-patterns]]
+== Relationship patterns
+
+A relationship pattern is a pattern that matches a single relationship.
+It can only be used with node patterns on either side of it.
+
+A relationship pattern followed immediately by a quantifier is an abbreviated xref::patterns/reference.adoc#quantified-path-patterns[quantified path pattern] called a xref::patterns/reference.adoc#quantified-relationships[quantified relationship].
+
+See also xref:patterns/concepts.adoc#relationship-patterns[relationship pattern concepts].
+
+[[relationship-patterns-syntax]]
+=== Syntax 
+
+[source, syntax, role=noheader]
+----
+relationshipPattern ::= fullPattern | abbreviatedRelationship
+
+fullPattern ::= 
+    "<-[" patternFiller "]-" 
+  | "-[" patternFiller "]->"
+  | "-[" patternFiller "]-"
+
+abbreviatedRelationship ::= "<--" | "--" | "-->"
+
+patternFiller ::= [ relationshipVariable ] [ typeExpression ] 
+    [ propertyKeyValueExpression ] [ "WHERE" booleanExpression ]
+----
+
+Note that the syntax for type expressions in relationship patterns is the same as for label expressions in node patterns (although unlike node labels, relationships must have exactly one type).
+
+For rules on valid relationship variable names, see the xref:syntax/naming.adoc[Cypher naming rules].
+
+[[relationship-patterns-rules]]
+=== Rules
+
+[[relationship-patterns-rules-predicates]]
+==== Predicates
+
+The following three types of predicate can be specified in the pattern filler of a full relationship pattern (i.e. a pattern with the square brackets):
+
+* xref:patterns/reference.adoc#label-expressions[label expressions]
+* xref:patterns/reference.adoc#property-key-value-expressions[property key-value expressions] 
+* xref:clauses/where.adoc[WHERE clauses]
+
+A fourth type of predicate specifies the directionality of the relationship with respect to the overall path pattern, using the less-than or greater-than symbols to form arrows (`<` and `>`). 
+If a relationship pattern has no arrows, it will match relationships of any direction. 
+
+The boolean expression of the `WHERE` clause can reference any variables within scope of the relationship pattern.
+A relationship variable needs to be declared in the pattern in order to reference it in the boolean expression.
+
+If no predicates are specified then the pattern matches all relationships.
+
+[[relationship-patterns-rules-variable-binding]]
+==== Variable binding
+
+If the variable has not been declared elsewhere in the query, it will become bound to relationships when the matching of its containing path pattern is executed.
+If it has been bound in a previous clause, then no new relationships will be bound to the variable; if any previously bound relationships do not match in the current path pattern, then those matches will be eliminated from the results.
+
+See the chapter on xref:clauses/clause_composition.adoc[clause composition] for more details on the passing of results between clauses.
+
+[[relationship-patterns-examples]]
+=== Examples 
+
+Matches all relationships with the type `R` and binds them to the variable `r`:
+
+[source, role=noheader]
+----
+()-[r:R]->()
+----
+
+Matches all relationships with type `R` and property `distance` equal to `100`:
+
+[source, role=noheader]
+----
+()-[:R {distance: 100}]->()
+----
+
+Matches all relationships where property `distance` is between `10` and `100`:
+
+[source, role=noheader]
+----
+()-[r WHERE 10 < r.distance < 100]->()
+----
+
+Matches all relationships that connect nodes with label `A` as their source and nodes with label `B` as their target:
+
+[source, role=noheader]
+----
+(:A)-->(:B)
+----
+
+Matches all relationships that connect nodes with label `A` and nodes with label `B`, irrespective of their direction:
+
+[source, role=noheader]
+----
+(:A)--(:B)
+----
+
+[[label-expressions]]
+== Label expressions
+
+The following applies to both the label expressions of node patterns and the type expressions of relationship patterns.
+
+A label expression is a boolean predicate composed from label names and a wildcard symbol using disjunction, conjunction, negation and grouping. 
+A label expression returns true when it matches the set of labels for a node.
+
+Although relationships have a type rather than labels, the syntax for expressions matching a relationship type is identical to that of label expressions. 
+
+[[label-expressions-syntax]]
+=== Syntax
+
+[source, syntax, role=noheader]
+----
+labelExpression ::= ":" labelTerm
+
+labelTerm ::=
+    labelIdentifier
+  | labelTerm "&" labelTerm
+  | labelTerm "|" labelTerm
+  | "!" labelTerm 
+  | "%" 
+  | "(" labelTerm ")"
+----
+
+For valid label identifiers, see the xref:syntax/naming.adoc[Cypher naming rules].
+
+[[label-expressions-rules]]
+=== Rules
+
+The following table lists the symbols used in label expressions:
+
+[options="header",cols="a,3a,a"]
+|===
+| Symbol | Description | Precedence
+
+| `%` 
+| Wildcard.
+Evaluates to `true` if the label set is non-empty 
+| 
+
+| `()`
+| Contained expression is evaluated before evaluating the outer expression the group is contained in. 
+| 1 (highest)
+
+| `!`
+| Negation
+| 2
+
+| `&`
+| Conjunction
+| 3
+
+| `&#124;` 
+| Disjunction
+| 4 (lowest)
+
+|===
+
+Associativity is left-to-right.
+
+[[label-expressions-examples]]
+=== Examples
+
+In the following table, a tick is shown where the label expression matches the node with the labels shown: 
+
+|===
+
+| 8+^|  *Node* 
+|*Node pattern*
+|`()`
+|`(:A)`
+|`(:B)`
+|`(:C)`
+|`(:A:B)`
+|`(:A:C)`
+|`(:B:C)`
+|`(:A:B:C)`
+
+|`()` | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705;
+
+|`(:A)` | | &#x2705; | | | &#x2705; | &#x2705; | | &#x2705;
+
+|`(:A&B)` | | | | | &#x2705; | | | &#x2705;
+
+|`(:A&#124;B)` | | &#x2705; | &#x2705; | | &#x2705; | &#x2705; | &#x2705; | &#x2705;
+
+|`(:!A)` | &#x2705; | | &#x2705; | &#x2705;| | | &#x2705; | 
+
+|`(:!!A)` | | &#x2705; | | | &#x2705; | &#x2705; | | &#x2705;
+
+|`(:A&!A)` | | | | | | | | 
+
+| `(:A&#124;!A)` | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705;
+
+|`(:%)` | | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705;
+
+|`(:!%)` | &#x2705; | | | | | | | 
+
+|`(:%&#124;!%)` | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705;
+
+| `(:%&!%)` | | | | | | | | 
+
+| `(:A&%)` | | &#x2705; | | | &#x2705; | &#x2705; | | &#x2705;
+
+| `(:A&#124;%)` | | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705; | &#x2705;
+
+| `(:(A&B)&!(B&C))` | | | | | &#x2705; | | | 
+
+| `(:!A&%)` | | |  &#x2705;  |  &#x2705;  | | |  &#x2705; | 
+
+|===
+
+As relationships have exactly one type each, this expression will never match a relationship:
+
+[source, role=noheader]
+----
+-[:A&B]->
+----
+
+Similarly, the following will always match a relationship:
+
+[source, role=noheader]
+----
+-[:%]->
+----
+
+The use of negation can make the conjunction useful in relationship patterns. 
+The following matches relationships that have a type that is neither `A` nor `B`:
+
+[source, role=noheader]
+----
+-[:!A&!B]->
+----
+
+[[property-key-value-expressions]]
+== Property key-value expressions
+
+[[property-key-value-expressions-syntax]]
+=== Syntax
+
+[source, syntax, role=noheader]
+----
+propertyKeyValueExpression ::= 
+  "{" propertyKeyValuePairList "}"
+
+propertyKeyValuePairList ::= 
+  propertyKeyValuePair [ "," propertyKeyValuePair ]
+
+propertyKeyValuePair ::= propertyName ":" valueExpression
+----
+
+[[property-key-value-expressions-rules]]
+=== Rules
+
+The property key-value expression is treated as a conjunction of equalities on the properties of the element that the containing pattern matches. 
+
+For example, the following node pattern:
+
+[source, role=noheader]
+----
+({ p: valueExp1, q: valueExp2 })
+----
+
+is equivalent to the following node pattern with a `WHERE` clause:
+
+[source, role=noheader]
+----
+(n WHERE n.p = valueExp1 AND n.q = valueExp2)
+----
+
+The value expression can be any expression as listed in the chapter on xref:syntax/expressions.adoc[expressions], except for path patterns (which will throw a syntax error) and regular expressions (which will be treated as string literals).
+An empty property key-value expression matches all elements.
+Property key-value expressions can be combined with a `WHERE` clause.
+
+[[property-key-value-expressions-examples]]
+=== Examples
+
+Matches all nodes with property `p` = `10`:
+
+[source, role=noheader]
+----
+({ p: 10 })
+----
+
+Matches all relationships with property `p` = `10` and `q` equal to date `2023-02-10`:
+[source, role=noheader]
+----
+()-[{ p: 10, q: date('2023-02-10') }]-()
+----
+
+Matches all relationships with its property `p` equal to the property `p` of its source node:
+
+[source, role=noheader]
+----
+(s)-[{ p: s.p }]-()
+----
+
+Matches all nodes with property `p` = `10` and property `q` greater than `100`:
+
+[source, role=noheader]
+----
+(n { p: 10 } WHERE n.q > 100)
+----
+
+
+[[path-patterns]]
+== Path patterns
+
+A path pattern is the top level pattern that is matched against paths in a graph.
+
+[[path-patterns-syntax]]
+=== Syntax
+
+[source, syntax, role=noheader]
+----
+pathPattern ::= [{ simplePathPattern | quantifiedPathPattern }]+
+
+simplePathPattern ::= nodePattern 
+  [ { relationshipPattern | quantifiedRelationship } nodePattern ]*
+----
+
+[[path-patterns-rules]]
+=== Rules
+
+The minimum number of elements in the path pattern must be greater than zero.
+For example, a path pattern that is a quantified path pattern with a quantifier that has a lower bound of zero is not allowed:
+
+[source, role=noheader]
+----
+((n)-[r]->(m)){0,10}    //this is not allowed
+----
+
+A path pattern must always begin and end with a node pattern.
+The following is not allowed:
+
+[source, role=noheader]
+----
+(n)-[r]->(m)-[s]-    //this is not allowed
+----
+
+A path pattern may be composed of a concatenation of simple and quantified path patterns.
+Two simple path patterns, however, may not be placed next to each other.
+For example, the following is not allowed:
+
+[source, role=noheader]
+----
+(a)<-[s]-(b) (c)-[t]->(d)    //this is not allowed
+----
+
+When a path pattern is matched to paths in a graph, nodes can be revisited but relationships cannot.
+
+See xref::patterns/reference.adoc#graph-patterns[graph patterns] for rules on declaring variables multiple times. 
+
+[[path-patterns-examples]]
+=== Examples
+
+A single node pattern is allowed as it has at least one element:
+
+[source, role=noheader]
+----
+(n)
+----
+
+A simple path pattern with more than one element:
+
+[source, role=noheader]
+----
+(a:A)<-[{p: 30}]-(b)-[t WHERE t.q > 0]->(c:C)
+----
+
+A quantified path pattern can have a lower bound of zero in its quantifier as long as it abuts other patterns that have at least one element:
+
+[source, role=noheader]
+----
+(:A) ((:X)-[:R]-()){0,10} (:B)
+----
+
+A quantified relationship can also have a lower bound of zero as long as the overall path pattern has at least one element:
+
+[source, role=noheader]
+----
+(:A)-[:R]->{0,10}(:B)
+----
+
+A concatenation of simple and quantified path patterns:
+
+[source, role=noheader]
+----
+(a)<-[s]-(b)-[t]->(c) ((n)-[r]->(m)){0,10} (:X)
+----
+
+Referencing non-local node variable in a simple path pattern:
+
+[source, role=noheader]
+----
+(a)<-[s:X WHERE a.p = s.p]-(b)
+----
+
+Referencing a non-local relationship variable within a quantified path pattern:
+
+[source, role=noheader]
+----
+(:A) ((a)<-[s:X WHERE a.p = s.p]-(b)){,5}
+----
+
+A variable that was introduced in a previous clause can be referenced as long as that variable was defined outside of a quantified path pattern:
+
+[source, role=noheader]
+----
+MATCH (n)
+MATCH ()-[r WHERE r.q = n.q]-() (()<-[s:X WHERE n.p = s.p]-()){2,3}
+----
+
+[[quantified-path-patterns]]
+== Quantified path patterns
+
+_This feature was introduced in Neo4j 5.9._
+
+A quantified path pattern represents a xref::patterns/reference.adoc#path-patterns[path pattern] repeated a number of times in a given range.
+It is composed of a path pattern, representing the path section to be repeated, followed by a xref::patterns/reference.adoc#quantifiers[quantifier], constraining the number of repetitions between a lower bound and an upper bound.
+
+image::patterns_qpp_reference.svg[width="500", role="middle"]
+
+For information about an alternative version of patterns for matching paths of variable length, see xref::patterns/reference.adoc#variable-length-relationships
+[variable-length relationships].
+
+[[quantified-path-patterns-syntax]]
+=== Syntax
+
+[source, syntax, role=noheader]
+----
+quantifiedPathPattern ::= 
+  "(" fixedPath [ "WHERE" booleanExpression ] ")" quantifier
+
+fixedPath ::= nodePattern [ relationshipPattern nodePattern ]+
+----
+
+[[quantified-path-patterns-rules]]
+=== Rules
+
+[[quantified-path-pattern-rules-minimum-pattern-length]]
+==== Minimum pattern length
+
+The path pattern being quantified must have a length greater than zero.
+In other words, it must contain at least one relationship.
+A single node pattern cannot be quantified.
+For example, this is not allowed:
+
+[source, role=noheader]
+----
+((x:A)){2,4}    //this is not allowed
+----
+
+[[quantified-path-patterns-rules-nesting]]
+==== Nesting of quantified path patterns
+
+The nesting of quantified path patterns is not allowed.
+For example, the following nesting of a quantified relationship in a quantified path pattern is not allowed:
+
+[source, role=noheader]
+----
+(:A) (()-[:R]->+()){2,3} (:B)    //this is not allowed
+----
+
+A quantified path pattern that is part of the boolean expression within a quantified path pattern would not count as nested and is permitted. 
+For example, the following is valid: 
+
+[source, role=noheader]
+----
+MATCH ((n:A)-[:R]->({p: 30}) WHERE EXISTS { (n)-->+(:X) }){2,3}
+----
+
+[[quantified-path-patterns-rules-group-variables]]
+==== Group variables
+
+Variables introduced inside of a quantified path pattern are said to be exposed as _group variables_ outside of the definition of the pattern.
+As a group variable, they will be bound to either a list of nodes or a list of relationships.
+By contrast, variables can be treated as singletons inside the quantified path pattern where they are declared.
+The difference can be seen in the following query:
+
+[source, role=noheader]
+----
+MATCH ((x)-[r]->(z WHERE z.p > x.p)){2,3}
+RETURN [n in x | n.p] AS x_p
+----
+
+In the boolean expression `z.p > x.p` both `z` and `x` are singletons; in the `RETURN` clause, `x` is a group variable that can be iterated over like a list.
+Note that this means that the `WHERE` clause `z.p > x.p` above needs to be inside the quantified path pattern.
+The following would throw a syntax error because it is treating `z` and `p` as singletons:
+
+[source, role=noheader]
+----
+MATCH ((x)-[r]->(z)){2,3} WHERE z.p > x.p    //this is not allowed   
+----
+
+It is possible, however, to position the `WHERE` clause outside of the node pattern:
+
+[source, role=noheader]
+----
+MATCH ((x)-[r]->(z) WHERE z.p > x.p){2,3}
+----
+
+[[quantified-path-pattern-rules-matching]]
+==== Matching
+
+The mechanics of matching a quantified path pattern against paths is best explained with an example.
+For the example, the following simple graph will be used:
+
+image::patterns_qpp_reference_example.svg[width="600", role=middle"]
+
+First, consider the following simple path pattern:
+
+[source, role=noheader]
+----
+(x:A)-[:R]->(z:B WHERE z.h > 2)
+----
+
+This matches three different paths in the graph above.
+The resulting bindings for `x` and `z` for each match are the following (the captions `n1` etc indicate the identity of the nodes in the diagram above):
+
+[options="header",cols="2*<m"]
+|===
+
+| x | z
+
+| n1 | n2 
+| n2 | n3 
+| n3 | n5 
+
+|===
+
+If the quantifier `\{2}` is affixed to the simple path pattern, the result is the following quantified path pattern:
+
+[source, role=noheader, subs="-attributes"]
+----
+((x:A)-[:R]->(z:B WHERE z.h > 2)){2}
+----
+
+This is equivalent to chaining together two iterations of the pattern, where the rightmost node of the first iteration is merged with the leftmost node of the second one.
+(See xref::patterns/reference.adoc#node-pattern-pairs[node pattern pairs] for more details.)
+
+[source, role=noheader]
+----
+(x:A)-[:R]->(z:B WHERE z.h > 2) (x:A)-[:R]->(z:B WHERE z.h > 2)
+----
+
+To avoid introducing xref::patterns/reference.adoc#equijoins[equijoins] between the two instances of `x`, and between the two instances of `z`, the variables are replaced with a set of fresh variables inside each iteration:
+
+[source, role=noheader]
+----
+(x1:A)-[:R]->(z1:B WHERE z1.h > 2) (x2:A)-[:R]->(z2:B WHERE z2.h > 2)
+----
+
+Then the node variables in adjoining node patterns are merged:
+
+[source, role=noheader]
+----
+(x1:A)-[:R]->({z1,x2}:A&B WHERE z1.h > 2)-[:R]->(z2:B WHERE z2.h > 2)
+----
+
+The fact that variables `x2` and `z1` are bound to matches of the same node pattern is represented with the notation `{z1,x2}`.
+Outside of the pattern, the variables `x` and `z` will be group variables that contain lists of nodes. 
+
+Consider the quantified path pattern in the following query:
+
+[source, role=noheader, subs="-attributes"]
+----
+MATCH ((x:A)-[:R]->(z:B WHERE z.h > 2)){2}
+RETURN [n in x | n.h] AS x_h, [n in z | n.h] AS z_h
+----
+
+This yields the following results:
+
+[options="header",cols="2*<m"]
+|===
+
+| x_h | z_h
+
+| [1, 3] | [3, 4]
+| [3, 4] | [4, 5]
+
+|===
+
+Now the quantifier is changed to match lengths from one to five:
+
+[source, role=noheader]
+----
+MATCH ((x:A)-[:R]->(z:B WHERE z.h > 2)){1,5}
+RETURN [n in x | n.h] AS x_h, [n in z | n.h] AS z_h
+----
+
+Compared to the fixed length quantifier `\{2}`, this also matches paths of length one and three, but no matches exist for length greater than three:
+
+[options="header",cols="2*<m"]
+|===
+
+| x_h | z_h
+
+| [1] | [3]
+| [3] | [4]
+| [4] | [5]
+| [1, 3] | [3, 4]
+| [3, 4] | [4, 5]
+| [1, 3, 4] | [3, 4, 5]
+
+|===
+
+[[quantified-relationships]]
+== Quantified relationships
+
+[[quantified-relationships-syntax]]
+=== Syntax
+
+[source, syntax, role=noheader]
+----
+quantifiedRelationship ::= relationshipPattern quantifier
+----
+
+[[quantified-relationships-rules]]
+=== Rules
+
+A quantified relationship is an abbreviated form of a xref::patterns/reference.adoc#quantified-path-patterns[quantified path pattern], with only a single relationship pattern specified.
+
+For example, the following quantified relationship:
+
+[source, role=noheader]
+----
+()-[r]->{m,n}()
+----
+
+is equivalent to the following quantified path pattern, with empty node patterns on either side:
+
+[source, role=noheader]
+----
+() (()-[r]->()){m,n} ()
+----
+
+However, unlike a quantified path pattern, a quantified relationship must always have a node pattern on each side.
+
+[[quantified-relationship-examples]]
+=== Examples
+
+Matches paths starting with nodes labeled `A` and ending with nodes labeled `B`, that traverse between two and three relationships of type `R`:
+
+[source, role=noheader]
+----
+(:A)-[r:R]->{2,3}(:B)
+----
+
+This is equivalent to the following:
+
+[source, role=noheader]
+----
+(:A) (()-[r:R]->()){2,3} (:B)
+----
+
+Matches paths with one or more relationships of any direction and any type:
+
+[source, role=noheader]
+----
+()--+()
+----
+
+[[quantifiers]]
+== Quantifiers
+
+The quantifiers here only refer to those used in xref::patterns/reference.adoc#quantified-path-patterns[quantified path patterns] and xref::patterns/reference.adoc#quantified-relationships[quantified relationships].
+
+[[quantifiers-syntax]]
+=== Syntax
+
+[source, syntax, role=noheader]
+----
+quantifier ::= 
+  "*" | "+" | fixedQuantifier | generalQuantifier
+
+fixedQuantifier ::= "{" unsignedInteger "}"
+
+generalQuantifier ::= "{" lowerBound "," upperBound "}"
+
+lowerBound ::= unsignedInteger
+
+upperBound ::= unsignedInteger
+
+unsignedInteger ::= [0-9]+
+----
+
+[[quantifiers-rules]]
+=== Rules 
+
+The absence of an upper bound in the general quantifier syntax means there is no upper bound.
+The following table shows variants of the quantifier syntax and their canonical form:
+
+[options="header",cols="1m,1m,1a"]
+|===
+| *Variant* | *Canonical form* | *Description*
+
+| {m,n} | {m,n} | Between m and n iterations.
+| + | {1,} | 1 or more iterations.
+| * | {0,} | 0 or more iterations.
+| \{n} | {n,n} | Exactly n iterations.
+| {m,} | {m,} | m or more iterations.
+| {,n} | {0,n} | Between 0 and n iterations.
+| {,} | {0,} | 0 or more iterations.
+
+|===
+
+Note that a xref:patterns/reference.adoc#quantified-path-patterns[quantified path pattern] with the quantifier `\{1}` is not equivalent to a fixed-length path pattern.
+Although the resulting quantified path pattern will match on the same paths the fixed-length path contained in it would without the quantifier, the presence of the quantifier means that all variables within the path pattern will be exposed as group variables.
+
+[[graph-patterns]]
+== Graph patterns
+
+A graph pattern is a comma separated list of one or more path patterns.
+It is the top level construct provided to `MATCH`.
+
+image::patterns_graph_pattern_reference.svg[width="500", role="middle"]
+
+[[graph-patterns-syntax]]
+=== Syntax
+
+[source, role=noheader]
+----
+graphPattern ::= 
+  pathPattern [ "," pathPattern ]* [ "WHERE" booleanExpression ]
+----
+
+[[graph-patterns-rules]]
+=== Rules
+
+The rules for xref:patterns/reference.adoc#path-patterns[path patterns] apply to each constituent path pattern of a graph pattern.
+
+[[graph-patterns-rules-variable-references]]
+==== Variable references
+
+Any node or relationship variable declared in a graph pattern can be referenced in a `WHERE` clause elsewhere in the graph pattern - unless it is inside a quantified path pattern not containing the variable.
+For example, this is allowed:
+
+[source, role=noheader]
+----
+(n)-->(m:A)-->(:B), (m)-[r WHERE r.p <> n.p]->(:C)
+----
+
+But this is not allowed:
+
+[source, role=noheader]
+----
+(n)-->(m:A)-->(:B), (m) (()-[r WHERE r.p <> n.p]->())+ (:C)    //this is not allowed
+----
+
+A variable can be referred to inside a quantified path pattern if it has already been bound in a previous `MATCH` clause.
+If a variable is declared inside a quantified path pattern, then it can be treated as a singleton only from within the quantified path pattern it was declared in.
+Outside of that quantified path pattern, it must be treated as a group variable.
+For example, this would be allowed:
+
+[source, role=noheader]
+----
+((n)-[r]->(m WHERE r.p = m.q))+
+----
+
+As would this:
+
+[source, role=noheader]
+----
+(n)-[r]->+(m WHERE all(rel in r WHERE rel.q > m.q))
+----
+
+But this would not be allowed:
+
+[source, role=noheader]
+----
+(n)-[r]->+(m WHERE r.p = m.q)    //this is not allowed
+----
+
+[[graph-patterns-rules-relationship-uniqueness]]
+==== Relationship uniqueness
+
+A relationship can only be traversed once in a given match for a graph pattern. The same restriction doesn't hold for nodes, which may be re-traversed any number of times in a match. 
+
+[[graph-patterns-rules-equijoin]]
+==== Equijoin
+
+If a node variable is declared more than once in a path pattern, it is expressing an equijoin.
+This is an operation that requires that each node pattern with the same node variable be bound to the same node.
+For example, the following pattern refers to the same node twice with the variable `a`, forming a cycle:
+
+[source, role=noheader]
+----
+(a)-->(b)-->(c)-->(a)
+----
+
+The following pattern refers to the same node with variable `b` in different path patterns of the same graph pattern, forming a "T" shaped pattern:
+
+[source, role=noheader]
+----
+(a)-->(b)-->(c), (b)-->(e)
+----
+
+Equijoins can only be made using variables outside of quantified path patterns.
+The following would not be a valid equijoin:
+
+[source, role=noheader]
+----
+(a)-->(b)-->(c), ((b)-->(e))+ (:X)    //this is not allowed 
+----
+
+If no equijoin exists between path patterns in a graph pattern, then a Cartesian join is formed from the sets of matches for each path pattern.
+An equijoin can be expressed between relationship patterns by declaring a relationship variable multiple times.
+However, as relationships can only be traversed once in a given match, no solutions would be returned.
+
+[[graph-patterns-examples]]
+=== Examples
+
+The `WHERE` clause can refer to variables inside and outside of quantified path patterns:
+
+[source, role=noheader]
+----
+(a)-->(b)-->(c), (b) ((d)-->(e))+ WHERE any(n in d WHERE n.p = a.p)
+----
+
+An equijoin can be formed to match "H" shaped graphs:
+
+[source, role=noheader]
+----
+(:A)-->(x)--(:B), (x)-[:R]->+(y), (:C)-->(y)-->(:D)
+----
+
+With no variables in common, this graph pattern will result in a Cartesian join between the sets of matches for the two path patterns:
+
+[source, role=noheader]
+----
+(a)-->(b)-->(c), ((d)-->(e))+
+----
+
+Multiple equijoins can be formed between path patterns:
+
+[source, role=noheader]
+----
+(:X)-->(a:A)-[!:R]->+(b:B)-->(:Y), (a)-[:R]->+(b)
+----
+
+Variables declared in a previous `MATCH` can be referenced inside of a quantified path pattern:
+
+[source, role=noheader]
+----
+MATCH (n {p = 'ABC'})
+MATCH (n)-->(m:A)-->(:B), (m) (()-[r WHERE r.p <> n.p]->())+ (:C)
+----
+
+The repetition of a relationship variable in the following yields no solutions due to Cypher enforcing relationship uniqueness within a match for a graph pattern:
+
+[source, role=noheader]
+----
+MATCH ()-[r]->()-->(), ()-[r]-()
+----
+
+[[node-pattern-pairs]]
+== Node pattern pairs
+
+It is not valid syntax to write a pair of node patterns next to each other.
+For example, all of the following would raise a syntax error:
+
+[source, role=noheader]
+----
+(a:A)(b:B)
+----
+[source, role=noheader]
+----
+(a:A)(b:B)<-[r:R]-(c:C)
+----
+[source, role=noheader]
+----
+(a:A)<--(b:B)(c:C)-->(d:C)
+----
+
+However, the placing of pairs of node patterns next to each other is valid where it results indirectly from the expansion of quantified path patterns.
+
+[[node-pattern-pairs-iterations-of-qpps]]
+=== Iterations of quantified path patterns
+
+When a quantified path pattern is expanded, the fixed path pattern contained in its parentheses is repeated and chained.
+This results in pairs of node patterns sitting next to each other.
+Take the following quantified path pattern as an example:
+
+[source, role=noheader]
+----
+((x:X)<--(y:Y)){3}
+----
+
+This is expanded by repeating the fixed path pattern `(x:X)<--(y:Y)` three times, with indices on the variables to show that no equijoin is implied (see xref:patterns/reference.adoc#graph-patterns-rules-equijoin[equijoins] for more information):
+
+[source, role=noheader]
+----
+(x1:X)<--(y1:Y)(x2:X)<--(y2:Y)(x3:X)<--(y3:Y)
+----
+
+The result is that two pairs of node patterns end up adjoining each other, `(y1:Y)(x2:X)` and `(y2:Y)(x3:X)`.
+During the matching process, each pair of node patterns will match the same nodes, and those nodes will satisfy the conjunction of the predicates in the node patterns.
+For example, in the first pair both `y1` and `x2` will bind to the same node, and that node must have labels `X` and `Y`.
+This expansion and binding is depicted in the following diagram:
+
+image::patterns_node_pattern_pairs.svg[width="500", role="middle"]
+
+[[node-pattern-pairs-simple-path-patterns-and-quantified-path-patterns]]
+=== Simple path patterns and quantified path patterns
+
+Pairs of node patterns are also generated when a simple path pattern is placed next to a quantified path.
+For example, consider the following path pattern:
+
+[source, role=noheader]
+----
+(:A)-[:R]->(:B) ((:X)<--(:Y)){1,2}
+----
+
+After expanding the iterations of the quantified path pattern, the right-hand node pattern `(:B)` adjoins the left-hand node pattern `(:X)`.
+The result will match the same paths as the union of matches of the following two path patterns:
+
+[source, role=noheader]
+----
+(:A)-[:R]->(:B&X)<--(:Y)
+----
+[source, role=noheader]
+----
+(:A)-[:R]->(:B&X)<--(:Y&X)<--(:Y)
+----
+
+If the simple path pattern is on the right of the quantified path pattern, its leftmost node `(:A)` adjoins the rightmost node `(:Y)` of the last iteration of the quantified path pattern.
+For example, the following:
+
+[source, role=noheader]
+----
+((:X)<--(:Y)){1,2} (:A)-[:R]->(:B)
+----
+
+will match the same paths as the union of the following two path patterns:
+
+[source, role=noheader]
+----
+(:X)<--(:Y&A)-[:R]->(:B)
+----
+[source, role=noheader]
+----
+(:X)<--(:Y&X)<--(:Y&A)-[:R]->(:B)
+----
+
+[[node-pattern-pairs-pairs-of-quantified-path-patterns]]
+=== Pairs of quantified path patterns
+
+When two quantified path patterns adjoin, the rightmost node of the last iteration of the first pattern is merged with the leftmost node of the first iteration of the second pattern.
+For example, the following adjoining patterns:
+
+[source, role=noheader]
+----
+((:A)-[:R]->(:B)){2} ((:X)<--(:Y)){1,2}
+----
+
+will match the same set of paths as the union of the paths matched by these two path patterns:
+
+[source, role=noheader]
+----
+(:A)-[:R]->(:B&A)-[:R]->(:B&X)<--(:Y)
+----
+[source, role=noheader]
+----
+(:A)-[:R]->(:B&A)-[:R]->(:B&X)<--(:Y&X)<--(:Y)
+----
+
+[[node-pattern-pairs-zero-iterations]]
+=== Zero iterations
+
+If the quantifier allows for zero iterations of a pattern, for example `{0,3}`, then the 0th iteration of that pattern results in the node patterns on either side pairing up. 
+
+For example, the following path pattern:
+[source, role=noheader]
+----
+(:X) ((a:A)-[:R]->(b:B)){0,1} (:Y)
+----
+
+will match the same set of paths as the union of the paths matched by the following two path patterns:
+
+[source, role=noheader]
+----
+(:X&Y)
+----
+[source, role=noheader]
+----
+(:X&A)-[:R]->(:B&Y)
+----
+
+[[variable-length-relationships]]
+== Variable-length relationships
+
+Prior to the introduction of the syntax for quantified path patterns and quantified relationships in Neo4j 5.9, the only way in Cypher to match paths of variable length was with a variable-length relationship.
+This syntax is still available.
+It is equivalent to the syntax for quantified relationships, with the following differences:
+
+* Position and syntax of quantifier.
+* Semantics of the asterisk symbol.
+* Type expressions are limited to the xref::syntax/operators.adoc#query-operators-boolean[disjunction operator].
+* The xref:clauses/where.adoc[WHERE] clause is not allowed.
+
+[[variable-length-relationships-syntax]]
+=== Syntax
+
+[source, syntax, role=noheader]
+----
+varLengthRelationship ::=
+    "<-[" varLengthFiller "]-" 
+  | "-[" varLengthFiller "]->"
+  | "-[" varLengthFiller "]-"
+varLengthFiller ::= [ relationshipVariable ] [ varLengthTypeExpression ] 
+    [ varLengthQuantifier ] [ propertyKeyValueExpression ]
+
+varLengthTypeExpression ::= ":" varLengthTypeTerm
+
+varLengthTypeTerm ::=
+    typeIdentifier
+  | varLengthTypeTerm "|" varLengthTypeTerm
+
+varLengthQuantifier ::= varLengthVariable | varLengthFixed
+
+varLengthVariable ::= "*" [ [ lowerBound ] ".." [ upperBound ] ]
+
+varLengthFixed ::= "*" fixedBound
+
+fixedBound ::= unsignedInteger
+lowerBound ::= unsignedInteger
+upperBound ::= unsignedInteger
+unsignedInteger ::= [0-9]+
+----
+
+For rules on valid relationship variable names, see xref:syntax/naming.adoc[Cypher naming rules].
+
+[[variable-length-relationships-rules]]
+=== Rules
+
+The following table shows variants of the variable-length quantifier syntax and their equivalent canonical xref:patterns/reference.adoc#quantifier[quantifier] form (the form used by xref:patterns/reference.adoc#quantified-path-pattern[quantified path patterns]):
+
+[options="header",cols="1m,1a"]
+|===
+| *Variant* | *Description*
+
+| * | 1 or more iterations.
+
+| *n | Exactly n iterations.
+
+| *m..n | Between m and n iterations.
+
+| *m.. | m or more iterations.
+
+|*..n | Between 1 and n iterations.
+|===
+
+Note that `*` used here on its own is not the same as the Kleene star (an operator that represents zero or more repetitions), as the Kleene star has a lower bound of zero.
+The above table can be used to translate the quantifier used in variable-length relationships.
+The rules given for xref:patterns/reference.adoc#quantified-path-pattern[quantified path patterns] would apply to the translation.
+
+This table shows some examples:
+
+[options="header",cols="1m,1m"]
+|===
+| *Variable-length relationship* | *Equivalent quantified path pattern*
+
+| (a)-[*2]\->(b) | (a) \(()-[]\->()){2,2} (b)
+
+| (a)-[:KNOWS*3..5]\->(b) | (a) \(()-[:KNOWS]\->()){3,5} (b)
+
+|  (a)-[r*..5 {name: 'Filipa'}]\->(b) | (a) \(()-[r {name: 'Filipa'}]\->()){1,5} (b)
+|===
+
+[[variable-length-relationships-equijoins]]
+=== Equijoins
+
+The variable of a variable-length relationship can be used in subsequent patterns to refer to the list of relationships the variable is bound to.
+This is the same as the xref:patterns/reference.adoc#graph-patterns-rules-equijoin[equijoin] for variables bound to single nodes or relationships. 
+
+This section uses the following graph: 
+
+image::patterns_equijoin_reference.svg[width="500", role="middle"]
+
+To recreate the graph, run the following query against an empty Neo4j database:
+
+.Query
+[source, cypher, role=test-setup]
+----
+CREATE ({name: 'Filipa'})-[:KNOWS]->({name:'Anders'})-[:KNOWS]->
+         ({name:'Dilshad'})
+----
+
+In the following query, the node variables will be bound to the same nodes:
+
+.Query
+[source, cypher]
+----
+MATCH (a {name: 'Dilshad'})<-[r*1..2]-(b)
+MATCH (c)<-[r*1..2]-(d)
+RETURN a = c, b = d, size(r)
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+
+| a = c | b = d | size(r)
+
+| true | true | 1
+| true | true | 2
+
+3+d|Rows: 2
+|===
+
+The list of relationships keeps its order.
+This means that in the following query, where the direction of the variable-length relationship in the second `MATCH` is switched, the equijoin will only match once, when there is a single relationship:
+
+.Query
+[source, cypher]
+----
+MATCH (a {name: 'Dilshad'})<-[r*1..2]-(b)
+MATCH (c)-[r*1..2]->(d)
+RETURN a = c, b = d, size(r)
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+
+| a = c | b = d | size(r)
+
+| false | false | 1
+
+3+d|Rows: 1
+|===
+
+The variable `r` can be reversed in order like any list, and made to match the switch in relationship pattern direction:
+
+.Query
+[source, cypher]
+----
+MATCH (a {name: 'Dilshad'})<-[r*1..2]-(b)
+WITH a, b, reverse(r) AS s
+MATCH (c)-[s*1..2]->(d)
+RETURN a = d, b = c, size(s)
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+
+| a = d | b = c | size()
+
+| true | true | 1
+| true | true | 2
+
+3+d|Rows: 2
+
+|===
+
+Changing the bounds on subsequent `MATCH` statements will mean that only the overlapping lengths of the quantifier bounds will produce results:
+
+.Query
+[source, cypher]
+----
+MATCH (a {name: 'Dilshad'})<-[r*1..2]-(b)
+MATCH (c)<-[r*2..3]-(d)
+RETURN a = c, b = d, size(r)
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+
+| a = c | b = d | size(r)
+
+| true | true | 2
+
+3+d|Rows: 1
+
+|===
+
+Because Cypher only allows paths to traverse a relationship once (see xref:patterns/reference.adoc#graph-patterns-rules-relationship-uniqueness[relationship uniqueness]), repeating a variable-length relationship in the same graph pattern will yield no results.
+For example, this `MATCH` clause will never pass on any intermediate results to subsequent clauses:
+
+[source, role=noheader]
+----
+MATCH (x)-[r*1..2]->(y)-[r*1..2]->(z)
+----
+
+Attempting to repeat a variable-length relationship in a single relationship pattern will raise an error.
+For example, the following pattern raises an error because the variable `r` appears in both a variable-length relationship and a fixed-length relationship:
+
+[source, role=noheader]
+----
+MATCH (x)-[r*1..2]->(y)-[r]->(z)
+----
+
+[[variable-length-relationships-examples]]
+=== Examples
+
+The following pattern matches paths starting with nodes labeled `A` and ending with nodes labeled `B`, that traverse between two and three relationships of type `R`:
+
+[source, role=noheader]
+----
+(:A)-[r:R*2..3]->(:B)
+----
+
+The following traverses relationships of type `R` or `S` or `T` exactly five times:
+
+[source, role=noheader]
+----
+()-[r:R|S|T*5]->()
+----
+
+The following traverses any relationship between zero and five times, with the path beginning at nodes labeled `A` and ending at nodes labeled `B`.
+Note that this will also return all nodes that have both labels `A` and `B` for the case where zero relationships are traversed:
+
+[source, role=noheader]
+----
+(:A)-[*0..5]->(:B)
+----
+
+If the lower bound is removed, it will default to one, and will no longer return paths of length zero, i.e. single nodes:
+
+[source, role=noheader]
+----
+(:A)-[*..5]->(:B)
+----
+
+The following pattern traverses one or more relationships of any direction that have property `p` = `$param`:
+
+[source, syntax, role=noheader]
+----
+()-[* {p: $param}]-()
+----
