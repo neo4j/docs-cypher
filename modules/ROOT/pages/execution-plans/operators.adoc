@@ -2626,7 +2626,7 @@ Total database accesses: 215, total allocated memory: 3440
 == VarLength Expand All
 // VarLengthExpand(All)
 
-Given a start node, the `VarLengthExpand(All)` operator will traverse variable-length relationships.
+Given a start node, the `VarLengthExpand(All)` operator will traverse variable-length and quantified relationships.
 
 
 .VarLengthExpand(All)
@@ -2673,7 +2673,7 @@ Total database accesses: 318, total allocated memory: 208
 == VarLength Expand Into
 // VarLengthExpand(Into)
 
-When both the start and end node have already been found, the `VarLengthExpand(Into)` operator is used to find all variable-length relationships connecting the two nodes.
+When both the start and end node have already been found, the `VarLengthExpand(Into)` operator is used to find all variable-length and quantified relationships connecting the two nodes.
 
 
 .VarLengthExpand(Into)
@@ -2719,7 +2719,7 @@ Total database accesses: 222, total allocated memory: 192
 == VarLength Expand Pruning
 // VarLengthExpand(Pruning)
 
-Given a start node, the `VarLengthExpand(Pruning)` operator will traverse variable-length relationships much like the xref::execution-plans/operators.adoc#query-plan-varlength-expand-all[`VarLengthExpand(All)`] operator.
+Given a start node, the `VarLengthExpand(Pruning)` operator will traverse variable-length and quantified relationships much like the xref::execution-plans/operators.adoc#query-plan-varlength-expand-all[`VarLengthExpand(All)`] operator.
 However, as an optimization, some paths will not be explored if they are guaranteed to produce an end node that has already been found (by means of a previous path traversal).
 
 This kind of expand is only planned when:
@@ -2776,7 +2776,7 @@ Total database accesses: 30, total allocated memory: 480
 // VarLengthExpand(Pruning,BFS)
 // New in 5.0
 
-Given a start node, the `VarLengthExpand(Pruning,BFS)` operator traverses variable-length relationships much like the xref::execution-plans/operators.adoc#query-plan-varlength-expand-all[`VarLengthExpand(All)`] operator.
+Given a start node, the `VarLengthExpand(Pruning,BFS)` operator traverses variable-length and quantified relationships much like the xref::execution-plans/operators.adoc#query-plan-varlength-expand-all[`VarLengthExpand(All)`] operator.
 However, as an optimization, it instead performs a breadth-first search (BFS) and while expanding, some paths are not explored if they are guaranteed to produce an end node that has already been found (by means of a previous path traversal).
 This is only used in cases where the individual paths are not of interest.
 
@@ -2823,6 +2823,62 @@ Batch size 128
 Total database accesses: 1, total allocated memory: 200
 ----
 
+[[query-plan-repeat]]
+== Repeat (Trail)
+// Repeat(Trail)
+_This feature was introduced in Neo4j 5.9._
+
+Given a start node, the `Repeat(Trail)` operator will traverse xref::patterns/concepts.adoc#quantified-path-patterns[quantified path patterns] that cannot be solved with the xref::execution-plans/operators.adoc#query-plan-varlength-expand-all[`VarLengthExpand(All)`] operator.
+Similar to an xref::execution-plans/operators.adoc#query-plan-apply[`Apply`] operator, it takes a single row from the left-hand side and applies the operators on the right-hand side.
+In contrast to `Apply`, however, it repeatedly applies these operators in accordance with the quantifiers on the quantified path pattern.
+In the following example, the operator will repeat twice and produce rows for both repetitions.
+
+.Repeat(Trail)
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH (me:Person) ((a)-[:FRIENDS_WITH]-(b) WHERE a.name <> b.name){1,2} (friend:Person)
+RETURN me, friend
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++------------------+----+-----------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator         | Id | Details                                             | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++------------------+----+-----------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults  |  0 | me, friend                                          |             15 |   48 |       0 |                |                        |           |                     |
+| |                +----+-----------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Filter          |  1 | friend:Person                                       |             15 |   48 |      96 |                |                        |           |                     |
+| |                +----+-----------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NullifyMetadata |  7 |                                                     |             15 |   48 |       0 |                |                        |           |                     |
+| |                +----+-----------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Repeat(Trail)   |  2 | (me) (...){1, 2} (friend)                           |             15 |   48 |       0 |          16784 |                    0/0 |     1.146 | Fused in Pipeline 2 |
+| |\               +----+-----------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Filter        |  3 | not a.name = b.name AND isRepeatTrailUnique(anon_2) |              5 |   48 |     216 |                |                        |           |                     |
+| | |              +----+-----------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +Expand(All)   |  4 | (a)-[anon_2:FRIENDS_WITH]-(b)                       |             10 |   72 |     151 |                |                        |           |                     |
+| | |              +----+-----------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +Argument      |  5 | a                                                   |             14 |   38 |       0 |           3112 |                    3/0 |     6.279 | Fused in Pipeline 1 |
+| |                +----+-----------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +NodeByLabelScan |  6 | me:Person                                           |             14 |   14 |      15 |            376 |                    1/0 |     3.970 | In Pipeline 0       |
++------------------+----+-----------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 318, total allocated memory: 208
+----
+
+======
 
 [[query-plan-assert-same-node]]
 == Assert Same Node
