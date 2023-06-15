@@ -14,7 +14,7 @@ This section contains an overview of expressions in Cypher with examples.
 [NOTE]
 ====
 Most expressions in Cypher evaluate to `null` if any of their inner expressions are `null`.
-Notable exceptions are the operators `IS NULL` and `IS NOT NULL`.
+Notable exceptions are the operators `IS NULL`, `IS NOT NULL`, and the type predicate expression.
 ====
 
 An expression in Cypher can be:
@@ -1231,6 +1231,193 @@ RETURN COLLECT {
 | +["Pete", "Tim"]+
 1+d|Rows: 1
 |===
+
+[[type-predicate-expressions]]
+== Type predicate expressions
+
+_This feature was introduced in Neo4j 5.9._
+
+A type predicate expression can be used to verify the type of a variable, literal, property or other Cypher expression.
+
+[source, syntax, role="noheader", indent=0]
+----
+<expr> IS :: <TYPE>
+----
+
+Where `<expr>` is any Cypher expression and `<TYPE>` is one of the following types:
+
+* `BOOLEAN`
+* `STRING`
+* `INTEGER`
+* `FLOAT`
+* `DATE`
+* `LOCAL TIME`
+* `ZONED TIME`
+* `LOCAL DATETIME`
+* `ZONED DATETIME`
+* `DURATION`
+* `POINT`
+
+For all available Cypher types, see the section on xref::values-and-types/property-structural-constructed.adoc#types-synonyms[types and their synonyms].
+
+.Query
+[source, cypher]
+----
+UNWIND [42, true, 'abc'] AS val
+RETURN val, val IS :: INTEGER AS isInteger
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| val | isInteger
+| 42 | true
+| true | false
+| 'abc' | false
+2+d|Rows: 3
+|===
+
+[[type-predicate-expressions-not]]
+=== Type predicate expressions with NOT
+
+It is also possible to verify that a Cypher expression is not of a certain type, using the negated type predicate expression `IS NOT ::`.
+
+.Query
+[source, cypher]
+----
+UNWIND [42, true, 'abc'] AS val
+RETURN val, val IS NOT :: STRING AS notString
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| val | notString
+| 42 | true
+| true | true
+| 'abc' | false
+2+d|Rows: 3
+|===
+
+[[type-predicate-expressions-null]]
+=== Type predicate expressions for null
+
+All Cypher types include the `null` value.
+Therefore, `IS ::` will return `true` for all expressions evaluating to `null`, regardless of the type.
+
+.Query
+[source, cypher]
+----
+RETURN (toFloat(null)) IS :: BOOLEAN AS isBoolean
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| isBoolean
+| true
+1+d|Rows: 1
+|===
+
+Likewise, `IS NOT ::` will return `false` for all expressions evaluating to `null`, regardless of the type.
+
+.Query
+[source, cypher]
+----
+RETURN (null + 1) IS NOT :: DATE AS isNotDate
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| isNotDate
+| false
+1+d|Rows: 1
+|===
+
+[[type-predicate-expressions-properties]]
+=== Type predicate expression for properties
+
+Type predicate expressions can also be used to filter out nodes or relationships with properties of a certain type.
+
+A graph containing the following nodes is used for the example below:
+
+////
+[source, cypher, role=test-setup]
+----
+MATCH (n) DETACH DELETE n;
+CREATE (:Person {name: 'Alice', age:14}),
+(:Person {name:'Bob', age:'20'}),
+(:Person {name:'Charlie', age:21}),
+----
+////
+
+image:graph_expression_type_predicate.svg[]
+
+The following query finds all `Person` nodes with an `age` property that is an `INTEGER` with a greater value than `18`.
+
+.Query
+[source, cypher]
+----
+MATCH (n:Person)
+WHERE n.age IS :: INTEGER AND n.age > 18
+RETURN n.name AS name, n.age AS age
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | age
+| Charlie | 21
+2+d|Rows: 1
+|===
+
+[[type-predicate-expressions-number-sizes]]
+=== Type predicate expressions for numbers of different sizes
+
+For numerical values passed in as parameters, Cypher does not take the size of the number into account.
+Cypher will therefore regard any exact numerical parameter as an `INTEGER` regardless of its declared size.
+For example, an `INT16` or an `INT32` passed through from a client programming language will both be treated by Cypher as an `INTEGER`.
+Note that any exact numerical parameter used must fit within the range of an `INT 64`. 
+
+.Query
+[source, cypher, role=test-skip]
+----
+RETURN $int16param IS :: INTEGER AS isInteger
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| isInteger
+| true
+1+d|Rows: 1
+|===
+
+More information about parameters can be found xref::syntax/parameters.adoc[here].
+
+[[type-predicate-expressions-variations]]
+=== Syntactical variations of type predicate expressions
+
+Type predicate expressions allow for some alternative syntax:
+
+[source, syntax, role="noheader", indent=0]
+----
+<expr> IS TYPED <TYPE>
+----
+
+[source, syntax, role="noheader", indent=0]
+----
+<expr> :: <TYPE>
+----
+
+For verifying that an expression is not of a certain type, the following alternative syntax is supported:
+
+[source, syntax, role="noheader", indent=0]
+----
+<expr> IS NOT TYPED <TYPE>
+----
+
 
 [[label-expressions]]
 == Label expressions
