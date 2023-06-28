@@ -1235,7 +1235,7 @@ RETURN COLLECT {
 [[type-predicate-expressions]]
 == Type predicate expressions
 
-_This feature was introduced in Neo4j 5.9._
+_This feature was introduced in Neo4j 5.9 and extended in 5.10_
 
 A type predicate expression can be used to verify the type of a variable, literal, property or other Cypher expression.
 
@@ -1246,6 +1246,8 @@ A type predicate expression can be used to verify the type of a variable, litera
 
 Where `<expr>` is any Cypher expression and `<TYPE>` is one of the following types:
 
+* `NOTHING`
+* `NULL`
 * `BOOLEAN`
 * `STRING`
 * `INTEGER`
@@ -1257,6 +1259,14 @@ Where `<expr>` is any Cypher expression and `<TYPE>` is one of the following typ
 * `ZONED DATETIME`
 * `DURATION`
 * `POINT`
+* `NODE`
+* `RELATIONSHIP`
+* `MAP`
+* `LIST<INNER_TYPE>`
+* `PATH`
+* `PROPERTY VALUE`
+* `ANY`
+* `<TYPE> NOT NULL`
 
 For all available Cypher types, see the section on xref::values-and-types/property-structural-constructed.adoc#types-synonyms[types and their synonyms].
 
@@ -1302,36 +1312,55 @@ RETURN val, val IS NOT :: STRING AS notString
 [[type-predicate-expressions-null]]
 === Type predicate expressions for null
 
-All Cypher types include the `null` value.
-Therefore, `IS ::` will return `true` for all expressions evaluating to `null`, regardless of the type.
+A Cypher type will include the `null` value unless it is prepended explicitly with `NOT NULL`.
+Therefore, `IS ::` will return `true` for all expressions evaluating to `null`, which do not explicitly remove it.
 
 .Query
 [source, cypher]
 ----
-RETURN (toFloat(null)) IS :: BOOLEAN AS isBoolean
+WITH (toFloat(null)) AS nullValue
+RETURN nullValue IS :: BOOLEAN AS isBoolean, nullValue IS :: BOOLEAN NOT NULL AS isNotNullBoolean
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| isBoolean | isNotNullBoolean
+| true      | false
+2+d|Rows: 1
+|===
+
+Likewise, `IS NOT ::` will return `false` for all expressions evaluating to `null`, if the type is not prepended with `NOT NULL`.
+
+.Query
+[source, cypher]
+----
+WITH (null + 1) AS nullValue
+RETURN nullValue IS NOT :: DATE AS isNotDate, nullValue IS NOT :: DATE NOT NULL AS isNotNotNullDate
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| isNotDate | isNotNotNullDate
+| false     | true
+2+d|Rows: 1
+|===
+
+It is also possible to check whether a value is only the `null` value using the `NULL` type.
+
+.Query
+[source, cypher]
+----
+WITH (toFloat(null)) AS nullValue
+RETURN nullValue IS :: NULL AS isNull
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
-| isBoolean
+| isNull
 | true
-1+d|Rows: 1
-|===
-
-Likewise, `IS NOT ::` will return `false` for all expressions evaluating to `null`, regardless of the type.
-
-.Query
-[source, cypher]
-----
-RETURN (null + 1) IS NOT :: DATE AS isNotDate
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| isNotDate
-| false
 1+d|Rows: 1
 |===
 
@@ -1371,6 +1400,9 @@ RETURN n.name AS name, n.age AS age
 | Charlie | 21
 2+d|Rows: 1
 |===
+
+The type `PROPERTY VALUE` can also be used to check for whether a type is storable as a property.
+Non-storable properties, such as `MAP`, will return `false` when checked with `IS :: PROPERTY VALUE`.
 
 [[type-predicate-expressions-number-sizes]]
 === Type predicate expressions for numbers of different sizes
@@ -1418,6 +1450,69 @@ For verifying that an expression is not of a certain type, the following alterna
 <expr> IS NOT TYPED <TYPE>
 ----
 
+[[type-predicate-expressions-any-and-nothing]]
+=== Use of Any and Nothing types
+
+The `ANY` type is a supertype of all types and will therefore match on everything.
+The `NOTHING` type is however the type containing an empty set of values. This means that it will return `false` for all values.
+
+.Query
+[source, cypher]
+----
+RETURN 42 IS :: ANY AS isOfTypeAny, 42 IS :: NOTHING AS isOfTypeNothing
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| isOfTypeAny | isOfTypeNothing
+| true        | false
+2+d|Rows: 1
+|===
+
+[[type-predicate-expressions-lists]]
+=== List Types
+
+Type predicate expressions can be used for `LIST` types, where the inner type of the list must be specified.
+If the inner type is not relevant, then the `ANY` type may be used.
+
+For a `LIST` type check to return `true`, all values in the list must match the inner type.
+
+.Query
+[source, cypher]
+----
+UNWIND [[42], [42, null], [42, 42.0]] as val
+RETURN val, val IS :: LIST<INTEGER> AS isIntList
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| val         | isIntList
+| [42]        | true
+| [42, null]  | true
+| [42, 42.0]  | false
+2+d|Rows: 3
+|===
+
+An empty list will match on all inner types, even the `NOTHING` type.
+
+.Query
+[source, cypher]
+----
+RETURN
+    [] IS :: LIST<NOTHING> AS isNothingList,
+    [] IS :: LIST<INTEGER> AS isIntList,
+    [] IS :: LIST<FLOAT NOT NULL> AS isFloatNotNullList
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| isNothingList | isIntList | isFloatNotNullList
+| true          | true      | true
+3+d|Rows: 1
+|===
 
 [[label-expressions]]
 == Label expressions
