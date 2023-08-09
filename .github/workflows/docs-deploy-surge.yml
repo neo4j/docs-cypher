@@ -14,7 +14,7 @@ on:
 
 jobs:
   publish-docs:
-    if: github.event.workflow_run.conclusion == 'success'
+    # if: github.event.workflow_run.conclusion == 'success'
 
     runs-on: ubuntu-latest
 
@@ -45,23 +45,27 @@ jobs:
       - id: get-deploy-id
         run: |
           deployid=$(<deployid)
-          echo "::set-output name=deploy-id::$deployid"
+          case "$deployid" in ''|*[!0-9]*) echo "Provided PR number is not an integer"; exit 1 ;; esac
+          echo "deploy-id=$deployid" >> "$GITHUB_OUTPUT"
       
       - uses: actions/setup-node@v3
         with:
           node-version: lts/*
       
       - name: Deploy docs to surge
+        shell: bash
+        env:
+          SURGE_TOKEN: "${{ secrets.DOCS_SURGE_TOKEN }}"
         run: |
           npm install -g surge
-          surge ./site ${{ github.event.repository.owner.login}}-${{ github.event.repository.name}}-${{ steps.get-deploy-id.outputs.deploy-id }}.surge.sh --token ${{ secrets.SURGE_TOKEN }}
+          surge ./site ${{ github.event.repository.owner.login}}-${{ github.event.repository.name}}-${{ steps.get-deploy-id.outputs.deploy-id }}.surge.sh --token "$SURGE_TOKEN"
 
       - name: Comment on PR
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           number: ${{ steps.get-deploy-id.outputs.deploy-id }}
           message: |
-            Looks like you've updated the documentation!
+            This PR includes documentation updates.
 
-            Check out your changes at https://${{ github.event.repository.owner.login}}-${{ github.event.repository.name}}-${{ steps.get-deploy-id.outputs.deploy-id }}.surge.sh
+            You can view the updated docs at https://${{ github.event.repository.owner.login}}-${{ github.event.repository.name}}-${{ steps.get-deploy-id.outputs.deploy-id }}.surge.sh
           GITHUB_TOKEN: ${{ secrets.DOCS_PR_COMMENT_TOKEN }}
