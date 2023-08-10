@@ -14,19 +14,458 @@ A Cypher query begins as a declarative query string, describing the graph patter
 After parsing, the query string goes through the planner,  which produces an imperative plan, known as the logical plan, to determine the most efficient way of executing the query given the current state of the database.
 In the final phase, this logical plan is turned into an executable physical plan, which actually runs the query against the database. Executing this physical plan is the task of the Cypher runtime. 
 
-image::
+image::runtimes_cypher_lifecycle.svg[width="400", role="middle"]
 
 In Cypher, there are three types of runtimes: slotted, pipelined, and parallel.
 In general, the default runtimes provide the best query performance.
 However, there are scenarios when deciding which runtime to use can be an important step in maximizing the efficiency of queries.
 
 [[runtimes-example-graph]]
+== Example graph
 
 To explain the different Cypher runtimes, a graph based on the UK national rail network is used.
 The data in the graph is taken from link:https://www.raildeliverygroup.com/our-services/rail-data/fares-timetable-data.html[publically available datasets].
 
+image::patterns_qpp_calling_points.svg[width="700",role="middle"]
+
+The graph contains two types of nodes: `Stop` and `Station`.
+Each `Stop` on a train service `CALLS_AT` one `Station`, and has the properties `arrives` and `departs` that give the times the train is at the `Station`.
+Following the `NEXT` relationship of a `Stop` will give the next `Stop` of a service. 
+
+To recreate the graph, run the following query against an empty Neo4j database:
+
+.Query
+[source, cypher, role=test-setup]
+----
+CREATE (pmr:Station {name: 'Peckham Rye'}), 
+  (dmk:Station {name: 'Denmark Hill'}),
+  (clp:Station {name: 'Clapham High Street'}), 
+  (wwr:Station {name: 'Wandsworth Road'}),
+  (clj:Station {name: 'Clapham Junction'}),
+  (s1:Stop {arrives: time('17:19'), departs: time('17:20')}),
+  (s2:Stop {arrives: time('17:12'), departs: time('17:13')}),
+  (s3:Stop {arrives: time('17:10'), departs: time('17:11')}),
+  (s4:Stop {arrives: time('17:06'), departs: time('17:07')}),
+  (s5:Stop {arrives: time('16:58'), departs: time('17:01')}),
+  (s6:Stop {arrives: time('17:17'), departs: time('17:20')}),
+  (s7:Stop {arrives: time('17:08'), departs: time('17:10')}),
+  (clj)<-[:CALLS_AT]-(s1), (wwr)<-[:CALLS_AT]-(s2),
+  (clp)<-[:CALLS_AT]-(s3), (dmk)<-[:CALLS_AT]-(s4),
+  (pmr)<-[:CALLS_AT]-(s5), (clj)<-[:CALLS_AT]-(s6),
+  (dmk)<-[:CALLS_AT]-(s7),
+  (s5)-[:NEXT {distance: 1.2}]->(s4),(s4)-[:NEXT {distance: 0.34}]->(s3),
+  (s3)-[:NEXT {distance: 0.76}]->(s2), (s2)-[:NEXT {distance: 0.3}]->(s1),
+  (s7)-[:NEXT {distance: 1.4}]->(s6)
+----
+
+The example query uses a xref:patterns/concepts.adoc#quantified-path-pattern[quantified path pattern] to count the number of possible path patterns between the start `Station`, `Denmark Hill`, and the end `Station`, `Clapham Junction`:
+
+.Query
+[source, cypher]
+----
+MATCH (:Station { name: 'Denmark Hill' })<-[:CALLS_AT]-(d:Stop) 
+      ((:Stop)-[:NEXT]->(:Stop))+
+      (a:Stop)-[:CALLS_AT]->(:Station { name: 'Clapham Junction' })
+RETURN count(*)
+----
+
+As can be seen from the graph, two such patterns exist (one with a service departing `Denmark Hill` at `17:07` which stops at the Stations `Clapham High Street` and `Wandsworth Road`, and one direct service departing `Denmark Hill` at `17:10`):
+
+image::patterns_qpp_solutions.svg[width="700",role="middle"]
+
+For the purposes of understanding Cypher runtimes, however, the query result is less interesting than the planning that produces it.
+Before discussing those plans, it is first necessary to explore the role played by the Cypher planner, and how to read execution plans.
+
+[[runtimes-reading-execution-plans]]
+== Reading execution plans
+
+The Cypher planner produces logical plans which describe how a particular query is going to be executed by the physical plan.
+This execution plan is essentially a binary tree of operators.
+An operator is, in turn, a specialized execution module that is responsible for some type of transformation to the data before passing it on to another operator, until the desired graph pattern has been matched.
+The execution plans produced by the planner thus decide which operators will be used and in what order they will be applied in order to achieve the aim declared in the original query.
+
+In order to view the plan of a query, prepend the query with `EXPLAIN` - this will not run the query, but only show the tree of operators used to find the desired result.
+
+.Query
+[source, cypher]
+----
+EXPLAIN
+MATCH (:Station { name: 'Denmark Hill' })<-[:CALLS_AT]-(d:Stop) 
+      ((:Stop)-[:NEXT]->(:Stop))+
+      (a:Stop)-[:CALLS_AT]->(:Station { name: 'Clapham Junction' })
+RETURN count(*)
+----
+
+This is the resulting execution plan (produced by the slotted runtime, the default for Neo4j Community Edition)footnote:[The format of the execution plans displayed on this page are those generated when using link:{neo4j-docs-base-uri}/operations-manual/{page-version}/tools/cypher-shell[Cypher Shell].
+The execution plans generated by link:{neo4j-docs-base-uri}/browser-manual/current[Neo4j Browser] use a different format.]:
+
+[role="queryplan"]
+----
++-------------------+----+------------------------------------------------------------------------+----------------+
+| Operator          | Id | Details                                                                | Estimated Rows |
++-------------------+----+------------------------------------------------------------------------+----------------+
+| +ProduceResults   |  0 | `count(*)`                                                             |              1 |
+| |                 +----+------------------------------------------------------------------------+----------------+
+| +EagerAggregation |  1 | count(*) AS `count(*)`                                                 |              1 |
+| |                 +----+------------------------------------------------------------------------+----------------+
+| +Filter           |  2 | not anon_1 = anon_5 AND anon_0.name = $autostring_0 AND anon_0:Station |              0 |
+| |                 +----+------------------------------------------------------------------------+----------------+
+| +Expand(All)      |  3 | (d)-[anon_1:CALLS_AT]->(anon_0)                                        |              0 |
+| |                 +----+------------------------------------------------------------------------+----------------+
+| +Filter           |  4 | d:Stop                                                                 |              0 |
+| |                 +----+------------------------------------------------------------------------+----------------+
+| +Repeat(Trail)    |  5 | (a) (...){1, *} (d)                                                    |              0 |
+| |\                +----+------------------------------------------------------------------------+----------------+
+| | +Filter         |  6 | isRepeatTrailUnique(anon_7) AND anon_2:Stop                            |              6 |
+| | |               +----+------------------------------------------------------------------------+----------------+
+| | +Expand(All)    |  7 | (anon_4)<-[anon_7:NEXT]-(anon_2)                                       |              6 |
+| | |               +----+------------------------------------------------------------------------+----------------+
+| | +Filter         |  8 | anon_4:Stop                                                            |             11 |
+| | |               +----+------------------------------------------------------------------------+----------------+
+| | +Argument       |  9 | anon_4                                                                 |             13 |
+| |                 +----+------------------------------------------------------------------------+----------------+
+| +Filter           | 10 | a:Stop                                                                 |              0 |
+| |                 +----+------------------------------------------------------------------------+----------------+
+| +Expand(All)      | 11 | (anon_6)<-[anon_5:CALLS_AT]-(a)                                        |              0 |
+| |                 +----+------------------------------------------------------------------------+----------------+
+| +Filter           | 12 | anon_6.name = $autostring_1                                            |              1 |
+| |                 +----+------------------------------------------------------------------------+----------------+
+| +NodeByLabelScan  | 13 | anon_6:Station                                                         |             10 |
++-------------------+----+------------------------------------------------------------------------+----------------+
+----
+
+The operators can be seen in the leftmost column of the results table.
+The most important thing to remember when reading execution plans is that they are read from the bottom up.
+To follow the execution of this query, it is, therefore, necessary to start from the bottom or leaf operator, xref::execution-plans/operators.adoc#query-plan-node-by-label-scan[NodeByLabelScan] (which fetches all nodes with a specific label from the node label index) and move step-by-step up the operator tree to see how the data in the graph is gradually refined until the final, root operator,  xref::execution-plans/operators.adoc#query-plan-produce-results[ProduceResults], generates readable results for the user. 
+
+To read more about the specific role played by operators used in this example, and many others, see the page on xref::execution-plans/operators.adoc[operators]. 
+
+The `id` column specifies a unique ID assigned to each operator.
+There are no guarantees about the order of the ids, although they will usually start with 0 at the root operator, and will increase until the leaf operator is reached at the beginning of the operator tree. 
+
+The `Details` column in the middle of the execution plan describes what task is performed by each operator.
+For example, the details column of the xref::execution-plans/operators.adoc#query-plan-repeat[Repeat(Trail)] operator in the middle of the execution plan (`id 5`), specifies that the operator traverses a quantified path pattern without an upward limit.
+
+Finally, the `Estimated Rows` column in the rightmost column of the execution plan details the number of rows that are expected to be produced by each operator.
+This estimate is an approximate number based on the available statistical information and the compiler uses it to choose a suitable execution plan. 
+
+[[runtimes-slotted-runtime]]
+== Slotted runtime
+
+The slotted runtime is the default runtime for Neo4j Community Edition.
+Users of Neo4j Enterprise Edition must prepend their query with `CYPHER runtime = slotted` in order for a query to be run with slotted runtime.
+For example:
+
+.Query
+[source, cypher]
+----
+EXPLAIN
+CYPHER runtime = slotted
+MATCH (:Station { name: 'Denmark Hill' })<-[:CALLS_AT]-(d:Stop) 
+      ((:Stop)-[:NEXT]->(:Stop))+
+      (a:Stop)-[:CALLS_AT]->(:Station { name: 'Clapham Junction' })
+RETURN count(*)
+----
+
+This query will generate the same execution plan as was seen in the previous example:
+
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime SLOTTED
+
+Runtime version {neo4j-version-minor}
+
++-------------------+----+------------------------------------------------------------------------+----------------+
+| Operator          | Id | Details                                                                | Estimated Rows |
++-------------------+----+------------------------------------------------------------------------+----------------+
+| +ProduceResults   |  0 | `count(*)`                                                             |              1 |
+| |                 +----+------------------------------------------------------------------------+----------------+
+| +EagerAggregation |  1 | count(*) AS `count(*)`                                                 |              1 |
+| |                 +----+------------------------------------------------------------------------+----------------+
+| +Filter           |  2 | not anon_1 = anon_5 AND anon_0.name = $autostring_0 AND anon_0:Station |              0 |
+| |                 +----+------------------------------------------------------------------------+----------------+
+| +Expand(All)      |  3 | (d)-[anon_1:CALLS_AT]->(anon_0)                                        |              0 |
+| |                 +----+------------------------------------------------------------------------+----------------+
+| +Filter           |  4 | d:Stop                                                                 |              0 |
+| |                 +----+------------------------------------------------------------------------+----------------+
+| +Repeat(Trail)    |  5 | (a) (...){1, *} (d)                                                    |              0 |
+| |\                +----+------------------------------------------------------------------------+----------------+
+| | +Filter         |  6 | isRepeatTrailUnique(anon_7) AND anon_2:Stop                            |              6 |
+| | |               +----+------------------------------------------------------------------------+----------------+
+| | +Expand(All)    |  7 | (anon_4)<-[anon_7:NEXT]-(anon_2)                                       |              6 |
+| | |               +----+------------------------------------------------------------------------+----------------+
+| | +Filter         |  8 | anon_4:Stop                                                            |             11 |
+| | |               +----+------------------------------------------------------------------------+----------------+
+| | +Argument       |  9 | anon_4                                                                 |             13 |
+| |                 +----+------------------------------------------------------------------------+----------------+
+| +Filter           | 10 | a:Stop                                                                 |              0 |
+| |                 +----+------------------------------------------------------------------------+----------------+
+| +Expand(All)      | 11 | (anon_6)<-[anon_5:CALLS_AT]-(a)                                        |              0 |
+| |                 +----+------------------------------------------------------------------------+----------------+
+| +Filter           | 12 | anon_6.name = $autostring_1                                            |              1 |
+| |                 +----+------------------------------------------------------------------------+----------------+
+| +NodeByLabelScan  | 13 | anon_6:Station                                                         |             10 |
++-------------------+----+------------------------------------------------------------------------+----------------+
+----
+
+The physical plan produced by slotted runtimes is a one-to-one mapping from the logical plan, where each logical operator maps to a corresponding physical operator, and where the operators are processed row-by-row.
+When using slotted runtime, each variable in the query gets a dedicated “slot”, which the runtime uses for accessing the data mapped to the given variable, hence the name “slotted”.
+
+The slotted runtime uses the traditional execution model of most databases known as the iterator or “Volcano” model.
+This is a pull-based process where each operator in the tree “pulls” rows of data from its child operator by using a virtual call function.
+In this way, data is pulled up from the bottom of the execution plan to the top, generating an eruption-like flow of data.
+
+[[runtimes-slotted-runtime-considerations]]
+=== Considerations
+
+The slotted runtime is an interpreted runtime, meaning that it interprets the logical plan sent by the planner operator-by-operator.
+In general, this is a convenient and flexible approach capable of handling all operators and queries.
+The slotted runtime is conceptually similar to interpreted programming languages, in that it has a shorter planning phase because it does not need to generate all the code for the query before execution (unlike compiled runtimes - discussed in more detail xref::runtimes/concepts.adoc#pipelined-runtime-considerations[below]).footnote:[The classification of a runtime as interpreted or compiled is not entirely accurate.
+Most runtime implementations are not fully interpreted or fully compiled but are rather a blend of the two styles.
+For example, when the slotted runtime is run in Neo4j Enterprise Edition, code is generated for the expressions included in the query.
+Nevertheless, the slotted runtime is considered interpreted, since that is the predominant method of implementation.]
+
+There are, however, limitations to the slotted runtime.
+The continuous calling of virtual functions between each operator uses CPU cycles which results in slower query execution.
+Furthermore, the iterator model can lead to poor data locality, which can cause a slower query execution.
+This is because the process of individual rows being pulled from different operators makes it difficult to make efficient use of CPU caches.
+
+In general, users of Neo4j Enterprise Edition should not have to use slotted runtime.
+However, there are scenarios where it may be useful.
+For example, if using an application that generates queries which are not cached (i.e. never, or very rarely, repeated), then slotted runtime may be preferable because of its faster planning time.
+
+[role=enterprise-edition]
+[[runtimes-pipelined-runtime]]
+== Pipelined runtime
+
+The pipelined runtime is the default runtime for Neo4j Enterprise Edition.
+This means that unless users of Neo4j Enterprise Edition specify a different runtime, queries will be run using the pipelined runtime.
+
+To specify that a query should use the pipelined runtime, prepend the query with `CYPHER runtime = pipelined`.
+For example:
+
+.Query
+[source, cypher]
+----
+EXPLAIN
+CYPHER runtime = pipelined
+MATCH (:Station { name: 'Denmark Hill' })<-[:CALLS_AT]-(d:Stop) 
+      ((:Stop)-[:NEXT]->(:Stop))+
+      (a:Stop)-[:CALLS_AT]->(:Station { name: 'Clapham Junction' })
+RETURN count(*)
+----
+
+The resulting execution plan contains notable differences from the one produced by slotted runtime:
+
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++-------------------+----+------------------------------------------------------------------------+----------------+---------------------+
+| Operator          | Id | Details                                                                | Estimated Rows | Pipeline            |
++-------------------+----+------------------------------------------------------------------------+----------------+---------------------+
+| +ProduceResults   |  0 | `count(*)`                                                             |              1 | In Pipeline 3       |
+| |                 +----+------------------------------------------------------------------------+----------------+---------------------+
+| +EagerAggregation |  1 | count(*) AS `count(*)`                                                 |              1 |                     |
+| |                 +----+------------------------------------------------------------------------+----------------+                     |
+| +Filter           |  2 | not anon_1 = anon_5 AND anon_0.name = $autostring_0 AND anon_0:Station |              0 |                     |
+| |                 +----+------------------------------------------------------------------------+----------------+                     |
+| +Expand(All)      |  3 | (d)-[anon_1:CALLS_AT]->(anon_0)                                        |              0 |                     |
+| |                 +----+------------------------------------------------------------------------+----------------+                     |
+| +Filter           |  4 | d:Stop                                                                 |              0 |                     |
+| |                 +----+------------------------------------------------------------------------+----------------+                     |
+| +NullifyMetadata  | 14 |                                                                        |              0 |                     |
+| |                 +----+------------------------------------------------------------------------+----------------+                     |
+| +Repeat(Trail)    |  5 | (a) (...){1, *} (d)                                                    |              0 | Fused in Pipeline 2 |
+| |\                +----+------------------------------------------------------------------------+----------------+---------------------+
+| | +Filter         |  6 | isRepeatTrailUnique(anon_7) AND anon_2:Stop                            |              6 |                     |
+| | |               +----+------------------------------------------------------------------------+----------------+                     |
+| | +Expand(All)    |  7 | (anon_4)<-[anon_7:NEXT]-(anon_2)                                       |              6 |                     |
+| | |               +----+------------------------------------------------------------------------+----------------+                     |
+| | +Filter         |  8 | anon_4:Stop                                                            |             11 |                     |
+| | |               +----+------------------------------------------------------------------------+----------------+                     |
+| | +Argument       |  9 | anon_4                                                                 |             13 | Fused in Pipeline 1 |
+| |                 +----+------------------------------------------------------------------------+----------------+---------------------+
+| +Filter           | 10 | a:Stop                                                                 |              0 |                     |
+| |                 +----+------------------------------------------------------------------------+----------------+                     |
+| +Expand(All)      | 11 | (anon_6)<-[anon_5:CALLS_AT]-(a)                                        |              0 |                     |
+| |                 +----+------------------------------------------------------------------------+----------------+                     |
+| +Filter           | 12 | anon_6.name = $autostring_1                                            |              1 |                     |
+| |                 +----+------------------------------------------------------------------------+----------------+                     |
+| +NodeByLabelScan  | 13 | anon_6:Station                                                         |             10 | Fused in Pipeline 0 |
++-------------------+----+------------------------------------------------------------------------+----------------+---------------------+
+----
+
+The rightmost column of the plan shows that it has been divided into three different *pipelines*.
+In order to understand what pipelines are, it is first necessary to understand that queries using pipelined runtime are, unlike those run in slotted runtime, not executed one row at a time.
+Rather, the pipelined runtime allows the physical operators to consume and produce *batches* of between roughly 100 and 1000 rows each (referred to as *morsels*), which are written into *buffers* containing data and tasks for a pipeline.
+A pipeline can, in turn, be defined as a sequence of fused operators for the runtime to execute together in the same task. 
+
+The logical operators are thus not mapped to a corresponding physical operator when using pipelined runtime.
+Instead, the logical operator tree is transformed into an execution graph containing pipelines and buffers: 
+
+image::runtimes_execution_graph1.svg[width="700",role="middle"]
 
 
+In this execution graph, query execution starts at `pipeline 0` which will eventually produce a morsel to be written into the buffer of `pipeline 1`.
+Once there is data for `pipeline 1` to process, it can begin executing and in turn write data for the next pipeline to process, and so on.
+In this way, data is being pushed along the execution graph.
 
+[[runtimes-pipelined-runtime-considerations]]
+=== Considerations
 
+The pipelined runtime is a push-based execution model, where data is pushed from the leaf operator to its parent operators.
+Unlike pull-based models (which the slotted runtime uses), data can be kept in local variables when using push-based execution models, and this has several benefits; it enables direct use of CPU registers, improves the use of CPU caches, and avoids the costly virtual function calls used in pull-based models.
 
+The pipelined runtime is a combined model, that can either use an interpreted or compiled runtime.
+However, because it predominantly uses the latter, it is considered a compiled runtime.
+Unlike interpreted runtimes, compiled runtimes have a code generation phase followed by an execution phase, and this typically causes a longer query planning time, but a shorter execution time.
+
+As stated xref::runtimes/concepts.adoc#runtimes-slotted-runtime-considerations[above], there are rare scenarios in which users of Neo4j Enterprise Edition may benefit from not using the pipelined runtime for their queries.
+However, for most queries, the pipelined runtime is a more efficient runtime capable of handling all operators and queries.
+
+[role=enterprise-edition]
+[[runtimes-parallel-runtime]]
+== Parallel runtime
+
+_This feature was introduced in Neo4j x.y._
+
+Both slotted and pipelined runtime execute queries in a single thread assigned to one CPU core.
+It is still possible to achieve parallelism (broadly defined as when two or more sets of operations can be processed by the same CPU core at the same time) when using these two runtimes by running multiple queries concurrently.
+However, there are scenarios, principally when performing graph analytics, where it is beneficial for a single query to use several cores to boost its performance.
+This can be achieved by using parallel runtime, which is multi-threaded and allows queries to potentially utilize all available cores on the server running Neo4j.
+To specify that a query should use the Parallel runtime, prepend it with `CYPHER runtime = parallel`.
+For example:
+
+.Query
+[source, cypher]
+----
+EXPLAIN
+CYPHER runtime = parallel
+MATCH (:Station { name: 'Denmark Hill' })<-[:CALLS_AT]-(d:Stop) 
+      ((:Stop)-[:NEXT]->(:Stop))+
+      (a:Stop)-[:CALLS_AT]->(:Station { name: 'Clapham Junction' })
+RETURN count(*)
+----
+
+This is the resulting execution plan:
+
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PARALLEL
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++-------------------+----+------------------------------------------------------------------------+----------------+---------------------+
+| Operator          | Id | Details                                                                | Estimated Rows | Pipeline            |
++-------------------+----+------------------------------------------------------------------------+----------------+---------------------+
+| +ProduceResults   |  0 | `count(*)`                                                             |              1 | In Pipeline 6       |
+| |                 +----+------------------------------------------------------------------------+----------------+---------------------+
+| +EagerAggregation |  1 | count(*) AS `count(*)`                                                 |              1 |                     |
+| |                 +----+------------------------------------------------------------------------+----------------+                     |
+| +Filter           |  2 | not anon_1 = anon_5 AND anon_0.name = $autostring_0 AND anon_0:Station |              0 |                     |
+| |                 +----+------------------------------------------------------------------------+----------------+                     |
+| +Expand(All)      |  3 | (d)-[anon_1:CALLS_AT]->(anon_0)                                        |              0 | Fused in Pipeline 5 |
+| |                 +----+------------------------------------------------------------------------+----------------+---------------------+
+| +Filter           |  4 | d:Stop                                                                 |              0 |                     |
+| |                 +----+------------------------------------------------------------------------+----------------+                     |
+| +NullifyMetadata  | 14 |                                                                        |              0 |                     |
+| |                 +----+------------------------------------------------------------------------+----------------+                     |
+| +Repeat(Trail)    |  5 | (a) (...){1, *} (d)                                                    |              0 | Fused in Pipeline 4 |
+| |\                +----+------------------------------------------------------------------------+----------------+---------------------+
+| | +Filter         |  6 | isRepeatTrailUnique(anon_7) AND anon_2:Stop                            |              6 |                     |
+| | |               +----+------------------------------------------------------------------------+----------------+                     |
+| | +Expand(All)    |  7 | (anon_4)<-[anon_7:NEXT]-(anon_2)                                       |              6 | Fused in Pipeline 3 |
+| | |               +----+------------------------------------------------------------------------+----------------+---------------------+
+| | +Filter         |  8 | anon_4:Stop                                                            |             11 |                     |
+| | |               +----+------------------------------------------------------------------------+----------------+                     |
+| | +Argument       |  9 | anon_4                                                                 |             13 | Fused in Pipeline 2 |
+| |                 +----+------------------------------------------------------------------------+----------------+---------------------+
+| +Filter           | 10 | a:Stop                                                                 |              0 |                     |
+| |                 +----+------------------------------------------------------------------------+----------------+                     |
+| +Expand(All)      | 11 | (anon_6)<-[anon_5:CALLS_AT]-(a)                                        |              0 | Fused in Pipeline 1 |
+| |                 +----+------------------------------------------------------------------------+----------------+---------------------+
+| +Filter           | 12 | anon_6.name = $autostring_1                                            |              1 |                     |
+| |                 +----+------------------------------------------------------------------------+----------------+                     |
+| +NodeByLabelScan  | 13 | anon_6:Station                                                         |             10 | Fused in Pipeline 0 |
++-------------------+----+------------------------------------------------------------------------+----------------+---------------------+
+----
+
+A key difference between the physical plans produced by the parallel runtime compared to those generated by pipelined runtime is that, in general, more pipelines are produced when using the parallel runtime (in this case, seven instead of the four produced by the same query being run on pipelined runtime).
+This is because, when executing a query in the parallel runtime, it is more efficient to have more tasks that can be run in parallel, whereas when running a single-threaded execution in the pipelined runtime it is more efficient to fuse several pipelines together.
+
+The parallel runtime shares the same architecture as the pipelined runtime, meaning that it will transform the logical plan into the same type of execution graph as described above.
+However, when using parallel runtime, each pipeline task can be executed in a separate thread.
+Another similarity with pipelined runtime is that queries run on the parallel runtime will begin by generating the first pipeline which eventually will produce a morsel in the input buffer of the subsequent pipeline.
+But, whereas only one pipeline can progress at a time when using the pipelined runtime, parallel runtime allows pipelines to work concurrently on producing morsels.
+Therefore, as each task finishes, more and more work will be made available for the tasks which means that more and more workers can be utilized to execute the query.
+
+To further explain how parallel runtime works, a set of new terms need to be defined:
+
+* *Worker*: a thread that executes work units to evaluate incoming queries.
+* *Task*: a unit of work.
+A task executes one pipeline on one input morsel and produces one output morsel.
+If back-pressure prevents a task from completing, it can be rescheduled as a Continuation to resume at a later time.
+* *Continuation*: a task that did not finish execution and must be scheduled again.
+* *Scheduler*: responsible for deciding which unit of work to process next.
+Scheduling is decentralized, and each worker has its own scheduler instance.
+
+Consider the execution graph below, based on the same example query:
+
+image::runtimes_execution_graph2.svg[width="900",role="middle"]
+
+The execution graph shows that execution starts at `pipeline 0`, which consists of the operator `NodeByLabelScan` and can be executed simultaneously on all available threads working on different morsels of data.
+Once pipeline `0` has produced at least one full morsel of data, any thread can then start executing `pipeline 1`, while other threads may continue to execute `pipeline 0`.
+More specifically, once there is data from a pipeline, the scheduler can proceed to the next pipeline while concurrently executing earlier pipelines.
+In this case, `pipeline 5` ends with an aggregation (performed by the EagerAggregation operator), which means that the last pipeline (6) cannot start until all preceding pipelines are completely finished for all the preceding morsels of data.
+
+[[runtimes-parallel-runtime-considerations]]
+=== Considerations
+
+The parallel runtime is a combined model, capable of utilizing both interpreted and compiled runtimes depending on which of the two is deemed more efficient for a particular query.
+Just as the pipelined runtime, the parallel runtime is considered a compiled runtime because this is its predominant execution mode. 
+
+Unlike the pipelined runtime, which was designed as the most efficient method for most queries to be planned, the use cases for the parallel runtime are more specific, and there are situations where it is not possible or beneficial to use it.
+Most notably, the parallel runtime only supports read queries.
+Queries including write-updates will generate the following error message:
+
+[source, error]
+----
+The parallel runtime does not support updating queries. Please use another runtime.
+----
+
+Moreover, not all queries will run faster by using parallel runtime.
+For example, a query that only matches a small portion of the graph will probably not run any faster (it may even run slower when executed with the parallel runtime, because of its scheduling and the additional book-keeping required for executing a query on multiple threads).
+As a general rule of thumb, the parallel runtime is not beneficial for queries which take less than one second to complete. 
+
+Additionally, though individual queries may run faster when running the parallel runtime, the overall throughput of the database may decrease as a result of running many concurrent queries. 
+
+In general, the parallel runtime is thus not suitable for transactional processing queries with high throughput workloads.
+It is, however, very useful for analytical processing, where queries are constructed to target a large section of the graph to gain valuable data insights (as opposed to more operational queries).
+
+[[runtimes-summary]]
+== Summary
+
+The below table summarizes the most important distinctions between the three different runtimes available in Cypher:
+
+|===
+|  | *Slotted* | *Pipelined* | *Parallel*
+
+| *Execution model* | pull | push | push
+| *Physical operator consumption* | row-by-row | batched | batched  
+| *Processor threads* | single-threaded | single-threaded | multi-threaded
+| *Runtime-type* | interpreted | compiled or interpreted | compiled or interpreted
+
+|===
