@@ -1,0 +1,534 @@
+[[label-expressions]]
+= Label expressions
+
+In earlier versions of Neo4j, label expressions for nodes had a single colon operator that represented the `AND` operator.
+With the release of version 5.0, a new label expression with an extended set of logical operators is being introduced, in addition to the single colon operator.
+It is important to note that you cannot mix these different types of label expression syntax.
+For more information, see <<syntax-restrictions-label, Restrictions on using the different types of label expression syntax>>.
+
+Label expressions evaluate to `true` or `false` when applied to the set of labels for a node.
+
+Assuming no other filters are applied, then a label expression evaluating to `true` means the node is matched.
+
+The following table displays whether the label expression matches the relationship:
+
+.Label expression matches
+[cols="^3,^2,^2,^2,^2,^2,^2,^2,^2"]
+|===
+|
+8+^|*Node*
+
+|*Label expression* | `()` | `(:A)` | `(:B)` | `(:C)` | `(:A:B)` | `(:A:C)` | `(:B:C)` | `(:A:B:C)`
+| `()`
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+
+| `(:A)`
+|
+| {check-mark}
+|
+|
+| {check-mark}
+| {check-mark}
+|
+| {check-mark}
+
+| `(:A&B)`
+|
+|
+|
+|
+| {check-mark}
+|
+|
+| {check-mark}
+
+| `(:A\|B)`
+|
+| {check-mark}
+| {check-mark}
+|
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+
+| `(:!A)`
+| {check-mark}
+|
+| {check-mark}
+| {check-mark}
+|
+|
+| {check-mark}
+|
+
+| `(:!!A)`
+|
+| {check-mark}
+|
+|
+| {check-mark}
+| {check-mark}
+|
+| {check-mark}
+
+| `(:A&!A)`
+|
+|
+|
+|
+|
+|
+|
+|
+
+| `(:A\|!A)`
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+
+| `(:%)`
+|
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+
+| `(:!%)`
+| {check-mark}
+|
+|
+|
+|
+|
+|
+|
+
+| `(:%\|!%)`
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+
+| `(:%&!%)`
+|
+|
+|
+|
+|
+|
+|
+|
+
+| `(:A&%)`
+|
+| {check-mark}
+|
+|
+| {check-mark}
+| {check-mark}
+|
+| {check-mark}
+
+| `(:A\|%)`
+|
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+
+| `(:(A&B)&!(B&C))`
+|
+|
+|
+|
+| {check-mark}
+|
+|
+|
+
+| `(:!(A&%)&%)`
+|
+|
+| {check-mark}
+| {check-mark}
+|
+|
+| {check-mark}
+|
+
+|===
+
+
+[[syntax-restrictions-label]]
+== Restrictions on using the different types of label expression syntax
+
+Neo4j version 5.0 introduced an ampersand operator, which is equivalent to the colon conjunction operator.
+Mixing the colon conjunction operator with any of the new label expression operators in the same clause will raise a syntax error.
+
+For example, each of the following clauses will raise syntax errors:
+
+* `MATCH (n:A|B:C)`
+* `MATCH (n:A:B)-[]-(m:(A&B)|C)`
+* `MATCH (n:A:B)--(m), (n)-->(o:(A&B)|C)`
+* `RETURN n:A&B, n:A:B`
+* `MATCH (n:A:B)-[]-(m) WHERE m:(A&B)|C`
+
+In earlier versions of Neo4j (version 4.4 and earlier), relationship type expressions only had the pipe operator.
+As the pipe operator will continue to act as an `OR` operator, it can continue to be used alongside the new operators.
+
+To make it easier to use the new syntax when extending existing queries, using the different syntax types in separate clauses will be supported.
+
+For example, the following query will not raise a syntax error:
+
+[source, cypher, role=noplay]
+----
+MATCH (m:A:B:C)-[]->()
+MATCH (n:(A&B)|C)-[]->(m)
+RETURN m,n
+----
+
+Queries that exclusively use syntax from earlier versions of Neo4j (version 4.4 and earlier) will continue to be supported.
+
+For example, the following will not raise a syntax error:
+
+[source, cypher, role=noplay]
+----
+MATCH (m:A:B:C)-[:S|T]->()
+RETURN
+  CASE
+    WHEN m:D:E THEN m.p
+    ELSE null
+  END AS result
+----
+
+[[label-expressions-examples]]
+=== Examples
+
+The following graph is used for the examples below:
+
+////
+[source, cypher, role=test-setup]
+----
+MATCH (n:Toy|Cat|Dog|Person|Swedish) DETACH DELETE n;
+
+CREATE
+  (:A {name:'Alice'}),
+  (:B {name:'Bob'}),
+  (:C {name:'Charlie'}),
+  (:A:B {name:'Daniel'}),
+  (:A:C {name:'Eskil'}),
+  (:B:C {name:'Frank'}),
+  (:A:B:C {name:'George'}),
+  ({name:'Henry'})
+----
+////
+
+image:graph_label_expressions.svg[]
+
+* xref:syntax/expressions.adoc#label-expressions-node-pattern-without-label-expressions[]
+* xref:syntax/expressions.adoc#label-expressions-node-pattern-with-single-node-label[]
+* xref:syntax/expressions.adoc#label-expressions-node-pattern-with-and-expression[]
+* xref:syntax/expressions.adoc#label-expressions-note-pattern-with-or-expression[]
+* xref:syntax/expressions.adoc#label-expressions-node-pattern-with-not-expressions[]
+* xref:syntax/expressions.adoc#label-expressions-node-pattern-with-wildcard-expression[]
+* xref:syntax/expressions.adoc#label-expressions-node-pattern-with-nested-label-expressions[]
+* xref:syntax/expressions.adoc#label-expressions-where-clause-with-label-expression-as-predicate[]
+* xref:syntax/expressions.adoc#label-expressions-with-return-clauses[]
+
+
+[discrete]
+[[label-expressions-node-pattern-without-label-expressions]]
+=== Node pattern without label expressions
+
+A node pattern without a label expression returns all nodes in the graph, including nodes without labels.
+
+.+Label expression+
+======
+
+[source, cypher]
+----
+MATCH (n)
+RETURN n.name AS name
+----
+
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Alice"+
+| +"Bob"+
+| +"Charlie"+
+| +"Daniel"+
+| +"Eskil"+
+| +"Frank"+
+| +"George"+
+| +"Henry"+
+1+d|Rows: 8
+|===
+
+======
+
+
+[discrete]
+[[label-expressions-node-pattern-with-single-node-label]]
+=== Node pattern with a single node label
+
+A node pattern with a single label returns the nodes that contain the specified label.
+
+
+.+Label expression+
+======
+
+[source, cypher]
+----
+MATCH (n:A)
+RETURN n.name AS name
+----
+
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Alice"+
+| +"Daniel"+
+| +"Eskil"+
+| +"George"+
+1+d|Rows: 4
+|===
+
+======
+
+
+[discrete]
+[[label-expressions-node-pattern-with-and-expression]]
+=== Node pattern with an `AND` expression for the node labels
+
+A node pattern with an `AND` expression for the node label returns the nodes that contain both of the specified labels.
+
+
+.+Label expression+
+======
+
+[source, cypher]
+----
+MATCH (n:A&B)
+RETURN n.name AS name
+----
+
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Daniel"+
+| +"George"+
+1+d|Rows: 2
+|===
+
+======
+
+
+[discrete]
+[[label-expressions-note-pattern-with-or-expression]]
+=== Node pattern with an `OR` expression for the node labels
+
+A match with `OR` expressions for the node label returns the nodes that contain either of the specified labels.
+
+
+.+Label expression+
+======
+
+[source, cypher]
+----
+MATCH (n:A|B)
+RETURN n.name AS name
+----
+
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Alice"+
+| +"Bob"+
+| +"Daniel"+
+| +"Eskil"+
+| +"Frank"+
+| +"George"+
+1+d|Rows: 6
+|===
+
+======
+
+
+[discrete]
+[[label-expressions-node-pattern-with-not-expressions]]
+=== Node pattern with `NOT` expressions for the node labels
+
+A node pattern with a `NOT` expression for the node label returns the nodes that do not contain the specified label.
+
+
+.+Label expression+
+======
+
+[source, cypher]
+----
+MATCH (n:!A)
+RETURN n.name AS name
+----
+
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Bob"+
+| +"Charlie"+
+| +"Frank"+
+| +"Henry"+
+1+d|Rows: 4
+|===
+
+======
+
+
+[discrete]
+[[label-expressions-node-pattern-with-wildcard-expression]]
+=== Node pattern with a `Wildcard` expression for the node labels
+
+A node pattern with a `Wildcard` expression for the node label returns all the nodes that contain at least one label.
+
+
+.+Label expression+
+======
+
+[source, cypher]
+----
+MATCH (n:%)
+RETURN n.name AS name
+----
+
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Alice"+
+| +"Bob"+
+| +"Charlie"+
+| +"Daniel"+
+| +"Eskil"+
+| +"Frank"+
+| +"George"+
+1+d|Rows: 7
+|===
+
+======
+
+
+[discrete]
+[[label-expressions-node-pattern-with-nested-label-expressions]]
+=== Node pattern with nested label expressions
+
+A node pattern with nested label expressions returns the nodes for which the full expression is `true`.
+
+
+.+Label expression+
+======
+
+[source, cypher]
+----
+MATCH (n:(!A&!B)|C)
+RETURN n.name AS name
+----
+
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Charlie"+
+| +"Eskil"+
+| +"Frank"+
+| +"George"+
+| +"Henry"+
+1+d|Rows: 5
+|===
+
+======
+
+
+[discrete]
+[[label-expressions-where-clause-with-label-expression-as-predicate]]
+=== `WHERE` clause with label expressions as a predicate
+
+A label expression can also be used as a predicate in the `WHERE` clause.
+
+
+.+Label expression+
+======
+
+[source, cypher]
+----
+MATCH (n)
+WHERE n:A|B
+RETURN n.name AS name
+----
+
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +name+
+| +"Alice"+
+| +"Bob"+
+| +"Daniel"+
+| +"Eskil"+
+| +"Frank"+
+| +"George"+
+1+d|Rows: 6
+|===
+
+======
+
+
+[discrete]
+[[label-expressions-with-return-clauses]]
+=== Label expressions in the `WITH` and `RETURN` clauses
+
+A label expression can also be used in a `WITH` or a `RETURN` clause.
+
+
+.+Label expression+
+======
+
+[source, cypher]
+----
+MATCH (n)
+RETURN n:A&B
+----
+
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +n:A&B+
+| +false+
+| +false+
+| +false+
+| +true+
+| +false+
+| +false+
+| +true+
+| +false+
+1+d|Rows: 8
+|===
+
+======

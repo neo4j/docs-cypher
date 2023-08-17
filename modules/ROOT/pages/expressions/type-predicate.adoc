@@ -1,0 +1,298 @@
+[[type-predicate]]
+= Type predicate expressions
+
+_This feature was introduced in Neo4j 5.9._
+
+A type predicate expression can be used to verify the type of a variable, literal, property or other Cypher expression.
+
+[source, syntax, role="noheader", indent=0]
+----
+<expr> IS :: <TYPE>
+----
+
+Where `<expr>` is any Cypher expression and `<TYPE>` is a Cypher Type.
+For all available Cypher types, see the section on xref::values-and-types/property-structural-constructed.adoc#types-synonyms[types and their synonyms].
+
+[source, cypher]
+----
+UNWIND [42, true, 'abc'] AS val
+RETURN val, val IS :: INTEGER AS isInteger
+----
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| val | isInteger
+| 42 | true
+| true | false
+| 'abc' | false
+2+d|Rows: 3
+|===
+
+[[type-predicate-not]]
+== Type predicate expressions with NOT
+
+It is also possible to verify that a Cypher expression is not of a certain type, using the negated type predicate expression `IS NOT ::`.
+
+[source, cypher]
+----
+UNWIND [42, true, 'abc'] AS val
+RETURN val, val IS NOT :: STRING AS notString
+----
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| val | notString
+| 42 | true
+| true | true
+| 'abc' | false
+2+d|Rows: 3
+|===
+
+[[type-predicate-null]]
+== Type predicate expressions for null
+
+As of Neo4j 5.10, a Cypher type includes the `null` value unless it is explicitly appended with `NOT NULL`.
+Therefore, `IS ::` returns `true` for all expressions evaluating to `null`, unless they explicitly remove it.
+
+[source, cypher]
+----
+WITH toFloat(null) AS nullValue
+RETURN nullValue IS :: BOOLEAN AS isBoolean, nullValue IS :: BOOLEAN NOT NULL AS isNotNullBoolean
+----
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| isBoolean | isNotNullBoolean
+| true      | false
+2+d|Rows: 1
+|===
+
+Likewise, `IS NOT ::` returns `false` for all expressions evaluating to `null`, unless the type is appended with `NOT NULL`.
+
+[source, cypher]
+----
+WITH (null + 1) AS nullValue
+RETURN nullValue IS NOT :: DATE AS isNotDate, nullValue IS NOT :: DATE NOT NULL AS isNotNotNullDate
+----
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| isNotDate | isNotNotNullDate
+| false     | true
+2+d|Rows: 1
+|===
+
+It is also possible to check whether a value is the only `null` value using the `NULL` type.
+
+[source, cypher]
+----
+WITH toFloat(null) AS nullValue
+RETURN nullValue IS :: NULL AS isNull
+----
+
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| isNull
+| true
+1+d|Rows: 1
+|===
+
+Closed dynamic union types (`INNER_TYPE_1 | INNER_TYPE_2...`) cannot be declared as `NOT NULL`. Instead, all the inner types should be individually declared as not nullable to achieve this behavior.
+
+Note that all inner types in a closed dynamic union must be either nullable, or not nullable. This is because `null` values cannot be attributed to a specific type. A syntax error will be raised if the inner types are not of the same nullability.
+
+[source, cypher, role=test-fail]
+----
+RETURN 1 IS :: INTEGER NOT NULL | FLOAT
+----
+
+.Error message
+[source, output]
+----
+All types in a Closed Dynamic Union must be nullable, or be appended with `NOT NULL`.
+----
+
+
+[[type-predicate-properties]]
+== Type predicate expression for properties
+
+Type predicate expressions can also be used to filter out nodes or relationships with properties of a certain type.
+
+A graph containing the following nodes is used for the example below:
+
+////
+[source, cypher, role=test-setup]
+----
+MATCH (n) DETACH DELETE n;
+CREATE (:Person {name: 'Alice', age:14}),
+(:Person {name:'Bob', age:'20'}),
+(:Person {name:'Charlie', age:21}),
+----
+////
+
+image:graph_expression_type_predicate.svg[]
+
+The following query finds all `Person` nodes with an `age` property that is an `INTEGER` with a greater value than `18`.
+
+[source, cypher]
+----
+MATCH (n:Person)
+WHERE n.age IS :: INTEGER AND n.age > 18
+RETURN n.name AS name, n.age AS age
+----
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | age
+| Charlie | 21
+2+d|Rows: 1
+|===
+
+The type `PROPERTY VALUE` can also be used to check whether a type is storable as a property.
+Types not storable in properties, such as `MAP`, will return `false` when checked with `IS :: PROPERTY VALUE`.
+
+[[type-predicate-numbers]]
+== Type predicate expressions for numbers of different sizes
+
+For numerical values passed in as parameters, Cypher does not take the size of the number into account.
+Cypher will therefore regard any exact numerical parameter as an `INTEGER` regardless of its declared size.
+For example, an `INT16` or an `INT32` passed through from a client programming language will both be treated by Cypher as an `INTEGER`.
+Note that any exact numerical parameter used must fit within the range of an `INT 64`. 
+
+[source, cypher, role=test-skip]
+----
+RETURN $int16param IS :: INTEGER AS isInteger
+----
+
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| isInteger
+| true
+1+d|Rows: 1
+|===
+
+More information about parameters can be found xref::syntax/parameters.adoc[here].
+
+[[type-predicate-syntax-variation]]
+== Syntactical variations of type predicate expressions
+
+Type predicate expressions allow for some alternative syntax:
+
+[source, syntax, role="noheader", indent=0]
+----
+<expr> IS TYPED <TYPE>
+----
+
+[source, syntax, role="noheader", indent=0]
+----
+<expr> :: <TYPE>
+----
+
+For verifying that an expression is not of a certain type, the following alternative syntax is supported:
+
+[source, syntax, role="noheader", indent=0]
+----
+<expr> IS NOT TYPED <TYPE>
+----
+
+[[type-predicate-any-and-nothing]]
+== Use of `ANY` and `NOTHING` types
+
+_This feature was introduced in Neo4j 5.10._
+
+`ANY` is a supertype which matches values of all types.
+`NOTHING` is a type containing an empty set of values.
+This means that it returns `false` for all values.
+
+[source, cypher]
+----
+RETURN 42 IS :: ANY AS isOfTypeAny, 42 IS :: NOTHING AS isOfTypeNothing
+----
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| isOfTypeAny | isOfTypeNothing
+| true        | false
+2+d|Rows: 1
+|===
+
+[[type-predicate-closed-dynamic-unions]]
+== Closed Dynamic Unions
+
+_This feature was introduced in Neo4j 5.11._
+
+Closed dynamic union types allow for the testing of multiple types in the same predicate.
+
+For example:
+
+[source, cypher]
+----
+UNWIND [42, 42.0, "42"] as val
+RETURN val, val IS :: INTEGER | FLOAT AS isNumber
+----
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| val   | isNumber
+| 42    | true
+| 42.0  | true
+| "42"  | false
+2+d|Rows: 3
+|===
+
+[[type-predicate-lists]]
+== List Types
+
+_This feature was introduced in Neo4j 5.10._
+
+Type predicate expressions can be used for `LIST` types, where the inner type of the elements in the list must be specified.
+If the inner type is not relevant, then the `ANY` type may be used.
+
+For a `LIST` type check to return `true`, all values in the list must match the inner type.
+
+[source, cypher]
+----
+UNWIND [[42], [42, null], [42, 42.0]] as val
+RETURN val, val IS :: LIST<INTEGER> AS isIntList
+----
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| val         | isIntList
+| [42]        | true
+| [42, null]  | true
+| [42, 42.0]  | false
+2+d|Rows: 3
+|===
+
+An empty list will match on all inner types, even the `NOTHING` type.
+
+[source, cypher]
+----
+RETURN
+    [] IS :: LIST<NOTHING> AS isNothingList,
+    [] IS :: LIST<INTEGER> AS isIntList,
+    [] IS :: LIST<FLOAT NOT NULL> AS isFloatNotNullList
+----
+
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| isNothingList | isIntList | isFloatNotNullList
+| true          | true      | true
+3+d|Rows: 1
+|===
+
+Lists can be combined with closed dynamic union types to create tests for heterogeneous lists.
+
+[source, cypher]
+----
+WITH [1, 0, true, false] AS booleanList
+RETURN booleanList IS :: LIST<BOOLEAN | INTEGER> as isMixedList
+----
+
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| isMixedList
+| true
+1+d|Rows: 1
+|===
