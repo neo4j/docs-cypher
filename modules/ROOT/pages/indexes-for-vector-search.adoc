@@ -389,34 +389,50 @@ For example, you cannot have one xref:indexes-vector-similarity-euclidean[Euclid
 The vector search index is a beta feature.
 The below table lists the known issues in its current implementation.
 
-[%header,cols="5d,d"]
+[%header,cols="5a,d"]
 |===
 | Known issues | Fixed in
 
-a| xref:clauses/listing-procedures.adoc[`SHOW PROCEDURES`] does not show the vector index procedures:
+| xref:clauses/listing-procedures.adoc[`SHOW PROCEDURES`] does not show the vector index procedures:
 
 * {link-procedures-reference}#procedure_db_create_setVectorProperty[`db.create.setVectorProperty`]
 * {link-procedures-reference}#procedure_db_index_vector_createNodeIndex[`db.index.vector.createNodeIndex`]
 * {link-procedures-reference}#procedure_db_index_vector_queryNodes[`db.index.vector.queryNodes`]
+
+[NOTE]
+====
+The procedures are still usable, just not visible.
+====
 | Neo4j 5.12
 
 | Passing `null` as an argument to some of the procedure parameters can generate a confusing exception.
 a| Neo4j 5.12
 
 | The creation of the vector index skipped the check to limit the dimensionality to `2048`.
+
+[NOTE]
+====
+Vector indexes configured with dimensionality greater than `2048` in Neo4j 5.11 should continue to work after the limitation is applied.
+====
 |
 
-| The validation for xref:indexes-vector-similarity-cosine[cosine similarity] verifies the vector's {l2-norm} can be represented finitely in {ieee-754} *double* precision, rather than _single_ precision.
+d| The validation for xref:indexes-vector-similarity-cosine[cosine similarity] verifies the vector's {l2-norm} can be represented finitely in {ieee-754} *double* precision, rather than _single_ precision.
 This can lead to certain large component vectors being incorrectly indexed, and return a similarity score of `&plusmn;0.0`.
 a| // Neo4j 5.12    pending PR
 
-a| {link-procedures-reference}#procedure_db_index_vector_queryNodes[`db.index.vector.queryNodes`] query vector validation is incorrect with a xref:indexes-vector-similarity-cosine[cosine] vector index. The {l2-norm} validation only considers the last component of the vector. If that component is `&plusmn;0.0`, an otherwise valid query vector will be thrown as invalid. This can also result in some invalid vectors being used to query, and return a similarity scores of `&plusmn;0.0`.
+| {link-procedures-reference}#procedure_db_index_vector_queryNodes[`db.index.vector.queryNodes`] query vector validation is incorrect with a xref:indexes-vector-similarity-cosine[cosine] vector index. The {l2-norm} validation only considers the last component of the vector. If that component is `&plusmn;0.0`, an otherwise valid query vector will be thrown as invalid. This can also result in some invalid vectors being used to query, and return a similarity scores of `&plusmn;0.0`.
+
+[TIP]
+====
+For {l2-norm}alized vectors (unit vectors), thus their length image:l2norm_is_1.svg["The l2-norm of vector v equals 1"], Euclidean and cosine similarity functions produce the same similarity ordering.
+It is _recommended_ to normalize your vectors (if needed), and use a xref:indexes-vector-similarity-euclidean[Euclidean] vector index.
+====
 a| // Neo4j 5.12    pending PR
 
 | The vector index `createStatement` field from xref:indexes-for-search-performance.adoc#indexes-list-indexes[`SHOW INDEXES`] does not correctly escape single quotes in index names, labels, and property keys.
 a| // Neo4j 5.12    pending PR
 
-a| {link-operations-manual}/backup-restore/copy-database/[Copying a database store] with a vector index does not log the recreation command, and instead logs an error:
+| {link-operations-manual}/backup-restore/copy-database/[Copying a database store] with a vector index does not log the recreation command, and instead logs an error:
 ----
 ERROR: [StoreCopy] Unable to format statement for index 'index-name'
 ----
@@ -424,9 +440,25 @@ Due to an:
 ----
 java.lang.IllegalArgumentException: Did not recognize index type VECTOR
 ----
+
+[TIP]
+====
+If a store copy is required, please make note of the creation commands from:
+[source,cypher]
+----
+SHOW INDEXES YIELD type, createStatement
+WHERE type = 'VECTOR'
+RETURN createStatement
+----
+====
 a| // Neo4j 5.12    pending PR
 
 | Some of the protections preventing using new features during database rolling upgrade are missing. This can result in a transaction to create a vector index being created on a cluster member running a Neo4j 5.11 version and being distributed to other cluster members on an older Neo4j version. The older Neo4j versions will fail to understand the transaction, and will panic.
+
+[TIP]
+====
+Ensure that all cluster members have been updated to use Neo4j 5.11 or newer before calling `dbms.upgrade()` on the `system` database. Once commited, vector indexes can be safely created on the cluster.
+====
 a| // Neo4j 5.12    pending PR
 
 |===
