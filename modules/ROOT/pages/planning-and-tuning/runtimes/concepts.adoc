@@ -1,7 +1,7 @@
 :description: information about the concepts behind slotted, pipelined, and parallel runtime. 
 
 [[runtimes-concepts]]
-= Concepts
+= Runtime concepts
 
 This is a step-by-step guide to the concepts behind Cypher runtimes.
 It starts with explaining the role a runtime plays in the lifecycle of a Cypher query, and how to read query plans produced by the Cypher planner.
@@ -10,15 +10,18 @@ It then explores the three available runtimes in more detail and their different
 [[runtimes-cypher-query-lifecycle]]
 == Cypher runtimes and the lifecycle of a Cypher query
 
-A Cypher query begins as a declarative query string, describing the graph pattern to match in a database.
-After parsing, the query string goes through the planner,  which produces an imperative plan, known as the logical plan, to determine the most efficient way of executing the query given the current state of the database.
+A Cypher query begins as a declarative query represented as a string, describing the graph pattern to match in a database.
+After parsing, the query string goes through the query optimizer (also known as the planner), which produces an imperative plan, known as the logical plan, to determine the most efficient way of executing the query given the current state of the database.footnote:[The relevant information about the current state of the database includes which indexes and constraints are available, as well as various statistics maintained by the database.
+The Cypher planner uses this information to determine which access patterns will produce the best execution plan.
+The statistical information maintained by Neo4j includes the following: the number of nodes having a certain label, the number of relationships by type, selectivity per index, and the number of relationships by type, ending with or starting from a node with a specific label.
+]
 In the final phase, this logical plan is turned into an executable physical plan, which actually runs the query against the database. Executing this physical plan is the task of the Cypher runtime. 
 
 image::runtimes_cypher_lifecycle.svg[width="400", role="middle"]
 
 In Cypher, there are three types of runtimes: slotted, pipelined, and parallel.
-In general, the default runtimes provide the best query performance.
-However, there are scenarios when deciding which runtime to use can be an important step in maximizing the efficiency of queries.
+In general, the default runtimes (the pipelined runtime in Enterprise Edition) provide the best query performance.
+However, each runtime offers advantages and disadvantages, and there are scenarios when deciding which runtime to use is an important step in maximizing the efficiency of queries. 
 
 [[runtimes-example-graph]]
 == Example graph
@@ -79,9 +82,9 @@ Before discussing those plans, it is first necessary to explore the role played 
 [[runtimes-reading-execution-plans]]
 == Reading execution plans
 
-The Cypher planner produces logical plans which describe how a particular query is going to be executed by the physical plan.
+The Cypher planner produces logical plans which describe how a particular query is going to be executed.
 This execution plan is essentially a binary tree of operators.
-An operator is, in turn, a specialized execution module that is responsible for some type of transformation to the data before passing it on to another operator, until the desired graph pattern has been matched.
+An operator is, in turn, a specialized execution module that is responsible for some type of transformation to the data before passing it on to the next operator, until the desired graph pattern has been matched.
 The execution plans produced by the planner thus decide which operators will be used and in what order they will be applied in order to achieve the aim declared in the original query.
 
 In order to view the plan of a query, prepend the query with `EXPLAIN` - this will not run the query, but only show the tree of operators used to find the desired result.
@@ -147,7 +150,18 @@ The `Details` column in the middle of the execution plan describes what task is 
 For example, the details column of the xref::execution-plans/operators.adoc#query-plan-repeat[Repeat(Trail)] operator in the middle of the execution plan (`id 5`), specifies that the operator traverses a quantified path pattern without an upward limit.
 
 Finally, the `Estimated Rows` column in the rightmost column of the execution plan details the number of rows that are expected to be produced by each operator.
-This estimate is an approximate number based on the available statistical information and the compiler uses it to choose a suitable execution plan. 
+This estimate is an approximate number based on the available statistical information and the planner uses it to choose a suitable execution plan. 
+
+[[runtimes-lazy-eager-evaluation]]
+== Lazy and eager query evaluation
+
+In general, query evaluation is _lazy_.
+This means that most operators pipe their output rows to their parent operators as soon as they are produced.
+In other words, a child operator may not be fully exhausted before the parent operator starts consuming the input rows produced by the child.
+
+However, some operators, such as those used for aggregation and sorting, need to aggregate all their rows before they can produce output.
+These operators are called eager operators (see the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-eager-aggregation[`EagerAggregation`] operator in the above table (`id 1`) for an example).
+Such operators need to complete execution in its entirety before any rows are sent to their parents as input, and are sometimes required to enforce Cypher semantic.
 
 [[runtimes-slotted-runtime]]
 == Slotted runtime
@@ -220,6 +234,8 @@ In this way, data is pulled up from the bottom of the execution plan to the top,
 [[runtimes-slotted-runtime-considerations]]
 === Considerations
 
+The slotted runtime is the first high-performance runtime introduced in Neo4j, replacing the original (and slower) interpreted runtime, which is now retired.
+
 The slotted runtime is an interpreted runtime, meaning that it interprets the logical plan sent by the planner operator-by-operator.
 In general, this is a convenient and flexible approach capable of handling all operators and queries.
 The slotted runtime is conceptually similar to interpreted programming languages, in that it has a shorter planning phase because it does not need to generate all the code for the query before execution (unlike compiled runtimes - discussed in more detail xref::runtimes/concepts.adoc#pipelined-runtime-considerations[below]).footnote:[The classification of a runtime as interpreted or compiled is not entirely accurate.
@@ -227,14 +243,12 @@ Most runtime implementations are not fully interpreted or fully compiled but are
 For example, when the slotted runtime is run in Neo4j Enterprise Edition, code is generated for the expressions included in the query.
 Nevertheless, the slotted runtime is considered interpreted, since that is the predominant method of implementation.]
 
+In general, users of Neo4j Enterprise Edition should not have to use slotted runtime. However, there are scenarios where the fast planning phase of the slotted runtime may be useful. For example, if using an application that generates queries which are not cached (i.e. never, or very rarely, repeated), then slotted runtime may be preferable because of its faster planning time. 
+
 There are, however, limitations to the slotted runtime.
 The continuous calling of virtual functions between each operator uses CPU cycles which results in slower query execution.
 Furthermore, the iterator model can lead to poor data locality, which can cause a slower query execution.
 This is because the process of individual rows being pulled from different operators makes it difficult to make efficient use of CPU caches.
-
-In general, users of Neo4j Enterprise Edition should not have to use slotted runtime.
-However, there are scenarios where it may be useful.
-For example, if using an application that generates queries which are not cached (i.e. never, or very rarely, repeated), then slotted runtime may be preferable because of its faster planning time.
 
 [role=enterprise-edition]
 [[runtimes-pipelined-runtime]]
@@ -307,9 +321,9 @@ Batch size 128
 The rightmost column of the plan shows that it has been divided into three different *pipelines*.
 In order to understand what pipelines are, it is first necessary to understand that queries using pipelined runtime are, unlike those run in slotted runtime, not executed one row at a time.
 Rather, the pipelined runtime allows the physical operators to consume and produce *batches* of between roughly 100 and 1000 rows each (referred to as *morsels*), which are written into *buffers* containing data and tasks for a pipeline.
-A pipeline can, in turn, be defined as a sequence of fused operators for the runtime to execute together in the same task. 
+A pipeline can, in turn, be defined as a sequence of operators which have been fused into one another so that they may be executed together in the same task by the runtime. 
 
-The logical operators are thus not mapped to a corresponding physical operator when using pipelined runtime.
+The logical operators are thus not mapped to a corresponding physical operator when using the pipelined runtime.
 Instead, the logical operator tree is transformed into an execution graph containing pipelines and buffers: 
 
 image::runtimes_execution_graph1.svg[width="700",role="middle"]
@@ -325,6 +339,8 @@ In this way, data is being pushed along the execution graph.
 The pipelined runtime is a push-based execution model, where data is pushed from the leaf operator to its parent operators.
 Unlike pull-based models (which the slotted runtime uses), data can be kept in local variables when using push-based execution models, and this has several benefits; it enables direct use of CPU registers, improves the use of CPU caches, and avoids the costly virtual function calls used in pull-based models.
 
+The pipelined runtime is ideal for transactional use cases, with a big number of queries running in parallel on the system. This covers most usage scenarios, and for this reason, it is the default Neo4j runtime.
+
 The pipelined runtime is a combined model, that can either use an interpreted or compiled runtime.
 However, because it predominantly uses the latter, it is considered a compiled runtime.
 Unlike interpreted runtimes, compiled runtimes have a code generation phase followed by an execution phase, and this typically causes a longer query planning time, but a shorter execution time.
@@ -336,10 +352,11 @@ However, for most queries, the pipelined runtime is a more efficient runtime cap
 [[runtimes-parallel-runtime]]
 == Parallel runtime
 
-_This feature was introduced in Neo4j x.y._
+_This feature was introduced in Neo4j 5.13._
 
 Both slotted and pipelined runtime execute queries in a single thread assigned to one CPU core.
 It is still possible to achieve parallelism (broadly defined as when two or more sets of operations can be processed by the same CPU core at the same time) when using these two runtimes by running multiple queries concurrently.
+This is the typical scenario in OLTP (Online Transaction Processing) use cases.
 However, there are scenarios, principally when performing graph analytics, where it is beneficial for a single query to use several cores to boost its performance.
 This can be achieved by using parallel runtime, which is multi-threaded and allows queries to potentially utilize all available cores on the server running Neo4j.
 To specify that a query should use the Parallel runtime, prepend it with `CYPHER runtime = parallel`.
@@ -434,8 +451,8 @@ In this case, `pipeline 5` ends with an aggregation (performed by the EagerAggre
 [[runtimes-parallel-runtime-considerations]]
 === Considerations
 
-The parallel runtime is a combined model, capable of utilizing both interpreted and compiled runtimes depending on which of the two is deemed more efficient for a particular query.
-Just as the pipelined runtime, the parallel runtime is considered a compiled runtime because this is its predominant execution mode. 
+In most situations where multiple CPU cores are available, queries that require more than a few milliseconds to run (e.g. >500ms) on the pipelined runtime will run significantly faster on the parallel runtime.
+The parallel runtime is thus suited for analytical processing, where relatively few demanding queries are constructed to target a large section of the graph to gain valuable data insights.
 
 Unlike the pipelined runtime, which was designed as the most efficient method for most queries to be planned, the use cases for the parallel runtime are more specific, and there are situations where it is not possible or beneficial to use it.
 Most notably, the parallel runtime only supports read queries.
@@ -452,8 +469,8 @@ As a general rule of thumb, the parallel runtime is not beneficial for queries w
 
 Additionally, though individual queries may run faster when running the parallel runtime, the overall throughput of the database may decrease as a result of running many concurrent queries. 
 
-In general, the parallel runtime is thus not suitable for transactional processing queries with high throughput workloads.
-It is, however, very useful for analytical processing, where queries are constructed to target a large section of the graph to gain valuable data insights (as opposed to more operational queries).
+The parallel runtime is accordingly not suitable for transactional processing queries with high throughput workloads.
+It is, however, ideal for analytical use cases where the database runs relatively few, but demanding read-queries. 
 
 [[runtimes-summary]]
 == Summary
