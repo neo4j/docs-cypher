@@ -171,6 +171,11 @@ point.distance(n.prop, center) < = distance
 
 |===
 
+[NOTE]
+====
+The above set of predicate can be extended with the use of type constraints, see xref::query-tuning/indexes.adoc#extending-index-compatibility-with-type-constraints[Extending index compatibility with type constraints].
+====
+
 
 == TEXT indexes
 
@@ -188,7 +193,7 @@ However, other predicates are only used when it is known that the property is co
 * `n.prop = "string"`
 * `n.prop IN ["a", "b", "c"]`
 
-This means that a `TEXT` index is not able to solve e.g. `a.prop = b.prop`.
+This means that a `TEXT` index is not able to solve e.g. `a.prop = b.prop`, unless a type constraint also exists on the property.
 
 In summary, `TEXT` indexes support the following predicates:
 
@@ -233,6 +238,11 @@ CONTAINS
 
 |===
 
+[NOTE]
+====
+The above set of predicate can be extended with the use of type constraints, see xref::query-tuning/indexes.adoc#extending-index-compatibility-with-type-constraints[Extending index compatibility with type constraints].
+====
+
 In some cases, the system cannot determine whether an expression is of type string.
 
 For example when the compared value is a parameter:
@@ -248,7 +258,22 @@ Depending on how values that are not of type string should be treated, there are
 `MATCH (n:Label) WHERE $param STARTS WITH '' AND n.prop = $param`
 * If expressions which are not of type string should be converted to string, then wrapping these in `toString(<expression>)` is the right choice:
 `MATCH (n:Label) WHERE n.prop = toString($param)`
+* If it's known that the property is always of type string, then it's also possible to xref::query-tuning/indexes.adoc#extending-index-compatibility-with-type-constraints[add a type constraint to help the planner].
 
+[[extending-index-compatibility-with-type-constraints]]
+== Extending index compatibility with type constraints
+
+As explained in above sections, for indexes that are compatible only with specific types (i.e. `TEXT` and `POINT` indexes) the planner needs to be able to deduce that a predicate will evaluate to `null` for non-compatible values.
+Since xref::constraints/index.adoc#types-of-constraint[type constraints] guarantee that a property is always of the same type, they can be used to extend the scenarios for which `TEXT` indexes and `POINT` indexes are compatible with a predicate.
+
+For example if the property `prop` in below clause has been constrained to have type `String`, then a `TEXT` index can also be planned for the `IS NOT NULL` predicate:
+
+[source]
+----
+MATCH (n: Label) WHERE n.prop IS NOT NULL
+----
+
+Similarly, if the property had been constrained to have type `Point`, then a `POINT` index could have been used.
 
 == Index preference
 
