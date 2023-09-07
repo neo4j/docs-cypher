@@ -1,46 +1,48 @@
-[[expressions-case]]
+[[case]]
 = Conditional expressions (CASE)
 
-Generic conditional expressions may be expressed using the `CASE` construct.
+Generic conditional expressions can be expressed in Cypher using the `CASE` construct.
 Two variants of `CASE` exist within Cypher: the simple form, which allows an expression to be compared against multiple values, and the generic form, which allows multiple conditional statements to be expressed.
 
 [NOTE]
 ====
-`CASE` can only be used as part of `RETURN` or `WITH` if you want to use the result in the succeeding clause or statement.
+`CASE` can only be used as part of xref:clauses/return.adoc[] or xref:clauses/with.adoc[] if you want to use the result in a subsequent clause.
 ====
 
-[[expressions-case-example]]
+[[case-example]]
 == Example graph
 
 The following graph is used for the examples below:
 
-////
+image:case_graph.svg[width="500",role="middle"]
+
+To recreate the graph, run the following query against an empty Neo4j database:
+
 [source, cypher, role=test-setup]
 ----
 CREATE
-  (alice:A {name:'Alice', age: 38, eyes: 'brown'}),
-  (bob:B {name: 'Bob', age: 25, eyes: 'blue'}),
-  (charlie:C {name: 'Charlie', age: 53, eyes: 'green'}),
-  (daniel:D {name: 'Daniel', eyes: 'brown'}),
-  (eskil:E {name: 'Eskil', age: 41, eyes: 'blue', array: ['one', 'two', 'three']}),
+  (alice:Person {name:'Alice', age: 38, eyes: 'brown'}),
+  (bob:Person {name: 'Bob', age: 25, eyes: 'blue'}),
+  (charlie:Person {name: 'Charlie', age: 53, eyes: 'green'}),
+  (daniel:Person {name: 'Daniel', eyes: 'brown'}),
+  (eskil:Person {name: 'Eskil', age: 41, eyes: 'blue'}),
   (alice)-[:KNOWS]->(bob),
   (alice)-[:KNOWS]->(charlie),
   (bob)-[:KNOWS]->(daniel),
   (charlie)-[:KNOWS]->(daniel),
   (bob)-[:MARRIED]->(eskil)
 ----
-////
 
-image:graph3.svg[]
-
-[[expressions-case-simple]]
+[[case-simple]]
 == Simple `CASE`
 
 The simple `CASE` form is used to compare an expression against multiple values.
-The expression is calculated, and compared in order with the `WHEN` clauses until a match is found.
-If no match is found, the expression in the `ELSE` clause is returned.
-However, if there is no `ELSE` case and no match is found, `null` will be returned.
+The expressions are evaluated by the `WHEN` operator until a `MATCH` is found.
+If no match is found, the expression in the `ELSE` operator is returned.
+If there is no `ELSE` case and no match is found, `null` will be returned.
 
+[[case-simple-syntax]]
+=== Syntax 
 
 [source, syntax]
 ----
@@ -50,7 +52,6 @@ CASE test
   [ELSE default]
 END
 ----
-
 
 *Arguments:*
 [options="header"]
@@ -70,6 +71,8 @@ END
 | If no match is found, `default` is returned.
 |===
 
+[[case-simple-examples]]
+=== Example
 
 [source, cypher]
 ----
@@ -84,24 +87,25 @@ END AS result
 
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
-| +result+
-| +2+
-| +1+
-| +3+
-| +2+
-| +1+
+| result
+| 2
+| 1
+| 3
+| 2
+| 1
 1+d|Rows: 5
 |===
 
-
-[[expressions-case-generic]]
+[[case-generic]]
 == Generic `CASE`
 
 The generic `CASE` expression enables the expression of multiple conditional statements.
-The predicates are evaluated in order until a `true` value is found, and the result value is used.
-If no match is found, the expression in the `ELSE` clause is returned.
-However, if there is no `ELSE` case and no match is found, `null` will be returned.
+Each row is evaluated in order and without any pre-evaluation until a `true` value is found.
+If no match is found, the expression in the `ELSE` operator is returned.
+If there is no `ELSE` case and no match is found, `null` will be returned
 
+[[case-generic-syntax]]
+=== Syntax
 
 [source, syntax]
 ----
@@ -111,7 +115,6 @@ CASE
   [ELSE default]
 END
 ----
-
 
 *Arguments:*
 [options="header"]
@@ -127,6 +130,9 @@ END
 | If no match is found, `default` is returned.
 |===
 
+[[case-generic-examples]]
+=== Example
+
 [source, cypher]
 ----
 MATCH (n)
@@ -141,112 +147,24 @@ END AS result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | +result+
-| +2+
-| +1+
-| +3+
-| +3+
-| +1+
+| 2
+| 1
+| 3
+| 3
+| 1
 1+d|Rows: 5
 |===
 
 
-[[expressions-case-differentiating]]
-== Differentiating simple and generic `CASE` forms: 
+[[expressions-case-null-differentiating]]
+== `CASE` with `null` values, and differentiating simple and generic `CASE` forms
 
-Owing to the close similarity between the syntax of the two forms, sometimes it may not be clear at the outset as to which form to use.
-We illustrate this scenario by means of the following query, in which there is an expectation that `age_10_years_ago` is `-1` if `n.age` is `null`:
+The difference between the two `CASE` expressions boils down to what is evaluated first.
+Two queries matching the `age` property of the `Daniel` node (which is `null`) is used to demonstrate the difference.
 
-[source, cypher]
-----
-MATCH (n)
-RETURN n.name,
-CASE n.age
-  WHEN n.age IS NULL THEN -1
-  ELSE n.age - 10
-END AS age_10_years_ago
-----
-
-However, as this query is written using the simple `CASE` form, instead of `age_10_years_ago` being `-1` for the node named `Daniel`, it is `null`.
-This is because a comparison is made between `n.age` and `n.age IS NULL`.
-As `n.age IS NULL` is a boolean value, and `n.age` is an integer value, the `WHEN n.age IS NULL THEN -1` branch is never taken.
-This results in the `ELSE n.age - 10` branch being taken instead, returning `null`.
-
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| +n.name+ | +age_10_years_ago+
-| +"Alice"+ | +28+
-| +"Bob"+ | +15+
-| +"Charlie"+ | +43+
-| +"Daniel"+ | +<null>+
-| +"Eskil"+ | +31+
-2+d|Rows: 5
-|===
-
-The corrected query, behaving as expected, is given by the following generic `CASE` form:
-
-[source, cypher]
-----
-MATCH (n)
-RETURN n.name,
-CASE
-  WHEN n.age IS NULL THEN -1
-  ELSE n.age - 10
-END AS age_10_years_ago
-----
-
-We now see that the `age_10_years_ago` correctly returns `-1` for the node named `Daniel`.
-
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| +n.name+ | +age_10_years_ago+
-| +"Alice"+ | +28+
-| +"Bob"+ | +15+
-| +"Charlie"+ | +43+
-| +"Daniel"+ | +-1+
-| +"Eskil"+ | +31+
-2+d|Rows: 5
-|===
-
-
-[[expressions-case-succeeding-clauses]]
-== `CASE` expressions and succeeding clauses
-
-You can use the result of `CASE` to set properties on a node or relationship.
-For example, instead of specifying the node directly, you can set a property for a node selected by an expression:
-
-
-[source, cypher]
-----
-MATCH (n)
-WITH n,
-CASE n.eyes
-  WHEN 'blue'  THEN 1
-  WHEN 'brown' THEN 2
-  ELSE 3
-END AS colourCode
-SET n.colourCode = colourCode
-----
-
-For more information about using the `SET` clause, see xref::clauses/set.adoc[SET].
-
-[role="queryresult",options="footer",cols="1*<m"]
-|===
-1+|(empty result)
-1+d|Rows: 0 +
-Properties set: 5
-|===
-
-
-[[expressions-case-null]]
-== Using `CASE` with null values
-
-When using the simple `CASE` form, it is useful to remember that in Cypher `null = null` yields `null`.
-
-
-.+CASE+
-======
-
-For example, you might expect `age_10_years_ago` to be `-1` for the node named `Daniel`:
+In a simple `CASE` expression, the `n.age` is evaluated on the third line in the below query.
+For the node `Daniel` it results in `null`, and this will never return `true`, because it is not possible for `null` to match on anything in a graph.
+The simple `CASE` expression therefore skips the `WHEN` branch, and goes straight to `ELSE`, where, because `null -10` equals `null`, the resulting age for `Daniel` is `null`.
 
 [source, cypher]
 ----
@@ -258,17 +176,73 @@ CASE n.age
 END AS age_10_years_ago
 ----
 
-However, as `null = null` does not yield `true`, the `WHEN null THEN -1` branch is never taken, resulting in the `ELSE n.age - 10` branch being taken instead, returning `null`.
-
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| +n.name+ | +age_10_years_ago+
-| +"Alice"+ | +28+
-| +"Bob"+ | +15+
-| +"Charlie"+ | +43+
-| +"Daniel"+ | +<null>+
-| +"Eskil"+ | +31+
+| n.name | age_10_years_ago
+| "Alice" | 28
+| "Bob" | 15
+| "Charlie" | 43
+| "Daniel" | null
+| "Eskil" | 31
 2+d|Rows: 5
 |===
 
-======
+The below query is rewritten to use the generic `CASE` form:
+
+[source, cypher]
+----
+MATCH (n)
+RETURN n.name,
+CASE
+  WHEN null THEN -1
+  ELSE n.age - 10
+END AS age_10_years_ago
+----
+
+In this example, because each row is evaluated individually in the generic `CASE` form, the `WHEN null THEN -1` branch evaluates to `true`.
+The resulting `age` of `Daniel` is therefore `-1`. 
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| n.name | age_10_years_ago
+| "Alice" | 28
+| "Bob" | 15
+| "Charlie" | 43
+| "Daniel" | -1
+| "Eskil" | 31
+2+d|Rows: 5
+|===
+
+For more information about `null`, see xref:values-and-types/working-with-null.adoc[].
+
+[[expressions-case-succeeding-clauses]]
+== `CASE` expressions and succeeding clauses
+
+The results of a `CASE` expression can be used to set properties on a node or relationship.
+For example, instead of specifying a node directly, properties can be set for a node selected by a `CASE` expression.
+
+[source, cypher]
+----
+MATCH (n)
+WITH n,
+CASE n.eyes
+  WHEN 'blue'  THEN 1
+  WHEN 'brown' THEN 2
+  ELSE 3
+END AS colourCode
+SET n.colourCode = colourCode
+RETURN n.name, n.colourCode
+----
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| n.name | n.colourCode
+| "Alice" | 2
+| "Bob" | 1
+| "Charlie" | 3
+| "Daniel" | 2
+| "Eskil" | 1
+2+d|Rows: 5
+|===
+
+For more information about using the `SET` clause, see xref::clauses/set.adoc[SET].
