@@ -6,17 +6,16 @@
 == Introduction
 
 The `CREATE` clause allows you to create nodes and relationships.
-Similar to xref::clauses/match.adoc[`MATCH`], this is done using xref::patterns/index.adoc[patterns].
-However, the patterns you can use in `CREATE` are restricted to what is relevant to describe the newly created nodes and relationships.
+To define these entities, `CREATE` uses a syntax similar to that of xref::clauses/match.adoc[`MATCH`].
+However, while xref::patterns/index.adoc[patterns] only need to evaluate to either true or false, the syntax for `CREATE` needs to specify exactly what nodes and relationships to create.
 
 [[create-nodes]]
 == Syntax for nodes
 
 The `CREATE` clause allows you to create one or more nodes.
-For each, you can specify labels and properties.
-You can give the nodes names that you can refer to later in the query.
-xref:clauses/where.adoc[`WHERE`-subclauses] and xref:clauses/match.adoc#label-expression-match-or-expression[label expression] are not allowed.
-Instead, multiple labels are separated by colons.
+Each node can be assigned labels and properties.
+You can bind each node to a variable that you can refer to later in the query.
+Multiple labels are separated by colons.
 
 .Query
 [source, cypher, indent=0]
@@ -24,26 +23,15 @@ Instead, multiple labels are separated by colons.
 CREATE (charlie:Person:Actor {name: 'Charlie Sheen'}), (oliver:Person:Director {name: 'Oliver Stone'})
 ----
 
-Creates two nodes, each with a `name` and a label `Person`.
-The one representing Charlie Sheen also has the label `Actor` while the one representing Oliver Stone receives the label `Director`.
-
-.Result
-[role="queryresult",options="footer",cols="1*<m"]
-|===
-1+|(empty result)
-1+d|Rows: 0 +
-Nodes created: 2 +
-Properties set: 2 +
-Labels added: 4
-|===
+Creates two nodes, bound to the variables `charlie` and `oliver`, each with a `Person` label and a `name` property.
+The node representing Charlie Sheen also has the label `Actor` while the node representing Oliver Stone is assigned the label `Director`.
 
 [[create-relationships]]
 == Syntax for relationships
 
-You can create relationships very similarly to nodes.
-However, relationships always need exactly one relationship type and a direction.
-Beyond this, they may also have properties and names.
-They may not be quantified or carry `WHERE`-subclause.
+Relationships can also be created using the `CREATE` clause.
+Unlike nodes, relationships always need exactly one relationship type and a direction.
+Similar to nodes, relationships can be assigned properties and relationship types and be bound to variables.
 
 .Query
 [source, cypher, indent=0]
@@ -51,24 +39,15 @@ They may not be quantified or carry `WHERE`-subclause.
 CREATE (charlie:Person:Actor {name: 'Charlie Sheen'})-[:ACTED_IN {role: 'Bud Fox'}]->(wallStreet:Movie {title: 'Wall Street'})<-[:DIRECTED]-(oliver:Person:Director {name: 'Oliver Stone'})
 ----
 
-Creates not only the nodes for Charlie Sheen and Oliver Stone as well as the one for the movie Wall Street but also the relationships of type `ACTED_IN` and `DIRECTED` between them.
-
-.Result
-[role="queryresult",options="footer",cols="1*<m"]
-|===
-1+|(empty result)
-1+d|Rows: 0 +
-Nodes created: 3 +
-Relationships created: 2 +
-Properties set: 5 +
-Labels added: 5
-|===
+This query creates the `Person` nodes for Charlie Sheen and Oliver Stone and the `Movie` node for Wall Street.
+It also created the relationships of the types `ACTED_IN` and `DIRECTED` between them.
 
 [[reusing-variables]]
 == Reusing variables
-The previous example created a whole path at once.
-Note, that these newly created elements are now disconnected from the rest of the graph.
-To instead connect them to already existing data, you can refer to variables from other parts of the query.
+The previous example created a path between the specified nodes.
+Note, that these newly created nodes and relationships are not connected to what was previously in the graph.
+To connect them to already existing data, bind the desired nodes and relationships to variables.
+These variables can then be passed along to subsequent clauses in a query that target pre-existing elements in the graph.
 
 .Query
 [source, cypher, indent=0]
@@ -77,7 +56,8 @@ MATCH (charlie:Person {name: 'Charlie Sheen'}), (oliver:Person {name: 'Oliver St
 CREATE (charlie)-[:ACTED_IN {role: 'Bud Fox'}]->(wallStreet:Movie {title: 'Wall Street'})<-[:DIRECTED]-(oliver)
 ----
 
-First looks up the two nodes representing Charlie Sheen and Oliver Stone in order to then connect them in the same way as we have done in the previous query.
+In this example, the `MATCH` clause finds the nodes Charlie Sheen and Oliver Stone and binds them to the `charlie` and `oliver` variables respectively.
+These variables are then passed along to the subsequent `CREATE` clause, which creates new relationships from the bound nodes.
 
 You can also reuse variables from the same `CREATE`, both in the same or a later clause.
 This way, you can, for example, define constructs that are more complex than just a linear path.
@@ -92,7 +72,7 @@ RETURN length(p)
 Creates all three nodes for Charlie Sheen, Oliver Stone and Michael Douglas and connects them all to the node representing the Wall Street movie.
 It then returns the length of the path from Charlie Sheen to Oliver Stone.
 
-Note that when repeating a node's name, you may not apply labels or properties to the repetition.
+Note that when repeating a node's variable, you may not add labels or properties to the repetition.
 
 .Query
 [source, cypher, role=test-fail]
@@ -101,7 +81,7 @@ MATCH (charlie:Person {name: 'Charlie Sheen'})
 CREATE (charlie:Actor)
 ----
 
-This query will fail because the node `charlie` already exists, and we therefore cannot `CREATE` it.
+This query will fail because the variable `charlie` has already been bound to a pre-existing node, and therefore it cannot be reused to create a new node.
 If you intend to add a label, use the xref:clauses/set.adoc#set-set-a-label-on-a-node[`SET` clause] instead.
 
 [[reusing-variables-properties]]
@@ -126,10 +106,10 @@ MATCH (person:Person)
 CREATE (anotherPerson:Person {name: person.name, age: $age})
 ----
 
-Creates a person with the same name as another person and the age from a xref:syntax/parameters.adoc[parameter] called `age`.
+This example created a `Person` node with the same name as another person and the age from a xref:syntax/parameters.adoc[parameter] called `age`.
 
 Such an expression may not contain a reference to a variable that is defined in the same `CREATE` statement.
-This is defined this way so that it is always clear what value a property should have.
+This is to ensure that the value of a property is always clear.
 
 .Query
 [source, cypher, role=test-fail]
@@ -137,8 +117,8 @@ This is defined this way so that it is always clear what value a property should
 CREATE (charlie {score: oliver.score + 1}), (oliver {score: charlie.score + 1})
 ----
 
-Tries to create nodes such that Charlie's score is higher than Oliver's and vice versa, which is a contradiction.
-Therefore, queries like this are rejected.
+This query tries to create nodes such that Charlie's score is higher than Oliver's and vice versa, which is a contradiction.
+The query therefore fails.
 
 [[use-parameters-with-create]]
 == Use parameters with `CREATE`
