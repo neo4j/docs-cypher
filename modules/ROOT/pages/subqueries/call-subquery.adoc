@@ -1,0 +1,395 @@
+:description: The `+CALL {}+` clause evaluates a subquery that returns some values.
+
+[[call]]
+= CALL {} 
+
+The `CALL` clause is used to call a subquery.
+Unlike other subqueries in Cypher, it can be used to perform changes to the database (e.g. xref:clauses/create.adoc[] new nodes), and it requires an importing xref:clauses/with.adoc[] clause.
+
+[NOTE]
+====
+The `CALL` clause is also used for calling procedures.
+For descriptions of the `CALL` clause in this context, refer to xref::clauses/call.adoc[`CALL` procedure].
+====
+
+[[call-syntax]]
+== Syntax 
+
+[source, syntax]
+----
+CALL LCURLY regularQuery RCURLY subqueryInTransactionsParameters?
+----
+
+[[call-returning-unit]]
+== Returning subqueries and unit subqueries
+
+Subqueries which end in a `RETURN` statement are called _returning subqueries_ while subqueries without such a return statement are called _unit subqueries_.
+
+A subquery is evaluated for each incoming input row.
+Every output row of a _returning subquery_ is combined with the input row to build the result of the subquery.
+That means that a returning subquery will influence the number of rows.
+If the subquery does not return any rows, there will be no rows available after the subquery.
+
+_Unit subqueries_, on the other hand, are called for their ability to alter the graph with clauses such as `CREATE`, `MERGE`, `SET`, and `DELETE`.
+They not explicitly return anything, and this means that the number of rows present after the subquery is the same as was going into the subquery.
+
+[[call-example-graph]]
+== Example graph
+
+The following graph is used for the examples below:
+
+image::call_subquery_graph.svg[]
+
+To recreate the graph, run the following query in an empty Neo4j database:
+
+[source, cypher, role=test-setup]
+----
+CREATE
+  (a:Person:Child {name: 'Alice', age: 20}),
+  (b:Person {name: 'Bob', age: 27}),
+  (c:Person:Parent {name: 'Charlie', age: 65}),
+  (d:Person {name: 'Dora', age: 30})
+  CREATE (a)-[:FRIEND_OF]->(b)
+  CREATE (a)-[:CHILD_OF]->(c)
+CREATE (:Counter {count: 0})
+----
+
+[[call-semantics]]
+== Semantics
+
+A `CALL` clause is executed once for each incoming row.
+
+.Execute for each incoming row
+======
+
+The `CALL` clause executes three times, one for each row that the `UNWIND` clause outputs.
+
+.Query
+[source, cypher]
+----
+UNWIND [0, 1, 2] AS x
+CALL {
+  RETURN 'hello' AS innerReturn
+}
+RETURN innerReturn
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="m"]
+|===
+| innerReturn 
+| 'hello' 
+| 'hello'
+| 'hello'
+d|Rows:3
+|===
+======
+
+Each execution of a `CALL` clause can observe changes from previous executions.
+
+
+.Observe changes from previous execution
+======
+
+.Query
+[source, cypher]
+----
+UNWIND [0, 1, 2] AS x
+CALL {
+  MATCH (n:Counter)
+    SET n.count = n.count + 1
+  RETURN n.count AS innerCount
+}
+WITH innerCount
+MATCH (n:Counter)
+RETURN
+  innerCount,
+  n.count AS totalCount
+----
+
+.Result
+[role="queryresult",options="header,footer",cols=""2*<m"]
+|===
+
+| innerReturn | totalCount
+
+| 1 |  3
+
+| 2 | 3
+
+| 3 | 3
+
+2+d|Rows:3
+|===
+
+======
+
+
+[[call-importing-variables]]
+== Importing variables into subqueries
+
+Variables are imported into a subquery using an importing `WITH` clause.
+As the subquery is evaluated for each incoming input row, the imported variables get bound to the corresponding values from the input row in each evaluation.
+
+.Query
+[source, cypher]
+----
+UNWIND [0, 1, 2] AS x
+CALL {
+  WITH x
+  RETURN x * 10 AS y
+}
+RETURN x, y
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| x | y
+| 0 | 0
+| 1 | 10
+| 2 | 20
+2+d|Rows: 3
+|===
+
+An importing `WITH` clause must:
+
+* Consist only of simple references to outside variables - e.g. `WITH x, y, z`. Aliasing or expressions are not supported in importing `WITH` clauses - e.g. `WITH a AS b` or `WITH a+1 AS b`.
+* Be the first clause of a subquery (or the second clause, if directly following a `USE` clause).
+
+[CAUTION]
+====
+The order in which subqueries are executed is not defined.
+If a query result depends on the order of execution of subqueries, an `ORDER BY` clause should precede the `CALL` clause.
+====
+
+
+.The order in which subqueries are executed
+======
+
+This query creates a linked list of all `:Person` nodes in order of ascending age.
+
+The `CALL` clause is relying on the incoming row ordering to ensure that a correctly linked list is created, thus the incoming rows must be ordered with a preceding `ORDER BY` clause.
+
+.Query
+[source, cypher]
+----
+MATCH (person:Person)
+WITH person ORDER BY person.age ASC LIMIT 1
+  SET person:ListHead
+WITH *
+MATCH (next: Person)
+  WHERE NOT next:ListHead
+WITH next ORDER BY next.age
+CALL {
+  WITH next
+  MATCH (current:ListHead)
+    REMOVE current:ListHead
+    SET next:ListHead
+    CREATE(current)-[r:IS_YOUNGER_THAN]->(next)
+  RETURN current AS from, next AS to
+}
+RETURN
+  from.name AS name,
+  from.age AS age,
+  to.name AS closestOlderName,
+  to.age AS closestOlderAge
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="4*<m"]
+|===
+| +name+ | +age+ | +closestOlderName+ | +closestOlderAge+
+
+| "Alice" | 20 | "Bob" | 27
+| "Bob" | 27 | "Dora" | 30
+| "Dora" | 30 | "Charlie" | 65
+
+4+d|Rows: 3
+|===
+
+======
+
+
+[[call-post-union]]
+== Post-union processing
+
+Subqueries can be used to process the results of a `UNION` query further.
+This example query finds the youngest and the oldest person in the database and orders them by name.
+
+.Query
+[source, cypher]
+----
+CALL {
+  MATCH (p:Person)
+  RETURN p
+  ORDER BY p.age ASC
+  LIMIT 1
+UNION
+  MATCH (p:Person)
+  RETURN p
+  ORDER BY p.age DESC
+  LIMIT 1
+}
+RETURN p.name, p.age
+ORDER BY p.name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| p.name | p.age
+| "Alice" | 20
+| "Charlie" | 65
+2+d|Rows: 2
+|===
+
+If different parts of a result should be matched differently, with some aggregation over the whole results, subqueries need to be used.
+This example query finds friends and/or parents for each person.
+Subsequently the number of friends and parents are counted together.
+
+.Query
+[source, cypher]
+----
+MATCH (p:Person)
+CALL {
+  WITH p
+  OPTIONAL MATCH (p)-[:FRIEND_OF]->(other:Person)
+  RETURN other
+UNION
+  WITH p
+  OPTIONAL MATCH (p)-[:CHILD_OF]->(other:Parent)
+  RETURN other
+}
+RETURN DISTINCT p.name, count(other)
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| p.name | count(other)
+| "Alice" | 2
+| "Bob" | 0
+| "Charlie" | 0
+| "Dora" | 0
+2+d|Rows: 4
+|===
+
+
+[[call-aggregation]]
+== Aggregations
+
+Returning subqueries change the number of results of the query: The result of the `CALL` clause is the combined result of evaluating the subquery for each input row.
+
+The following example finds the name of each person and the names of their friends:
+
+.Query
+[source, cypher]
+----
+MATCH (p:Person)
+CALL {
+  WITH p
+  MATCH (p)-[:FRIEND_OF]-(c:Person)
+  RETURN c.name AS friend
+}
+RETURN p.name, friend
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| p.name | friend
+| "Alice" | "Bob"
+| "Bob" | "Alice"
+2+d|Rows: 2
+|===
+
+The number of results of the subquery changed the number of results of the enclosing query: Instead of 4 rows, one for each node), there are now 2 rows which were found for Alice and Bob respectively. No rows are returned for Charlie and Dora since they have no friends in our example graph.
+
+We can also use subqueries to perform isolated aggregations. In this example we count the number of relationships each person has.
+As we get one row from each evaluation of the subquery, the number of rows is the same, before and after the `CALL` clause:
+
+.Query
+[source, cypher]
+----
+MATCH (p:Person)
+CALL {
+  WITH p
+  MATCH (p)--(c)
+  RETURN count(c) AS numberOfConnections
+}
+RETURN p.name, numberOfConnections
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| p.name | numberOfConnections
+| "Alice" | 3
+| "Bob" | 2
+| "Charlie" | 2
+| "Dora" | 3
+2+d|Rows: 4
+|===
+
+[[call-aggregation-imported-variables]]
+== Aggregation on imported variables
+
+Aggregations in subqueries are scoped to the subquery evaluation, also for imported variables.
+The following example counts the number of younger persons for each person in the graph:
+
+.Query
+[source, cypher]
+----
+MATCH (p:Person)
+CALL {
+  WITH p
+  MATCH (other:Person)
+  WHERE other.age < p.age
+  RETURN count(other) AS youngerPersonsCount
+}
+RETURN p.name, youngerPersonsCount
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +p.name+ | +youngerPersonsCount+
+| "Alice" | 0
+| "Bob" | 1
+| "Charlie" | 3
+| "Dora" | 2
+2+d|Rows: 4
+|===
+
+[[call-unit-subqueries]]
+== Unit subqueries and side-effects
+
+Unit subqueries are called for their ability to alter the graph with updating clauses.
+They do not impact the amount of rows returned by the enclosing query.
+
+This example query creates five clones of each existing person.
+As the subquery is a unit subquery, it does not change the number of rows of the enclosing query.
+
+.Query
+[source, cypher]
+----
+MATCH (p:Person)
+CALL {
+  WITH p
+  UNWIND range (1, 5) AS i
+  CREATE (:Person {name: p.name})
+}
+RETURN count(*)
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| count(*)
+| 4
+1+d|Rows: 1 +
+Nodes created: 20 +
+Properties set: 20 +
+Labels added: 20
+|===
