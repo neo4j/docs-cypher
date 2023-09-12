@@ -3,8 +3,14 @@
 [[call]]
 = CALL {} 
 
-The `CALL` clause is used to call a subquery.
+The `CALL` clause can be used to invoke a subquery.
 Unlike other subqueries in Cypher, it can be used to perform changes to the database (e.g. xref:clauses/create.adoc[] new nodes), and it requires an importing xref:clauses/with.adoc[] clause.
+
+There are restrictions on how `CALL` subqueries interact with enclosing queries:
+
+* A subquery can only refer to variables from the enclosing query if they are explicitly imported.
+* A subquery cannot return variables with the same names as variables in the enclosing query.
+* All variables that are returned from a subquery are afterwards available in the enclosing query.
 
 [NOTE]
 ====
@@ -23,7 +29,7 @@ CALL LCURLY regularQuery RCURLY subqueryInTransactionsParameters?
 [[call-returning-unit]]
 == Returning subqueries and unit subqueries
 
-Subqueries which end in a `RETURN` statement are called _returning subqueries_ while subqueries without such a return statement are called _unit subqueries_.
+Subqueries which end with a `RETURN` statement are called _returning subqueries_ while subqueries without such a return statement are called _unit subqueries_.
 
 A subquery is evaluated for each incoming input row.
 Every output row of a _returning subquery_ is combined with the input row to build the result of the subquery.
@@ -31,7 +37,7 @@ That means that a returning subquery will influence the number of rows.
 If the subquery does not return any rows, there will be no rows available after the subquery.
 
 _Unit subqueries_, on the other hand, are called for their ability to alter the graph with clauses such as `CREATE`, `MERGE`, `SET`, and `DELETE`.
-They not explicitly return anything, and this means that the number of rows present after the subquery is the same as was going into the subquery.
+They do not explicitly return anything, and this means that the number of rows present after the subquery is the same as was going into the subquery.
 
 [[call-example-graph]]
 == Example graph
@@ -57,12 +63,12 @@ CREATE (:Counter {count: 0})
 [[call-semantics]]
 == Semantics
 
-A `CALL` clause is executed once for each incoming row.
+A `CALL` subquery is executed once for each incoming row.
 
 .Execute for each incoming row
 ======
 
-The `CALL` clause executes three times, one for each row that the `UNWIND` clause outputs.
+The `CALL` subquery executes three times, one for each row that the `UNWIND` clause outputs.
 
 .Query
 [source, cypher]
@@ -129,6 +135,12 @@ RETURN
 == Importing variables into subqueries
 
 Variables are imported into a subquery using an importing `WITH` clause.
+
+[NOTE]
+====
+References to a variable in the outer scope that were not imported will introduce a new variable.
+====
+
 As the subquery is evaluated for each incoming input row, the imported variables get bound to the corresponding values from the input row in each evaluation.
 
 .Query
@@ -169,7 +181,7 @@ If a query result depends on the order of execution of subqueries, an `ORDER BY`
 
 This query creates a linked list of all `:Person` nodes in order of ascending age.
 
-The `CALL` clause is relying on the incoming row ordering to ensure that a correctly linked list is created, thus the incoming rows must be ordered with a preceding `ORDER BY` clause.
+The `CALL` clause is relying on the incoming row ordering to ensure that a correctly ordered linked list is created, thus the incoming rows must be ordered with a preceding `ORDER BY` clause.
 
 .Query
 [source, cypher]
@@ -178,16 +190,15 @@ MATCH (person:Person)
 WITH person ORDER BY person.age ASC LIMIT 1
   SET person:ListHead
 WITH *
-MATCH (next: Person)
-  WHERE NOT next:ListHead
-WITH next ORDER BY next.age
+MATCH (nextPerson: Person&!ListHead)
+WITH nextPerson ORDER BY nextPerson.age
 CALL {
-  WITH next
+  WITH nextPerson
   MATCH (current:ListHead)
     REMOVE current:ListHead
-    SET next:ListHead
-    CREATE(current)-[r:IS_YOUNGER_THAN]->(next)
-  RETURN current AS from, next AS to
+    SET nextPerson:ListHead
+    CREATE(current)-[:IS_YOUNGER_THAN]->(nextPerson)
+  RETURN current AS from, nextPerson AS to
 }
 RETURN
   from.name AS name,
@@ -214,7 +225,7 @@ RETURN
 [[call-post-union]]
 == Post-union processing
 
-Subqueries can be used to process the results of a `UNION` query further.
+Call subqueries can be used to process the results of a `UNION` query further.
 This example query finds the youngest and the oldest person in the database and orders them by name.
 
 .Query
@@ -244,7 +255,7 @@ ORDER BY p.name
 2+d|Rows: 2
 |===
 
-If different parts of a result should be matched differently, with some aggregation over the whole results, subqueries need to be used.
+If different parts of a result should be matched differently, with some aggregation over the whole result, subqueries need to be used.
 This example query finds friends and/or parents for each person.
 Subsequently the number of friends and parents are counted together.
 
@@ -279,7 +290,7 @@ RETURN DISTINCT p.name, count(other)
 [[call-aggregation]]
 == Aggregations
 
-Returning subqueries change the number of results of the query: The result of the `CALL` clause is the combined result of evaluating the subquery for each input row.
+Returning subqueries change the number of results of the query: The result of the `CALL` subquery is the combined result of evaluating the subquery for each input row.
 
 The following example finds the name of each person and the names of their friends:
 
@@ -307,7 +318,7 @@ RETURN p.name, friend
 The number of results of the subquery changed the number of results of the enclosing query: Instead of 4 rows, one for each node), there are now 2 rows which were found for Alice and Bob respectively. No rows are returned for Charlie and Dora since they have no friends in our example graph.
 
 We can also use subqueries to perform isolated aggregations. In this example we count the number of relationships each person has.
-As we get one row from each evaluation of the subquery, the number of rows is the same, before and after the `CALL` clause:
+As we get one row from each evaluation of the subquery, the number of rows is the same, before and after the `CALL` subquery:
 
 .Query
 [source, cypher]

@@ -82,18 +82,18 @@ CASE n.eyes
   WHEN 'blue'  THEN 1
   WHEN 'brown' THEN 2
   ELSE 3
-END AS result
+END AS result, n.eyes
 ----
 
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
-| result
-| 2
-| 1
-| 3
-| 2
-| 1
-1+d|Rows: 5
+| result | n.eyes
+| 2      | "brown"
+| 1      | "blue"
+| 3      | "green"
+| 2      | "brown"
+| 1      | "blue"
+2+d|Rows: 5
 |===
 
 [[case-generic]]
@@ -121,7 +121,8 @@ END
 |===
 | Name | Description
 | `predicate`
-| A predicate that is tested to find a valid alternative.
+| A predicate is an expression that evaluates to a `BOOLEAN` value.
+In this case, the predicate is tested to find a valid alternative.
 
 | `result`
 | This is the expression returned as output if `predicate` evaluates to `true`.
@@ -141,17 +142,17 @@ CASE
   WHEN n.eyes = 'blue' THEN 1
   WHEN n.age < 40      THEN 2
   ELSE 3
-END AS result
+END AS result, n.eyes, n.age
 ----
 
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
-| +result+
-| 2
-| 1
-| 3
-| 3
-| 1
+| result | n.eyes  | n.age
+| 2      | "brown" | 38
+| 1      | "blue"  | 25
+| 3      | "green" | 53
+| 3      | "brown" | null
+| 1      | "blue"  | 41
 1+d|Rows: 5
 |===
 
@@ -160,11 +161,11 @@ END AS result
 == `CASE` with `null` values, and differentiating simple and generic `CASE` forms
 
 The difference between the two `CASE` expressions boils down to what is evaluated first.
-Two queries matching the `age` property of the `Daniel` node (which is `null`) is used to demonstrate the difference.
+Two queries matching the `age` property of the `Daniel` node (which is `null`) are used to demonstrate the difference.
 
 In a simple `CASE` expression, the `n.age` is evaluated on the third line in the below query.
-For the node `Daniel` it results in `null`, and this will never return `true`, because it is not possible for `null` to match on anything in a graph.
-The simple `CASE` expression therefore skips the `WHEN` branch, and goes straight to `ELSE`, where, because `null -10` equals `null`, the resulting age for `Daniel` is `null`.
+For the node `Daniel` it results in `null`, and this will never match a value test, because `null` cannot equal any other value (including `null` itself).
+The simple `CASE` expression therefore skips the `WHEN` branch, and goes straight to `ELSE`, where, because `null - 10` equals `null`, the resulting age for `Daniel` ten years ago is `null`.
 
 [source, cypher]
 ----
@@ -194,13 +195,13 @@ The below query is rewritten to use the generic `CASE` form:
 MATCH (n)
 RETURN n.name,
 CASE
-  WHEN null THEN -1
+  WHEN n.age IS NULL THEN -1
   ELSE n.age - 10
 END AS age_10_years_ago
 ----
 
-In this example, because each row is evaluated individually in the generic `CASE` form, the `WHEN null THEN -1` branch evaluates to `true`.
-The resulting `age` of `Daniel` is therefore `-1`. 
+In this example, because each row is evaluated individually in the generic `CASE` form, the `WHEN n.age IS NULL` predicate expression evaluates to `true` for the `Daniel` node, and so the result from that branch is returned.
+The resulting `age_10_years_ago` of `Daniel` is therefore `-1`. 
 
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
@@ -229,14 +230,14 @@ CASE n.eyes
   WHEN 'blue'  THEN 1
   WHEN 'brown' THEN 2
   ELSE 3
-END AS colourCode
-SET n.colourCode = colourCode
-RETURN n.name, n.colourCode
+END AS colorCode
+SET n.colorCode = colorCode
+RETURN n.name, n.colorCode
 ----
 
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| n.name | n.colourCode
+| n.name | n.colorCode
 | "Alice" | 2
 | "Bob" | 1
 | "Charlie" | 3
