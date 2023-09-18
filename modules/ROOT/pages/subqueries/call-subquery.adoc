@@ -1,16 +1,8 @@
-:description: The `+CALL {}+` clause evaluates a subquery that returns some values.
-
-[[call]]
-= CALL {} 
+= CALL subqueries
+:description: This page describes how to use the CALL subquery with Cypher.
 
 The `CALL` clause can be used to invoke a subquery.
 Unlike other subqueries in Cypher, it can be used to perform changes to the database (e.g. xref:clauses/create.adoc[] new nodes), and it requires an importing xref:clauses/with.adoc[] clause.
-
-There are restrictions on how `CALL` subqueries interact with enclosing queries:
-
-* A subquery can only refer to variables from the enclosing query if they are explicitly imported.
-* A subquery cannot return variables with the same names as variables in the enclosing query.
-* All variables that are returned from a subquery are afterwards available in the enclosing query.
 
 [NOTE]
 ====
@@ -19,12 +11,18 @@ For descriptions of the `CALL` clause in this context, refer to xref::clauses/ca
 ====
 
 [[call-syntax]]
-== Syntax 
+== Syntax and rules
 
 [source, syntax]
 ----
-CALL LCURLY regularQuery RCURLY subqueryInTransactionsParameters?
+CALL LCURLY query RCURLY subqueryInTransactionsParameters?
 ----
+
+There are restrictions on how `CALL` subqueries interact with enclosing queries:
+
+* A subquery can only refer to variables from the enclosing query if they are explicitly imported.
+* A subquery cannot return variables with the same names as variables in the enclosing query.
+* All variables that are returned from a subquery are afterwards available in the enclosing query.
 
 [[call-returning-unit]]
 == Returning subqueries and unit subqueries
@@ -32,11 +30,11 @@ CALL LCURLY regularQuery RCURLY subqueryInTransactionsParameters?
 Subqueries which end with a `RETURN` statement are called _returning subqueries_ while subqueries without such a return statement are called _unit subqueries_.
 
 A subquery is evaluated for each incoming input row.
-Every output row of a _returning subquery_ is combined with the input row to build the result of the subquery.
+Every output row of a _returning subquery_ is combined with the input row to build the result of the subquery. 
 That means that a returning subquery will influence the number of rows.
 If the subquery does not return any rows, there will be no rows available after the subquery.
 
-_Unit subqueries_, on the other hand, are called for their ability to alter the graph with clauses such as `CREATE`, `MERGE`, `SET`, and `DELETE`.
+_Unit subqueries_, on the other hand, are used for their ability to alter the graph with clauses such as `CREATE`, `MERGE`, `SET`, and `DELETE`.
 They do not explicitly return anything, and this means that the number of rows present after the subquery is the same as was going into the subquery.
 
 [[call-example-graph]]
@@ -91,7 +89,7 @@ d|Rows:3
 |===
 ======
 
-Each execution of a `CALL` clause can observe changes from previous executions.
+Each execution of a `CALL` subquery can observe changes from previous executions.
 
 
 .Observe changes from previous execution
@@ -175,10 +173,6 @@ The order in which subqueries are executed is not defined.
 If a query result depends on the order of execution of subqueries, an `ORDER BY` clause should precede the `CALL` clause.
 ====
 
-
-.The order in which subqueries are executed
-======
-
 This query creates a linked list of all `:Person` nodes in order of ascending age.
 
 The `CALL` clause is relying on the incoming row ordering to ensure that a correctly ordered linked list is created, thus the incoming rows must be ordered with a preceding `ORDER BY` clause.
@@ -218,9 +212,6 @@ RETURN
 
 4+d|Rows: 3
 |===
-
-======
-
 
 [[call-post-union]]
 == Post-union processing
@@ -290,7 +281,8 @@ RETURN DISTINCT p.name, count(other)
 [[call-aggregation]]
 == Aggregations
 
-Returning subqueries change the number of results of the query: The result of the `CALL` subquery is the combined result of evaluating the subquery for each input row.
+Returning subqueries change the number of results of the query.
+The result of the `CALL` subquery is the combined result of evaluating the subquery for each input row.
 
 The following example finds the name of each person and the names of their friends:
 
@@ -315,10 +307,13 @@ RETURN p.name, friend
 2+d|Rows: 2
 |===
 
-The number of results of the subquery changed the number of results of the enclosing query: Instead of 4 rows, one for each node), there are now 2 rows which were found for Alice and Bob respectively. No rows are returned for Charlie and Dora since they have no friends in our example graph.
+The number of results of the subquery changed the number of results of the enclosing query.
+Instead of 4 rows, there are now 2 rows which were found for Alice and Bob respectively.
+No rows are returned for Charlie and Dora since they have no friends in our example graph.
 
-We can also use subqueries to perform isolated aggregations. In this example we count the number of relationships each person has.
-As we get one row from each evaluation of the subquery, the number of rows is the same, before and after the `CALL` subquery:
+Subqueries can also perform isolated aggregations.
+The below example counts the number of relationships each person has.
+For each evaluation of the subquery, the number of rows is the same, both before and after the `CALL` subquery:
 
 .Query
 [source, cypher]
@@ -343,43 +338,13 @@ RETURN p.name, numberOfConnections
 2+d|Rows: 4
 |===
 
-[[call-aggregation-imported-variables]]
-== Aggregation on imported variables
-
-Aggregations in subqueries are scoped to the subquery evaluation, also for imported variables.
-The following example counts the number of younger persons for each person in the graph:
-
-.Query
-[source, cypher]
-----
-MATCH (p:Person)
-CALL {
-  WITH p
-  MATCH (other:Person)
-  WHERE other.age < p.age
-  RETURN count(other) AS youngerPersonsCount
-}
-RETURN p.name, youngerPersonsCount
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| +p.name+ | +youngerPersonsCount+
-| "Alice" | 0
-| "Bob" | 1
-| "Charlie" | 3
-| "Dora" | 2
-2+d|Rows: 4
-|===
-
 [[call-unit-subqueries]]
-== Unit subqueries and side-effects
+== Unit subqueries
 
-Unit subqueries are called for their ability to alter the graph with updating clauses.
+Unit subqueries are used for their ability to alter the graph with updating clauses.
 They do not impact the amount of rows returned by the enclosing query.
 
-This example query creates five clones of each existing person.
+This example query creates five clones of each existing `Person` node in the graph.
 As the subquery is a unit subquery, it does not change the number of rows of the enclosing query.
 
 .Query

@@ -1,20 +1,20 @@
-[[subquery-call-in-transactions]]
-= Subqueries in transactions
+= CALL subqueries in transactions
+:description: This page describes how to use CALL...IN TRANSACTIONS subquery with Cypher.
 
 `CALL` subqueries can be made to execute in separate, inner transactions, producing intermediate commits.
-This can come in handy when doing large write operations, like batch updates, imports, and deletes.
-To execute a subquery in separate transactions, you add the modifier `IN TRANSACTIONS` after the subquery.
+This can be useful when doing large write operations, like batch updates, imports, and deletes.
+To execute a `CALL` subquery in separate transactions, you add the modifier `IN TRANSACTIONS` after the subquery.
 An outer transaction is opened to report back the accumulated statistics for the inner transactions
-(created and deleted nodes, relationships, etc) and it will succeed or fail depending on the results
+(created and deleted nodes, relationships, etc.) and it will succeed or fail depending on the results
 of those inner transactions.
-For more information, see <<txs_error_behaviour, error behaviour>>.
+For more information, see xref:subqueries/subqueries-in-transactions.adoc#error-behavior[Error behavior].
 Canceling that outer transaction will cancel the inner ones.
 
 
 .+Loading CSV data in transactions+
 ======
 This example uses a CSV file and the `LOAD CSV` clause to import more data to the example graph.
-It creates nodes in separate transactions using `+CALL { ... } IN TRANSACTIONS+`:
+It creates nodes in separate transactions using `CALL { ... } IN TRANSACTIONS`:
 
 .friends.csv
 [source, csv, role="noheader" filename="friends.csv"]
@@ -52,14 +52,13 @@ As the size of the CSV file in this example is small, only a single separate tra
 
 [NOTE]
 ====
-`+CALL { ... } IN TRANSACTIONS+` is only allowed in xref::introduction/cypher_neo4j.adoc#cypher-neo4j-transactions[implicit transactions].
+`CALL { ... } IN TRANSACTIONS` is only allowed in xref::introduction/cypher_neo4j.adoc#cypher-neo4j-transactions[implicit transactions].
 ====
-
 
 [[delete-with-call-in-transactions]]
 == Deleting a large volume of nodes
 
-Using `+CALL { ... } IN TRANSACTIONS+` is the recommended way of deleting a large volume of nodes.
+Using `CALL { ... } IN TRANSACTIONS` is the recommended way of deleting a large volume of nodes.
 
 
 .+DETACH DELETE on all nodes+
@@ -87,7 +86,7 @@ Transactions committed: 1
 
 [IMPORTANT]
 ====
-The `+CALL { ... } IN TRANSACTIONS+` subquery is handled by the database so as to ensure optimal performance.
+The `CALL { ... } IN TRANSACTIONS` subquery is handled by the database to ensure optimal performance.
 Modifying the subquery may result in `OutOfMemory` exceptions for sufficiently large datasets.
 ====
 
@@ -97,7 +96,7 @@ Modifying the subquery may result in `OutOfMemory` exceptions for sufficiently l
 .+DETACH DELETE on only some nodes+
 ======
 
-The `+CALL { ... } IN TRANSACTIONS+` subquery should not be modified.
+The `CALL { ... } IN TRANSACTIONS` subquery should not be modified.
 
 Any necessary filtering can be done before the subquery.
 
@@ -120,7 +119,7 @@ CALL {
 
 ======
 
-
+[[batching]]
 == Batching
 
 The amount of work to do in each separate transaction can be specified in terms of how many input rows
@@ -171,7 +170,7 @@ The query now starts and commits three separate transactions:
 . The last execution of the subquery (for the last input row) takes place in a third transaction.
 . The third transaction is committed.
 
-You can also use `+CALL { ... } IN TRANSACTIONS OF n ROWS+` to delete all your data in batches in order to avoid a huge garbage collection or an `OutOfMemory` exception.
+You can also use `CALL { ... } IN TRANSACTIONS OF n ROWS` to delete all your data in batches in order to avoid a huge garbage collection or an `OutOfMemory` exception.
 For example:
 
 .Query
@@ -201,19 +200,20 @@ The batch size of `2 ROWS` is an example given the small data set used here.
 For larger data sets, you might want to use larger batch sizes, such as `10000 ROWS`.
 ====
 
-== Error behaviour [[txs_error_behaviour]]
+[[error-behavior]]
+== Error behavior 
 
 _This feature was introduced in Neo4j 5.7._
 
-Users can choose one of three different option flags to control the behaviour
-in case of an error occurring in any of the inner transactions of `+CALL { ... } IN TRANSACTIONS+`:
+Users can choose one of three different option flags to control the behavior
+in case of an error occurring in any of the inner transactions of `CALL { ... } IN TRANSACTIONS`:
 
 * `ON ERROR CONTINUE` to ignore a recoverable error and continue the execution of subsequent inner transactions. 
 The outer transaction succeeds.
 It will cause the expected variables from the failed inner query to be bound as null for that specific transaction.
 * `ON ERROR BREAK` to ignore a recoverable error and stop the execution of subsequent inner transactions. The outer transaction succeeds. 
 It will cause expected variables from the failed inner query to be bound as null for all onward transactions (including the failed one).
-* `ON ERROR FAIL` to acknowledge a recoverable error and stop the execution of subsequent inner transactions. The outer transaction fails. This is the default behaviour if no flag is explicitly specified.
+* `ON ERROR FAIL` to acknowledge a recoverable error and stop the execution of subsequent inner transactions. The outer transaction fails. This is the default behavior if no flag is explicitly specified.
 
 [IMPORTANT]
 ====
@@ -393,10 +393,11 @@ RETURN n.num;
 / by zero (Transactions committed: 1)
 ----
 
+[[status-report]]
 == Status report
 
 Users can also report the execution status of the inner transactions by using `REPORT STATUS AS var`.
-This flag is disallowed for `ON ERROR FAIL`. For more information, see <<txs_error_behaviour, error behaviour>>.
+This flag is disallowed for `ON ERROR FAIL`. For more information, see xref:subqueries/subqueries-in-transactions.adoc#error-behavior[Error behavior].
 
 After each execution of the inner query finishes (successfully or not), a status value is created that records information about the execution and the transaction that executed it:
 
@@ -489,13 +490,14 @@ RETURN n.num, s.errorMessage;
 REPORT STATUS can only be used when specifying ON ERROR CONTINUE or ON ERROR BREAK
 ----
 
+[[restrictions]]
 == Restrictions
 
-These are the restrictions on queries that use `+CALL { ... } IN TRANSACTIONS+`:
+These are the restrictions on queries that use `CALL { ... } IN TRANSACTIONS`:
 
-* A nested `+CALL { ... } IN TRANSACTIONS+` inside a `+CALL { ... }+` clause is not supported.
-* A `+CALL { ... } IN TRANSACTIONS+` in a `UNION` is not supported.
-* A `+CALL { ... } IN TRANSACTIONS+` after a write clause is not supported, unless that write clause is inside a `+CALL { ... } IN TRANSACTIONS+`.
+* A nested `CALL { ... } IN TRANSACTIONS` inside a `CALL { ... }` clause is not supported.
+* A `CALL { ... } IN TRANSACTIONS` in a `UNION` is not supported.
+* A `CALL { ... } IN TRANSACTIONS` after a write clause is not supported, unless that write clause is inside a `CALL { ... } IN TRANSACTIONS`.
 
 Additionally, there are some restrictions that apply when using an importing `WITH` clause in a `CALL` subquery:
 
