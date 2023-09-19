@@ -1447,7 +1447,7 @@ a|Rows: 1
 [[access-control-dbms-administration-execute]]
 == The DBMS `EXECUTE` privileges
 
-The DBMS privileges for procedure and user defined function execution can be assigned by using Cypher administrative commands.
+The DBMS privileges for procedure and user-defined function execution can be assigned by using Cypher administrative commands.
 They can be granted, denied and revoked like other privileges.
 
 [NOTE]
@@ -1471,7 +1471,7 @@ GRANT [IMMUTABLE] EXECUTE PROCEDURE[S] name-globbing[, ...]
 GRANT [IMMUTABLE] EXECUTE BOOSTED PROCEDURE[S] name-globbing[, ...]
   ON DBMS
   TO role[, ...]
-| Enables the specified roles to execute the given procedures with elevated privileges.
+| Enables the specified roles to use elevated privileges when executing the given procedures.
 
 | [source, syntax, role=noheader]
 GRANT [IMMUTABLE] EXECUTE ADMIN[ISTRATOR] PROCEDURES
@@ -1483,19 +1483,14 @@ GRANT [IMMUTABLE] EXECUTE ADMIN[ISTRATOR] PROCEDURES
 GRANT [IMMUTABLE] EXECUTE [USER [DEFINED]] FUNCTION[S] name-globbing[, ...]
   ON DBMS
   TO role[, ...]
-| Enables the specified roles to execute the given user defined functions.
+| Enables the specified roles to execute the given user-defined functions.
 
 | [source, syntax, role=noheader]
 GRANT [IMMUTABLE] EXECUTE BOOSTED [USER [DEFINED]] FUNCTION[S] name-globbing[, ...]
   ON DBMS
   TO role[, ...]
-| Enables the specified roles to execute the given user defined functions with elevated privileges.
+| Enables the specified roles to use elevated privileges when executing the given user-defined functions.
 |===
-
-The `EXECUTE BOOSTED` privileges replace the `dbms.security.procedures.default_allowed` and `dbms.security.procedures.roles` configuration parameters for procedures and user defined functions.
-The configuration parameters are still honored as a set of temporary privileges.
-These cannot be revoked, but will be updated on each restart with the current configuration values.
-
 
 [[access-control-execute-procedure]]
 === The `EXECUTE PROCEDURE` privilege
@@ -1529,7 +1524,7 @@ a|Rows: 1
 |===
 
 In order to allow the execution of all but only a few procedures, you can grant `EXECUTE PROCEDURES *` and deny the unwanted procedures.
-For example, the following queries allow the execution of all procedures, except those starting with `dbms.killTransaction`:
+For example, the following queries allow the execution of all procedures, except those starting with `dbms.cluster`:
 
 [source, cypher, role=noplay]
 ----
@@ -1538,10 +1533,10 @@ GRANT EXECUTE PROCEDURE * ON DBMS TO deniedProcedureExecutor
 
 [source, cypher, role=noplay]
 ----
-DENY EXECUTE PROCEDURE dbms.killTransaction* ON DBMS TO deniedProcedureExecutor
+DENY EXECUTE PROCEDURE dbms.cluster* ON DBMS TO deniedProcedureExecutor
 ----
 
-The resulting role has privileges that only allow executing all procedures except those starting with `dbms.killTransaction`.
+The resulting role has privileges that only allow executing all procedures except those starting with `dbms.cluster`.
 List all privileges for the role `deniedProcedureExecutor` as commands by using the following query:
 
 [source, cypher, role=noplay]
@@ -1553,23 +1548,26 @@ SHOW ROLE deniedProcedureExecutor PRIVILEGES AS COMMANDS
 [options="header,footer", width="100%", cols="m"]
 |===
 |command
-|"DENY EXECUTE PROCEDURE dbms.killTransaction* ON DBMS TO `deniedProcedureExecutor`"
+|"DENY EXECUTE PROCEDURE dbms.cluster* ON DBMS TO `deniedProcedureExecutor`"
 |"GRANT EXECUTE PROCEDURE * ON DBMS TO `deniedProcedureExecutor`"
 a|Rows: 2
 |===
 
-Both the `dbms.killTransaction` and the `dbms.killTransactions` procedures are blocked here, as well as any other procedures starting with `dbms.killTransaction`.
-
+The `dbms.cluster.checkConnectivity`, `dbms.cluster.cordonServer`, `dbms.cluster.protocols`, `dbms.cluster.readReplicaToggle`, `dbms.cluster.routing.getRoutingTable`, `dbms.cluster.secondaryReplicationDisable`, `dbms.cluster.setAutomaticallyEnableFreeServers`, and `dbms.cluster.uncordonServer` procedures are blocked, as well as any others starting with `dbms.cluster`.
 
 [[access-control-execute-boosted-procedure]]
 === The `EXECUTE BOOSTED PROCEDURE` privilege
 
-The ability to execute a procedure with elevated privileges can be granted via the `EXECUTE BOOSTED PROCEDURE` privilege.
-A user with this privilege is allowed to execute the procedures matched by the xref::administration/access-control/dbms-administration.adoc#access-control-name-globbing[name-globbing] without the execution being restricted to their other privileges.
+The ability to use elevated privileges when executing a procedure can be granted via the `EXECUTE BOOSTED PROCEDURE` privilege.
+A user with this privilege will not be restricted to their other privileges when executing the procedures matched by the <<access-control-name-globbing, name-globbing>>.
+The `EXECUTE BOOSTED PROCEDURE` privilege only affects the elevation, and not the execution of the procedure.
+Therefore, it is needed to grant `EXECUTE PROCEDURE` privilege for the procedures as well.
 
-There is no need to grant an individual `EXECUTE PROCEDURE` privilege for the procedures either, as granting the `EXECUTE BOOSTED PROCEDURE` includes an implicit `EXECUTE PROCEDURE` grant for them.
-A denied `EXECUTE PROCEDURE` still denies executing the procedure.
-The following query shows an example of how to grant this privilege:
+[NOTE]
+--
+Since 5.0, both `EXECUTE PROCEDURE` and `EXECUTE BOOSTED PROCEDURE` are needed to execute a procedure with elevated privileges.
+This differs from 4.x, when only the `EXECUTE BOOSTED PROCEDURE` was required.
+--
 
 [source, cypher, role=noplay]
 ----
@@ -1577,11 +1575,10 @@ GRANT EXECUTE PROCEDURE * ON DBMS TO boostedProcedureExecutor;
 GRANT EXECUTE BOOSTED PROCEDURE db.labels, db.relationshipTypes ON DBMS TO boostedProcedureExecutor
 ----
 
-Users with the role `boostedProcedureExecutor` can thus run the `db.labels` and the `db.relationshipTypes` procedures with full privileges.
-Now they can see everything on the graph and not just the labels and types that the user has `TRAVERSE` privilege on.
+Users with the role `boostedProcedureExecutor` can thus run the `db.labels` and the `db.relationshipTypes` procedures with full privileges, seeing everything in the graph not just the labels and types that the user has `TRAVERSE` privilege on.
+Without the `EXECUTE PROCEDURE`, no procedures could be executed at all.
 
-The resulting role has privileges that only allow executing the `db.labels` and the `db.relationshipTypes` procedures, but with elevated execution.
-List all privileges for the role `boostedProcedureExecutor` as commands by using the following query:
+The resulting role has privileges that allow executing procedures `db.labels` and `db.relationshipTypes` with elevated privileges, and all other procedures with the users own privileges:
 
 [source, cypher, role=noplay]
 ----
@@ -1598,10 +1595,8 @@ SHOW ROLE boostedProcedureExecutor PRIVILEGES AS COMMANDS
 a|Rows: 3
 |===
 
-Granting the `EXECUTE BOOSTED PROCEDURE` privilege on its own allows the procedure to be both executed (due to the implicit `EXECUTE PROCEDURE` grant) and proceed with elevated privileges.
-A denied `EXECUTE BOOSTED PROCEDURE` on its own behaves slightly differently: it only denies the elevation and not the execution of the procedure.
-However, a role with both a granted `EXECUTE BOOSTED PROCEDURE` and a denied `EXECUTE BOOSTED PROCEDURE` will deny the execution as well.
-This is explained through the following examples:
+As with grant, denying `EXECUTE BOOSTED PROCEDURE` on its own only affects the elevation and not the execution of the procedure.
+This can be seen in the following examples:
 
 .Grant `EXECUTE PROCEDURE` and deny `EXECUTE BOOSTED PROCEDURE`
 [example]
@@ -1650,7 +1645,7 @@ GRANT EXECUTE BOOSTED PROCEDURE * ON DBMS TO deniedBoostedProcedureExecutor2
 DENY EXECUTE PROCEDURE db.labels ON DBMS TO deniedBoostedProcedureExecutor2
 ----
 
-The resulting role has privileges that allow executing all procedures with elevated privileges except `db.labels`, which is not allowed to be executed at all.
+The resulting role has privileges that allow elevating the privileges for all procedures, but cannot execute any due to missing or denied `EXECUTE PROCEDURE` privileges.
 List all privileges for the role `deniedBoostedProcedureExecutor2` as commands by using the following query:
 
 [source, cypher, role=noplay]
@@ -1681,7 +1676,7 @@ GRANT EXECUTE BOOSTED PROCEDURE * ON DBMS TO deniedBoostedProcedureExecutor3
 DENY EXECUTE BOOSTED PROCEDURE db.labels ON DBMS TO deniedBoostedProcedureExecutor3
 ----
 
-The resulting role has privileges that allow executing all procedures with elevated privileges except `db.labels`, which is not allowed to be executed at all.
+The resulting role has privileges that allow elevating the privileges for all procedures except `db.labels`, however no procedures can be executed due to missing `EXECUTE PROCEDURE` privilege.
 List all privileges for the role `deniedBoostedProcedureExecutor3` as commands by using the following query:
 
 [source, cypher, role=noplay]
@@ -1699,51 +1694,14 @@ a|Rows: 2
 |===
 ====
 
-.Grant `EXECUTE PROCEDURE` and `EXECUTE BOOSTED PROCEDURE` and deny `EXECUTE BOOSTED PROCEDURE`
-[example]
-====
-[source, cypher, role=noplay]
-----
-GRANT EXECUTE PROCEDURE db.labels ON DBMS TO deniedBoostedProcedureExecutor4
-----
-
-[source, cypher, role=noplay]
-----
-GRANT EXECUTE BOOSTED PROCEDURE * ON DBMS TO deniedBoostedProcedureExecutor4
-----
-
-[source, cypher, role=noplay]
-----
-DENY EXECUTE BOOSTED PROCEDURE db.labels ON DBMS TO deniedBoostedProcedureExecutor4
-----
-
-The resulting role has privileges that allow executing all procedures with elevated privileges except the `db.labels` procedure, which is only allowed to execute using the user's own privileges.
-List all privileges for the role `deniedBoostedProcedureExecutor4` as commands by using the following query:
-
-[source, cypher, role=noplay]
-----
-SHOW ROLE deniedBoostedProcedureExecutor4 PRIVILEGES AS COMMANDS
-----
-
-.Result
-[options="header,footer", width="100%", cols="m"]
-|===
-|command
-|"DENY EXECUTE BOOSTED PROCEDURE db.labels ON DBMS TO `deniedBoostedProcedureExecutor4`"
-|"GRANT EXECUTE BOOSTED PROCEDURE * ON DBMS TO `deniedBoostedProcedureExecutor4`"
-|"GRANT EXECUTE PROCEDURE db.labels ON DBMS TO `deniedBoostedProcedureExecutor4`"
-a|Rows: 3
-|===
-====
-
-.How would the privileges from examples 1 to 4 affect the output of a procedure?
+.How would the privileges from examples 1 to 3 affect the output of a procedure?
 [example]
 ====
 Assume there is a procedure called `myProc`.
 
 This procedure gives the result `A` and `B` for a user with `EXECUTE PROCEDURE` privilege and `A`, `B` and `C` for a user with `EXECUTE BOOSTED PROCEDURE` privilege.
 
-Now, adapt the privileges from examples 1 to 4 to be applied to this procedure and show what is returned.
+Now, adapt the privileges from examples 1 to 3 to be applied to this procedure and show what is returned.
 With the privileges from example 1, granted `EXECUTE PROCEDURE *` and denied `EXECUTE BOOSTED PROCEDURE myProc`, the `myProc` procedure returns the result `A` and `B`.
 
 With the privileges from example 2, granted `EXECUTE BOOSTED PROCEDURE *` and denied `EXECUTE PROCEDURE myProc`, execution of the `myProc` procedure is not allowed.
@@ -1755,16 +1713,13 @@ For comparison, when granted:
 * `EXECUTE PROCEDURE myProc`: the `myProc` procedure returns the result `A` and `B`.
 * `EXECUTE BOOSTED PROCEDURE myProc`: execution of the `myProc` procedure is not allowed.
 * `EXECUTE PROCEDURE myProc` and `EXECUTE BOOSTED PROCEDURE myProc`: the `myProc` procedure returns the result `A`, `B`, and `C`.
-
-For comparison, when only `EXECUTE BOOSTED PROCEDURE myProc` is granted, the `myProc` procedure returns the result `A`, `B`, and `C`; without the need for granting of the `EXECUTE PROCEDURE myProc` privilege.
 ====
-
 
 [[access-control-admin-procedure]]
 === The `EXECUTE ADMIN PROCEDURE` privilege
 
 The ability to execute admin procedures (annotated with `@Admin`) can be granted via the `EXECUTE ADMIN PROCEDURES` privilege.
-This privilege is equivalent to granting the xref::administration/access-control/dbms-administration.adoc#access-control-execute-boosted-procedure[`EXECUTE BOOSTED PROCEDURE` privilege] on each of the admin procedures.
+This privilege is equivalent with granting the <<access-control-execute-procedure,`EXECUTE PROCEDURE`>> and <<access-control-execute-boosted-procedure,`EXECUTE BOOSTED PROCEDURE`>> privileges on each of the admin procedures.
 Any newly added `admin` procedure is automatically included in this privilege.
 The following query shows an example of how to grant this privilege:
 
@@ -1774,8 +1729,8 @@ GRANT EXECUTE ADMIN PROCEDURES ON DBMS TO adminProcedureExecutor
 ----
 
 Users with the role `adminProcedureExecutor` can then run any `admin` procedure with elevated privileges.
-
 The resulting role has privileges that allow executing all admin procedures.
+
 List all privileges for the role `adminProcedureExecutor` as commands by using the following query:
 
 [source, cypher, role=noplay]
@@ -1793,13 +1748,12 @@ a|Rows: 1
 
 In order to compare this with the `EXECUTE PROCEDURE` and `EXECUTE BOOSTED PROCEDURE` privileges, revisit the `myProc` procedure, but this time as an `admin` procedure, which will give the result `A`, `B` and `C` when allowed to execute.
 
-By starting with a user only granted with the `EXECUTE PROCEDURE myProc` privilege, execution of the `myProc` procedure is not allowed.
+By starting with a user only granted with the `EXECUTE PROCEDURE myProc` or the `EXECUTE BOOSTED PROCEDURE myProc` privilege, execution of the `myProc` procedure is not allowed.
 
-However, for a user granted with the `EXECUTE BOOSTED PROCEDURE myProc` or `EXECUTE ADMIN PROCEDURES` privileges, the `myProc` procedure returns the result `A`, `B` and `C`.
+However, for a user granted with the `EXECUTE ADMIN PROCEDURES` or both `EXECUTE PROCEDURE myProc` and `EXECUTE BOOSTED PROCEDURE myProc`, the `myProc` procedure returns the result `A`, `B` and `C`.
 
 Any denied `EXECUTE` privilege results in the procedure not being allowed to be executed.
 In this case, it does not matter whether `EXECUTE PROCEDURE`, `EXECUTE BOOSTED PROCEDURE` or `EXECUTE ADMIN PROCEDURES` is being denied.
-
 
 [[access-control-execute-user-defined-function]]
 === The `EXECUTE USER DEFINED FUNCTION` privilege
@@ -1901,21 +1855,21 @@ The `apoc.any.property` and `apoc.any.properties` are blocked, as well as any ot
 === The `EXECUTE BOOSTED USER DEFINED FUNCTION` privilege
 
 //EXECUTE BOOSTED [USER [DEFINED]] FUNCTION[S]
-The ability to execute a user-defined function (UDF) with elevated privileges can be granted via the `EXECUTE BOOSTED USER DEFINED FUNCTION` privilege.
-A user with this privilege is allowed to execute the UDFs matched by the xref::administration/access-control/dbms-administration.adoc#access-control-name-globbing[name-globbing] without the execution being restricted to their other privileges.
+The ability to use elevated privileges when executing a user-defined function (UDF) can be granted via the `EXECUTE BOOSTED USER DEFINED FUNCTION` privilege.
+A user with this privilege will not be restricted to their other privileges when executing the UDFs matched by the <<access-control-name-globbing, name-globbing>>.
+The `EXECUTE BOOSTED USER DEFINED FUNCTION` privilege only affects the elevation and not the execution of the function.
+Therefore, it is needed to grant `EXECUTE USER DEFINED FUNCTION` privilege for the functions as well.
 
-There is no need to grant an individual `EXECUTE USER DEFINED FUNCTION` privilege for the functions, as granting `EXECUTE BOOSTED USER DEFINED FUNCTION` includes an implicit `EXECUTE USER DEFINED FUNCTION` grant.
-However, a denied `EXECUTE USER DEFINED FUNCTION` still prevents the function to be executed.
+[NOTE]
+--
+Since 5.0, both `EXECUTE USER DEFINED FUNCTION` and `EXECUTE BOOSTED USER DEFINED FUNCTION` are needed to execute a function with elevated privileges.
+This differs from 4.x, when only the `EXECUTE BOOSTED USER DEFINED FUNCTION` was required.
+--
 
 [IMPORTANT]
 ====
 The `EXECUTE BOOSTED USER DEFINED FUNCTION` privilege does not apply to built-in functions, as they have no concept of elevated privileges.
 ====
-
-Granting `EXECUTE BOOSTED USER DEFINED FUNCTION` on its own allows the UDF to be both executed (because of the implicit `EXECUTE USER DEFINED FUNCTION` grant) and gives it elevated privileges during the execution.
-A denied `EXECUTE BOOSTED USER DEFINED FUNCTION` on its own behaves slightly differently: it only denies the elevation and not the execution of the UDF.
-However, a role with only a granted `EXECUTE BOOSTED USER DEFINED FUNCTION` and a denied `EXECUTE BOOSTED USER DEFINED FUNCTION` prevents the execution to be performed as well.
-This is the same behavior as for the xref::administration/access-control/dbms-administration.adoc#access-control-execute-boosted-procedure[`EXECUTE BOOSTED PROCEDURE` privilege].
 
 .Execute boosted user-defined function
 ======
@@ -1936,8 +1890,9 @@ GRANT EXECUTE BOOSTED FUNCTION apoc.any.properties ON DBMS TO boostedFunctionExe
 ----
 
 Users with the role `boostedFunctionExecutor` can thus run `apoc.any.properties` with full privileges and see every property on the node/relationship, not just the properties that the user has `READ` privilege on.
+Without the `EXECUTE USER DEFINED FUNCTION` no UDFs could be executed at all.
 
-The resulting role has privileges that only allow executing of the UDF `apoc.any.properties`, but with elevated execution.
+The resulting role has privileges that allow executing the UDF `apoc.any.properties` with elevated privileges, and all other UDFs with the users own privileges.
 List all privileges for the role `boostedFunctionExecutor` as commands by using the following query:
 
 [source,cypher,role=noplay]
@@ -2052,7 +2007,7 @@ The right to perform the following privileges can be achieved with a single comm
 * Enable, alter, rename, reallocate, deallocate, and drop servers
 * Show, assign, and remove privileges.
 * Execute all procedures with elevated privileges.
-* Execute all user defined functions with elevated privileges.
+* Execute all user-defined functions with elevated privileges.
 * Show all configuration settings.
 
 [NOTE]
@@ -2092,7 +2047,7 @@ a|Rows: 1
 [[access-control-name-globbing]]
 == Name-globbing for procedures, user-defined functions, and settings
 
-The name-globbing for procedure, user defined function, and setting names is a simplified version of globbing for filename expansions.
+The name-globbing for procedure, user-defined function, and setting names is a simplified version of globbing for filename expansions.
 It only allows two wildcard characters: `+*+` and `?`, which are used for multiple and single character matches.
 In this case, `+*+` means 0 or more characters and `?` matches exactly one character.
 
