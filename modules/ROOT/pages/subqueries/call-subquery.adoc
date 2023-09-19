@@ -10,33 +10,6 @@ The `CALL` clause is also used for calling procedures.
 For descriptions of the `CALL` clause in this context, refer to xref::clauses/call.adoc[`CALL` procedure].
 ====
 
-[[call-syntax]]
-== Syntax and rules
-
-[source, syntax]
-----
-CALL LCURLY query RCURLY subqueryInTransactionsParameters?
-----
-
-There are restrictions on how `CALL` subqueries interact with enclosing queries:
-
-* A subquery can only refer to variables from the enclosing query if they are explicitly imported.
-* A subquery cannot return variables with the same names as variables in the enclosing query.
-* All variables that are returned from a subquery are afterwards available in the enclosing query.
-
-[[call-returning-unit]]
-== Returning subqueries and unit subqueries
-
-Subqueries which end with a `RETURN` statement are called _returning subqueries_ while subqueries without such a return statement are called _unit subqueries_.
-
-A subquery is evaluated for each incoming input row.
-Every output row of a _returning subquery_ is combined with the input row to build the result of the subquery. 
-That means that a returning subquery will influence the number of rows.
-If the subquery does not return any rows, there will be no rows available after the subquery.
-
-_Unit subqueries_, on the other hand, are used for their ability to alter the graph with clauses such as `CREATE`, `MERGE`, `SET`, and `DELETE`.
-They do not explicitly return anything, and this means that the number of rows present after the subquery is the same as was going into the subquery.
-
 [[call-example-graph]]
 == Example graph
 
@@ -63,7 +36,6 @@ CREATE (:Counter {count: 0})
 
 A `CALL` subquery is executed once for each incoming row.
 
-.Execute for each incoming row
 ======
 
 The `CALL` subquery executes three times, one for each row that the `UNWIND` clause outputs.
@@ -91,8 +63,6 @@ d|Rows:3
 
 Each execution of a `CALL` subquery can observe changes from previous executions.
 
-
-.Observe changes from previous execution
 ======
 
 .Query
@@ -167,13 +137,14 @@ An importing `WITH` clause must:
 * Consist only of simple references to outside variables - e.g. `WITH x, y, z`. Aliasing or expressions are not supported in importing `WITH` clauses - e.g. `WITH a AS b` or `WITH a+1 AS b`.
 * Be the first clause of a subquery (or the second clause, if directly following a `USE` clause).
 
-[CAUTION]
-====
+
+[[call-execution-order]]
+== Execution order of CALL subqueries
+
 The order in which subqueries are executed is not defined.
 If a query result depends on the order of execution of subqueries, an `ORDER BY` clause should precede the `CALL` clause.
-====
 
-This query creates a linked list of all `:Person` nodes in order of ascending age.
+This query creates a linked list of all `Person` nodes in order of ascending age.
 
 The `CALL` clause is relying on the incoming row ordering to ensure that a correctly ordered linked list is created, thus the incoming rows must be ordered with a preceding `ORDER BY` clause.
 
@@ -338,6 +309,21 @@ RETURN p.name, numberOfConnections
 2+d|Rows: 4
 |===
 
+[[call-returning-unit]]
+== Note on returning subqueries and unit subqueries
+
+The examples above have all used subqueries which end with a `RETURN` clause.
+These subqueries are called _returning subqueries_.
+
+A subquery is evaluated for each incoming input row.
+Every output row of a returning subquery is combined with the input row to build the result of the subquery. 
+That means that a returning subquery will influence the number of rows.
+If the subquery does not return any rows, there will be no rows available after the subquery.
+
+Subqueries without a `RETURN` statement are called _unit subqueries_.
+Unit subqueries are used for their ability to alter the graph with clauses such as `CREATE`, `MERGE`, `SET`, and `DELETE`.
+They do not explicitly return anything, and this means that the number of rows present after the subquery is the same as was going into the subquery.
+
 [[call-unit-subqueries]]
 == Unit subqueries
 
@@ -369,3 +355,18 @@ Nodes created: 20 +
 Properties set: 20 +
 Labels added: 20
 |===
+
+[[call-rules]]
+== Rules
+
+The following is true for `CALL` subqueries:
+
+* A `CALL` subquery can only refer to variables from the enclosing query if they are explicitly imported.
+
+* A `CALL` subquery cannot return variables with the same names as variables in the enclosing query.
+
+* All variables that are returned from a `CALL` subquery are afterwards available in the enclosing query.
+
+* A `CALL` subquery can be used to perform changes to the database.
+
+* A `CALL` subquery requires an importing `WITH` clause.
