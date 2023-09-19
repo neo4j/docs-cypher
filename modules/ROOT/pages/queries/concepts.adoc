@@ -12,7 +12,7 @@ To learn more about these and many other Cypher clauses, see the section on xref
 [[core-concepts-nodes]]
 == Nodes
 
-The data entities in a Neo4j knowledge graph are called nodes.
+The data entities in a Neo4j graph database are called nodes.
 Nodes are referred to in Cypher using parenthesis `()`.
 
 [source, cypher]
@@ -24,31 +24,33 @@ RETURN n.born AS birthYear
 In the above example, the node includes the following:
 
 * A `Person` *label*.
-A node may have none, one, or several node labels, and they are used as tags to enable the retrieval of specific data entities.
+Labels are like tags, and are used to query the database for specific nodes.
+A node may have multiple labels, for example `Person` and `Actor`.
 * A `name` *property* set to `Anna`.
-Properties are defined within curly braces, `{}`, and are used to provide nodes with specific information, which can then also be matched for and further improve the ability to retrieve data.
+Properties are defined within curly braces, `{}`, and are used to provide nodes with specific information, which can also be queried for and further improve the ability to pinpoint data.
 * A *variable*, `n`.
-Variables are used to bind specified nodes in order that they may be retrieved in subsequent clauses.
+Variables allow referencing specified nodes in subsequent clauses.
 
 In this example, the first `MATCH` clause finds all `Person` nodes in the graph with the `name` property set to `Anna`, and binds them to the variable `n`.
-The variable `n` is then passed along to the subsequent `RETURN` clause, which returns the value of a different property (`born`) belonging to the same bound node.
+The variable `n` is then passed along to the subsequent `RETURN` clause, which returns the value of a different property (`born`) belonging to the same node.
 
 [[core-concepts-relationships]]
 == Relationships
 
 Nodes in a graph can be connected with relationships.
-A relationship must have a start node, an end node, and exactly one relationship type.
-Relationships are represented in Cypher with dashes (`-`) and arrows (e.g. `-->`) indicating the direction of a relationship.
+A relationship must have a start node, an end node, and exactly one type.
+Relationships are represented in Cypher with arrows (e.g. `-->`) indicating the direction of a relationship.
 
 [source, cypher]
 ----
 MATCH (:Person {name: 'Anna'})-[r:KNOWS WHERE r.since < 2020]->(friend:Person)
-RETURN count(friend) As numberOfFriends
+RETURN count(r) As numberOfFriends
 ----
 
 Unlike nodes, information within a relationship pattern must be enclosed by square brackets.
-In this case, all outgoing relationships from the start node must be of the type `KNOWS` and have the property `since` set to less than `2020`.
-The xref:functions/aggregating.adoc#functions-count[count()] aggregate function is used in the `RETURN` clause to count all nodes bound by the `friend` variable in the preceding `MATCH` clause (i.e. how many friends Anna has known since before 2020).
+The query example above matches for relationships of type `KNOWS` and with the property `since` set to less than `2020`.
+The query also requires the relationships to go from a `Person` node named `Anna` to any other `Person` nodes, referred to as `friend`.
+The xref:functions/aggregating.adoc#functions-count[count()] function is used in the `RETURN` clause to count all the relationships bound by the `r` variable in the preceding `MATCH` clause (i.e. how many friends Anna has known since before 2020).
 
 Note that while nodes can have several labels, relationships can only have one type.
 
@@ -62,19 +64,19 @@ By applying a declarative path pattern in a query, you can find simple or comple
 [source, cypher]
 ----
 MATCH (n:Person {name: 'Anna'})-[:KNOWS]-{1,5}(friend:Person WHERE n.born < friend.born)
-RETURN DISTINCT friend.name AS youngerFriends
+RETURN DISTINCT friend.name AS youngerConnections
 ----
 
-This example uses a xref:patterns/concepts.adoc#quantified-relationships[quantified relationship] to find all paths of a specific length (between `1` and `5` "hops") traversing only relationships of type `KNOWS` from the start node `Anna` to other `Person` nodes with a lower `born` property (as defined by the xref:clauses/where.adoc[] clause).
+This example uses a xref:patterns/concepts.adoc#quantified-relationships[quantified relationship] to find all paths up to `5` hops away, traversing only relationships of type `KNOWS` from the start node `Anna` to other younger `Person` nodes (as defined by the xref:clauses/where.adoc[] clause).
 The xref:syntax/operators.adoc#syntax-using-the-distinct-operator[DISTINCT] operator is used to ensure that the `RETURN` clause only returns unique nodes.
 
 Patterns can also be assigned variables.
-For example, the below query binds a whole path pattern, which matches the xref:patterns/concepts.adoc#shortest-path[shortest path] from `Anna` to another `Person` node in the graph with the `nationality` property set to `Canadian`.
+For example, the below query binds a whole path pattern, which matches the xref:patterns/concepts.adoc#shortest-path[shortest path] from `Anna` to another `Person` node in the graph up to `10` hops away with the `nationality` property set to `Canadian`.
 In this case, the `RETURN` clause returns the full path pattern between the two nodes.
 
 [source, cypher]
 ----
-MATCH p=shortestPath((:Person {name:'Anna'})-[:KNOWS*]-(:Person {nationality: 'Canadian'}))
+MATCH p=shortestPath((:Person {name: 'Anna'})-[:KNOWS*1..10]-(:Person {nationality: 'Canadian'}))
 RETURN p
 ----
 
