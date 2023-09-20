@@ -22,12 +22,17 @@ To recreate the graph, run the following query in an empty Neo4j database:
 [source, cypher, role=test-setup]
 ----
 CREATE
-  (a:Person:Child {name: 'Alice', age: 20}),
-  (b:Person {name: 'Bob', age: 27}),
-  (c:Person:Parent {name: 'Charlie', age: 65}),
-  (d:Person {name: 'Dora', age: 30})
-  CREATE (a)-[:FRIEND_OF]->(b)
-  CREATE (a)-[:CHILD_OF]->(c)
+ (a:Person:Child {name: 'Alice', age: 20}),
+ (b:Person {name: 'Bob', age: 27}),
+ (c:Person:Parent {name: 'Charlie', age: 65}),
+ (d:Person {name: 'Dora', age: 30})
+ CREATE (a)-[:FRIEND_OF]->(b)
+ CREATE (a)-[:CHILD_OF]->(c)
+ CREATE (a)-[:OWES {dollars: 20}]->(c)
+ CREATE (a)-[:OWES {dollars: 25}]->(b)
+ CREATE (b)-[:OWES {dollars: 35}]->(d)
+ CREATE (d)-[:OWES {dollars: 15}]->(b)
+ CREATE (d)-[:OWES {dollars: 30}]->(b)
 CREATE (:Counter {count: 0})
 ----
 
@@ -36,9 +41,7 @@ CREATE (:Counter {count: 0})
 
 A `CALL` subquery is executed once for each incoming row.
 
-======
-
-The `CALL` subquery executes three times, one for each row that the `UNWIND` clause outputs.
+In the below example, the `CALL` subquery executes three times, one for each row that the `UNWIND` clause outputs.
 
 .Query
 [source, cypher]
@@ -59,11 +62,8 @@ RETURN innerReturn
 | 'hello'
 d|Rows:3
 |===
-======
 
 Each execution of a `CALL` subquery can observe changes from previous executions.
-
-======
 
 .Query
 [source, cypher]
@@ -95,8 +95,6 @@ RETURN
 
 2+d|Rows:3
 |===
-
-======
 
 
 [[call-importing-variables]]
@@ -187,7 +185,7 @@ RETURN
 [[call-post-union]]
 == Post-union processing
 
-Call subqueries can be used to process the results of a `UNION` query further.
+Call subqueries can be used to further process the results of a xref:clauses/union.adoc[] query.
 This example query finds the youngest and the oldest person in the database and orders them by name.
 
 .Query
@@ -211,40 +209,40 @@ ORDER BY p.name
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| p.name | p.age
-| "Alice" | 20
-| "Charlie" | 65
+| +p.name+ | +p.age+
+| +"Alice"+ | +20+
+| +"Charlie"+ | +65+
 2+d|Rows: 2
 |===
 
 If different parts of a result should be matched differently, with some aggregation over the whole result, subqueries need to be used.
-This example query finds friends and/or parents for each person.
-Subsequently the number of friends and parents are counted together.
+This example query uses a `CALL` subquery in combination with `UNION ALL` to determine how much each `Person` node in the graph owes or is owed.
 
 .Query
 [source, cypher]
 ----
 MATCH (p:Person)
 CALL {
-  WITH p
-  OPTIONAL MATCH (p)-[:FRIEND_OF]->(other:Person)
-  RETURN other
-UNION
-  WITH p
-  OPTIONAL MATCH (p)-[:CHILD_OF]->(other:Parent)
-  RETURN other
+    WITH p
+    OPTIONAL MATCH (p)-[o:OWES]->(other:Person)
+    RETURN o.dollars * -1 AS moneyOwed
+UNION ALL
+    WITH p
+    OPTIONAL MATCH (other:Person)-[o:OWES]->(p)
+    RETURN o.dollars AS moneyOwed
 }
-RETURN DISTINCT p.name, count(other)
+RETURN p.name, sum(moneyOwed) AS amountOwing
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| p.name | count(other)
-| "Alice" | 2
-| "Bob" | 0
-| "Charlie" | 0
-| "Dora" | 0
+| p.name | amountOwing
+| "Alice" | -45
+| "Bob" | 35
+| "Charlie" | 20
+| "Dora" | -10
+
 2+d|Rows: 4
 |===
 
@@ -283,8 +281,7 @@ Instead of 4 rows, there are now 2 rows which were found for Alice and Bob respe
 No rows are returned for Charlie and Dora since they have no friends in our example graph.
 
 Subqueries can also perform isolated aggregations.
-The below example counts the number of relationships each person has.
-For each evaluation of the subquery, the number of rows is the same, both before and after the `CALL` subquery:
+The below example uses the xref:functions/aggregating.adoc#functions-sum[sum()] function to count how much money is owed between the `Person` nodes in the graph.
 
 .Query
 [source, cypher]
@@ -292,21 +289,21 @@ For each evaluation of the subquery, the number of rows is the same, both before
 MATCH (p:Person)
 CALL {
   WITH p
-  MATCH (p)--(c)
-  RETURN count(c) AS numberOfConnections
+  MATCH (p)-[o:OWES]->(c)
+  RETURN sum(o.dollars) AS owedAmount, c.name AS owedName
 }
-RETURN p.name, numberOfConnections
+RETURN p.name, owedAmount, owedName
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| p.name | numberOfConnections
-| "Alice" | 3
-| "Bob" | 2
-| "Charlie" | 2
-| "Dora" | 3
-2+d|Rows: 4
+| p.name | owedAmount | owedName
+| "Alice" | 25 | "Bob"
+| "Alice" | 20 | "Charlie"
+| "Bob" | 35 | "Dora"
+| "Dora" | 45 | "Bob"
+3+d|Rows: 4
 |===
 
 [[call-returning-unit]]
