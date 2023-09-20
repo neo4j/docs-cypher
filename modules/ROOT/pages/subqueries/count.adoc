@@ -1,0 +1,299 @@
+= COUNT subqueries
+:description: This page describes how to use the COUNT subquery with Cypher.
+
+A `COUNT` subquery can be used to count the number of rows returned by the subquery.
+
+[[count-example]]
+== Example graph
+
+The following graph is used for the examples below:
+
+image::subqueries_graph.svg[width="700",role="middle"]
+
+To recreate the graph, run the following query against an empty Neo4j database:
+
+[source, cypher, role=test-setup]
+----
+CREATE
+(andy:Swedish:Person {name: 'Andy', age: 36}),
+(timothy:Person {name: 'Timothy', nickname: 'Tim', age: 25}),
+(peter:Person {name: 'Peter', nickname: 'Pete', age: 35}),
+(andy)-[:HAS_DOG {since: 2016}]->(:Dog {name:'Andy'}),
+(timothy)-[:HAS_CAT {since: 2019}]->(:Cat {name:'Mittens'}),
+(fido:Dog {name:'Fido'})<-[:HAS_DOG {since: 2010}]-(peter)-[:HAS_DOG {since: 2018}]->(:Dog {name:'Ozzy'}),
+(fido)-[:HAS_TOY]->(:Toy{name:'Banana'})
+----
+
+[[count-simple]]
+== Simple `COUNT` subquery
+
+Variables introduced by the outside scope can be used in the `COUNT` subquery without importing them.
+In this regard, `COUNT` subqueries are different from `CALL` subqueries, xref::subqueries/call-subquery.adoc#call-importing-variables[which do require importing].
+The following query exemplifies this and outputs the owners of more than one dog:
+
+
+[source, cypher]
+----
+MATCH (person:Person)
+WHERE COUNT { (person)-[:HAS_DOG]->(:Dog) } > 1
+RETURN person.name AS name
+----
+
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| name
+| "Peter"
+1+d|Rows: 1
+|===
+
+
+[[count-where]]
+== `COUNT` subquery with `WHERE` clause
+
+A `WHERE` clause can be used inside the `COUNT` pattern.
+Variables introduced by the `MATCH` clause and the outside scope can be used in this scope.
+
+
+[source, cypher]
+----
+MATCH (person:Person)
+WHERE COUNT {
+  (person)-[:HAS_DOG]->(dog:Dog)
+  WHERE person.name = dog.name
+} = 1
+RETURN person.name AS name
+----
+
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| name
+| "Andy"
+1+d|Rows: 1
+|===
+
+[[count-union]]
+== `COUNT` subquery with a `UNION`
+
+_This feature was introduced in Neo4j 5.3._
+
+`COUNT` can be used with a `UNION` clause. If the `UNION` clause is distinct, the `RETURN` clause is required.
+`UNION ALL` clauses do not require the `RETURN` clause. However, it is worth noting that if one branch has a `RETURN` clause, then all require one.
+The below example shows the count of pets each person has by using a `UNION` clause:
+
+[source, cypher]
+----
+MATCH (person:Person)
+RETURN
+    person.name AS name,
+    COUNT {
+        MATCH (person)-[:HAS_DOG]->(dog:Dog)
+        RETURN dog.name AS petName
+        UNION
+        MATCH (person)-[:HAS_CAT]->(cat:Cat)
+        RETURN cat.name AS petName
+    } AS numPets
+----
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name        | numPets
+| "Andy"      | 1
+| "Timothy"   | 1
+| "Peter"     | 2
+2+d|Rows: 3
+|===
+
+
+[[count-with]]
+== `COUNT` subquery with `WITH`
+
+_This feature was introduced in Neo4j 5.3._
+
+Variables from the outside scope are visible for the entire subquery, even when using a `WITH` clause.
+To avoid confusion, shadowing of these variables is not allowed.
+An outside scope variable is shadowed when a newly introduced variable within the inner scope is defined with the same variable.
+In the example below, the outer variable `name` is shadowed and will therefore throw an error.
+
+[source, cypher, role=test-fail]
+----
+WITH 'Peter' as name
+MATCH (person:Person {name: name})
+WHERE COUNT {
+    WITH "Ozzy" AS name
+    MATCH (person)-[:HAS_DOG]->(d:Dog)
+    WHERE d.name = name
+} = 1
+RETURN person.name AS name
+----
+
+.Error message
+[source, output, role="noheader"]
+----
+The variable `name` is shadowing a variable with the same name from the outer scope and needs to be renamed (line 4, column 20 (offset: 90))
+----
+
+New variables can be introduced into the subquery, as long as they use a different identifier.
+In the example below, a `WITH` clause introduces a new variable.
+Note that the outer scope variable `person` referenced in the main query is still available after the `WITH` clause.
+
+[source, cypher]
+----
+MATCH (person:Person)
+WHERE COUNT {
+    WITH "Ozzy" AS dogName
+    MATCH (person)-[:HAS_DOG]->(d:Dog)
+    WHERE d.name = dogName
+} = 1
+RETURN person.name AS name
+----
+
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| name
+| "Peter"
+1+d|Rows: 1
+|===
+
+
+[[count-inside-clauses]]
+== Using `COUNT` subqueries inside other clauses
+
+`COUNT` can be used in any position in a query, with the exception of administration commands, where it is restricted.
+See a few examples below:
+
+[[count-subqueries-with-return]]
+=== Using `COUNT` in `RETURN`
+
+
+[source, cypher]
+----
+MATCH (person:Person)
+RETURN person.name, COUNT { (person)-[:HAS_DOG]->(:Dog) } as howManyDogs
+
+----
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| person.name | howManyDogs
+| "Andy" | 1
+| "Timothy" | 0
+| "Peter" | 2
+2+d|Rows: 3
+|===
+
+
+[[count-set]]
+=== Using `COUNT` in `SET`
+
+
+[source, cypher]
+----
+MATCH (person:Person) WHERE person.name ="Andy"
+SET person.howManyDogs = COUNT { (person)-[:HAS_DOG]->(:Dog) }
+RETURN person.howManyDogs as howManyDogs
+
+----
+
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| howManyDogs
+| 1
+1+d|Rows: 1 +
+Properties set: 1
+|===
+
+
+[[count-case]]
+=== Using `COUNT` in `CASE`
+
+[source, cypher]
+----
+MATCH (person:Person)
+RETURN
+   CASE
+     WHEN COUNT { (person)-[:HAS_DOG]->(:Dog) } > 1 THEN "Doglover " + person.name
+     ELSE person.name
+   END AS result
+
+----
+
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| result
+| "Andy"
+| "Timothy"
+| "Doglover Peter"
+1+d|Rows: 3
+|===
+
+
+[[count-grouping-key]]
+=== Using `COUNT` as a grouping key
+
+The following query groups all persons by how many dogs they own,
+and then calculates the average age for each group.
+
+
+[source, cypher]
+----
+MATCH (person:Person)
+RETURN COUNT { (person)-[:HAS_DOG]->(:Dog) } AS numDogs,
+       avg(person.age) AS averageAge
+ ORDER BY numDogs
+
+----
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +numDogs+ | +averageAge+
+| 0 | 25.0
+| 1 | 36.0
+| 2 | 35.0
+2+d|Rows: 3
+|===
+
+
+[[count-return]]
+=== `COUNT` subquery with `RETURN`
+
+_This feature was introduced in Neo4j 5.3._
+
+`COUNT` subqueries do not require a `RETURN` clause at the end of the subquery.
+If one is present, it does not need to be aliased.
+This is a difference compared to xref::subqueries/call-subquery.adoc[`CALL` subqueries].
+Any variables returned in a `COUNT` subquery will not be available after the subquery.
+
+[source, cypher]
+----
+MATCH (person:Person)
+WHERE COUNT {
+    MATCH (person)-[:HAS_DOG]->(:Dog)
+    RETURN person.name
+} = 1
+RETURN person.name AS name
+----
+
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| name
+| "Andy"
+1+d|Rows: 1
+|===
+
+[[count-rules]]
+== Rules
+
+The following is true for `COUNT` subqueries:
+
+* Any non-writing query is allowed.
+
+* The final `RETURN` clause may be omitted, as any variable defined within the subquery will not be available outside of the expression, even if a final `RETURN` clause is used.
+One exception to this is that for a `DISTINCT UNION` clause, the `RETURN` clause is still mandatory.
+
+* The `MATCH` keyword can be omitted in subqueries in cases where the `COUNT` consists of only a pattern and an optional `WHERE` clause.
+
+* A `COUNT` subquery can appear anywhere in a query that an expression is valid.
+
+* Any variable that is defined in the outside scope can be referenced inside the `COUNT` subquery’s own scope.
+
+* Variables introduced inside the `COUNT` subquery are not part of the outside scope and therefore cannot be accessed on the outside.

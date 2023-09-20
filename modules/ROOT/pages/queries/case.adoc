@@ -1,0 +1,249 @@
+[[case]]
+= Conditional expressions (CASE)
+:description: This page describes how to use the CASE expression with Cypher.
+
+Generic conditional expressions can be expressed in Cypher using the `CASE` construct.
+Two variants of `CASE` exist within Cypher: the _simple_ form, to compare a single expression against multiple values, and the _generic_ form, to express multiple conditional statements.
+
+[NOTE]
+====
+`CASE` can only be used as part of xref:clauses/return.adoc[] or xref:clauses/with.adoc[] if you want to use the result in a subsequent clause.
+====
+
+[[case-example]]
+== Example graph
+
+The following graph is used for the examples below:
+
+image:case_graph.svg[width="500",role="middle"]
+
+To recreate the graph, run the following query against an empty Neo4j database:
+
+[source, cypher, role=test-setup]
+----
+CREATE
+  (alice:Person {name:'Alice', age: 38, eyes: 'brown'}),
+  (bob:Person {name: 'Bob', age: 25, eyes: 'blue'}),
+  (charlie:Person {name: 'Charlie', age: 53, eyes: 'green'}),
+  (daniel:Person {name: 'Daniel', eyes: 'brown'}),
+  (eskil:Person {name: 'Eskil', age: 41, eyes: 'blue'}),
+  (alice)-[:KNOWS]->(bob),
+  (alice)-[:KNOWS]->(charlie),
+  (bob)-[:KNOWS]->(daniel),
+  (charlie)-[:KNOWS]->(daniel),
+  (bob)-[:MARRIED]->(eskil)
+----
+
+[[case-simple]]
+== Simple `CASE`
+
+The simple `CASE` form is used to compare a single expression against multiple values, and is analogous to the `switch` construct of programming languages.
+The expressions are evaluated by the `WHEN` operator until a match is found.
+If no match is found, the expression in the `ELSE` operator is returned.
+If there is no `ELSE` case and no match is found, `null` will be returned.
+
+[[case-simple-syntax]]
+=== Syntax
+
+[source, syntax]
+----
+CASE test
+  WHEN value THEN result
+  [WHEN ...]
+  [ELSE default]
+END
+----
+
+*Arguments:*
+[options="header", cols="1,2"]
+|===
+| Name | Description
+
+| `test`
+| An expression.
+
+| `value`
+| An expression whose result will be compared to `test`.
+
+| `result`
+| The expression returned as output if `value` matches `test`
+
+| `default`
+| The expression to return if no value matches the test expression.
+|===
+
+[[case-simple-examples]]
+=== Example
+
+[source, cypher]
+----
+MATCH (n:Person)
+RETURN
+CASE n.eyes
+  WHEN 'blue'  THEN 1
+  WHEN 'brown' THEN 2
+  ELSE 3
+END AS result, n.eyes
+----
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| result | n.eyes
+| 2      | "brown"
+| 1      | "blue"
+| 3      | "green"
+| 2      | "brown"
+| 1      | "blue"
+2+d|Rows: 5
+|===
+
+[[case-generic]]
+== Generic `CASE`
+
+The generic `CASE` expression supports multiple conditional statements, and is analogous to the `if-elseif-else` construct of programming languages.
+Each row is evaluated in order until a `true` value is found.
+If no match is found, the expression in the `ELSE` operator is returned.
+If there is no `ELSE` case and no match is found, `null` will be returned.
+
+[[case-generic-syntax]]
+=== Syntax
+
+[source, syntax]
+----
+CASE
+  WHEN predicate THEN result
+  [WHEN ...]
+  [ELSE default]
+END
+----
+
+*Arguments:*
+[options="header", cols="1,2"]
+|===
+| Name | Description
+| `predicate`
+| A predicate is an expression that evaluates to a `BOOLEAN` value.
+In this case, the predicate is tested to find a valid alternative.
+
+| `result`
+| The expression returned as output if `predicate` evaluates to `true`.
+
+| `default`
+| If no match is found, `default` is returned.
+|===
+
+[[case-generic-examples]]
+=== Example
+
+[source, cypher]
+----
+MATCH (n:Person)
+RETURN
+CASE
+  WHEN n.eyes = 'blue' THEN 1
+  WHEN n.age < 40      THEN 2
+  ELSE 3
+END AS result, n.eyes, n.age
+----
+
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| result | n.eyes  | n.age
+| 2      | "brown" | 38
+| 1      | "blue"  | 25
+| 3      | "green" | 53
+| 3      | "brown" | null
+| 1      | "blue"  | 41
+3+d|Rows: 5
+|===
+
+
+[[expressions-case-null-differentiating]]
+== `CASE` with `null` values
+
+When working with `null` values, you may be forced to use the generic `CASE` form.
+The two examples below use the `age` property of the `Daniel` node (which has a `null` value for that property) to clarify the difference.
+
+.Simple `CASE`
+[source, cypher]
+----
+MATCH (n:Person)
+RETURN n.name,
+CASE n.age  // <1>
+  WHEN null THEN -1  // <2>
+  ELSE n.age - 10 // <3>
+END AS age_10_years_ago
+----
+
+<1> `n.age` is the expression being evaluated. Note that the node `Daniel` has a `null` value as age.
+<2> This branch is skipped, because `null` does not equal any other value, including `null` itself.
+<3> The execution takes the `ELSE` branch, which outputs `null` because `n.age - 10` equals `null`.
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| n.name | age_10_years_ago
+| "Alice" | 28
+| "Bob" | 15
+| "Charlie" | 43
+| "Daniel" | null
+| "Eskil" | 31
+2+d|Rows: 5
+|===
+
+.Generic `CASE`
+[source, cypher]
+----
+MATCH (n:Person)
+RETURN n.name,
+CASE  // <1>
+  WHEN n.age IS NULL THEN -1  // <2>
+  ELSE n.age - 10
+END AS age_10_years_ago
+----
+
+<1> If no expression is provided after `CASE`, it acts in its generic form, supporting predicate expressions in each branch.
+<2> This predicate expression evaluates to `true` for the node `Daniel`, so the result from this branch is returned.
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| n.name | age_10_years_ago
+| "Alice" | 28
+| "Bob" | 15
+| "Charlie" | 43
+| "Daniel" | -1
+| "Eskil" | 31
+2+d|Rows: 5
+|===
+
+For more information about `null`, see xref:values-and-types/working-with-null.adoc[].
+
+[[expressions-case-succeeding-clauses]]
+== `CASE` expressions and succeeding clauses
+
+The results of a `CASE` expression can be used to set properties on a node or relationship.
+
+[source, cypher]
+----
+MATCH (n:Person)
+WITH n,
+CASE n.eyes
+  WHEN 'blue'  THEN 1
+  WHEN 'brown' THEN 2
+  ELSE 3
+END AS colorCode
+SET n.colorCode = colorCode
+RETURN n.name, n.colorCode
+----
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| n.name | n.colorCode
+| "Alice" | 2
+| "Bob" | 1
+| "Charlie" | 3
+| "Daniel" | 2
+| "Eskil" | 1
+2+d|Rows: 5
+|===
+
+For more information about using the `SET` clause, see xref::clauses/set.adoc[SET].
