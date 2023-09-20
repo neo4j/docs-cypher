@@ -1,10 +1,12 @@
-[[cypher-tutorial]]
-= Tutorial
-:description: This section provides an overview of Cypher, and goes through a short Cypher tutorial based on the Neo4j movie database.
+= Basic queries
+:description: This section provides an overview of some basic Cypher queries using the Neo4j movie database.
 
-In this short tutorial, users will learn how to create, query, and delete a property graph database using Cypher. 
-The tutorial uses the xref:https://github.com/neo4j-graph-examples/movies/tree/main/documentation[Neo4j movie database].
+This page contains information about how to create, query, and delete a graph database using Cypher.
+For more advanced queries, see the section on xref:subqueries/index.adoc[].
 
+The examples below uses the publicly available link:https://github.com/neo4j-graph-examples/movies/tree/main/documentation[Neo4j movie database].
+
+[[data-model]]
 == Creating a data model 
 
 Before creating a property graph database, it is important to develop an appropriate data model.
@@ -16,17 +18,18 @@ image::introduction_schema.svg[width="800",role="middle"]
 
 It includes two types of node labels:
 
-* `Person` nodes, which have the following properties: `name` (`STRING`) and `born` (`INTEGER`).
-* `Movie` nodes, which have the following properties: `title` (`STRING`), `released` (`INTEGER`), and `tagline` (`STRING`).
+* `Person` nodes, which have the following properties: `name` and `born`.
+* `Movie` nodes, which have the following properties: `title`, `released`, and `tagline`.
 
 The data model also contains five different relationship types between the `Person` and `Movie` nodes: `ACTED_IN`, `DIRECTED`, `PRODUCED`, `WROTE`, and `REVIEWED`. Two of the relationship types have properties:
 
-* The `ACTED_IN` relationship type, which has the `roles` property (`STRING`).
-* The `REVIEWED` relationship type, which has a `summary` property (`STRING`) and a `rating` property (`FLOAT`).
+* The `ACTED_IN` relationship type, which has the `roles` property.
+* The `REVIEWED` relationship type, which has a `summary` property and a `rating` property.
 
 _To learn more about data modelling for graph databases, enroll in the free
 https://graphacademy.neo4j.com/courses/modeling-fundamentals/[Graph Data Modelling Fundamentals] course offered by GraphAcademy._
 
+[[create-graph]]
 == Creating a property graph database
 
 The complete Cypher query to create the Neo4j movie database, can be found https://github.com/neo4j-graph-examples/movies/blob/main/scripts/movies.cypher[here].
@@ -538,6 +541,7 @@ CREATE
 ----
 ////
 
+[[find-nodes]]
 == Finding nodes
 
 The `MATCH` clause is used to find a specific pattern in the graph, such as a specific node. 
@@ -557,8 +561,7 @@ RETURN keanu.name AS name, keanu.born AS born
 |===
 | name | born
 
-| "Keanu Reeves"
-| 1964
+| "Keanu Reeves" | 1964
 
 2+d|Rows: 1
 |===
@@ -588,10 +591,11 @@ LIMIT 5
 1+d|Rows: 5
 |===
 
+[[clause-composition-note]]
 == Note on clause composition
 
 Similar to SQL, Cypher queries are constructed using various clauses which are chained together to feed intermediate results between each other. 
-Each clause has as input the state of the graph and a table of intermediate results consisting of the current variables.
+Each clause has as input the state of the graph and a table of intermediate results consisting of the referenced variables.
 The first clause takes as input the state of the graph before the query and an empty table of intermediate results.
 The output of a clause is a new state of the graph and a new table of intermediate results, serving as input to the next clause. 
 The output of the last clause is the result of the query.
@@ -601,7 +605,7 @@ Note that if one of the clauses returns an empty table of intermediate results, 
 For example, by replacing a `MATCH` clause with xref:clauses/optional-match.adoc[OPTIONAL MATCH].)
 
 In the below example, the first `MATCH` clause finds all nodes with the `Person` label.
-The second clause will then filter those nodes to find all `Person` nodes who were bron in the 1980s.
+The second clause will then filter those nodes to find all `Person` nodes who were born in the 1980s.
 The final clause returns the result in a descending chronological order.
 
 .Query
@@ -609,7 +613,8 @@ The final clause returns the result in a descending chronological order.
 ----
 MATCH (bornInEighties:Person)
 WHERE bornInEighties.born >= 1980 AND bornInEighties.born < 1990 
-RETURN bornInEighties.name as name, bornInEighties.born as born ORDER BY born DESC 
+RETURN bornInEighties.name as name, bornInEighties.born as born
+ORDER BY born DESC 
 ----
 
 .Result
@@ -634,6 +639,7 @@ RETURN bornInEighties.name as name, bornInEighties.born as born ORDER BY born DE
 
 For more details, see the section on xref:clauses/clause_composition.adoc[].
 
+[[find-connected-nodes]]
 == Finding connected nodes
 
 To discover how nodes are connected to one another, relationships must be added to queries.
@@ -666,17 +672,17 @@ The below query searches the graph for outgoing relationships from the `Tom Hank
 [source, cypher]
 ----
 MATCH (tom:Person {name:'Tom Hanks'})-[r]->(m:Movie)
-Return type(r), m.title AS movies
+RETURN type(r) AS type, m.title AS movie
 ----
 
-The graph returned shows that he has 13 outgoing relationships connected to 12 different `Movie` nodes (12 have the `ACTED_IN` type and one has the `DIRECTED` type).
+The result shows that he has 13 outgoing relationships connected to 12 different `Movie` nodes (12 have the `ACTED_IN` type and one has the `DIRECTED` type).
 
 image::introduction_example1.svg[width="500",role="middle"]
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-|+type(r)+ | +movies+
+| type | movie
 
 | "ACTED_IN" | "Apollo 13"
 
@@ -708,41 +714,43 @@ image::introduction_example1.svg[width="500",role="middle"]
 |===
 
 It is possible to further modify Cypher queries by adding label expressions to the clauses.
-For example, the below query uses a `NOT` expression (`!`) to return all relationships connected to `Tom Hanks` that does not contain the specified type, `ACTED_IN`. 
+For example, the below query uses a `NOT` label expression (`!`) to return all relationships connected to `Tom Hanks` that are not of type `ACTED_IN`.
 
 .Query
 [source, cypher]
 ----
-MATCH (tom:Person {name:'Tom Hanks'})-[r:!ACTED_IN]->(m:Movie)
-Return type(r), m.title AS movies
+MATCH (:Person {name:'Tom Hanks'})-[r:!ACTED_IN]->(m:Movie)
+Return type(r) AS type, m.title AS movies
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| type(r) | movies
+| type | movie
 
 | "DIRECTED" | "That Thing You Do"
 
 2+d|Rows: 1
 |===
 
-For more information about the different label expressions supported by Cypher, see the section on xref:syntax/expressions.adoc#label-expressions[label expressions].
+For more information about the different label expressions supported by Cypher, see the section on xref:patterns/reference.adoc#label-expressions[label expressions].
 
+[[find-paths]]
 == Finding paths
 
 There are several ways in which Cypher can be used to search a graph for paths between nodes.
 
-To search for patterns of a fixed length, specify the distance ("hops") between the nodes in the pattern by using a xref::patterns/reference.adoc#quantifiers[quantifier] (`\{n}`). 
-For example, the following query matches all `Person` nodes exactly 2 "hops" away from `Tom Hanks` and returns the first five rows, in ascending order of the `born` property value of the `colleagues` nodes.
+To search for patterns of a fixed length, specify the distance (hops) between the nodes in the pattern by using a xref::patterns/reference.adoc#quantifiers[quantifier] (`\{n}`). 
+For example, the following query matches all `Person` nodes exactly 2 hops away from `Tom Hanks` and returns the first five rows.
 The xref:syntax/operators.adoc#syntax-using-the-distinct-operator[DISTINCT] operator ensures that the result contain no duplicate values. 
 
 .Query
 [source, cypher]
 ----
 MATCH (tom:Person {name:'Tom Hanks'})--{2}(colleagues:Person)
-RETURN DISTINCT colleagues.name AS name, colleagues.born AS bornIn  
-ORDER BY bornIn LIMIT 5
+RETURN DISTINCT colleagues.name AS name, colleagues.born AS bornIn
+ORDER BY bornIn
+LIMIT 5
 ----
 
 .Result
@@ -760,14 +768,15 @@ ORDER BY bornIn LIMIT 5
 |===
 
 It is also possible to match a graph for patterns of a variable length. 
-The below query matches all `Person` nodes between `1` and `4` "hops" away from `Tom Hanks` and returns the first five rows, in ascending order of the `born` and `name` property values of the `colleagues` nodes.
+The below query matches all `Person` nodes between `1` and `4` hops away from `Tom Hanks` and returns the first five rows.
 
 .Query
 [source, cypher, role=test-result-skip]
 ----
 MATCH (p:Person {name:'Tom Hanks'})--{1,4}(colleagues:Person)
 RETURN DISTINCT colleagues.name AS name, colleagues.born AS bornIn  
-ORDER BY bornIn, name LIMIT 5
+ORDER BY bornIn, name
+LIMIT 5
 ----
 
 .Result
@@ -799,12 +808,12 @@ For example, this query matches the shorest path in the graph between the two no
 [source, cypher]
 ----
 MATCH p=shortestPath(
-(keanu:Person {name:"Keanu Reeves"})-[*]-(tom:Person {name:"Tom Hanks"})
+(:Person {name:"Keanu Reeves"})-[*]-(:Person {name:"Tom Hanks"})
 )
 RETURN p
 ----
 
-This is the returned graph:
+This is the returned path:
 
 image::introduction_example2.svg[width="500",role="middle]
 
@@ -812,6 +821,7 @@ It shows that `Keanu Reeves` `ACTED_IN` the `Movie` `The Replacements`, which wa
 
 More information can be found in the section on xref::patterns/index.adoc[Patterns].
 
+[[find-recommendations]]
 == Finding recommendations
 
 Cypher allows for more complex queries.
@@ -824,7 +834,9 @@ The query then orders the results by how frequently a matched co-co-actor has co
 MATCH (keanu:Person {name:'Keanu Reeves'})-[:ACTED_IN]->(m:Movie)<-[:ACTED_IN]-(coActors:Person),
   (coActors:Person)-[:ACTED_IN]->(m2:Movie)<-[:ACTED_IN]-(cocoActors:Person)
 WHERE NOT (keanu)-[:ACTED_IN]->()<-[:ACTED_IN]-(cocoActors) AND keanu <> cocoActors
-RETURN cocoActors.name AS recommended, count(cocoActors) AS strength ORDER BY strength DESC LIMIT 7
+RETURN cocoActors.name AS recommended, count(cocoActors) AS strength
+ORDER BY strength DESC
+LIMIT 7
 ----
 
 .Result
@@ -849,15 +861,15 @@ The following query matches coactors who could introduce the two, by looking for
 .Query
 [source, cypher]
 ----
-MATCH (keanu:Person {name: 'Keanu Reeves'})-[:ACTED_IN]->(m:Movie)<-[:ACTED_IN]-(coActors:Person),
-  (coActors)-[:ACTED_IN]->(m2:Movie)<-[:ACTED_IN]-(tom:Person {name:'Tom Hanks'})
-RETURN DISTINCT coActors.name AS coActors
+MATCH (:Person {name: 'Keanu Reeves'})-[:ACTED_IN]->(:Movie)<-[:ACTED_IN]-(coActor:Person),
+  (coActor)-[:ACTED_IN]->(:Movie)<-[:ACTED_IN]-(:Person {name:'Tom Hanks'})
+RETURN DISTINCT coActor.name AS coActor
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
-| coActors
+| coActor
 
 | "Charlize Theron"
 | "Hugo Weaving"
@@ -866,6 +878,7 @@ RETURN DISTINCT coActors.name AS coActors
 
 |===
 
+[[delete-graph]]
 == Delete a graph
 
 To delete all nodes and relationships in a graph, run the following query:
@@ -875,3 +888,5 @@ To delete all nodes and relationships in a graph, run the following query:
 MATCH (n)
 DETACH DELETE n
 ----
+
+For more information, see the section on the xref:clauses/delete.adoc[] clause.
