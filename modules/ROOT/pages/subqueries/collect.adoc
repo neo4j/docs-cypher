@@ -1,0 +1,325 @@
+= COLLECT subqueries
+:description: This page describes how to use the COLLECT subquery with Cypher.
+
+_This feature was introduced in Neo4j 5.6._
+
+A `COLLECT` subquery expression can be used to create a list with the rows returned by a given subquery.
+
+`COLLECT` subqueries differ from `COUNT` and `EXISTS` subqueries in that the final `RETURN` clause is mandatory.
+The `RETURN` clause must return exactly one column.
+
+[[collect-example]]
+== Example graph
+
+The following graph is used for the examples below:
+
+image::subqueries_graph.svg[width="700",role="middle"]
+
+To recreate the graph, run the following query against an empty Neo4j database:
+
+[source, cypher, role=test-setup]
+----
+CREATE
+(andy:Swedish:Person {name: 'Andy', age: 36}),
+(timothy:Person {name: 'Timothy', nickname: 'Tim', age: 25}),
+(peter:Person {name: 'Peter', nickname: 'Pete', age: 35}),
+(andy)-[:HAS_DOG {since: 2016}]->(:Dog {name:'Andy'}),
+(timothy)-[:HAS_CAT {since: 2019}]->(:Cat {name:'Mittens'}),
+(fido:Dog {name:'Fido'})<-[:HAS_DOG {since: 2010}]-(peter)-[:HAS_DOG {since: 2018}]->(:Dog {name:'Ozzy'}),
+(fido)-[:HAS_TOY]->(:Toy{name:'Banana'})
+----
+
+[[collect-simple]]
+== Simple `COLLECT` subquery
+
+Variables introduced by the outside scope can be used in the `COLLECT` subquery without importing them.
+In this regard, `COLLECT` subqueries are different from `CALL` subqueries, xref::subqueries/call-subquery.adoc#call-importing-variables[which do require importing].
+The following query exemplifies this and outputs the owners of the dog named `Ozzy`:
+
+[source, cypher]
+----
+MATCH (person:Person)
+WHERE 'Ozzy' IN COLLECT { MATCH (person)-[:HAS_DOG]->(dog:Dog) RETURN dog.name }
+RETURN person.name AS name
+----
+
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| name
+| "Peter"
+1+d|Rows: 1
+|===
+
+
+[[collect-where]]
+== `COLLECT` subquery with `WHERE` clause
+
+A `WHERE` clause can be used inside the `COLLECT` subquery.
+Variables introduced by the `MATCH` clause and the outside scope can be used in the inner scope.
+
+[source, cypher]
+----
+MATCH (person:Person)
+RETURN person.name as name, COLLECT {
+  MATCH (person)-[r:HAS_DOG]->(dog:Dog)
+  WHERE r.since > 2017
+  RETURN dog.name
+} as youngDogs
+----
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name        | youngDogs
+| "Andy"      | []
+| "Timothy"   | []
+| "Peter"     | ["Ozzy"]
+2+d|Rows: 3
+|===
+
+
+[[collect-union]]
+== `COLLECT` subquery with a `UNION`
+
+`COLLECT` can be used with a `UNION` clause.
+The below example shows the collection of pet names each person has by using a `UNION` clause:
+
+[source, cypher]
+----
+MATCH (person:Person)
+RETURN
+    person.name AS name,
+    COLLECT {
+        MATCH (person)-[:HAS_DOG]->(dog:Dog)
+        RETURN dog.name AS petName
+        UNION
+        MATCH (person)-[:HAS_CAT]->(cat:Cat)
+        RETURN cat.name AS petName
+    } AS petNames
+----
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name        | petNames
+| "Andy"      | ["Andy"]
+| "Timothy"   | ["Mittens"]
+| "Peter"     | ["Ozzy", "Fido"]
+2+d|Rows: 3
+|===
+
+
+[[collect-with]]
+== `COLLECT` subquery with `WITH`
+
+Variables from the outside scope are visible for the entire subquery, even when using a `WITH` clause.
+To avoid confusion, shadowing of these variables is not allowed.
+An outside scope variable is shadowed when a newly introduced variable within the inner scope is defined with the same variable.
+In the example below, the outer variable `name` is shadowed and will therefore throw an error.
+
+[source, cypher, role=test-fail]
+----
+WITH 'Peter' as name
+MATCH (person:Person {name: name})
+RETURN COLLECT {
+    WITH 'Ozzy' AS name
+    MATCH (person)-[r:HAS_DOG]->(d:Dog {name: name})
+    RETURN d.name
+} as dogsOfTheYear
+----
+
+.Error message
+[source, output, role="noheader"]
+----
+The variable `name` is shadowing a variable with the same name from the outer scope and needs to be renamed (line 4, column 20 (offset: 92))
+----
+
+New variables can be introduced into the subquery, as long as they use a different identifier.
+In the example below, a `WITH` clause introduces a new variable.
+Note that the outer scope variable `person` referenced in the main query is still available after the `WITH` clause.
+
+[source, cypher]
+----
+MATCH (person:Person)
+RETURN person.name AS name, COLLECT {
+    WITH 2018 AS yearOfTheDog
+    MATCH (person)-[r:HAS_DOG]->(d:Dog)
+    WHERE r.since = yearOfTheDog
+    RETURN d.name
+} as dogsOfTheYear
+----
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name        | dogsOfTheYear
+| "Andy"      | []
+| "Timothy"   | []
+| "Peter"     | ["Ozzy"]
+2+d|Rows: 3
+|===
+
+
+[[collect-inside-clauses]]
+== Using `COLLECT` subqueries inside other clauses
+
+`COLLECT` can be used in any position in a query, with the exception of administration commands, where the `COLLECT` expression is restricted.
+See a few examples below of how `COLLECT` can be used in different positions within a query:
+
+
+[[collect-return]]
+=== Using `COLLECT` in `RETURN`
+
+[source, cypher]
+----
+MATCH (person:Person)
+RETURN person.name,
+       COLLECT {
+            MATCH (person)-[:HAS_DOG]->(d:Dog)
+            MATCH (d)-[:HAS_TOY]->(t:Toy)
+            RETURN t.name
+       } as toyNames
+----
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| person.name | toyNames
+| "Andy"      | []
+| "Timothy"   | []
+| "Peter"     | ["Banana"]
+2+d|Rows: 3
+|===
+
+
+[[collect-set]]
+=== Using `COLLECT` in `SET`
+
+[source, cypher]
+----
+MATCH (person:Person) WHERE person.name = "Peter"
+SET person.dogNames = COLLECT { MATCH (person)-[:HAS_DOG]->(d:Dog) RETURN d.name }
+RETURN person.dogNames as dogNames
+----
+
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| dogNames
+| ["Ozzy", "Fido"]
+1+d|Rows: 1 +
+Properties set: 1
+|===
+
+
+[[collect-case]]
+=== Using `COLLECT` in `CASE`
+
+[source, cypher]
+----
+MATCH (person:Person)
+RETURN
+   CASE
+     WHEN COLLECT { MATCH (person)-[:HAS_DOG]->(d:Dog) RETURN d.name } = []  THEN "No Dogs " + person.name
+     ELSE person.name
+   END AS result
+----
+
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| result
+| "Andy"
+| "No Dogs Timothy"
+| "Peter"
+1+d|Rows: 3
+|===
+
+
+[[collect-grouping-key]]
+=== Using `COLLECT` as a grouping key
+
+The following query collects all persons by their dogs' names,
+and then calculates the average age for each group.
+
+[source, cypher]
+----
+MATCH (person:Person)
+RETURN COLLECT { MATCH (person)-[:HAS_DOG]->(d:Dog) RETURN d.name } AS dogNames,
+       avg(person.age) AS averageAge
+ ORDER BY dogNames
+----
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| dogNames         | averageAge
+| []               | 25.0
+| ["Andy"]         | 36.0
+| ["Ozzy", "Fido"] | 35.0
+2+d|Rows: 3
+|===
+
+
+[[collect-differentiation]]
+== Using `COLLECT` vs `collect()`
+
+`COLLECT` does not handle `null` values in the same way that the aggregating function `collect()` does.
+The `collect()` function automatically removes `null` values.
+`COLLECT` will not remove `null` values automatically.
+However, they can be removed by adding a filtering step in the subquery.
+
+The following queries illustrate these differences:
+
+[source, cypher]
+----
+MATCH (p:Person)
+RETURN collect(p.nickname) AS names
+----
+
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| names
+| ["Pete", "Tim"]
+1+d|Rows: 1
+|===
+
+[source, cypher]
+----
+RETURN COLLECT {
+        MATCH (p:Person)
+        RETURN p.nickname ORDER BY p.nickname
+      } AS names
+----
+
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| names
+| ["Pete", "Tim", null]
+1+d|Rows: 1
+|===
+
+[source, cypher]
+----
+RETURN COLLECT {
+        MATCH (p:Person)
+        WHERE p.nickname IS NOT NULL
+        RETURN p.nickname ORDER BY p.nickname
+      } AS names
+----
+
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| name
+| ["Pete", "Tim"]
+1+d|Rows: 1
+|===
+
+[[collect-rules]]
+== Rules
+
+The following is true for `COLLECT` subqueries:
+
+* Any non-writing query is allowed.
+
+* The final `RETURN` clause is mandatory when using a `COLLECT` subquery.
+The `RETURN` clause must return exactly one column.
+
+* A `COLLECT` subquery can appear anywhere in a query that an expression is valid.
+
+* Any variable that is defined in the outside scope can be referenced inside the `COLLECT` subquery’s own scope.
+
+* Variables introduced inside the `COLLECT` subquery are not part of the outside scope and therefore cannot be accessed on the outside.
