@@ -270,21 +270,10 @@ Removed 1 index.
 [[indexes-vector-set]]
 == Set a vector property on a node
 
-You can set a vector property, `LIST<FLOAT>`, on a node using the xref:clauses/set.adoc#set-set-a-property[`SET`] command:
-
-.Syntax for setting a vector property
-[source,syntax,role="noheader",indent=0]
-----
-SET node.propertyKey = vector
-----
-
-However, Cypher stores the provided `LIST<FLOAT>` as a primitive array of {ieee-754} _double_ precision values.
 Valid vectors for use in the index must have components finitely representable in {ieee-754} _single_ precision.
-As a result, it takes up approximately twice as much space.
-
-The {link-procedures-reference}#procedure_db_create_setVectorProperty[`db.create.setVectorProperty`] procedure is provided to validate and set the property as an array of {ieee-754} single precision values.
-As a result, the store's space is approximately halved.
-
+They are represented as properties on nodes with type `LIST<FLOAT>`.
+The recommended way of setting a vector property is using the {link-procedures-reference}#procedure_db_create_setVectorProperty[`db.create.setVectorProperty`] procedure.
+This procedure will validate the input and set the property as an array of {ieee-754} single precision values.
 
 .Signature for `db.create.setVectorProperty` to set a vector property
 [source,syntax,role="noheader",indent=0]
@@ -292,16 +281,32 @@ As a result, the store's space is approximately halved.
 db.create.setVectorProperty(node :: NODE?, key :: STRING?, vector :: LIST? OF FLOAT?) :: (node :: NODE?)
 ----
 
-Thus, this is the equivalent syntax for setting a vector with a procedure:
+Usually you want to define your embeddings as Cypher parameters and call the procedure similar to the following listing:
 
-.Syntax for setting a vector _via_ a procedure
+.Syntax for setting a vector via a procedure
 [source,syntax,role="noheader",indent=0]
 ----
-CALL db.create.setVectorProperty(node, 'propertyKey', vector)
+MATCH (n:Node {id: $id})
+CALL db.create.setVectorProperty(n, 'propertyKey', $vector)
+YIELD node RETURN node;
 ----
 
+In the example we match one node and update it's embedding, but it's completely possible to use a list parameter containing many match criterias and many embeddings, so that you can update many nodes in an `UNWIND` clause.
 This is ideal for creating and setting new vector properties in the graph.
-Though existing properties can be re-set using this procedure to minimize store size, there is a cost in transaction log size until they are rotated away, especially in the case of record formats.
+
+You can also set a vector property on a node using the xref:clauses/set.adoc#set-set-a-property[`SET`] command:
+
+.Syntax for setting a vector property
+[source,syntax,role="noheader",indent=0]
+----
+MATCH (node:Node {id: $id})
+SET node.propertyKey = $vector
+RETURN node;
+----
+
+However, Cypher stores the provided `LIST<FLOAT>` as a primitive array of {ieee-754} _double_ precision values.
+As a result, it takes up approximately twice as much space and we don't recommend it for properties that are used in a vector index.
+Existing properties can be re-set using `db.create.setVectorProperty`to minimize store size, but there is a cost in the transaction log size until they are rotated away.
 
 [[indexes-vector-similarity]]
 == Supported similarity functions
