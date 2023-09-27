@@ -64,8 +64,12 @@ Returns the requested number of approximate nearest neighbor nodes and their sim
 | Lists all vector indexes, see the xref:indexes-for-search-performance.adoc#indexes-list-indexes[`SHOW INDEXES`] command for details. There is no vector index filter built into `SHOW INDEXES`.
 
 | Set vector property.
-| {link-procedures-reference}#procedure_db_create_setVectorProperty[`db.create.setVectorProperty`]
+| {link-procedures-reference}#procedure_db_create_setNodeVectorProperty[`db.create.setNodeVectorProperty`]
 | label:beta[] Update a given node property with the given vector in a more space-efficient way than directly using xref:clauses/set.adoc#set-set-a-property[`SET`].
+
+| Set vector property.
+| {link-procedures-reference}#procedure_db_create_setVectorProperty[`db.create.setVectorProperty`]
+| label:beta[] label:deprecated[] Please use {link-procedures-reference}#procedure_db_create_setNodeVectorProperty[`db.create.setNodeVectorProperty`]
 
 |===
 
@@ -272,26 +276,38 @@ Removed 1 index.
 
 Valid vectors for use in the index must have components finitely representable in {ieee-754} _single_ precision.
 They are represented as properties on nodes with type `LIST<FLOAT>`.
-The recommended way of setting a vector property is using the link:{link-procedures-reference}#procedure_db_create_setVectorProperty[`db.create.setVectorProperty`] procedure.
-This procedure validates the input and sets the property as an array of {ieee-754} single precision values.
+The recommended way of setting a vector property is using the {link-procedures-reference}#procedure_db_create_setNodeVectorProperty[`db.create.setNodeVectorProperty`] procedure.
+This _beta_ procedure validates the input and sets the property as an array of {ieee-754} single precision values.
 
-.Signature for `db.create.setVectorProperty`
+.Signature for `db.create.setNodeVectorProperty`
+[source,syntax]
+----
+db.create.setNodeVectorProperty(node :: NODE, key :: STRING, vector :: LIST<FLOAT>)
+----
+
+.Signature for `db.create.setVectorProperty` label:deprecated[]
 [source,syntax]
 ----
 db.create.setVectorProperty(node :: NODE, key :: STRING, vector :: LIST<FLOAT>) :: (node :: NODE)
 ----
 
-Usually you want to define your embeddings as Cypher parameters and call `db.create.setVectorProperty` as in the following example:
+[NOTE]
+====
+As of Neo4j 5.13 {link-procedures-reference}#procedure_db_create_setVectorProperty[`db.create.setVectorProperty`] is _deprecated_,
+please instead use {link-procedures-reference}#procedure_db_create_setNodeVectorProperty[`db.create.setNodeVectorProperty`].
+====
+
+Usually you want to define your embeddings as Cypher parameters and call `db.create.setNodeVectorProperty` as in the following example:
 
 .Set a vector via `db.create.setVectorProperty`
 [source,cypher]
 ----
 MATCH (n:Node {id: $id})
-CALL db.create.setVectorProperty(n, 'propertyKey', $vector)
-YIELD node RETURN node;
+CALL db.create.setNodeVectorProperty(n, 'propertyKey', $vector)
+RETURN node
 ----
 
-The example above matches one node and updates its embedding, but it's also possible to use a list parameter containing several MATCH criterias and embeddings, to update multiple nodes in an `UNWIND` clause.
+The example above matches one node and updates its embedding, but it's also possible to use a list parameter containing several `MATCH` criteria and embeddings, to update multiple nodes in an `UNWIND` clause.
 This is ideal for creating and setting new vector properties in the graph.
 
 You can also set a vector property on a node using the xref:clauses/set.adoc#set-set-a-property[`SET`] command:
@@ -301,12 +317,12 @@ You can also set a vector property on a node using the xref:clauses/set.adoc#set
 ----
 MATCH (node:Node {id: $id})
 SET node.propertyKey = $vector
-RETURN node;
+RETURN node
 ----
 
 However, Cypher stores the provided `LIST<FLOAT>` as a primitive array of {ieee-754} _double_ precision values.
 As a result, it takes up approximately twice as much space and it's not recommended for properties that are used in a vector index.
-Existing properties can be re-set using `db.create.setVectorProperty` to minimize store size, but there is a cost in the transaction log size until they are rotated away.
+Existing properties can be re-set using `db.create.setNodeVectorProperty` to minimize store size, but there is a cost in the transaction log size until they are rotated away.
 
 [[indexes-vector-similarity]]
 == Supported similarity functions
