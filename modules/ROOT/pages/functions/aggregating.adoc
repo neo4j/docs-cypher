@@ -1035,7 +1035,7 @@ The sum of the two supplied Durations is returned:
 
 
 [[grouping-keys]]
-== Grouping keys
+== Aggregating expressions and grouping keys
 
 Aggregating expressions are expressions which contain one or more aggregating functions.
 A simple aggregating expression consists of a single aggregating function.
@@ -1044,20 +1044,32 @@ Aggregating expressions are also allowed to be more complex, where the result of
 For instance, `0.1 * (sum(x.a) / count(x.b))` is an aggregating expression that contains two aggregating functions, `sum( )` with `x.a` as its argument and `count( )` with `x.b` as its argument.
 Both are input arguments to the division expression.
 
+Grouping keys are non-aggregating expressions that are used to group the values going into the aggregating functions.
+For example, given the following query containing two return expressions, `n` and `+count(*)+`:
 
-For aggregating expressions to be correctly computable for the buckets formed by the grouping key(s), they have to fulfill some requirements.
-Specifically, each sub-expression in an aggregating expression has to be either:
+[source, cypher, role=test-skip]
+----
+RETURN n, count(*)
+----
 
-* an aggregating function, e.g. `sum(x.a)`,
-* a constant, e.g. `0.1`,
-* a parameter, e.g. `$param`,
-* a grouping key, e.g. the `a` in `RETURN a, count(*)`
-* a local variable, e.g. the `x` in  `count(*) + size([ x IN range(1, 10) | x ])`, or
-* a sub-expression, all operands of which have to be allowed in an aggregating expression.
+The first, `n` is not an aggregating function, so it will be the grouping key.
+The latter, `count(*)` is an aggregating function.
+The matching paths will be divided into different buckets, depending on the grouping key.
+The aggregating function will then be run on these buckets, calculating an aggregate value per bucket.
 
+The input expression of an aggregating function can contain any expression, including expressions that are not grouping keys.
+However, not all expressions can be composed with aggregating functions.
+The example below will throw an error since `n.x`, which is not a grouping key, is combined with the aggregating function `count(*)`.
+
+[source, cypher, role=test-skip]
+----
+RETURN n.x + count(*)
+----
+
+To sort the result set using aggregating functions, the aggregation must be included in the `ORDER BY` sub-clause following the `RETURN` clause.
 
 [[grouping-key-examples]]
-=== Examples of aggregating expressions
+=== Examples
 
 .Simple aggregation without any grouping keys
 ======
@@ -1197,3 +1209,15 @@ RETURN groupingKey, groupingKey - max(f.age)
 2+d|Rows: 1
 |===
 ======
+
+=== Rules for aggregating expressions
+
+For aggregating expressions to be correctly computable for the buckets formed by the grouping key(s), they have to fulfill some requirements.
+Specifically, each sub-expression in an aggregating expression has to be either:
+
+* an aggregating function, e.g. `sum(x.a)`,
+* a constant, e.g. `0.1`,
+* a parameter, e.g. `$param`,
+* a grouping key, e.g. the `a` in `RETURN a, count(*)`
+* a local variable, e.g. the `x` in  `count(*) + size([ x IN range(1, 10) | x ])`, or
+* a sub-expression, all operands of which have to be allowed in an aggregating expression.
