@@ -1,4 +1,320 @@
-:description: reference material for the various Cypher runtimes. 
+:description: reference material for the parallel runtime. 
 
-[[runtimes-reference]]
-= Reference 
+= Parallel runtime: reference
+
+The parallel runtime behaves differently compared to the slotted and pipelined runtimes in several regards.
+This page explains the relevant configuration settings for the parallel runtime and the scenarios in which it is either not supported or considered thread-safe.
+It also includes relevant information for Neo4j Aura users.
+
+Readers not familiar with the parallel runtime are encouraged to read about the xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-parallel-runtime[parallel runtime] before reading this page.
+
+[[updating-queries]]
+== Updating queries
+
+The parallel runtime will throw an error if a query attempts to update the graph.
+For example, any query run on the parallel runtime which uses the `CREATE` clause, will throw the following error:
+
+.Error message
+[source, error]
+----
+The parallel runtime does not support updating queries. Please use another runtime.
+----
+
+For a full list of all available Cypher writing clauses, see the xref:clauses/index.adoc#writing-clauses[Clauses overview page].
+
+[[transactions]]
+== Transactions
+
+The parallel runtime does not work on a non-empty transaction state.
+Nor does the Cypher planner know the transactional state at compile time when a query is executed (since queries are cached).
+As a result, the most consistent behavior for Neo4j is to fail updating queries run on the parallel runtime at runtime, rather than falling back to the pipelined runtime (the default runtime for Enterprise Edition).
+
+It is, therefore, not possible to use the parallel runtime if a change has been made to the state of a transaction.
+
+For example, the following transaction (initiated on link:{neo4j-docs-base-uri}/operations-manual/{page-version}/tools/cypher-shell[Cypher Shell]) will be rolled back, because executing a Cypher query will make changes to the state of a transaction.
+
+.Step 1: Initiate a new transaction
+[source, cypher]
+----
+:begin
+CREATE (n:Person)
+----
+
+.Step 2: Attempt to execute a Cypher query with the parallel runtime on the existing transaction
+[source, cypher, role=test-fail]
+----
+CYPHER runtime = parallel
+RETURN 42
+----
+
+.Error message
+[source, error]
+----
+An error occurred while in an open transaction. The transaction will be rolled back and terminated. Error: The parallel runtime is not supported if there are changes in the transaction state. Use another runtime.
+----
+
+For more information about transactions in Neo4j, see the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/database-internals/transaction-management[Operations Manual -> Transaction management].
+
+[[configuration-settings]]
+== Configuration settings
+
+The following setting can be configured to modify the behavior of the parallel runtime:
+
+.server.cypher.parallel.worker_limit
+[frame="topbot", stripes=odd, grid="cols", cols="<1s,<4", role=noheader]
+|===
+|Description
+a|Allows for the configuration of workers (a thread that executes work units to evaluate incoming queries) for queries run on the parallel runtime.
+
+The default value is `0`, which means that the query will have as many workers as there are processors on the server. 
+Setting a number greater than `0` will allocate the specified number of workers (e.g. setting it to `10` will allocate `10` workers).
+
+It is also possible to set negative values.
+Setting it to `-1` will mean the parallel runtime has access to the number of workers that are available processors on the server `-1`. 
+|Valid values
+a| Integer
+|Default value
+m| 0
+|===
+
+If `server.cypher.parallel.worker_limit` is set to a negative number which is lower than the available CPUs on a server and a query is then run on the parallel runtime, it will throw the following error:
+
+.Error message
+[source,error]
+----
+There are no workers configured for the parallel runtime. Change server.cypher.parallel.worker_limit to some larger value to use the parallel runtime
+----
+
+For more information about configuration settings in Neo4j, see the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/configuration[Operations Manual -> Configuration.]
+
+[[aura]]
+== Aura
+
+The parallel runtime can only be run on Aura instances with 3 or more CPUs.
+This means that the parallel runtime is not available to users to users of AuraDB Free.
+Nor is it available on instances of AuraDB Professional and AuraDB Enterprise with 2 or fewer CPUs.
+
+Attempting to run a query with the parallel runtime on instances with 2 or fewer CPUs will generate the following error message:
+
+.Error message
+[source,error]
+----
+The parallel runtime is not supported on this instance size.
+----
+
+[TIP]
+====
+Users of AuraDB Professional and AuraDB Enterprise select the number of available CPUs when creating an instance.
+More information about the various tiers of AuraDB can be found on the link:https://neo4j.com/pricing/[Neo4j Pricing page].
+====
+
+[[procedures-and-functions]]
+== Procedures and functions
+
+Procedures and functions that read the database are supported by the parallel runtime.
+However, not all procedures and functions are considered thread-safe, because they perform functions that are not protected against multiple worker threads concurrently interacting with the targeted data.
+This includes tasks such as executing a Cypher query, updating a graph, creating a new transaction, and acquiring locks.
+
+[[neo4j-procedures]]
+=== Neo4j procedures
+
+The following Neo4j procedures are not considered thread-safe, and *cannot* be run on the parallel runtime:
+
+*TBC*
+
+[[apoc]]
+=== APOC
+
+The link:{neo4j-docs-base-uri}/apoc/{page-version}/[APOC library] is a library of user-defined procedures and functions which extend the use of Cypher.
+The following APOC procedures and functions are not considered thread-safe, and *cannot* be run on the parallel runtime:
+
+[cols="1", options="noheader"]
+|===
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.algo/apoc.algo.allSimplePaths/[apoc.algo.allSimplePaths]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.any/apoc.any.isDeleted/[apoc.any.isDeleted]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.coll/apoc.coll.max/[apoc.coll.max]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.coll/apoc.coll.min/[apoc.coll.min]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.cypher/apoc.cypher.run/[apoc.cypher.run]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.cypher/apoc.cypher.runFirstColumnMany/[apoc.cypher.runFirstColumnMany]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.cypher/apoc.cypher.runManyReadOnly/[apoc.cypher.runManyReadOnly]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.cypher/apoc.cypher.runTimeboxed/[apoc.cypher.runTimeBoxed]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.export/apoc.export.arrow.stream.all/[apoc.export.arrow.stream.all]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.export/apoc.export.arrow.stream.graph/[apoc.export.arrow.stream.graph]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.export/apoc.export.arrow.stream.query/[apoc.export.arrow.stream.query]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.export/apoc.export.arrow.all/[apoc.export.arrow.all]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.export/apoc.export.arrow.graph/[apoc.export.arrow.graph]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.export/apoc.export.arrow.query/[apoc.export.arrow.query]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.export/apoc.export.csv.all/[apoc.export.csv.all]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.export/apoc.export.csv.data/[apoc.export.csv.data]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.export/apoc.export.csv.graph/[apoc.export.csv.graph]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.export/apoc.export.csv.query/[apoc.export.csv.query]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.export/apoc.export.cypher.all/[apoc.export.cypher.all]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.export/apoc.export.cypher.data/[apoc.export.cypher.data]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.export/apoc.export.cypher.graph/[apoc.export.cypher.graph]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.export/apoc.export.cypher.query/[apoc.export.cypher.query]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.export/apoc.export.cypher.schema/[apoc.export.cypher.schema]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.export/apoc.export.graphml.all/[apoc.export.graphml.all]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.export/apoc.export.graphml.query/[apoc.export.graphml.query]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.export/apoc.export.json.all/[apoc.export.json.all]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.export/apoc.export.json.data/[apoc.export.json.data]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.export/apoc.export.json.graph/[apoc.export.json.graph]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.export/apoc.export.json.query/[apoc.export.json.query]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.graph/apoc.graph.fromCypher/[apoc.graph.fromCypher]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc/apoc.help/[apoc.help]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.lock/apoc.lock.all/[apoc.lock.all]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.lock/apoc.lock.nodes/[apoc.lock.nodes]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.lock/apoc.lock.read.nodes/[apoc.lock.read.nodes]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.lock/apoc.lock.rels/[apoc.lock.rels]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.lock/apoc.lock.read.rels/[apoc.lock.read.rels]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.meta/apoc.meta.data/[apoc.meta.data]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.meta/apoc.meta.data.of/[apoc.meta.data.of]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.meta/apoc.meta.graph/[apoc.meta.graph]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.meta/apoc.meta.graph.of/[apoc.meta.graph.of]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.meta/apoc.meta.graphSample/[apoc.meta.graphSample]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.nodes/apoc.nodes.group/[apoc.meta.group]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.meta/apoc.meta.nodeTypeProperties/[apoc.meta.nodeTypeProperties]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.meta/apoc.meta.nodes.count/[apoc.meta.nodes.count]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.meta/apoc.meta.relTypeProperties/[apoc.meta.relTypeProperties]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.meta/apoc.meta.schema/[apoc.meta.schema]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.meta/apoc.meta.subGraph/[apoc.meta.subGraph]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.path/apoc.path.expand/[apoc.path.expand]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.path/apoc.path.expandConfig/[apoc.path.expandConfig]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.path/apoc.path.spanningTree/[apoc.path.spanningTree]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.path/apoc.path.subgraphAll/[apoc.path.subgraphAll]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.path/apoc.path.subgraphNodes/[apoc.path.subgraphNodes]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.schema/apoc.schema.assert/[apoc.schema.assert]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.schema/apoc.schema.nodes/[apoc.schema.nodes]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.schema/apoc.schema.node.constraintExists/[apoc.schema.node.constraintExists]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.schema/apoc.schema.node.indexExists/[apoc.schema.node.indexExists]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.schema/apoc.schema.properties.distinct/[apoc.schema.properties.distinct]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.schema/apoc.schema.properties.distinctCount/[apoc.schema.properties.distinctCount]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.schema/apoc.schema.relationships/[apoc.schema.relationships]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.schema/apoc.schema.relationship.constraintExists/[apoc.schema.relationship.constraintExist]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.schema/apoc.schema.relationship.indexExists/[apoc.schema.relationship.indexExist]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.search/apoc.search.nodeAllReduced/[apoc.search.nodeAllReduced]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.search/apoc.search.nodeReduced/[apoc.search.nodeReduced]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.search/apoc.search.multiSearchReduced/[apoc.search.multiSearchReduced]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.search/apoc.search.node/[apoc.search.node]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.search/apoc.search.nodeAll/[apoc.search.nodeAll]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.stats/apoc.stats.degrees/[apoc.stats.degrees]
+
+| link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.warmup/apoc.warmup.run/[apoc.warmup.run]
+
+|===
+
+[[user-defined-functions]]
+=== User-defined functions
+
+User-defined functions are simpler forms of procedures that return a single value and are read-only.
+To learn more about user-defined functions in Neo4j, see the link:{neo4j-docs-base-uri}/java-reference/{page-version}/extending-neo4j/functions/[Java Reference Manual -> User-defined functions].
+
+Similar to Neo4j and APOC procedures, any user-defined function that starts a new transaction by executing a Cypher query is not considered thread-safe and will not be supported by the parallel runtime.
+
+For example, consider the two following user-defined functions:
+
+[source,java]
+----
+class MyFunctions {
+  @Context
+  public Transaction transaction;
+
+  @UserFunction("examples.return42")
+  public long return42() {
+    return 42L;
+  }
+
+  @UserFunction("examples.return42ViaCypher")
+  public long return42ViaCypher() {
+    return (long) transaction.execute("RETURN 42 AS res").next().get("n);
+  }
+}
+----
+
+Running `examples.return42()` will succeed with the parallel runtime, whereas `examples.return42ViaCypher()` will fail because executing a new Cypher query will start a new transaction.
+
+However, if `@NotThreadSafe` is added to the method, then the query will automatically not run on the parallel runtime. The query will instead default to the single-threaded pipelined runtime and generate a notification. 
+
+Calling the below user-defined function would, therefore, not fail with the parallel runtime.
+Instead, the Cypher query would automatically be run on the pipelined runtime.
+
+[source,java]
+----
+class MyFunctions {
+  @Context
+  public Transaction transaction;
+ 
+  @UserFunction("examples.return42ViaCypher")
+  @NotThreadSafe
+  public long return42ViaCypher() {
+    return (long) transaction.execute("RETURN 42 AS res").next().get("n);
+  }
+}
+----
+
