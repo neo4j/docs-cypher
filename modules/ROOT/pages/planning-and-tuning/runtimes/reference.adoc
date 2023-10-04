@@ -1,5 +1,4 @@
 :description: reference material for the parallel runtime. 
-
 = Parallel runtime: reference
 
 The parallel runtime behaves differently compared to the slotted and pipelined runtimes in several regards.
@@ -25,16 +24,12 @@ For a full list of all available Cypher writing clauses, see the xref:clauses/in
 [[transactions]]
 == Transactions
 
-The parallel runtime does not work on a non-empty transaction state.
-Nor does the Cypher planner know the transactional state at compile time when a query is executed (since queries are cached).
-As a result, the most consistent behavior for Neo4j is to fail updating queries run on the parallel runtime at runtime, rather than falling back to the pipelined runtime (the default runtime for Enterprise Edition).
-
-It is, therefore, not possible to use the parallel runtime if a change has been made to the state of a transaction.
+It is not possible to use the parallel runtime if a change has been made to the state of a transaction.
 
 For example, the following transaction (initiated on link:{neo4j-docs-base-uri}/operations-manual/{page-version}/tools/cypher-shell[Cypher Shell]) will be rolled back, because executing a Cypher query will make changes to the state of a transaction.
 
-.Step 1: Initiate a new transaction
-[source, cypher]
+.Step 1: Initiate a new transaction and change its state by creating a node
+[source, cypher, role=test-skip]
 ----
 :begin
 CREATE (n:Person)
@@ -113,19 +108,20 @@ More information about the various tiers of AuraDB can be found on the link:http
 
 Procedures and functions that read the database are supported by the parallel runtime.
 However, not all procedures and functions are considered thread-safe, because they perform functions that are not protected against multiple worker threads concurrently interacting with the targeted data.
-This includes tasks such as executing a Cypher query, updating a graph, creating a new transaction, and acquiring locks.
+This includes tasks such as executing a Cypher query (since that will start a new transaction and a new thread), creating a new transaction, and acquiring locks.
+In general, any procedure or function that updates the graph is not supported because the parallel runtime does not support updating queries.
 
 [[neo4j-procedures]]
 === Neo4j procedures
 
-The following Neo4j procedures are not considered thread-safe, and *cannot* be run on the parallel runtime:
+The following Neo4j procedures *cannot* be run on the parallel runtime:
 
 *TBC*
 
 [[apoc]]
 === APOC
 
-The link:{neo4j-docs-base-uri}/apoc/{page-version}/[APOC library] is a library of user-defined procedures and functions which extend the use of Cypher.
+The link:{neo4j-docs-base-uri}/apoc/{page-version}/[APOC library] contains procedures and functions which extend the use of Cypher.
 The following APOC procedures and functions are not considered thread-safe, and *cannot* be run on the parallel runtime:
 
 [cols="1", options="noheader"]
@@ -275,7 +271,7 @@ The following APOC procedures and functions are not considered thread-safe, and 
 User-defined functions are simpler forms of procedures that return a single value and are read-only.
 To learn more about user-defined functions in Neo4j, see the link:{neo4j-docs-base-uri}/java-reference/{page-version}/extending-neo4j/functions/[Java Reference Manual -> User-defined functions].
 
-Similar to Neo4j and APOC procedures, any user-defined function that starts a new transaction by executing a Cypher query is not considered thread-safe and will not be supported by the parallel runtime.
+Similar to Neo4j and APOC procedures, any user-defined function that starts a new transaction by executing a Cypher query is not considered thread-safe and will not be supported by the parallel runtime (this includes all user-defined aggregating functions).
 
 For example, consider the two following user-defined functions:
 
