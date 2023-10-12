@@ -339,26 +339,45 @@ In this case, `pipeline 5` ends with an aggregation (performed by the EagerAggre
 [[runtimes-parallel-runtime-considerations]]
 === Considerations
 
+.When to use the parallel runtime
+
 In most situations where multiple CPU cores are available, long-running queries can be expected to run significantly faster on the parallel runtime.
-While it is not possible to define the exact length at which queries should be in order to benefit from being run on the parallel runtime (as this depends on the data model, the query structure, the load of the system, and the number of cores available), it can be assumed as a general rule that any query which takes longer than approximately 500 milliseconds would be a good candidate.
-This means that the parallel runtime is suitable for analytical queries constructed to target a large section of the graph to gain valuable insights from it. 
+While it is not possible to define the exact duration at which a query would benefit from being run on the parallel runtime (as this depends on the data model, the query structure, the load of the system, and the number of cores available), it can be assumed as a general rule that any query that takes longer than approximately 500 milliseconds would be a good candidate.
+
+This means that the parallel runtime is suitable for *analytical*, *graph-global* queries.
+These queries are often not anchored to a particular start node and therefore process a large section of the graph in order to gain valuable insights from it.
+
+However, queries that start with anchoring a specific node may benefit from being run on the parallel runtime, if either of the following is true:
+
+* The anchored starting node is a densely connected node or super node.
+* The query proceeds to expand from the anchored node to a large section of the graph.
+
+There is, therefore, no fixed rule as to when a query should be run with the parallel runtime, but these guidelines provide some useful information about the scenarios when users would very likely benefit from trying to use it.
+
+.When not to use the parallel runtime
 
 Unlike the pipelined runtime, which was designed as the most efficient method for most queries to be planned, the use cases for the parallel runtime are more specific, and there are situations where it is not possible or beneficial to use it.
-Most notably, the parallel runtime only supports read queries.
+Most notably, the parallel runtime *only supports read queries*.
 It also does not support procedures functions that are not considered thread-safe (i.e. not safe to run from multiple threads).
 
 Moreover, not all queries will run faster by using the parallel runtime.
-For example, a query that only matches a small portion of the graph will probably not run any faster (it may even run slower when executed with the parallel runtime, because of its scheduling and the additional book-keeping required for executing a query on multiple threads).
-As a general rule of thumb, the parallel runtime is not beneficial for queries which take less than one second to complete. 
+For example, a *graph-local* query that starts with anchoring a node and proceeds to only match a small portion of the graph will probably not run any faster on the parallel runtime (it may even run slower when executed with the parallel runtime, because of its scheduling and the additional book-keeping required for executing a query on multiple threads).
+As a general rule of thumb, the parallel runtime is probably not beneficial for queries which take less than half a second to complete. 
 
-Additionally, though individual queries may run faster when running the parallel runtime, the overall throughput of the database may decrease as a result of running many concurrent queries. 
+The parallel runtime may also perform worse than the pipelined runtime for queries that contain subclauses where xref:clauses/order-by.adoc[] is used to order a property that is indexed.
+This is because the parallel runtime is unable to take advantage of property indexes for ordering, and therefore must re-sort the aggregated results on the selected properties before returning any results.
+
+Finally, though individual queries may run faster when running the parallel runtime, the overall throughput of the database may decrease as a result of running many concurrent queries.
 
 The parallel runtime is accordingly not suitable for transactional processing queries with high throughput workloads.
 It is, however, ideal for analytical use cases where the database runs relatively few, but demanding read queries.
 
+[[runtimes-parallel-runtime-overview]]
+==== Overview
+
 In general, the parallel runtime should be considered if the conditions are met:
 
-* Read-queries are constructed to target a large section of a graph.
+* Graph-global read-queries are constructed to target a large section of a graph.
 * The speed of queries is important.
 * The server has many CPUs and enough memory.
 * There is a low concurrency workload on the database.
