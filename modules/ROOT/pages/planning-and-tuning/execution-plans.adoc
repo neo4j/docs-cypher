@@ -1,0 +1,159 @@
+:description: This page describes how to understand a Cypher execution plan.
+= Understanding execution plans
+
+This section describes how to understand the execution plans produced by the Cypher planner.
+It begins by explaining the lifecycle of a Cypher query, before giving a step-by-step breakdown of a particular query and the execution plan it uses.
+It then explains the difference between lazy and eager query evaluation.
+
+== The lifecycle of a Cypher query
+
+A Cypher query begins as a declarative query represented as a string, describing the graph pattern to match in a database.
+After parsing, the query string goes through the query optimizer (also known as the planner), which produces an imperative plan, known as the logical plan, to determine the most efficient way of executing the query given the current state of the database.footnote:[The relevant information about the current state of the database includes which indexes and constraints are available, as well as various statistics maintained by the database.
+The Cypher planner uses this information to determine which access patterns will produce the best execution plan.]
+In the final phase, this logical plan is turned into an executable physical plan, which actually runs the query against the database.
+Executing this physical plan is the task of the xref:planning-and-tuning/runtimes/index.adoc[Cypher runtime]. 
+
+image::runtimes_cypher_lifecycle.svg[width="400", role="middle"]
+
+[[runtimes-example-graph]]
+== Example graph
+
+To explain how to understand a Cypher execution plan, a graph based on the UK national rail network is used.
+The data in the graph is taken from link:https://www.raildeliverygroup.com/our-services/rail-data/fares-timetable-data.html[publically available datasets].
+
+image::patterns_qpp_calling_points.svg[width="700",role="middle"]
+
+The graph contains two types of nodes: `Stop` and `Station`.
+Each `Stop` on a train service `CALLS_AT` one `Station`, and has the properties `arrives` and `departs` that give the times the train is at the `Station`.
+Following the `NEXT` relationship of a `Stop` will give the next `Stop` of a service. 
+
+To recreate the graph, run the following query against an empty Neo4j database:
+
+.Query
+[source, cypher, role=test-setup]
+----
+CREATE (pmr:Station {name: 'Peckham Rye'}), 
+  (dmk:Station {name: 'Denmark Hill'}),
+  (clp:Station {name: 'Clapham High Street'}), 
+  (wwr:Station {name: 'Wandsworth Road'}),
+  (clj:Station {name: 'Clapham Junction'}),
+  (s1:Stop {arrives: time('17:19'), departs: time('17:20')}),
+  (s2:Stop {arrives: time('17:12'), departs: time('17:13')}),
+  (s3:Stop {arrives: time('17:10'), departs: time('17:11')}),
+  (s4:Stop {arrives: time('17:06'), departs: time('17:07')}),
+  (s5:Stop {arrives: time('16:58'), departs: time('17:01')}),
+  (s6:Stop {arrives: time('17:17'), departs: time('17:20')}),
+  (s7:Stop {arrives: time('17:08'), departs: time('17:10')}),
+  (clj)<-[:CALLS_AT]-(s1), (wwr)<-[:CALLS_AT]-(s2),
+  (clp)<-[:CALLS_AT]-(s3), (dmk)<-[:CALLS_AT]-(s4),
+  (pmr)<-[:CALLS_AT]-(s5), (clj)<-[:CALLS_AT]-(s6),
+  (dmk)<-[:CALLS_AT]-(s7),
+  (s5)-[:NEXT {distance: 1.2}]->(s4),(s4)-[:NEXT {distance: 0.34}]->(s3),
+  (s3)-[:NEXT {distance: 0.76}]->(s2), (s2)-[:NEXT {distance: 0.3}]->(s1),
+  (s7)-[:NEXT {distance: 1.4}]->(s6)
+----
+
+The example query uses a xref:patterns/concepts.adoc#quantified-path-pattern[quantified path pattern] to count the number of possible path patterns between the start `Station`, `Denmark Hill`, and the end `Station`, `Clapham Junction`:
+
+.Query
+[source, cypher]
+----
+MATCH (:Station { name: 'Denmark Hill' })<-[:CALLS_AT]-(d:Stop) 
+      ((:Stop)-[:NEXT]->(:Stop))+
+      (a:Stop)-[:CALLS_AT]->(:Station { name: 'Clapham Junction' })
+RETURN count(*)
+----
+
+As can be seen from the graph, two such patterns exist (one with a service departing `Denmark Hill` at `17:07` which stops at the Stations `Clapham High Street` and `Wandsworth Road`, and one direct service departing `Denmark Hill` at `17:10`):
+
+image::patterns_qpp_solutions.svg[width="700",role="middle"]
+
+For the purposes of understanding Cypher execution plans, however, the query result is less interesting than the planning that produces it.
+
+[[runtimes-reading-execution-plans]]
+== Reading execution plans
+
+The Cypher planner produces logical plans which describe how a particular query is going to be executed.
+This execution plan is essentially a binary tree of operators.
+An operator is, in turn, a specialized execution module that is responsible for some type of transformation to the data before passing it on to the next operator, until the desired graph pattern has been matched.
+The execution plans produced by the planner thus decide which operators will be used and in what order they will be applied to achieve the aim declared in the original query.
+
+In order to view the plan of a query, prepend the query with `EXPLAIN` - this will not run the query, but only show the tree of operators used to find the desired result.
+
+.Query
+[source, cypher, role=test-skip]
+----
+EXPLAIN
+MATCH (:Station { name: 'Denmark Hill' })<-[:CALLS_AT]-(d:Stop) 
+      ((:Stop)-[:NEXT]->(:Stop))+
+      (a:Stop)-[:CALLS_AT]->(:Station { name: 'Clapham Junction' })
+RETURN count(*)
+----
+
+This is the resulting execution plan (produced by the xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-slotted-runtime[slotted runtime], the default for Neo4j Community Edition)footnote:[The format of the execution plans displayed in this section are those generated when using link:{neo4j-docs-base-uri}/operations-manual/{page-version}/tools/cypher-shell[Cypher Shell].
+The execution plans generated by link:{neo4j-docs-base-uri}/browser-manual/current[Neo4j Browser] use a different format.]:
+
+[role="queryplan"]
+----
++-------------------+----+------------------------------------------------------------------------+----------------+
+| Operator          | Id | Details                                                                | Estimated Rows |
++-------------------+----+------------------------------------------------------------------------+----------------+
+| +ProduceResults   |  0 | `count(*)`                                                             |              1 |
+| |                 +----+------------------------------------------------------------------------+----------------+
+| +EagerAggregation |  1 | count(*) AS `count(*)`                                                 |              1 |
+| |                 +----+------------------------------------------------------------------------+----------------+
+| +Filter           |  2 | not anon_1 = anon_5 AND anon_0.name = $autostring_0 AND anon_0:Station |              0 |
+| |                 +----+------------------------------------------------------------------------+----------------+
+| +Expand(All)      |  3 | (d)-[anon_1:CALLS_AT]->(anon_0)                                        |              0 |
+| |                 +----+------------------------------------------------------------------------+----------------+
+| +Filter           |  4 | d:Stop                                                                 |              0 |
+| |                 +----+------------------------------------------------------------------------+----------------+
+| +Repeat(Trail)    |  5 | (a) (...){1, *} (d)                                                    |              0 |
+| |\                +----+------------------------------------------------------------------------+----------------+
+| | +Filter         |  6 | isRepeatTrailUnique(anon_7) AND anon_2:Stop                            |              6 |
+| | |               +----+------------------------------------------------------------------------+----------------+
+| | +Expand(All)    |  7 | (anon_4)<-[anon_7:NEXT]-(anon_2)                                       |              6 |
+| | |               +----+------------------------------------------------------------------------+----------------+
+| | +Filter         |  8 | anon_4:Stop                                                            |             11 |
+| | |               +----+------------------------------------------------------------------------+----------------+
+| | +Argument       |  9 | anon_4                                                                 |             13 |
+| |                 +----+------------------------------------------------------------------------+----------------+
+| +Filter           | 10 | a:Stop                                                                 |              0 |
+| |                 +----+------------------------------------------------------------------------+----------------+
+| +Expand(All)      | 11 | (anon_6)<-[anon_5:CALLS_AT]-(a)                                        |              0 |
+| |                 +----+------------------------------------------------------------------------+----------------+
+| +Filter           | 12 | anon_6.name = $autostring_1                                            |              1 |
+| |                 +----+------------------------------------------------------------------------+----------------+
+| +NodeByLabelScan  | 13 | anon_6:Station                                                         |             10 |
++-------------------+----+------------------------------------------------------------------------+----------------+
+----
+
+The operators can be seen in the leftmost column of the results table.
+The most important thing to remember when reading execution plans is that they are read from the bottom up.
+To follow the execution of this query, it is, therefore, necessary to start from the bottom or leaf operator, xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-node-by-label-scan[NodeByLabelScan] (which fetches all nodes with a specific label from the node label index) and move step-by-step up the operator tree to see how the data in the graph is gradually refined until the final, root operator,  xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-produce-results[ProduceResults], generates readable results for the user. 
+
+To read more about the specific role played by operators used in this example, and many others, see the section on xref::planning-and-tuning/operators/index.adoc[]. 
+
+The `id` column specifies a unique ID assigned to each operator.
+There are no guarantees about the order of the ids, although they will usually start with 0 at the root operator, and will increase until the leaf operator is reached at the beginning of the operator tree. 
+
+The `Details` column in the middle of the execution plan describes what task is performed by each operator.
+For example, the details column of the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-repeat[Repeat(Trail)] operator in the middle of the execution plan (`id 5`), specifies that the operator traverses a quantified path pattern without an upward limit.
+
+Finally, the `Estimated Rows` column in the rightmost column of the execution plan details the number of rows that are expected to be produced by each operator.
+This estimate is an approximate number based on the available statistical information and the planner uses it to choose a suitable execution plan.footnote:[The statistical information maintained by Neo4j includes the following: the number of nodes having a certain label, the number of relationships by type, selectivity per index, and the number of relationships by type, ending with or starting from a node with a specific label.]
+
+The execution plans produced by the xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-pipelined-runtime[pipelined runtime] and xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-parallel-runtimes[parallel runtime] runtimes contain more information about how a query is executed.
+For details about how the different runtimes changes a particular execution plan, see xref:planning-and-tuning/runtimes/concepts.adoc[].
+
+[[lazy-eager-evaluation]]
+== Lazy and eager query evaluation
+
+In general, query evaluation is _lazy_.
+This means that most operators pipe their output rows to their parent operators as soon as they are produced.
+In other words, a child operator may not be fully exhausted before the parent operator starts consuming the input rows produced by the child.
+
+However, some operators, such as those used for aggregation and sorting, need to aggregate all their rows before they can produce output.
+These operators are called eager operators (see the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-eager-aggregation[EagerAggregation] operator in the above table (`id 1`) for an example).
+Such operators need to complete execution in its entirety before any rows are sent to their parents as input, and are sometimes required to enforce correct Cypher semantics.
+For more information about the row-by-row processing of Cypher queries, see the section on xref:clauses/clause_composition.adoc[].
