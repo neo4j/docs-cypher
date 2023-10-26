@@ -15,15 +15,12 @@ For query performance purposes, it is important to also understand how the index
 Refer to xref::planning-and-tuning/query-tuning/index.adoc[] for examples and in-depth discussions on how query plans result from different index and query scenarios.
 See specifically xref::planning-and-tuning/query-tuning/indexes.adoc[The use of indexes] for examples of how various index scenarios result in different query plans.
 
-== Purpose
-
-Why?
 
 [[create-indexes]]
 == +CREATE INDEX+
 
 Creating an index is done with the `+CREATE ... INDEX ...+` command.
-If no index type is specified in the create command a xref:indexes/indexes-for-search-performance.adoc#indexes-create-range-index[range index] will be created.
+If no index type is specified in the create command a xref:indexes/indexes-for-search-performance.adoc#create-range-index[range index] will be created.
 
 Best practice is to give the index a name when it is created.
 If the index is not explicitly named, it gets an auto-generated name.
@@ -221,10 +218,72 @@ ON (r.propertyName)
 As of Neo4j 5.1, text indexes have two index providers available, `text-2.0` (default) and `text-1.0` (deprecated), and no supported index configuration.
 
 
+[[text-indexes-supported-predicates]]
+[discrete]
+==== Supported predicates
+
+In combination with node label and relationship type predicates, `TEXT` indexes only solve predicates operating on strings.
+That means that `TEXT` indexes are only used when it is known that the predicate evaluates to `null` for all non-string values.
+
+Predicates that only operate on strings are always solvable by a `TEXT` index:
+
+* `STARTS WITH`
+* `ENDS WITH`
+* `CONTAINS`
+
+However, other predicates are only used when it is known that the property is compared to a string:
+
+* `n.prop = "string"`
+* `n.prop IN ["a", "b", "c"]`
+
+This means that a `TEXT` index is not able to solve e.g. `a.prop = b.prop`, unless a type constraint also exists on the property.
+
+`TEXT` indexes support the following predicates:
+
+[cols="2", options="header"]
+|===
+| Predicate | Syntax
+
+| Equality check.
+a|
+[source, syntax, role="noheader"]
+----
+n.prop = 'example_string'
+----
+
+| List membership check.
+a|
+[source, syntax, role="noheader"]
+----
+n.prop IN ['abc', 'example_string', 'neo4j']
+----
+
+| Prefix search.
+a|
+[source, syntax, role="noheader"]
+----
+STARTS WITH
+----
+
+| Suffix search.
+a|
+[source, syntax, role="noheader"]
+----
+ENDS WITH
+----
+
+| Substring search.
+a|
+[source, syntax, role="noheader"]
+----
+CONTAINS
+----
+
+|===
+
 [NOTE]
 ====
-Text indexes only recognize string values and do not support multiple properties.
-Nodes or relationships with the node label or relationship type where the indexed property is of another value type are not included in the index.
+As of Neo4j 5.11, the above set of predicates can be extended with the use of type constraints, see xref::planning-and-tuning/query-tuning/indexes.adoc#extending-index-compatibility-with-type-constraints[Extending index compatibility with type constraints].
 ====
 
 [discrete]
@@ -319,6 +378,47 @@ Point indexes have supported index configuration, see the last examples, but onl
 ====
 Note that point indexes only recognize point values and do not support multiple properties.
 Nodes or relationships with the indexed node label or relationship type where the indexed property is of another value type are not included in the index.
+====
+
+[discrete]
+==== Supported predicates
+
+In combination with node label and relationship type predicates, `POINT` indexes only solve predicates operating on points.
+Therefore, `POINT` indexes are only used when it is known that the predicate evaluates to `null` for all non-point values.
+
+`POINT` indexes only support point type predicates:
+
+[cols="2", options="header"]
+|===
+| Predicate | Syntax
+
+| Property point value.
+a|
+[source, syntax, role="noheader"]
+----
+n.prop = point({x: value, y: value})
+----
+
+| Within bounding box.
+a|
+[source, syntax, role="noheader"]
+----
+point.withinBBox(n.prop, lowerLeftCorner, upperRightCorner)
+----
+
+| Distance.
+a|
+[source, syntax, role="noheader"]
+----
+point.distance(n.prop, center) < = distance
+----
+
+|===
+
+[NOTE]
+====
+As of Neo4j 5.11, the above set of predicates can be extended with the use of type constraints.
+For more information, see xref::planning-and-tuning/query-tuning/indexes.adoc#extending-index-compatibility-with-type-constraints[Extending index compatibility with type constraints].
 ====
 
 [discrete]
@@ -426,6 +526,55 @@ ON [EACH] type(r)
 ----
 
 Token lookup indexes have only one index provider available, `token-lookup-1.0`, and no supported index configuration.
+
+[discrete]
+==== Supported predicates 
+
+Tooken lookup indexes are present by default and solve only node label and relationship type predicates:
+
+[cols="2, 2a", options="header"]
+|===
+| Predicate | Syntax (example)
+
+| Node label predicate.
+|
+[source, syntax, role="noheader"]
+----
+MATCH (n:Label)
+----
+
+| Node label predicate.
+|
+[source, syntax, role="noheader"]
+----
+MATCH (n)
+WHERE n:Label
+----
+
+| Relationship type predicate.
+|
+[source, syntax, role="noheader"]
+----
+MATCH ()-[r:REL]->()
+----
+
+| Relationship type predicate.
+|
+[source, syntax, role="noheader"]
+----
+MATCH ()-[r]->()
+WHERE r:REL
+----
+
+|===
+
+[WARNING]
+====
+`LOOKUP` indexes are the most important index type in the database because they improve the performance of the Cypher queries and the population of other indexes.
+Dropping these indexes may lead to severe performance degradation.
+Therefore, carefully consider the consequences before doing so.
+====
+
 
 [discrete]
 ==== Examples
@@ -617,7 +766,114 @@ SHOW [ALL \| FULLTEXT \| LOOKUP \| POINT \| RANGE \| TEXT] INDEX[ES]
   [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
 ----
 
-This command will produce a table with the following columns:
+
+Listing indexes require link:{neo4j-docs-base-uri}/operations-manual/{page-version}/database-administration/standard-databases/manage-databases/#manage-databases-stop/authentication-authorization/database-administration/#access-control-database-administration-index[the `SHOW INDEX` privilege].
+
+[discrete]
+=== Examples
+
+* xref:indexes/indexes-for-search-performance.adoc#indexes-listing-all-indexes[]
+* xref:indexes/indexes-for-search-performance.adoc#indexes-listing-indexes-with-filtering[]
+
+
+[discrete]
+[[indexes-listing-all-indexes]]
+==== Listing all indexes
+
+To list all indexes with the default output columns, the `SHOW INDEXES` command can be used.
+If all columns are required, use `SHOW INDEXES YIELD *`.
+
+.Showing all indexes
+[source, cypher, role=test-result-skip]
+----
+SHOW INDEXES
+----
+
+// SHOW INDEXES default outputs
+// 4.4: id, name, state, populationPercent, uniqueness, type, entityType, labelsOrTypes, properties, indexProvider
+// 5.0: id, name, state, populationPercent, type, entityType, labelsOrTypes, properties, indexProvider, owningConstraint
+// 5.8: id, name, state, populationPercent, type, entityType, labelsOrTypes, properties, indexProvider, owningConstraint, lastRead, readCount
+
+.Result
+[queryresult]
+----
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| id | name                              | state    | populationPercent | type     | entityType     | labelsOrTypes | properties         | indexProvider      | owningConstraint | lastRead                 | readCount |
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 3  | "composite_range_node_index_name" | "ONLINE" | 100.0             | "RANGE"  | "NODE"         | ["Person"]    | ["age", "country"] | "range-1.0"        | NULL             | NULL                     | 0         |
+| 4  | "composite_range_rel_index_name"  | "ONLINE" | 100.0             | "RANGE"  | "RELATIONSHIP" | ["PURCHASED"] | ["date", "amount"] | "range-1.0"        | NULL             | 2023-03-13T11:41:44.537Z | 1         |
+| 13 | "example_index"                   | "ONLINE" | 100.0             | "RANGE"  | "NODE"         | ["Book"]      | ["title"]          | "range-1.0"        | NULL             | 2023-04-10T15:41:44.537Z | 2         |
+| 14 | "indexOnBooks"                    | "ONLINE" | 100.0             | "TEXT"   | "NODE"         | ["Label1"]    | ["prop1"]          | "text-2.0"         | NULL             | NULL                     | 0         |
+| 11 | "node_label_lookup_index"         | "ONLINE" | 100.0             | "LOOKUP" | "NODE"         | NULL          | NULL               | "token-lookup-1.0" | NULL             | 2023-04-13T08:11:15.537Z | 10        |
+| 8  | "node_point_index_name"           | "ONLINE" | 100.0             | "POINT"  | "NODE"         | ["Person"]    | ["sublocation"]    | "point-1.0"        | NULL             | 2023-04-05T16:21:44.692Z | 1         |
+| 1  | "node_range_index_name"           | "ONLINE" | 100.0             | "RANGE"  | "NODE"         | ["Person"]    | ["surname"]        | "range-1.0"        | NULL             | 2022-12-30T02:01:44.537Z | 6         |
+| 5  | "node_text_index_nickname"        | "ONLINE" | 100.0             | "TEXT"   | "NODE"         | ["Person"]    | ["nickname"]       | "text-2.0"         | NULL             | 2023-04-13T11:41:44.537Z | 2         |
+| 10 | "point_index_with_config"         | "ONLINE" | 100.0             | "POINT"  | "NODE"         | ["Label"]     | ["prop2"]          | "point-1.0"        | NULL             | NULL                     | 0         |
+| 9  | "rel_point_index_name"            | "ONLINE" | 100.0             | "POINT"  | "RELATIONSHIP" | ["STREET"]    | ["intersection"]   | "point-1.0"        | NULL             | 2023-03-03T13:37:42.537Z | 2         |
+| 2  | "rel_range_index_name"            | "ONLINE" | 100.0             | "RANGE"  | "RELATIONSHIP" | ["KNOWS"]     | ["since"]          | "range-1.0"        | NULL             | 2023-04-12T10:41:44.692Z | 5         |
+| 6  | "rel_text_index_name"             | "ONLINE" | 100.0             | "TEXT"   | "RELATIONSHIP" | ["KNOWS"]     | ["interest"]       | "text-2.0"         | NULL             | 2023-04-01T10:40:44.537Z | 3         |
+| 12 | "rel_type_lookup_index"           | "ONLINE" | 100.0             | "LOOKUP" | "RELATIONSHIP" | NULL          | NULL               | "token-lookup-1.0" | NULL             | 2023-04-12T21:41:44.537Z | 7         |
+| 7  | "text_index_with_indexprovider"   | "ONLINE" | 100.0             | "TEXT"   | "RELATIONSHIP" | ["TYPE"]      | ["prop1"]          | "text-2.0"         | NULL             | NULL                     | 0         |
+| 15 | "uniqueBookIsbn"                  | "ONLINE" | 100.0             | "RANGE"  | "NODE"         | ["Book"]      | ["isbn"]           | "range-1.0"        | "uniqueBookIsbn" | 2023-04-13T11:41:44.692Z | 6         |
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+15 rows
+----
+
+One of the output columns from `SHOW INDEXES` is the name of the index.
+This can be used to drop the index with the xref:indexes/indexes-for-search-performance.adoc#indexes-drop-an-index[`DROP INDEX` command].
+
+
+[discrete]
+[[indexes-listing-indexes-with-filtering]]
+==== Listing indexes with filtering
+
+The `SHOW INDEX` command can be filtered in various ways.`
+
+For example, to show only range indexes, use `SHOW RANGE INDEXES`.
+
+Another more flexible way of filtering the output is to use the `WHERE` clause.
+An example is to only show indexes not belonging to constraints.
+
+To show only range indexes that does not belong to a constraint we can combine the filtering versions.
+
+.Showing range indexes
+[source, cypher, role=test-result-skip]
+----
+SHOW RANGE INDEXES WHERE owningConstraint IS NULL
+----
+
+.Result
+[queryresult]
+----
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| id | name                              | state    | populationPercent | type    | entityType     | labelsOrTypes | properties         | indexProvider | owningConstraint | lastRead                 | readCount |
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 3  | "composite_range_node_index_name" | "ONLINE" | 100.0             | "RANGE" | "NODE"         | ["Person"]    | ["age", "country"] | "range-1.0"   | NULL             | NULL                     | 0         |
+| 4  | "composite_range_rel_index_name"  | "ONLINE" | 100.0             | "RANGE" | "RELATIONSHIP" | ["PURCHASED"] | ["date", "amount"] | "range-1.0"   | NULL             | 2023-03-13T11:41:44.537Z | 1         |
+| 13 | "example_index"                   | "ONLINE" | 100.0             | "RANGE" | "NODE"         | ["Book"]      | ["title"]          | "range-1.0"   | NULL             | 2023-04-10T15:41:44.537Z | 2         |
+| 1  | "node_range_index_name"           | "ONLINE" | 100.0             | "RANGE" | "NODE"         | ["Person"]    | ["surname"]        | "range-1.0"   | NULL             | 2022-12-30T02:01:44.537Z | 6         |
+| 2  | "rel_range_index_name"            | "ONLINE" | 100.0             | "RANGE" | "RELATIONSHIP" | ["KNOWS"]     | ["since"]          | "range-1.0"   | NULL             | 2023-04-12T10:41:44.692Z | 5         |
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+5 rows
+----
+
+This will only return the default output columns.
+
+To get all columns, use:
+
+[source, syntax, role="noheader"]
+----
+SHOW RANGE INDEXES YIELD * WHERE owningConstraint IS NULL
+----
+
+For a full output, returning all available information in all columns, use:
+
+[source, syntax, role="noheader"]
+----
+SHOW RANGE INDEXES YIELD *
+----
+
+The below table contains further information about the columns returned by the `SHOW INDEX` command:
 
 .List indexes output
 [options="header", cols="4,6,2"]
@@ -695,114 +951,6 @@ label:new[Introduced in 5.8]
 | `STRING`
 
 |===
-
-[NOTE]
-====
-The command `SHOW INDEXES` returns only the default output.
-For a full output use the optional `YIELD` command.
-Full output: `+SHOW INDEXES YIELD *+`.
-====
-
-Listing indexes also allows for `WHERE` and `YIELD` clauses to filter the returned rows and columns.
-
-Listing indexes require link:{neo4j-docs-base-uri}/operations-manual/{page-version}/database-administration/standard-databases/manage-databases/#manage-databases-stop/authentication-authorization/database-administration/#access-control-database-administration-index[the `SHOW INDEX` privilege].
-
-[discrete]
-=== Examples
-
-* xref:indexes/indexes-for-search-performance.adoc#indexes-listing-all-indexes[]
-* xref:indexes/indexes-for-search-performance.adoc#indexes-listing-indexes-with-filtering[]
-
-
-[discrete]
-[[indexes-listing-all-indexes]]
-==== Listing all indexes
-
-To list all indexes with the default output columns, the `SHOW INDEXES` command can be used.
-If all columns are required, use `SHOW INDEXES YIELD *`.
-
-.Showing all indexes
-[source, cypher, role=test-result-skip]
-----
-SHOW INDEXES
-----
-
-// SHOW INDEXES default outputs
-// 4.4: id, name, state, populationPercent, uniqueness, type, entityType, labelsOrTypes, properties, indexProvider
-// 5.0: id, name, state, populationPercent, type, entityType, labelsOrTypes, properties, indexProvider, owningConstraint
-// 5.8: id, name, state, populationPercent, type, entityType, labelsOrTypes, properties, indexProvider, owningConstraint, lastRead, readCount
-
-.Result
-[queryresult]
-----
-+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| id | name                              | state    | populationPercent | type     | entityType     | labelsOrTypes | properties         | indexProvider      | owningConstraint | lastRead                 | readCount |
-+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| 3  | "composite_range_node_index_name" | "ONLINE" | 100.0             | "RANGE"  | "NODE"         | ["Person"]    | ["age", "country"] | "range-1.0"        | NULL             | NULL                     | 0         |
-| 4  | "composite_range_rel_index_name"  | "ONLINE" | 100.0             | "RANGE"  | "RELATIONSHIP" | ["PURCHASED"] | ["date", "amount"] | "range-1.0"        | NULL             | 2023-03-13T11:41:44.537Z | 1         |
-| 13 | "example_index"                   | "ONLINE" | 100.0             | "RANGE"  | "NODE"         | ["Book"]      | ["title"]          | "range-1.0"        | NULL             | 2023-04-10T15:41:44.537Z | 2         |
-| 14 | "indexOnBooks"                    | "ONLINE" | 100.0             | "TEXT"   | "NODE"         | ["Label1"]    | ["prop1"]          | "text-2.0"         | NULL             | NULL                     | 0         |
-| 11 | "node_label_lookup_index"         | "ONLINE" | 100.0             | "LOOKUP" | "NODE"         | NULL          | NULL               | "token-lookup-1.0" | NULL             | 2023-04-13T08:11:15.537Z | 10        |
-| 8  | "node_point_index_name"           | "ONLINE" | 100.0             | "POINT"  | "NODE"         | ["Person"]    | ["sublocation"]    | "point-1.0"        | NULL             | 2023-04-05T16:21:44.692Z | 1         |
-| 1  | "node_range_index_name"           | "ONLINE" | 100.0             | "RANGE"  | "NODE"         | ["Person"]    | ["surname"]        | "range-1.0"        | NULL             | 2022-12-30T02:01:44.537Z | 6         |
-| 5  | "node_text_index_nickname"        | "ONLINE" | 100.0             | "TEXT"   | "NODE"         | ["Person"]    | ["nickname"]       | "text-2.0"         | NULL             | 2023-04-13T11:41:44.537Z | 2         |
-| 10 | "point_index_with_config"         | "ONLINE" | 100.0             | "POINT"  | "NODE"         | ["Label"]     | ["prop2"]          | "point-1.0"        | NULL             | NULL                     | 0         |
-| 9  | "rel_point_index_name"            | "ONLINE" | 100.0             | "POINT"  | "RELATIONSHIP" | ["STREET"]    | ["intersection"]   | "point-1.0"        | NULL             | 2023-03-03T13:37:42.537Z | 2         |
-| 2  | "rel_range_index_name"            | "ONLINE" | 100.0             | "RANGE"  | "RELATIONSHIP" | ["KNOWS"]     | ["since"]          | "range-1.0"        | NULL             | 2023-04-12T10:41:44.692Z | 5         |
-| 6  | "rel_text_index_name"             | "ONLINE" | 100.0             | "TEXT"   | "RELATIONSHIP" | ["KNOWS"]     | ["interest"]       | "text-2.0"         | NULL             | 2023-04-01T10:40:44.537Z | 3         |
-| 12 | "rel_type_lookup_index"           | "ONLINE" | 100.0             | "LOOKUP" | "RELATIONSHIP" | NULL          | NULL               | "token-lookup-1.0" | NULL             | 2023-04-12T21:41:44.537Z | 7         |
-| 7  | "text_index_with_indexprovider"   | "ONLINE" | 100.0             | "TEXT"   | "RELATIONSHIP" | ["TYPE"]      | ["prop1"]          | "text-2.0"         | NULL             | NULL                     | 0         |
-| 15 | "uniqueBookIsbn"                  | "ONLINE" | 100.0             | "RANGE"  | "NODE"         | ["Book"]      | ["isbn"]           | "range-1.0"        | "uniqueBookIsbn" | 2023-04-13T11:41:44.692Z | 6         |
-+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-15 rows
-----
-
-One of the output columns from `SHOW INDEXES` is the name of the index.
-This can be used to drop the index with the xref:indexes/indexes-for-search-performance.adoc#indexes-drop-an-index[`DROP INDEX` command].
-
-
-[discrete]
-[[indexes-listing-indexes-with-filtering]]
-==== Listing indexes with filtering
-
-One way of filtering the output from `SHOW INDEXES` by index type is the use of type keywords, listed in the syntax description.
-
-For example, to show only range indexes, use `SHOW RANGE INDEXES`.
-
-Another more flexible way of filtering the output is to use the `WHERE` clause.
-An example is to only show indexes not belonging to constraints.
-
-To show only range indexes that does not belong to a constraint we can combine the filtering versions.
-
-.Showing range indexes
-[source, cypher, role=test-result-skip]
-----
-SHOW RANGE INDEXES WHERE owningConstraint IS NULL
-----
-
-.Result
-[queryresult]
-----
-+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| id | name                              | state    | populationPercent | type    | entityType     | labelsOrTypes | properties         | indexProvider | owningConstraint | lastRead                 | readCount |
-+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| 3  | "composite_range_node_index_name" | "ONLINE" | 100.0             | "RANGE" | "NODE"         | ["Person"]    | ["age", "country"] | "range-1.0"   | NULL             | NULL                     | 0         |
-| 4  | "composite_range_rel_index_name"  | "ONLINE" | 100.0             | "RANGE" | "RELATIONSHIP" | ["PURCHASED"] | ["date", "amount"] | "range-1.0"   | NULL             | 2023-03-13T11:41:44.537Z | 1         |
-| 13 | "example_index"                   | "ONLINE" | 100.0             | "RANGE" | "NODE"         | ["Book"]      | ["title"]          | "range-1.0"   | NULL             | 2023-04-10T15:41:44.537Z | 2         |
-| 1  | "node_range_index_name"           | "ONLINE" | 100.0             | "RANGE" | "NODE"         | ["Person"]    | ["surname"]        | "range-1.0"   | NULL             | 2022-12-30T02:01:44.537Z | 6         |
-| 2  | "rel_range_index_name"            | "ONLINE" | 100.0             | "RANGE" | "RELATIONSHIP" | ["KNOWS"]     | ["since"]          | "range-1.0"   | NULL             | 2023-04-12T10:41:44.692Z | 5         |
-+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-5 rows
-----
-
-This will only return the default output columns.
-
-To get all columns, use:
-
-[source, syntax, role="noheader"]
-----
-SHOW RANGE INDEXES YIELD * WHERE owningConstraint IS NULL
-----
 
 
 [[indexes-drop-indexes]]
