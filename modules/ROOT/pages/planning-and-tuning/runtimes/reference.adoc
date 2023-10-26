@@ -1,0 +1,236 @@
+:description: reference material for the parallel runtime. 
+= Parallel runtime: reference
+
+_The parallel runtime was introduced in Neo4j 5.13._
+
+The parallel runtime behaves differently compared to the slotted and pipelined runtimes in several regards.
+This page explains the relevant configuration settings for the parallel runtime and the scenarios in which it is either not supported or considered thread-safe.
+It also includes relevant information for Neo4j Aura users.
+
+Readers not familiar with the parallel runtime are encouraged to read about the xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-parallel-runtime[parallel runtime concepts] before reading this page.
+
+[[updating-queries]]
+== Updating queries
+
+The parallel runtime will throw an error if a query attempts to update the graph.
+For example, any query run on the parallel runtime which uses the `CREATE` clause, will throw the following error:
+
+.Error message
+[source, error]
+----
+The parallel runtime does not support updating queries. Please use another runtime.
+----
+
+For a full list of all available Cypher write clauses, see the xref:clauses/index.adoc#writing-clauses[Clauses overview page].
+
+[[transactions]]
+== Transactions
+
+It is not possible to use the parallel runtime if a change has been made to the state of a transaction.
+
+For example, the following transaction (initiated on link:{neo4j-docs-base-uri}/operations-manual/{page-version}/tools/cypher-shell[Cypher Shell]) will be rolled back, because executing a Cypher query will make changes to the state of a transaction.
+
+.Step 1: Initiate a new transaction and change its state by creating a node
+[source, cypher, role=test-skip]
+----
+:begin
+CREATE (n:Person)
+----
+
+.Step 2: Attempt to execute a Cypher query with the parallel runtime on the existing transaction
+[source, cypher, role=test-fail]
+----
+CYPHER runtime = parallel
+RETURN 42
+----
+
+.Error message
+[source, error]
+----
+An error occurred while in an open transaction. The transaction will be rolled back and terminated. Error: The parallel runtime is not supported if there are changes in the transaction state. Use another runtime.
+----
+
+For more information about transactions in Neo4j, see the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/database-internals/transaction-management[Operations Manual -> Transaction management].
+
+[[configuration-settings]]
+== Configuration settings
+
+The following setting can be configured to modify the behavior of the parallel runtime:
+
+.server.cypher.parallel.worker_limit
+[frame="topbot", stripes=odd, grid="cols", cols="<1s,<4", role=noheader]
+|===
+|Description
+a|Number of threads to allocate to Cypher worker threads for the parallel runtime.
+If set to a positive number, that number of workers will be started.
+If set to `0`, one worker will be started for every logical processor available to the Java Virtual Machine.
+
+If set to a negative number we will subtract the value from the number of logical processors available; for example, say Neo4j is running on a server with 16 available processors, using `server.cypher.parallel.worker_limit = -1` would then mean that 15 threads are available for the parallel runtime. 
+|Valid values
+a| Integer
+|Default value
+m| 0
+|===
+
+Setting `server.cypher.parallel.worker_limit` to a negative number `-n` where `n` is greater than the total number of cores will disable the parallel runtime.
+
+For more information about configuration settings in Neo4j, see the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/configuration[Operations Manual -> Configuration.]
+
+[[aura]]
+== Aura
+
+The parallel runtime can only be run on Aura instances with 3 or more CPUs.
+This means that the parallel runtime is not available to users to users of AuraDB Free.
+Nor is it available on instances of AuraDB Professional and AuraDB Enterprise with 2 or fewer CPUs.
+
+Attempting to run a query with the parallel runtime on instances with 2 or fewer CPUs will generate the following error message:
+
+.Error message
+[source,error]
+----
+Parallel runtime has been disabled, please enable it or upgrade to a bigger Aura instance.
+----
+
+[TIP]
+====
+Users of AuraDB Professional and AuraDB Enterprise select the number of available CPUs when creating an instance.
+More information about the various tiers of AuraDB can be found on the link:https://neo4j.com/pricing/[Neo4j Pricing page].
+====
+
+[[procedures-and-functions]]
+== Procedures and functions
+
+Procedures and functions that read the database are supported by the parallel runtime.
+Apart from this, there are two categories of procedures and functions to keep in mind when using the parallel runtime.
+
+The first can be categorized as _updating procedures_.
+These are procedures that update the graph with write queries, such as the Neo4j procedures link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_createlabel[db.createLabel] and link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_createproperty[db.createProperty].
+If such procedures are called in a query run on the parallel runtime, the query will fail. 
+
+The second can be categorized as _non-thread-safe_ procedures and functions.
+These are procedures and functions which perform tasks that are not protected against multiple worker threads concurrently interacting with the targeted data.
+This includes procedures and functions that perform either of the following tasks:
+
+* Executes a Cypher query (because that will start a new transaction, which is not supported by the parallel runtime).
+* Starts a new transaction (because this is not supported by the parallel runtime).
+
+Calling procedures which perform any of these tasks in a query run on the parallel runtime will not fail the query.
+Instead the query will automatically run on the pipelined runtime.
+
+[[neo4j-procedures]]
+=== Neo4j procedures
+
+The following Neo4j procedures are not considered thread-safe and cannot be run on the parallel runtime. 
+Trying to call them in a query run on the parallel runtime will not fail the query.
+Instead the query will automatically run on the pipelined runtime.
+
+.Non-thread-safe Neo4j procedures
+[cols="1", options="header", cols="1m"]
+|===
+
+| Procedure 
+
+| link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_awaitindex[db.awaitIndex]
+
+| link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_awaitindexes[db.awaitIndexes]
+
+| link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_checkpoint[db.checkpoint]
+
+| link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_info[db.info]
+
+| link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_labels[db.labels]
+
+| link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_listlocks[db.listLocks]
+
+| link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_ping[db.ping]
+
+| link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_propertykeys[db.propertyKeys]
+
+| link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_prepareforreplanning[db.prepareForReplanning]
+
+| link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_relationshiptypes[db.relationshipTypes]
+
+| link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_resampleindex[db.resampleIndex]
+
+| link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_resampleoutdatedindexes[db.resampleOutdatedIndexes]
+
+| link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_schema_nodetypeproperties[db.schema.nodeTypeProperties]
+
+| link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_schema_reltypeproperties[db.schema.relTypeProperties]
+
+| link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_schema_visualization[db.schema.visualization]
+
+| link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_dbms_checkconfigvalue[dbms.checkConfigValue]
+
+| link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_dbms_listactivelocks[dbms.listActiveLocks]
+
+| link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_dbms_listpools[dbms.listPools]
+
+| link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_dbms_scheduler_failedjobs[dbms.scheduler.failedJobs]
+
+| link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_dbms_scheduler_groups[dbms.scheduler.groups]
+
+| link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_dbms_scheduler_jobs[dbms.scheduler.jobs]
+
+| link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_dbms_upgrade[dbms.upgrade]
+
+| link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_dbms_upgradestatus[dbms.upgradeStatus]
+
+|===
+
+[[apoc]]
+=== APOC
+
+The link:{neo4j-docs-base-uri}/apoc/{page-version}/[APOC library] contains procedures and functions which extend the use of Cypher.
+There are a number of APOC procedures and functions that are not considered thread-safe, and *cannot* be run on the parallel runtime.
+For information about these, refer to the pages of the individual link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/[procedures and functions] in the APOC Manual.
+
+[[user-defined-functions]]
+=== User-defined functions
+
+User-defined functions are simpler forms of procedures that return a single value and are read-only.
+To learn more about user-defined functions in Neo4j, see the link:{neo4j-docs-base-uri}/java-reference/{page-version}/extending-neo4j/functions/[Java Reference Manual -> User-defined functions].
+
+Similar to Neo4j and APOC procedures, any user-defined function that starts a new transaction by executing a Cypher query is not considered thread-safe and will not be supported by the parallel runtime (this includes all user-defined aggregating functions).
+
+For example, consider the two following user-defined functions:
+
+[source,java]
+----
+class MyFunctions {
+  @Context
+  public Transaction transaction;
+
+  @UserFunction("examples.return42")
+  public long return42() {
+    return 42L;
+  }
+
+  @UserFunction("examples.return42ViaCypher")
+  public long return42ViaCypher() {
+    return (long) transaction.execute("RETURN 42 AS res").next().get("n);
+  }
+}
+----
+
+Running `examples.return42()` will succeed with the parallel runtime, whereas `examples.return42ViaCypher()` will fail because executing a new Cypher query will start a new transaction.
+
+However, if `@NotThreadSafe` is added to the method, then the query will automatically not run on the parallel runtime. The query will instead default to the single-threaded pipelined runtime and generate a notification. 
+
+Calling the below user-defined function would, therefore, not fail with the parallel runtime.
+Instead, the Cypher query would automatically be run on the pipelined runtime.
+
+[source,java]
+----
+class MyFunctions {
+  @Context
+  public Transaction transaction;
+ 
+  @UserFunction("examples.return42ViaCypher")
+  @NotThreadSafe
+  public long return42ViaCypher() {
+    return (long) transaction.execute("RETURN 42 AS res").next().get("n);
+  }
+}
+----
+
