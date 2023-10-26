@@ -10,11 +10,10 @@
 
 :l2-norm: image:l2.svg["l2"]-norm
 
-[role=beta]
 [[indexes-vector]]
 = Vector search indexes
 
-_Vector search indexes were released as a public beta in Neo4j 5.11._
+_Vector search indexes were released as a public beta in Neo4j 5.11 and general availability in Neo4j 5.13._
 
 This chapter describes how to use vector indexes to perform an approximate nearest neighbor search.
 
@@ -65,8 +64,12 @@ Returns the requested number of approximate nearest neighbor nodes and their sim
 | Lists all vector indexes, see the xref:indexes/indexes-for-search-performance.adoc#indexes-list-indexes[`SHOW INDEXES`] command for details. There is no vector index filter built into `SHOW INDEXES`.
 
 | Set vector property.
+| {link-procedures-reference}#procedure_db_create_setNodeVectorProperty[`db.create.setNodeVectorProperty`]
+| label:beta[] label:new[Introduced in 5.13] Update a given node property with the given vector in a more space-efficient way than directly using xref:clauses/set.adoc#set-set-a-property[`SET`]. Replaces  {link-procedures-reference}#procedure_db_create_setVectorProperty[`db.create.setVectorProperty`].
+
+| Set vector property.
 | {link-procedures-reference}#procedure_db_create_setVectorProperty[`db.create.setVectorProperty`]
-| Update a given node property with the given vector in a more space-efficient way than directly using xref:clauses/set.adoc#set-set-a-property[`SET`].
+| label:beta[] label:deprecated[] It is replaced by {link-procedures-reference}#procedure_db_create_setNodeVectorProperty[`db.create.setNodeVectorProperty`]
 
 |===
 
@@ -267,46 +270,57 @@ Removed 1 index.
 
 ======
 
+[role=beta]
 [[indexes-vector-set]]
 == Set a vector property on a node
 
 Valid vectors for use in the index must have components finitely representable in {ieee-754} _single_ precision.
-They are represented as properties on nodes with type `LIST<FLOAT>`.
-The recommended way of setting a vector property is using the link:{link-procedures-reference}#procedure_db_create_setVectorProperty[`db.create.setVectorProperty`] procedure.
-This procedure validates the input and sets the property as an array of {ieee-754} single precision values.
+They are represented as properties on nodes with the type `LIST<FLOAT>`.
+As of Neo4j 5.13, you can set a vector property using the {link-procedures-reference}#procedure_db_create_setNodeVectorProperty[`db.create.setNodeVectorProperty`] procedure.
+It validates the input and sets the property as an array of {ieee-754} single precision values.
+This beta procedure replaces {link-procedures-reference}#procedure_db_create_setVectorProperty[`db.create.setVectorProperty`].
 
-.Signature for `db.create.setVectorProperty`
+.Signature for `db.create.setNodeVectorProperty`
+[source,syntax]
+----
+db.create.setNodeVectorProperty(node :: NODE, key :: STRING, vector :: LIST<FLOAT>)
+----
+
+.Signature for `db.create.setVectorProperty` label:deprecated[]
 [source,syntax]
 ----
 db.create.setVectorProperty(node :: NODE, key :: STRING, vector :: LIST<FLOAT>) :: (node :: NODE)
 ----
 
-Usually you want to define your embeddings as Cypher parameters and call `db.create.setVectorProperty` as in the following example:
+The following example shows how to define embeddings as Cypher parameters by matching a node and setting its vector properties using `db.create.setNodeVectorProperty`:
 
 .Set a vector via `db.create.setVectorProperty`
 [source,cypher]
 ----
 MATCH (n:Node {id: $id})
-CALL db.create.setVectorProperty(n, 'propertyKey', $vector)
-YIELD node RETURN node;
+CALL db.create.setNodeVectorProperty(n, 'propertyKey', $vector)
+RETURN node
 ----
 
-The example above matches one node and updates its embedding, but it's also possible to use a list parameter containing several MATCH criterias and embeddings, to update multiple nodes in an `UNWIND` clause.
+Furthermore, you can also use a list parameter containing several `MATCH` criteria and embeddings to update multiple nodes in an `UNWIND` clause.
 This is ideal for creating and setting new vector properties in the graph.
 
-You can also set a vector property on a node using the xref:clauses/set.adoc#set-set-a-property[`SET`] command:
+You can also set a vector property on a node using the xref:clauses/set.adoc#set-set-a-property[`SET`] command as in the following example:
 
 .Set a vector property via `SET`
 [source,cypher]
 ----
 MATCH (node:Node {id: $id})
 SET node.propertyKey = $vector
-RETURN node;
+RETURN node
 ----
 
-However, Cypher stores the provided `LIST<FLOAT>` as a primitive array of {ieee-754} _double_ precision values.
-As a result, it takes up approximately twice as much space and it's not recommended for properties that are used in a vector index.
-Existing properties can be re-set using `db.create.setVectorProperty` to minimize store size, but there is a cost in the transaction log size until they are rotated away.
+However, Cypher stores the provided `LIST<FLOAT>` as a primitive array of {ieee-754} _double_ precision values. 
+This takes up almost twice as much space compared to the alternative method, where you use the `db.create.setNodeVectorProperty` procedure.
+As a result, using `SET` for a vector index is not recommended. 
+
+To reduce the storage space, you can reset the existing properties using `db.create.setNodeVectorProperty`. 
+However, this comes with the cost of an increase in the transaction log size until they are rotated away.
 
 [[indexes-vector-similarity]]
 == Supported similarity functions
@@ -391,12 +405,23 @@ For example, you cannot have one xref:indexes-vector-similarity-euclidean[Euclid
 [[index-vector-issues]]
 == Known issues
 
-The vector search index is a beta feature.
-The below table lists the known issues in its current implementation.
+As of Neo4j 5.13, the vector search index is no longer a beta feature.
+The following table lists the known issues and the version in which they were fixed:
 
 [%header,cols="5a,d"]
 |===
 | Known issues | Fixed in
+
+| Querying for a _single_ approximate nearest neighbor from an index would fail a validation check. Passing a `null` value would also provide an unhelpful exception.
+| Neo4j 5.13
+
+| Vector index queries throw an exception if the transaction state contains changes. This means that writes may only take place *after* the last vector index query in a transaction.
+
+[TIP]
+====
+To work around this issue if you need to run multiple vector index queries and make changes based on the results, you can run the queries in a `+CALL { ... } IN TRANSACTIONS+` clause to isolate them from the outer transaction's state.
+====
+| Neo4j 5.13
 
 | xref:clauses/listing-procedures.adoc[`SHOW PROCEDURES`] does not show the vector index procedures:
 
