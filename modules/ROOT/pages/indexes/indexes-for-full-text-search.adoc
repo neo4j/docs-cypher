@@ -3,103 +3,35 @@
 [[indexes-fulltext-search]]
 = Full-text search indexes
 
-Full-text indexes are powered by the link:https://lucene.apache.org/[Apache Lucene] indexing and search library, and can be used to index nodes and relationships by string properties.
-A full-text index allows you to write queries that match within the _contents_ of indexed string properties.
-For instance, the range and text indexes described in previous sections can only perform limited matching on strings; exact, prefix, substring, or suffix matches.
-A full-text index will instead tokenize the indexed string values, so it can match _terms_ anywhere within the strings.
-How the indexed strings are tokenized and broken into terms, is determined by what analyzer the full-text index is configured with.
-For instance, the _swedish_ analyzer knows how to tokenize and stem Swedish words, and will avoid indexing Swedish stop words.
-The complete list of stop words for each analyzer is included in the result of the `db.index.fulltext.listAvailableAnalyzers` procedure.
+A full-text index is used to index nodes and relationships by `STRING` properties.
+Unlike xref:indexes/indexes-for-search-performance.adoc#indexes-create-range-index[range] and xref:indexes/indexes-for-search-performance.adoc#indexes-create-text-index[text] indexes, which can only perform limited `STRING` matching (exact, prefix, substring, or suffix matches), full-text indexes index individual words in any given `STRING` property.
+This means that full-text indexes can be used to match within the content of a `STRING` property, which can be very useful to obtain more fine-grained query results.
 
+Full-text indexes are powered by the link:https://lucene.apache.org/[Apache Lucene] indexing and search library.
 
-Full-text indexes:
+== Example graph
 
-* support the indexing of both nodes and relationships.
-* support configuring custom analyzers, including analyzers that are not included with Lucene itself.
-* can be queried using the Lucene query language.
-* can return the _score_ for each result from a query.
-* are kept up to date automatically, as nodes and relationships are added, removed, and modified.
-* will automatically populate newly created indexes with the existing data in a store.
-* can be checked by the consistency checker, and they can be rebuilt if there is a problem with them.
-* are a projection of the store, and can only index nodes and relationships by the contents of their properties.
-* include only property values of types `STRING` or `LIST<STRING>`.
-* can support any number of documents in a single index.
-* are created, dropped, and updated transactionally, and is automatically replicated throughout a cluster.
-* can be accessed via Cypher procedures.
-* can be configured to be _eventually consistent_, in which index updating is moved from the commit path to a background thread.
-Using this feature, it is possible to work around the slow Lucene writes from the performance critical commit process, thus removing the main bottlenecks for Neo4j write performance.
+The following graph is used for the examples below:
 
-At first sight, the construction of full-text indexes can seem similar to regular indexes.
-However there are some things that are interesting to note:
-In contrast to xref:indexes/indexes-for-search-performance.adoc[other indexes], a full-text index can be:
+To recreate it, run the following query against an empty Neo4j database:
 
-* applied to more than one label.
-* applied to more than one relationship type.
-* applied to more than one property at a time (similar to a xref:indexes/indexes-for-search-performance.adoc#indexes-create-a-composite-range-index-for-nodes[_composite index_]) but with an important difference:
-While a composite index applies only to entities that match the indexed label and _all_ of the indexed properties, full-text index will index entities that have at least one of the indexed labels or relationship types, and at least one of the indexed properties.
+[source, cypher, role=test-setup]
+----
+CREATE (andersC:Employee {name: "Anders Carlsson", position: "Engineer", team: "Delivery Operations"}),
+(bridget:Manager {name: "Bridget Daniels", position: "Manager"}),
+(andersE::Employee {name: "Anders Ericsson", position: "Engineer", team: "Administration"}),
+(bridget)-[:REVIEWED {feedback: "Anders is often late and must improve soon."}]->(andersC)
+(bridget)-[:REVIEWED {feedback: "Anders is never late has improved a lot."}]->(andersE)
+(andersC)-[:EMAILED {message:'Hi Bridget. Sorry I have been late. I will try to improve.'}]->(bridget)
+----
 
-For information on how to configure full-text indexes, refer to link:{neo4j-docs-base-uri}/operations-manual/{page-version}/performance/index-configuration#index-configuration-fulltext[Operations Manual -> Indexes to support full-text search].
-
-
-[[indexes-fulltext-search-manage]]
-== Full-text search procedures
-
-Full-text indexes are managed through commands and used through built-in procedures, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures[Operations Manual -> Procedures] for a complete reference.
-
-The commands and procedures for full-text indexes are listed in the table below:
-
-
-[options="header"]
-|===
-| Usage | Procedure/Command | Description
-
-| Create full-text node index.
-| `+CREATE FULLTEXT INDEX ...+`
-| Create a node full-text index for the given labels and properties.
-
-| Create full-text relationship index.
-| `+CREATE FULLTEXT INDEX ...+`
-a|
-Create a relationship full-text index for the given relationship types and properties.
-
-| List available analyzers.
-| https://neo4j.com/docs/operations-manual/current/reference/procedures/#procedure_db_index_fulltext_listavailableanalyzers[`db.index.fulltext.listAvailableAnalyzers`]
-| List the available analyzers that the full-text indexes can be configured with.
-
-| Use full-text node index.
-| https://neo4j.com/docs/operations-manual/current/reference/procedures/#procedure_db_index_fulltext_querynodes[`db.index.fulltext.queryNodes`]
-| Query the given full-text index. Returns the matching nodes and their Lucene query score, ordered by score.
-
-| Use full-text relationship index.
-| https://neo4j.com/docs/operations-manual/current/reference/procedures/#procedure_db_index_fulltext_queryrelationships[`db.index.fulltext.queryRelationships`]
-| Query the given full-text index. Returns the matching relationships and their Lucene query score, ordered by score.
-
-| Drop full-text index.
-| `+DROP INDEX ...+`
-| Drop the specified index.
-
-| Eventually consistent indexes.
-| https://neo4j.com/docs/operations-manual/current/reference/procedures/#procedure_db_index_fulltext_awaiteventuallyconsistentindexrefresh[`db.index.fulltext.awaitEventuallyConsistentIndexRefresh`]
-| Wait for the updates from recently committed transactions to be applied to any eventually-consistent full-text indexes.
-
-| Listing all full-text indexes.
-| `SHOW FULLTEXT INDEXES`
-| Lists all full-text indexes, see xref:indexes/indexes-for-search-performance.adoc#indexes-list-indexes[the `SHOW INDEXES` command] for details.
-
-|===
-
-
-[[indexes-fulltext-search-create-and-configure]]
-== Create and configure full-text indexes
+== Create full-text indexes
 
 Full-text indexes are created with the `CREATE FULLTEXT INDEX` command.
 An index can be given a unique name when created (or get a generated one), which is used to reference the specific index when querying or dropping it.
 A full-text index applies to a list of labels or a list of relationship types, for node and relationship indexes respectively, and then a list of property names.
 
-[NOTE]
-====
-More details about the syntax descriptions can be found xref:administration/index.adoc#administration-syntax[here].
-====
+Creating a full-text index requires the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/database-administration/standard-databases/manage-databases/#manage-databases-stop/authentication-authorization/database-administration/#access-control-database-administration-index[`CREATE INDEX` privilege].
 
 .Syntax for creating full-text indexes
 [options="header", width="100%", cols="5a, 3"]
@@ -126,59 +58,70 @@ ON EACH "[" r.propertyName[, ...] "]"
 
 |===
 
-It is considered best practice to give the index a name when it is created. This name is needed for both dropping and querying the index.
-If the index is not explicitly named, it will get an auto-generated name.
-
-[NOTE]
-====
-The index name must be unique among all indexes and constraints.
-====
-
-Index provider and configuration settings can be specified using the `OPTIONS` clause.
-Supported settings are `fulltext.analyzer`, for specifying what analyzer to use when indexing and querying.
-Use the `db.index.fulltext.listAvailableAnalyzers` procedure to see what options are available.
-To make this index eventually consistent, `fulltext.eventually_consistent` should be set to `true`.
-This will ensure that updates from committing transactions are applied in a background thread.
-
-The command is optionally idempotent. This means that its default behavior is to throw an error if an attempt is made to create the same index twice.
-With `IF NOT EXISTS`, no error is thrown and nothing happens should an index with the same name, schema or both already exist.
-It may still throw an error should a constraint with the same name exist.
-
-.+CREATE FULLTEXT INDEX+
-======
-
-For instance, if we have a movie with a title.
+This query creates a full-text index named `titlesAndDescriptions` on each `title` and `description` property for all `Movie` and `Book` nodes in the graph:
 
 .Query
 [source, cypher]
 ----
-CREATE (m:Movie {title: "The Matrix"}) RETURN m.title
+CREATE FULLTEXT INDEX positionAndTeams FOR (n:Employee|Manager) ON EACH [n.position, n.team]
 ----
 
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
+This query highlights two key differences between full-text and xref:indexes/indexes-for-search-performance.adoc[]:
 
-| +m.title+
-| +"The Matrix"+
+* Full-text indexes can be applied to more than one node label.
+* Full-text indexes can be applied to more than one property, but unlike xref:indexes/indexes-for-search-performance.adoc#indexes-create-a-composite-range-index-for-nodes[composite search performance indexes], a full-text index indexes entities that have _at least_ one of the indexed labels or relationship types, and _at least_ one of the indexed properties.
 
-|===
+Similarly, though a relationship can only have one type, a full-text index can index multiple relationship types, and all relationships will be included that match one of the relationship types, and at least one of the indexed properties.
 
-And we have a full-text index on the `title` and `description` properties of movies and books.
+Full-text indexes follow the same naming rules and best-practices as search performance indexes.
+More information can be read in the section about xref:indexes/index.adoc#naming-rules-and-recommendations[Index naming rules].
+
+=== Tokenization and analyzers
+
+As previously mentioned, full-text indexes index individual words in a `STRING` property.
+This is achieved by tokenizer, which breaks up a stream of characters (usually individual words) into individual tokens.
+How a string is tokenized is determined by what analyzer the full-text index is configured with.
+For example, the _swedish_ analyzer knows how to tokenize Swedish words, and will avoid indexing Swedish stop words.
+
+A complete list of all available analyzers is included in the result of the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_index_fulltext_listavailableanalyzers[`db.index.fulltext.listAvailableAnalyzers`] procedure.
+
+=== Configuration settings
+
+The `CREATE FULLTEXT INDEX` command take an optional clause, called `options`.
+This has two parts, the `indexProvider` and `indexConfig`.
+The provider can only have the default value, `'fulltext-1.0'`.
+The `indexConfig` is a map from string to string and booleans, and can be used to set index-specific configuration settings.
+
+The `fulltext.analyzer` setting can be used to configure an index-specific analyzer.
+The possible values for the `fulltext.analyzer` setting can be listed with the `db.index.fulltext.listAvailableAnalyzers` procedure.
+
+The `fulltext.eventually_consistent` setting, if set to `true`, will put the index in an _eventually consistent_ update mode.
+This means that updates will be applied in a background thread "as soon as possible", instead of during transaction commit like other indexes.
+
+In the below example, an eventually consistent relationship full-text index is created for the `EMAILED` relationship type, and the `message` property, and the index uses the `url_or_email` analyzer.
+This could, for instance, be a system where people are assigning tags to documents, and where the index on the `taggedByUser` property will allow them to quickly find all of the documents they have tagged.
+Had it not been for the relationship index, one would have had to add artificial connective nodes between the tags and the documents in the data model, just so these nodes could be indexed.
 
 .Query
 [source, cypher]
 ----
-CREATE FULLTEXT INDEX titlesAndDescriptions FOR (n:Movie|Book) ON EACH [n.title, n.description]
+CREATE FULLTEXT INDEX emails FOR ()-[r:EMAILED]-() ON EACH [r.message]
+OPTIONS {
+  indexConfig: {
+    `fulltext.analyzer`: 'url_or_email',
+    `fulltext.eventually_consistent`: true
+  }
+}
 ----
 
-.Result
-[queryresult]
-----
-Added 1 index.
-----
+For more information on how to configure full-text indexes, refer to the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/performance/index-configuration#index-configuration-fulltext[Operations Manual -> Indexes to support full-text search].
 
-Then our movie node from above will be included in the index, even though it only has one of the indexed labels, and only one of the indexed properties:
+== Querying full-text indexes
+
+To query a full-text index, use either the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_index_fulltext_querynodes[`db.index.fulltext.queryNodes`] or the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_index_fulltext_relationships[`db.index.fulltext.queryRelationships`] procedures.
+
+
+This query uses the `db.index.fulltext.queryNodes` to query the previously created full-text index for any titles and descriptions `STRING` properties in the graph containing "matrix":
 
 .Query
 [source, cypher]
@@ -191,77 +134,20 @@ RETURN node.title, node.description, score
 [role="queryresult",options="header,footer",cols="3*<m"]
 |===
 
-| +node.title+ | +node.description+ | +score+
-| +"The Matrix"+ | +<null>+ | +0.13076457381248474+
+| node.title | node.description | score
+| "The Matrix" | <null> | 0.13076457381248474
 3+d|Rows: 1
 
 |===
 
-The same is true for full-text indexes on relationships.
-Though a relationship can only have one type, a relationship full-text index can index multiple types, and all relationships will be included that match one of the relationship types, and at least one of the indexed properties.
 
-======
-
-
-The `CREATE FULLTEXT INDEX` command take an optional clause, called `options`. This have two parts, the `indexProvider` and `indexConfig`.
-The provider can only have the default value, `'fulltext-1.0'`.
-The `indexConfig` is a map from string to string and booleans, and can be used to set index-specific configuration settings.
-
-The `fulltext.analyzer` setting can be used to configure an index-specific analyzer.
-The possible values for the `fulltext.analyzer` setting can be listed with the `db.index.fulltext.listAvailableAnalyzers` procedure.
-
-The `fulltext.eventually_consistent` setting, if set to `true`, will put the index in an _eventually consistent_ update mode.
-This means that updates will be applied in a background thread "as soon as possible", instead of during transaction commit like other indexes.
-
-
-.+CREATE FULLTEXT INDEX+
-======
-
-.Query
-[source, cypher]
-----
-CREATE FULLTEXT INDEX taggedByRelationshipIndex FOR ()-[r:TAGGED_AS]-() ON EACH [r.taggedByUser]
-OPTIONS {
-  indexConfig: {
-    `fulltext.analyzer`: 'url_or_email',
-    `fulltext.eventually_consistent`: true
-  }
-}
-----
-
-In this example, an eventually consistent relationship full-text index is created for the `TAGGED_AS` relationship type, and the `taggedByUser` property, and the index uses the `url_or_email` analyzer.
-This could, for instance, be a system where people are assigning tags to documents, and where the index on the `taggedByUser` property will allow them to quickly find all of the documents they have tagged.
-Had it not been for the relationship index, one would have had to add artificial connective nodes between the tags and the documents in the data model, just so these nodes could be indexed.
-
-.Result
-[queryresult]
-----
-Added 1 index.
-----
-
-======
-
-
-[[indexes-fulltext-search-query]]
-== Query full-text indexes
-
-Full-text indexes will, in addition to any exact matches, also return _approximate_ matches to a given query.
-Both the property values that are indexed, and the queries to the index, are processed through the analyzer such that the index can find that don't _exactly_ matches.
+In addition to any exact matches, full-text indexes also return _approximate_ matches to a given query.
+Both the property values that are indexed, and the queries to the index, are processed through the analyzer such that the index can find data entities which do not exactly match the provided string.
 The `score` that is returned alongside each result entry, represents how well the index thinks that entry matches the given query.
 The results are always returned in _descending score order_, where the best matching result entry is put first.
 
 
-.Query full-text
-======
-
 To illustrate, in the example below, we search our movie database for `"Full Metal Jacket"`, and even though there is an exact match as the first result, we also get three other less interesting results:
-
-////
-[source, cypher, role=test-setup]
-----
-CREATE (:Movie {title: "Full Metal Jacket"}), (:Movie {title: "The Jacket"}), (:Movie {title: "Yellow Jacket"}), (:Movie {title: "Full Moon High"}), (:Movie {title: "Metallica Through The Never", description: "The movie follows the young roadie Trip through his surreal adventure with the band."});
-----
-////
 
 .Query
 [source, cypher]
@@ -283,16 +169,7 @@ RETURN node.title, score
 
 |===
 
-======
-
-
-Full-text indexes are powered by the link:https://lucene.apache.org/[Apache Lucene] indexing and search library.
-This means that we can use Lucene's full-text query language to express what we wish to search for.
-For instance, if we are only interested in exact matches, then we can quote the string we are searching for.
-
-
-.Query full-text
-======
+To only obtain exact matches, can quote the string you are searching for.
 
 .Query
 [source, cypher]
@@ -301,7 +178,7 @@ CALL db.index.fulltext.queryNodes("titlesAndDescriptions", '"Full Metal Jacket"'
 RETURN node.title, score
 ----
 
-When we put "Full Metal Jacket" in quotes, Lucene only gives us exact matches.
+When we put "Full Metal Jacket" in quotes, Lucene only gives us exact matches:
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -311,14 +188,7 @@ When we put "Full Metal Jacket" in quotes, Lucene only gives us exact matches.
 2+d|Rows: 1
 |===
 
-======
-
-
-Lucene also allows us to use logical operators, such as `AND` and `OR`, to search for terms.
-
-
-.Query full-text
-======
+Lucene also allows the use of logical operators, such as `AND` and `OR`, to search for terms.
 
 .Query
 [source, cypher]
@@ -339,14 +209,9 @@ Only the `Full Metal Jacket` movie in our database has both the words `full` and
 
 |===
 
-======
 
+It is possible to limit the search to specific properties, by putting the property name and a colon in front of the text being searched for.
 
-It is also possible to search for only specific properties, by putting the property name and a colon in front of the text being searched for.
-
-
-.Query full-text
-======
 
 .Query
 [source, cypher, indent=0]
@@ -365,30 +230,16 @@ RETURN node.title, node.description, score
 
 |===
 
-======
-
 A complete description of the Lucene query syntax can be found in the link:https://lucene.apache.org/core/8_2_0/queryparser/org/apache/lucene/queryparser/classic/package-summary.html#package.description[Lucene documentation].
 
 
 [[indexes-fulltext-search-text-array-properties]]
-== Handling of Text Array properties
+=== Text Array properties
 
 If the indexed property contains a text array, each element of this array is analyzed independently and all produced terms are associated with the same property name.
 This means that when querying such an indexed node or relationship, there is a match if any of the array elements match the query.
 For scoring purposes, the full-text index treats it as a single-property value, and the score will represent how close the query is to matching the entire array.
 
-
-.Text Array properties
-======
-
-////
-[source, cypher, role=test-setup]
-----
-MATCH (m:Movie {title: 'The Matrix'})
-SET m.reviews = ['The best movie ever.', 'The movie is nonsense.'];
-CREATE FULLTEXT INDEX reviews FOR (m:Movie) ON EACH [m.reviews]
-----
-////
 
 For example, both of the following queries match the same node while referring different elements:
 
@@ -435,17 +286,14 @@ RETURN
 
 |===
 
-======
+== List full-text indexes 
+
 
 
 [[indexes-fulltext-search-drop]]
 == Drop full-text indexes
 
 A full-text node index is dropped by using the xref:indexes/indexes-for-search-performance.adoc#indexes-drop-an-index[same command as for other indexes], `DROP INDEX`.
-
-
-.+DROP INDEX+
-======
 
 In the following example, we will drop the `taggedByRelationshipIndex` that we created previously:
 
@@ -455,11 +303,54 @@ In the following example, we will drop the `taggedByRelationshipIndex` that we c
 DROP INDEX taggedByRelationshipIndex
 ----
 
-.Result
-[queryresult]
-----
-Removed 1 index.
-----
 
-======
 
+[[indexes-fulltext-search-manage]]
+== List of procedures
+
+Full-text indexes are managed through commands and used through built-in procedures, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures[Operations Manual -> Procedures] for a complete reference.
+
+The procedures for full-text indexes are listed in the table below:
+
+[options="header"]
+|===
+| Usage | Procedure/Command | Description
+
+| List available analyzers.
+| https://neo4j.com/docs/operations-manual/current/reference/procedures/#procedure_db_index_fulltext_listavailableanalyzers[`db.index.fulltext.listAvailableAnalyzers`]
+| List the available analyzers that the full-text indexes can be configured with.
+
+| Use full-text node index.
+| https://neo4j.com/docs/operations-manual/current/reference/procedures/#procedure_db_index_fulltext_querynodes[`db.index.fulltext.queryNodes`]
+| Query the given full-text index. Returns the matching nodes and their Lucene query score, ordered by score.
+
+| Use full-text relationship index.
+| https://neo4j.com/docs/operations-manual/current/reference/procedures/#procedure_db_index_fulltext_queryrelationships[`db.index.fulltext.queryRelationships`]
+| Query the given full-text index. Returns the matching relationships and their Lucene query score, ordered by score.
+
+| Eventually consistent indexes.
+| https://neo4j.com/docs/operations-manual/current/reference/procedures/#procedure_db_index_fulltext_awaiteventuallyconsistentindexrefresh[`db.index.fulltext.awaitEventuallyConsistentIndexRefresh`]
+| Wait for the updates from recently committed transactions to be applied to any eventually-consistent full-text indexes.
+
+
+|===
+
+
+== Rules
+
+The following is true for full-text indexes:
+
+* Full-text indexes support the indexing of both nodes and relationships.
+* Full-text indexes support configuring custom analyzers, including analyzers that are not included with Lucene itself.
+* Full-text indexes can be queried using the Lucene query language.
+* Full-text indexes can return the _score_ for each result from a query.
+* Full-text indexes are kept up to date automatically, as nodes and relationships are added, removed, and modified.
+* Full-text indexes will automatically populate newly created indexes with the existing data in a store.
+* Full-text indexes can be checked by the consistency checker, and they can be rebuilt if there is a problem with them.
+* Full-text indexes are a projection of the store, and can only index nodes and relationships by the contents of their properties.
+* Full-text indexes include only property values of types `STRING` or `LIST<STRING>`.
+* Full-text indexes can support any number of documents in a single index.
+* Full-text indexes are created, dropped, and updated transactionally, and are automatically replicated throughout a cluster.
+* Full-text indexes can be accessed via Cypher procedures.
+* Full-text indexes can be configured to be _eventually consistent_, in which index updating is moved from the commit path to a background thread.
+Using this feature, it is possible to work around the slow Lucene writes from the performance critical commit process, thus removing the main bottlenecks for Neo4j write performance.
