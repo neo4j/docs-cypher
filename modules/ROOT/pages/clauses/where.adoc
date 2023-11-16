@@ -479,36 +479,29 @@ The `name` and `age` for `Andy` are returned because his name starts with 'AND' 
 2+|Rows: 1
 |===
 
-
 [[query-where-patterns]]
-== Using path patterns in `WHERE`
+== Path pattern expressions
+
+[[path-pattern-expressions]]
+=== About path pattern expressions
+
+Path pattern expressions can be used to assert whether a specified path exists at least once in a graph. Path pattern expressions are similar to xref::subqueries/existential.adoc[existential subqueries].
+On one hand, xref::subqueries/existential.adoc[existential subqueries] are the more powerful feature and can do anything path pattern expressions can, while on the other hand path pattern expressions are more concise.
+
+Path pattern expressions come with several restrictions which are highlighted below.
+Use cases which require more permissive functionality should consider using xref::subqueries/existential.adoc[existential subqueries] instead.
+
+Path pattern expressions may only use a subset of xref::patterns/reference.adoc#graph-patterns[graph patterns] semantics.
+A path pattern expressions must be a xref::patterns/reference.adoc#path-patterns[path pattern] of length greater than zero.
+In other words, it must contain at least one xref::patterns/reference.adoc#relationship-patterns[relationship] or xref::patterns/reference.adoc#variable-length-relationships[variable-length relationship].
+
+Path pattern expressions may not declare new variables.
+They can only reference existing variables.
+
+Path pattern expressions may only be used in positions where a xref:queries/expressions.adoc#boolean[boolean expression] is expected.
+The following sections will demonstrate how to use path pattern expressions in a `WHERE` clause.
 
 [[filter-on-patterns]]
-=== Filter on patterns
-
-xref:patterns/concepts.adoc#path-patterns[Path patterns] may be used both in a `MATCH` clause and in a `WHERE` clause.
-When used in a `WHERE` clause they are called path pattern expressions.
-
-Path patterns used in a `MATCH` clause should be thought of as retrieving data.
-Path pattern expressions used in a `WHERE` clause should be thought of as filtering data.
-
-For example, the clause `MATCH (a)-[]->(b)` is very different from `WHERE (a)-[]->(b)`.
-The first will produce a record for every path it can find between `a` and `b`.
-The latter will filter records where `a` and `b` do not have a directed relationship between them.
-
-There are several limitations to what path patterns used in a `MATCH` clause can do in contrast to path pattern expressions used in a `WHERE` clause.
-
-- Path patterns in a `MATCH` clause can introduce new variables.
-The same is not true for path pattern expressions in a `WHERE` clause.
-
-- All  xref::patterns/reference.adoc[pattern] semantics apply to path patterns in a `MATCH` clause.
-Path pattern expressions in a `WHERE` clause can only use
-xref::patterns/reference.adoc#relationship-patterns[relationship] and
-xref::patterns/reference.adoc#variable-length-relationships[variable-length relationship] semantics.
-
-- Multiple path patterns in a `MATCH` clause can be separated by commas.
-Multiple path pattern expressions in a `WHERE` clause can only be separated by xref::syntax/operators.adoc#query-operators-boolean[Boolean operators] such as `AND` and `OR`.
-
 === Filter on patterns
 
 .Query
@@ -517,7 +510,7 @@ Multiple path pattern expressions in a `WHERE` clause can only be separated by x
 MATCH
   (timothy:Person {name: 'Timothy'}),
   (other:Person)
-WHERE other.name IN ['Andy', 'Peter'] AND (other)-->(timothy)
+WHERE (other)-->(timothy)
 RETURN other.name, other.age
 ----
 
@@ -541,10 +534,10 @@ The `NOT` operator can be used to exclude a pattern:
 [source, cypher]
 ----
 MATCH
-  (person:Person),
-  (peter:Person {name: 'Peter'})
-WHERE NOT (person)-->(peter)
-RETURN person.name, person.age
+  (peter:Person {name: 'Peter'}),
+  (other:Person)
+WHERE NOT (other)-->(peter)
+RETURN other.name, other.age
 ----
 
 The `name` and `age` values for nodes that do not have an outgoing relationship to `Peter` are returned:
@@ -552,7 +545,7 @@ The `name` and `age` values for nodes that do not have an outgoing relationship 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| person.name | person.age
+| other.name | other.age
 | "Timothy" | 25
 | "Peter" | 35
 2+|Rows: 2
@@ -567,9 +560,9 @@ Properties can also be added to patterns:
 .Query
 [source, cypher]
 ----
-MATCH (n:Person)
-WHERE (n)-[:KNOWS]-({name: 'Timothy'})
-RETURN n.name, n.age
+MATCH (other:Person)
+WHERE (other)-[:KNOWS]-({name: 'Timothy'})
+RETURN other.name, other.age
 ----
 
 The `name` and `age` values are returned for nodes that have a relationship with the type `KNOWS` connected to `Timothy`:
@@ -577,38 +570,10 @@ The `name` and `age` values are returned for nodes that have a relationship with
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| n.name | n.age
+| other.name | other.age
 | "Andy" | 36
 2+|Rows: 1
 |===
-
-
-[[filter-on-relationship-type]]
-=== Filter on relationship type
-
-You can put the exact relationship type in the `MATCH` pattern,
-It also possible to do more advanced filtering on the relationship type by using the special property `type` to compare the type with something else.
-In this example, the query does a regular expression comparison with the name of the relationship type:
-
-.Query
-[source, cypher]
-----
-MATCH (n:Person)-[r]->()
-WHERE n.name='Andy' AND type(r) =~ 'K.*'
-RETURN type(r), r.since
-----
-
-This returns all relationships having a type whose name starts with 'K':
-
-.Result
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| type(r) | r.since
-| "KNOWS" | 1999
-| "KNOWS" | 2012
-2+|Rows: 2
-|===
-
 
 [[query-where-lists]]
 == Lists
