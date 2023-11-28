@@ -172,7 +172,6 @@ For more information, see xref::planning-and-tuning/query-tuning/indexes.adoc#ex
 == TEXT indexes
 
 In combination with node label and relationship type predicates, `TEXT` indexes only solve predicates operating on strings.
-That means that `TEXT` indexes are only used when it is known that the predicate evaluates to `false` or `null` for all non-string values.
 
 Predicates that only operate on strings are always solvable by a `TEXT` index:
 
@@ -187,11 +186,7 @@ However, other predicates are only used when it is known that the property is co
 
 This means that a `TEXT` index is not able to solve e.g. `a.prop = b.prop`, unless a type constraint also exists on the property.
 
-One can add xref:values-and-types/type-predicate.adoc[type predicate expressions] such as `IS {two-colons} STRING NOT NULL` to enforce the String type and possibly the property's existence.
-Note that `null IS {two-colons} STRING` is true and that indexes do not store entities with `null` properties.
-That is why, to be able to use the index, one has to use `IS {two-colons} STRING NOT NULL`.
-
-In summary, `TEXT` indexes support the following predicates:
+`TEXT` indexes support the following predicates:
 
 [cols="2", options="header"]
 |===
@@ -233,7 +228,8 @@ CONTAINS
 ----
 
 |
-xref:values-and-types/type-predicate.adoc[String type predicates with existence check].
+xref:values-and-types/type-predicate.adoc[`STRING` type predicates with existence check].
+For more information, see xref:planning-and-tuning/query-tuning/indexes.adoc#text-index-type-predicate-expressions[TEXT indexes and type predicate expressions].
 a|
 [source,syntax,role="noheader"]
 ----
@@ -242,27 +238,40 @@ IS :: STRING NOT NULL
 
 |===
 
-[NOTE]
-====
-As of Neo4j 5.11, the above set of predicates can be extended with the use of type constraints, see xref::planning-and-tuning/query-tuning/indexes.adoc#extending-index-compatibility-with-type-constraints[Extending index compatibility with type constraints].
-====
 
-In some cases, the system cannot determine whether an expression is of type string.
+[[text-index-type-predicate-expressions]]
+=== TEXT indexes and type predicate expressions
 
-For example when the compared value is a parameter:
+`TEXT` indexes only solve predicates if it is known that the predicate evaluates to `false` or `null` for all non-`STRING` values.
+However, in Cypher, `null IS {two-colons} STRING` is `true`, and indexes do not store `null` values.
+This means that `TEXT` indexes cannot be used if any of the queried properties are `null` instead of a `STRING` value.
+
+To use `TEXT` indexes in situations where any of the queried properties may be `null` rather than a `STRING` value, add the type predicate expression `IS {two-colons} STRING NOT NULL` (or its alias, introduced in Neo4j 5.14, `IS {two-colons} STRING!`) to the query.
+This will enforce both the existence of a property and its `STRING` type, discarding any rows where the property is missing or not of type `STRING`, and thereby enable the use of `TEXT` indexes
+
+For example, the following `MATCH` clause may not be solvable with a `TEXT` index because some of the queried properties may be `null`:
+
 [source, cypher, role="noheader", role=test-skip]
 ----
 MATCH (n:Label) WHERE n.prop = $param
 ----
 
-Such queries can be modified to provide this information.
-Depending on how values that are not of type string should be treated, there are two options:
+The same clause, with `IS {two-colons} STRING NOT NULL` added, would, however, be able to access an existing `TEXT` index:
 
-* If rows in which the expression is not of type string should be discarded, then adding `WHERE <expression> IS {two-colons} STRING NOT NULL` is the right option:
-`MATCH (n:Label) WHERE $param IS {two-colons} STRING NOT NULL AND n.prop = $param` (See the documentation on xref::values-and-types/type-predicate.adoc[Type predicate expressions] for more information on these predicates)
-* If expressions which are not of type string should be converted to string, then wrapping these in `toString(<expression>)` is the right choice:
-`MATCH (n:Label) WHERE n.prop = toString($param)`
-* If it is known that the property is always of type `STRING`, then it's also possible to xref::planning-and-tuning/query-tuning/indexes.adoc#extending-index-compatibility-with-type-constraints[add a type constraint to help the planner].
+[source, cypher, role="noheader", role=test-skip]
+----
+MATCH (n:Label) WHERE $param IS :: STRING NOT NULL AND n.prop = $param
+----
+
+[NOTE]
+While type predicate expressions were introduced in Neo4j 5.9, the `IS {two-colons} STRING NOT NULL` syntax only became an index-compatible predicate in Neo4j 5.15.
+
+For more information, see the page about xref:values-and-types/type-predicate.adoc[type predicate expressions].
+
+There are two further methods which can be used to ensure that an expression is of type `STRING`:
+
+* It is possible to use the xref:functions/string.adoc#functions-tostring[`toString()`] function to convert an expression to a `STRING` values.
+* If it is known that the property is always of type `STRING`, then it is also possible to xref::planning-and-tuning/query-tuning/indexes.adoc#extending-index-compatibility-with-type-constraints[add a type constraint to help the planner].
 
 [[extending-index-compatibility-with-type-constraints]]
 == Extending index compatibility with type constraints
