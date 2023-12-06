@@ -47,8 +47,9 @@ The procedures and commands for vector indexes are listed in the following table
 | Usage | Procedure/Command | Description
 
 | Create vector index.
-| {link-procedures-reference}#procedure_db_index_vector_createNodeIndex[`db.index.vector.createNodeIndex`]
-| Create a named vector index for the specified label and property with the given vector dimensionality using the given similarity function.
+| `+CREATE VECTOR INDEX ...+`
+| Create a vector index for the specified label and property with the given vector dimensionality using the given similarity function.
+See the xref:indexes-for-search-performance.adoc#indexes-create-indexes[`CREATE INDEX`] command for more details.
 
 | Use vector index.
 | {link-procedures-reference}#procedure_db_index_vector_queryNodes[`db.index.vector.queryNodes`]
@@ -76,8 +77,8 @@ Returns the requested number of approximate nearest neighbor nodes and their sim
 [[indexes-vector-create]]
 == Create and configure vector indexes
 
-You can create vector indexes using the procedure {link-procedures-reference}#procedure_db_index_vector_createNodeIndex[`db.index.vector.createNodeIndex`].
-The name of the index must be unique so that you can reference it when xref:#indexes-vector-query[querying] or if you want to xref:indexes-vector-drop[drop] the index.
+You can create vector indexes using the `CREATE VECTOR INDEX` command.
+An index can be given a unique name when created (or get a generated one), which is used to reference the specific index when xref:#indexes-vector-query[querying] or xref:indexes-vector-drop[dropping] it.
 
 Creating a vector index requires link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/database-administration/#access-control-database-administration-index[the `CREATE INDEX` privilege].
 
@@ -87,14 +88,46 @@ The index name must be unique among both indexes and constraints.
 ====
 
 A vector index is a single-label, single-property index for nodes.
-In addition to the label and property key (both given as `STRING`), a vector index needs to be configured with both the dimensionality of the vector (`INTEGER` between `1` and `2048` _inclusive_), and the measure of similarity between two vectors (case-insensitive `STRING`).
+A vector index needs to be configured with both the dimensionality of the vector (`INTEGER` between `1` and `2048` _inclusive_), and the measure of similarity between two vectors (case-insensitive `STRING`).
 For details, see xref:#indexes-vector-similarity[].
 
-.Signature for `db.index.vector.createNodeIndex` to create a vector node index
-[source,syntax,role="noheader",indent=0]
+[NOTE]
+====
+More details about the syntax descriptions can be found link:{neo4j-docs-base-uri}/operations-manual/{page-version}/database-administration/syntax/#administration-syntax-reading[here].
+====
+
+.Syntax for creating vector indexes
+[options="header", width="100%", cols="5a, 3"]
+|===
+| Command | Description
+
+| [source, syntax, role=noplay, indent=0]
 ----
-db.index.vector.createNodeIndex(indexName :: STRING, label :: STRING, propertyKey :: STRING, vectorDimension :: INTEGER, vectorSimilarityFunction :: STRING)
+CREATE VECTOR INDEX [index_name] [IF NOT EXISTS]
+FOR (n:LabelName)
+ON (n.propertyName)
+OPTIONS "{" option: value[, ...] "}"
 ----
+| Create a vector index on nodes.
+The options map is mandatory because setting the vector dimensions and similarity function is mandatory when creating a vector index.
+
+|===
+
+It is considered best practice to give the index a name when it is created. This name is needed for both dropping and querying the index.
+If the index is not explicitly named, it will get an auto-generated name.
+
+[IMPORTANT]
+====
+The index name must be unique among all indexes and constraints.
+====
+
+The `CREATE VECTOR INDEX` command take an `OPTIONS` clause. This has two parts, the `indexProvider` and `indexConfig`.
+The provider can only have the default value, `'vector-1.0'`.
+The `indexConfig` is a `MAP` from `STRING` values to `STRING` and `INTEGER` values, and is used to set the index-specific configuration settings (the vector dimensions and similarity function).
+
+The command is optionally idempotent. This means that its default behavior is to throw an error if an attempt is made to create the same index twice.
+With `IF NOT EXISTS`, no error is thrown and nothing happens should an index with the same name, schema or both already exist.
+It may still throw an error should a constraint with the same name exist.
 
 [NOTE]
 ====
@@ -136,7 +169,12 @@ You can create a cosine vector index over the `embedding` property.
 .Query
 [source,cypher]
 ----
-CALL db.index.vector.createNodeIndex('abstract-embeddings', 'Abstract', 'embedding', 1536, 'cosine')
+CREATE VECTOR INDEX `abstract-embeddings`
+FOR (n: Abstract) ON (n.embedding)
+OPTIONS {indexConfig: {
+ `vector.dimensions`: 1536,
+ `vector.similarity_function`: 'cosine'
+}}
 ----
 
 You can see that the vector index has been created using `SHOW INDEXES`:
@@ -403,8 +441,6 @@ For example, you cannot have one xref:indexes-vector-similarity-euclidean[Euclid
 
 * Changes made within the same transaction are not visible to the index.
 
-* There is no Cypher syntax for creating a vector index.
-
 [[index-vector-issues]]
 == Known issues
 
@@ -414,6 +450,19 @@ The following table lists the known issues and the version in which they were fi
 [%header,cols="5a,d"]
 |===
 | Known issues | Fixed in
+
+| There is no Cypher syntax for creating a vector index.
+
+[TIP]
+====
+Use the procedure `db.index.vector.createNodeIndex` to create the a vector index.
+Procedure signature:
+[source,syntax,role="noheader"]
+----
+db.index.vector.createNodeIndex(indexName :: STRING, label :: STRING, propertyKey :: STRING, vectorDimension :: INTEGER, vectorSimilarityFunction :: STRING)
+----
+====
+| Neo4j 5.15
 
 | The standard index type filtering for xref:indexes-for-search-performance.adoc#indexes-list-indexes[`SHOW INDEXES`] command is missing.
 
