@@ -1,7 +1,7 @@
 :description: This page explains how to manage indexes used for search performance.
 = Managing search-performance indexes
 
-This page describes how to create, list, and delete indexes for search performance.
+This page describes how to create, list, and delete search-performance indexes.
 The following index types are included in this category:
 
 * xref:indexes/indexes-for-search-performance.adoc#create-range-index[Range indexes]
@@ -14,7 +14,7 @@ For information about how search-performance indexes are used in Cypher queries,
 [[create-indexes]]
 == +CREATE INDEX+
 
-Creating an index is done with the `+CREATE ... INDEX ...+` command.
+Creating an index is done with the `CREATE ... INDEX ...` command.
 If no index type is specified in the create command a xref:indexes/indexes-for-search-performance.adoc#create-range-index[range index] will be created.
 
 Best practice is to give the index a name when it is created.
@@ -25,19 +25,25 @@ If the index is not explicitly named, it gets an auto-generated name.
 The index name must be unique among both indexes and constraints.
 ====
 
-The `+CREATE INDEX+` command is optionally idempotent. This mean that its default behavior is to throw an error if an attempt is made to create the same index twice.
-With `IF NOT EXISTS`, no error is thrown and nothing happens should an index with the same name or same schema and index type already exist.
+The `CREATE INDEX` command is optionally idempotent.
+This mean that its default behavior is to throw an error if an attempt is made to create the same index twice.
+If `IF NOT EXISTS` is appended to the command, no error is thrown and nothing happens should an index with the same name or same schema and index type already exist.
 It may still throw an error if conflicting constraints exist, such as constraints with the same name or schema and backing index type.
+
+Index providers and configuration settings can be specified using the `OPTIONS` clause.
+However, not all indexes have available configuration settings or more than one provider.
+In those cases, nothing needs to be specified and the `OPTIONS` map should be omitted from the query.
 
 [TIP]
 Creating an index requires link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/database-administration/#access-control-database-administration-index[the `CREATE INDEX` privilege].
 
-The new index is not immediately available, but is created in the background.
+A newly created index is not immediately available but is created in the background. 
 
 [[create-range-index]]
 === Creating a range index
 
 Creating a range index can be done with the `CREATE INDEX` command.
+Note that the index name must be unique.
 
 Range indexes have only one index provider available, `range-1.0`, and no supported index configuration.
 
@@ -174,16 +180,19 @@ The index will not be created if there already exists an index with the same sch
 Creating a text index can be done with the `CREATE TEXT INDEX` command.
 Note that the index name must be unique.
 
-As of Neo4j 5.1, text indexes have two index providers available, `text-2.0` (default) and `text-1.0` (deprecated), and no supported index configuration.
+Text indexes have no supported index configuration and, as of Neo4j 5.1, they have two index providers available, `text-2.0` (default) and `text-1.0` (deprecated).
+
+[TIP]
+Text indexes only store `STRING` values and do not support multiple properties.
 
 [[text-indexes-supported-predicates]]
 [discrete]
 ==== Supported predicates
 
-In combination with node label and relationship type predicates, text indexes only solve predicates operating on `STRING` values.
-This means that text indexes are only used when it is known that the predicate evaluates to `null` for all non-string values.
+Text indexes only solve predicates operating on `STRING` values.
+That means that text indexes are only used in Cypher queries when it is known that the predicate evaluates to `null` or `false` for all non-`STRING` values.
 
-Predicates that only operate on strings are always solvable by a text index:
+The following predicates that only operate on `STRING` values are always solvable by a text index:
 
 * `STARTS WITH`
 * `ENDS WITH`
@@ -192,9 +201,9 @@ Predicates that only operate on strings are always solvable by a text index:
 However, other predicates are only used when it is known that the property is compared to a `STRING`:
 
 * `n.prop = "string"`
-* `n.prop IN ["a", "b", "c"]
+* `n.prop IN ["a", "b", "c"]`
 
-This means that a text index is not able to solve, for example, e.g. `a.prop = b.prop`, unless a type constraint also exists on the property.
+This means that a text index is not able to solve, for example, e.g. `a.prop = b.prop`, unless a xref:constraints/examples.adoc#constraints-examples-node-property-type[type constraint] also exists on the property.
 
 Text indexes support the following predicates:
 
@@ -239,10 +248,12 @@ CONTAINS
 
 |===
 
-[NOTE]
-====
-As of Neo4j 5.11, the above set of predicates can be extended with the use of type constraints, see xref::planning-and-tuning/query-tuning/indexes.adoc#extending-index-compatibility-with-type-constraints[Extending index compatibility with type constraints].
-====
+As of Neo4j 5.11, the above set of predicates can be extended with the use of type constraints.
+See xref:indexes/using-indexes.adoc#index-compatibility-type-constraints[Index compatibility and type constraints] for more information.
+
+[TIP]
+Unlike text indexes, full-text indexes can search the content of `STRING` properties.
+For more information, see the page about xref:indexes/indexes-for-full-text-search.adoc[full-text indexes].
 
 [discrete]
 [[text-indexes-examples]]
@@ -316,22 +327,20 @@ There is no supported index configuration for text indexes.
 Creating a point index can be done with the `CREATE POINT INDEX` command.
 Note that the index name must be unique.
 
-Point indexes have supported index configuration (see the last examples), but only one index provider available, `point-1.0`.
+Point indexes have supported index configuration, but only one index provider available, `point-1.0`.
 
-[NOTE]
-====
-Note that point indexes only recognize `POINT` values and do not support multiple properties.
-Nodes or relationships with the indexed node label or relationship type where the indexed property is of another value type are not included in the index.
-====
+[TIP]
+Point indexes only store `POINT` values and do not support multiple properties.
 
 [discrete]
 [[point-index-supported-predicates]]
 ==== Supported predicates
 
-In combination with node label and relationship type predicates, point indexes only solve predicates operating on `POINT` values.
-Therefore, point indexes are only used when it is known that the predicate evaluates to `null` for all non-`POINT` values.
+Point indexes only solve predicates operating on `POINT` values.
+Therefore, point indexes are only used when it is known that the predicate evaluates to `null` or `false` for all non-`POINT` values.
 
-`POINT` indexes only support point type predicates:
+
+Point indexes support the following predicates:
 
 [cols="2", options="header"]
 |===
@@ -360,11 +369,11 @@ point.distance(n.prop, center) < = distance
 
 |===
 
-[NOTE]
-====
 As of Neo4j 5.11, the above set of predicates can be extended with the use of type constraints.
-For more information, see xref::planning-and-tuning/query-tuning/indexes.adoc#extending-index-compatibility-with-type-constraints[Extending index compatibility with type constraints].
-====
+See xref:indexes/using-indexes.adoc#index-compatibility-type-constraints[Index compatibility and type constraints] for more information.
+
+[TIP]
+To learn more about the spatial data types supported by Cypher, see the page about xref:values-and-types/spatial.adoc[Spatial values].
 
 [discrete]
 [[point-indexes-examples]]
@@ -418,20 +427,18 @@ Note that the index will not be created if there already exists an index with th
 [[create-a-point-index-specifying-the-index-configuration]]
 ===== Create a point index specifying the index configuration
 
-To create a point index with a specific index configuration, the `OPTIONS` clause is used.
-
+To create a point index with a specific index configuration, the `indexConfig` settings in the `OPTIONS` clause.
 The valid configuration settings are:
 
-* `spatial.cartesian.min`
-* `spatial.cartesian.max`
-* `spatial.cartesian-3d.min`
-* `spatial.cartesian-3d.max`
-* `spatial.wgs-84.min`
-* `spatial.wgs-84.max`
-* `spatial.wgs-84-3d.min`
-* `spatial.wgs-84-3d.max`
+* `spatial.cartesian.min` (default value: [`-1000000.0`, `-1000000.0`])
+* `spatial.cartesian.max` (default value: [`1000000.0`, `1000000.0`])
+* `spatial.cartesian-3d.min` (default value: [`-1000000.0`, `-1000000.0`, `-1000000.0`])
+* `spatial.cartesian-3d.max` (default value: [`1000000.0`, `1000000.0`, `1000000.0``])
+* `spatial.wgs-84.min` (default value: [`-180.0`, `-90.0`])
+* `spatial.wgs-84.max` (default value: [`-180.0`, `-90.0`])
+* `spatial.wgs-84-3d.min` (default value: [`-180.0`, `-90.0`, `-1000000.0`])
+* `spatial.wgs-84-3d.max` (default value: [`180.0`, `90.0`, `1000000.0`])
 
-Non-specified settings have their respective default values.
 
 The following statement will create a point index specifying the `spatial.cartesian.min` and `spatial.cartesian.max` settings.
 
@@ -448,30 +455,17 @@ OPTIONS {
 }
 ----
 
-Specifying the index configuration can be combined with specifying index provider.
-Though only one valid value exists for the index provider, `point-1.0`, which is the default value.
-
+Note that the wgs-84 and 3D cartesian settings, which are not specified in this example, will be set with their respective default values.
 
 [[create-lookup-index]]
 === Creating a token lookup index
 
-Creating a token lookup index (node label or relationship type lookup index) can be done with the `CREATE LOOKUP INDEX` command.
-Note that the index name must be unique.
-
-[source, syntax, role="noheader"]
-----
-CREATE LOOKUP INDEX [index_name] [IF NOT EXISTS]
-FOR (n)
-ON EACH labels(n)
-----
-[source, syntax, role="noheader"]
-----
-CREATE LOOKUP INDEX [index_name] [IF NOT EXISTS]
-FOR ()-"["r"]"-()
-ON [EACH] type(r)
-----
+Token lookup indexes (node label lookup or relationship type lookup indexes) are created with the `CREATE LOOKUP INDEX` command. Note that the index name must be unique.
 
 Token lookup indexes have only one index provider available, `token-lookup-1.0`, and no supported index configuration.
+
+[NOTE]
+Only two token lookup indexes can exist at the same time: one for node labels and one for relationship types.
 
 [discrete]
 [[lookup-index-supported-predicates]]
@@ -490,8 +484,6 @@ Token lookup indexes are present by default and solve only node label and relati
 MATCH (n:Label)
 ----
 
-| Node label predicate.
-|
 [source, syntax, role="noheader"]
 ----
 MATCH (n)
@@ -505,8 +497,6 @@ WHERE n:Label
 MATCH ()-[r:REL]->()
 ----
 
-| Relationship type predicate.
-|
 [source, syntax, role="noheader"]
 ----
 MATCH ()-[r]->()
@@ -517,9 +507,7 @@ WHERE r:REL
 
 [WARNING]
 ====
-Token lookup indexes are the most important index type in the database because they improve the performance of the Cypher queries and the population of other indexes.
-Dropping these indexes may lead to severe performance degradation.
-Therefore, carefully consider the consequences before doing so.
+Token lookup indexes improve the performance of Cypher queries and the population of other indexes. Dropping these indexes may lead to severe performance degradation. 
 ====
 
 
@@ -609,13 +597,15 @@ CREATE INDEX example_index FOR (n:Book) ON (n.title)
 CREATE INDEX bookTitleIndex FOR (book:Book) ON (book.title)
 ----
 
-In this case the index can not be created because it already exists.
+In this case, the index can not be created because it already exists.
 
 .Error message
 [source, error]
 ----
 There already exists an index (:Book {title}).
 ----
+
+Using `IF NOT EXISTS` when creating the index would result in no error and would not create a new index.
 
 [discrete]
 [[failure-to-create-an-index-with-the-same-name-as-an-already-existing-index]]
@@ -637,13 +627,15 @@ CREATE TEXT INDEX indexOnBooks FOR (b:Label1) ON (b.prop1)
 CREATE INDEX indexOnBooks FOR (book:Book) ON (book.numberOfPages)
 ----
 
-In this case the index cannot be created because there already exists an index with the given name.
+In this case, the index cannot be created because there already exists an index with the given name.
 
 .Error message
 [source, error]
 ----
 There already exists an index called 'indexOnBooks'.
 ----
+
+Using `IF NOT EXISTS` when creating the index would result in no error and would not create a new index.
 
 [discrete]
 [[failure-to-create-an-index-when-a-constraint-already-exists]]
@@ -665,7 +657,7 @@ CREATE CONSTRAINT uniqueBookIsbn FOR (book:Book) REQUIRE (book.isbn) IS UNIQUE
 CREATE INDEX bookIsbnIndex FOR (book:Book) ON (book.isbn)
 ----
 
-In this case the index can not be created because an index-backed constraint already exists on that label and property combination.
+In this case, the index can not be created because an index-backed constraint already exists on that label and property combination.
 
 .Error message
 [source, error]
@@ -692,7 +684,7 @@ CREATE CONSTRAINT bookRecommendations FOR (book:Book) REQUIRE (book.recommend) I
 CREATE INDEX bookRecommendations FOR (book:Book) ON (book.recommendations)
 ----
 
-In this case the index can not be created because there already exists a constraint with the given name.
+In this case, the index can not be created because there already exists a constraint with the given name.
 
 .Error message
 [source, error]
@@ -705,22 +697,15 @@ There already exists a constraint called 'bookRecommendations'.
 
 Listing indexes can be done with `SHOW INDEXES`.
 
-[source, syntax, role="noheader"]
-----
-SHOW [ALL \| FULLTEXT \| LOOKUP \| POINT \| RANGE \| TEXT] INDEX[ES]
-  [YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
-  [WHERE expression]
-  [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
-----
-
 [TIP]
-Listing indexes require link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/database-administration/#access-control-database-administration-index[the `SHOW INDEX` privilege].
+Listing indexes requires link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/database-administration/#access-control-database-administration-index[the `SHOW INDEX` privilege].
 
 [discrete]
 [[listing-indexes-examples]]
 === Examples
 
 * xref:indexes/indexes-for-search-performance.adoc#listing-all-indexes[]
+* xref:indexes/indexes-for-search-performance.adoc#listing-specific-columns[]
 * xref:indexes/indexes-for-search-performance.adoc#listing-indexes-with-filtering[]
 
 
@@ -772,6 +757,48 @@ This can be used to drop the index with the xref:indexes/indexes-for-search-perf
 
 
 [discrete]
+[[listing-specific-columns]]
+==== Listing specific columns
+
+It is possible to return only specific columns of the available indexes using the `YIELD` clause:
+
+
+.Returning specific columns for all indexes
+[source, cypher, role=test-result-skip]
+----
+SHOW INDEXES
+YIELD name, type, indexProvider AS provider, options, createStatement
+RETURN name, type, provider, options.indexConfig AS config, createStatement
+----
+
+.Result
+[queryresult]
+----
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| name                              | type     | provider           | config                                                                                                                                                                                                                                                                                                                                                                                                                     | createStatement                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "composite_range_node_index_name" | "RANGE"  | "range-1.0"        | {}                                                                                                                                                                                                                                                                                                                                                                                                                         | "CREATE RANGE INDEX `composite_range_node_index_name` FOR (n:`Person`) ON (n.`age`, n.`country`)"                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| "composite_range_rel_index_name"  | "RANGE"  | "range-1.0"        | {}                                                                                                                                                                                                                                                                                                                                                                                                                         | "CREATE RANGE INDEX `composite_range_rel_index_name` FOR ()-[r:`PURCHASED`]-() ON (r.`date`, r.`amount`)"                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| "example_index"                   | "RANGE"  | "range-1.0"        | {}                                                                                                                                                                                                                                                                                                                                                                                                                         | "CREATE RANGE INDEX `example_index` FOR (n:`Book`) ON (n.`title`)"                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| "indexOnBooks"                    | "TEXT"   | "text-2.0"         | {}                                                                                                                                                                                                                                                                                                                                                                                                                         | "CREATE TEXT INDEX `indexOnBooks` FOR (n:`Label1`) ON (n.`prop1`) OPTIONS {indexConfig: {}, indexProvider: 'text-2.0'}"                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| "index_343aff4e"                  | "LOOKUP" | "token-lookup-1.0" | {}                                                                                                                                                                                                                                                                                                                                                                                                                         | "CREATE LOOKUP INDEX `index_343aff4e` FOR (n) ON EACH labels(n)"                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| "index_f7700477"                  | "LOOKUP" | "token-lookup-1.0" | {}                                                                                                                                                                                                                                                                                                                                                                                                                         | "CREATE LOOKUP INDEX `index_f7700477` FOR ()-[r]-() ON EACH type(r)"                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| "node_point_index_name"           | "POINT"  | "point-1.0"        | {`spatial.cartesian.min`: [-1000000.0, -1000000.0], `spatial.wgs-84.min`: [-180.0, -90.0], `spatial.wgs-84.max`: [180.0, 90.0], `spatial.cartesian.max`: [1000000.0, 1000000.0], `spatial.wgs-84-3d.max`: [180.0, 90.0, 1000000.0], `spatial.cartesian-3d.min`: [-1000000.0, -1000000.0, -1000000.0], `spatial.cartesian-3d.max`: [1000000.0, 1000000.0, 1000000.0], `spatial.wgs-84-3d.min`: [-180.0, -90.0, -1000000.0]} | "CREATE POINT INDEX `node_point_index_name` FOR (n:`Person`) ON (n.`sublocation`) OPTIONS {indexConfig: {`spatial.cartesian-3d.max`: [1000000.0, 1000000.0, 1000000.0],`spatial.cartesian-3d.min`: [-1000000.0, -1000000.0, -1000000.0],`spatial.cartesian.max`: [1000000.0, 1000000.0],`spatial.cartesian.min`: [-1000000.0, -1000000.0],`spatial.wgs-84-3d.max`: [180.0, 90.0, 1000000.0],`spatial.wgs-84-3d.min`: [-180.0, -90.0, -1000000.0],`spatial.wgs-84.max`: [180.0, 90.0],`spatial.wgs-84.min`: [-180.0, -90.0]}, indexProvider: 'point-1.0'}"       |
+| "node_range_index"                | "RANGE"  | "range-1.0"        | {}                                                                                                                                                                                                                                                                                                                                                                                                                         | "CREATE RANGE INDEX `node_range_index` FOR (n:`Person`) ON (n.`surname`)"                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| "node_text_index_nickname"        | "TEXT"   | "text-2.0"         | {}                                                                                                                                                                                                                                                                                                                                                                                                                         | "CREATE TEXT INDEX `node_text_index_nickname` FOR (n:`Person`) ON (n.`nickname`) OPTIONS {indexConfig: {}, indexProvider: 'text-2.0'}"                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| "point_index_with_config"         | "POINT"  | "point-1.0"        | {`spatial.cartesian.min`: [-100.0, -100.0], `spatial.wgs-84.min`: [-180.0, -90.0], `spatial.wgs-84.max`: [180.0, 90.0], `spatial.cartesian.max`: [100.0, 100.0], `spatial.wgs-84-3d.max`: [180.0, 90.0, 1000000.0], `spatial.cartesian-3d.min`: [-1000000.0, -1000000.0, -1000000.0], `spatial.cartesian-3d.max`: [1000000.0, 1000000.0, 1000000.0], `spatial.wgs-84-3d.min`: [-180.0, -90.0, -1000000.0]}                 | "CREATE POINT INDEX `point_index_with_config` FOR (n:`Label`) ON (n.`prop2`) OPTIONS {indexConfig: {`spatial.cartesian-3d.max`: [1000000.0, 1000000.0, 1000000.0],`spatial.cartesian-3d.min`: [-1000000.0, -1000000.0, -1000000.0],`spatial.cartesian.max`: [100.0, 100.0],`spatial.cartesian.min`: [-100.0, -100.0],`spatial.wgs-84-3d.max`: [180.0, 90.0, 1000000.0],`spatial.wgs-84-3d.min`: [-180.0, -90.0, -1000000.0],`spatial.wgs-84.max`: [180.0, 90.0],`spatial.wgs-84.min`: [-180.0, -90.0]}, indexProvider: 'point-1.0'}"                            |
+| "rel_point_index_name"            | "POINT"  | "point-1.0"        | {`spatial.cartesian.min`: [-1000000.0, -1000000.0], `spatial.wgs-84.min`: [-180.0, -90.0], `spatial.wgs-84.max`: [180.0, 90.0], `spatial.cartesian.max`: [1000000.0, 1000000.0], `spatial.wgs-84-3d.max`: [180.0, 90.0, 1000000.0], `spatial.cartesian-3d.min`: [-1000000.0, -1000000.0, -1000000.0], `spatial.cartesian-3d.max`: [1000000.0, 1000000.0, 1000000.0], `spatial.wgs-84-3d.min`: [-180.0, -90.0, -1000000.0]} | "CREATE POINT INDEX `rel_point_index_name` FOR ()-[r:`STREET`]-() ON (r.`intersection`) OPTIONS {indexConfig: {`spatial.cartesian-3d.max`: [1000000.0, 1000000.0, 1000000.0],`spatial.cartesian-3d.min`: [-1000000.0, -1000000.0, -1000000.0],`spatial.cartesian.max`: [1000000.0, 1000000.0],`spatial.cartesian.min`: [-1000000.0, -1000000.0],`spatial.wgs-84-3d.max`: [180.0, 90.0, 1000000.0],`spatial.wgs-84-3d.min`: [-180.0, -90.0, -1000000.0],`spatial.wgs-84.max`: [180.0, 90.0],`spatial.wgs-84.min`: [-180.0, -90.0]}, indexProvider: 'point-1.0'}" |
+| "rel_range_index_name"            | "RANGE"  | "range-1.0"        | {}                                                                                                                                                                                                                                                                                                                                                                                                                         | "CREATE RANGE INDEX `rel_range_index_name` FOR ()-[r:`KNOWS`]-() ON (r.`since`)"                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| "rel_text_index_name"             | "TEXT"   | "text-2.0"         | {}                                                                                                                                                                                                                                                                                                                                                                                                                         | "CREATE TEXT INDEX `rel_text_index_name` FOR ()-[r:`KNOWS`]-() ON (r.`interest`) OPTIONS {indexConfig: {}, indexProvider: 'text-2.0'}"                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| "text_index_with_indexprovider"   | "TEXT"   | "text-2.0"         | {}                                                                                                                                                                                                                                                                                                                                                                                                                         | "CREATE TEXT INDEX `text_index_with_indexprovider` FOR ()-[r:`TYPE`]-() ON (r.`prop1`) OPTIONS {indexConfig: {}, indexProvider: 'text-2.0'}"                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| "uniqueBookIsbn"                  | "RANGE"  | "range-1.0"        | {}                                                                                                                                                                                                                                                                                                                                                                                                                         | "CREATE CONSTRAINT `uniqueBookIsbn` FOR (n:`Book`) REQUIRE (n.`isbn`) IS UNIQUE OPTIONS {indexConfig: {}, indexProvider: 'range-1.0'}"                                                                                                                                                                                                                                                                                                                                                                                                                          |
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
+
+Note that `YIELD` is mandatory if the `RETURN` clause is used.
+
+
+[discrete]
 [[listing-indexes-with-filtering]]
 ==== Listing indexes with filtering
 
@@ -816,15 +843,9 @@ SHOW RANGE INDEXES YIELD * WHERE owningConstraint IS NULL
 
 [discrete]
 [[listing-indexes-result-columns]]
-==== Listing indexes: result columns
-For a full output, returning all available information in all columns, use:
+==== Result columns for listing indexes
 
-[source, syntax, role="noheader"]
-----
-SHOW RANGE INDEXES YIELD *
-----
-
-The below table contains further information about the columns returned by the `SHOW INDEX` command:
+The below table contains the full information about all columns returned by the `SHOW INDEXES YIELD *` command: 
 
 .List indexes output
 [options="header", cols="4,6,2"]
@@ -890,7 +911,8 @@ label:new[Introduced in 5.8]
 | `ZONED DATETIME`
 
 | `options`
-| The options passed to `CREATE` command.
+| Information retrieved from the `OPTIONS` map about the provider and configuration settings for an index.
+If neither is specified when creating the index, this column will return the default values.
 | `MAP`
 
 | `failureMessage`
@@ -928,6 +950,7 @@ Dropping an index requires link:{neo4j-docs-base-uri}/operations-manual/{page-ve
 === Examples
 
 * xref:indexes/indexes-for-search-performance.adoc#drop-an-index[]
+* xref:indexes/indexes-for-search-performance.adoc#drop-index-backing-constraint[]
 * xref:indexes/indexes-for-search-performance.adoc#drop-a-non-existing-index[]
 
 
@@ -945,6 +968,26 @@ DROP INDEX example_index
 
 If an index with that name exists it is removed, if not the command fails.
 
+[discrete]
+[[drop-index-backing-constraint]]
+==== Failure to drop an index backing a constraint
+
+It is not possible to drop indexes that back constraints.
+
+.Dropping an index backing a constraint
+[source, cypher,role=test-fail]
+----
+DROP INDEX uniqueBookIsbn
+----
+
+.Error message
+[source, error]
+----
+Unable to drop index: Index belongs to constraint: `uniqueBookIsbn`
+----
+
+Dropping the index-backed constraint will also remove the backing index.
+For more information, see xref:constraints/examples.adoc#constraints-examples-drop-constraint[Drop a constraint by name].
 
 [discrete]
 [[drop-a-non-existing-index]]
@@ -961,72 +1004,3 @@ DROP INDEX missing_index_name IF EXISTS
 ----
 
 If an index with that name exists it is removed, if not the command does nothing.
-
-[[single-vs-composite-index]]
-== Composite index limitations
-
-An index created on more than one property for any given label or relationship type is called a composite index.
-
-Like single-property range indexes, composite range indexes support all predicates:
-
-* equality check: `n.prop = value`
-* list membership check: `n.prop IN list`
-* existence check: `n.prop IS NOT NULL`
-* range search: `n.prop > value`
-* prefix search: `STARTS WITH`
-
-[NOTE]
-====
-For details about each operator, see xref::syntax/operators.adoc[Operators].
-====
-
-However, predicates might be planned as existence check and a filter.
-For most predicates, this can be avoided by following these restrictions:
-
-* If there is any `equality check` and `list membership check` predicates,
-they need to be for the first properties defined by the index.
-* There can be up to one `range search` or `prefix search` predicate.
-* There can be any number of `existence check` predicates.
-* Any predicate after a `range search`, `prefix search` or `existence check` predicate has to be an `existence check` predicate.
-
-[NOTE]
-====
-The `suffix search` (`ENDS WITH`) and `substring search` (`CONTAINS`) predicates can utilize the index as well.
-However, they are always planned as an existence check and a filter and any predicates following after will therefore also be planned as such.
-====
-
-For example, an index on nodes with `:Label(prop1,prop2,prop3,prop4,prop5,prop6)` and predicates:
-
-[source, cypher, role=test-skip]
-----
-WHERE n.prop1 = 'x' AND n.prop2 = 1 AND n.prop3 > 5 AND n.prop4 < 'e' AND n.prop5 = true AND n.prop6 IS NOT NULL
-----
-
-will be planned as:
-
-[source, cypher, role=test-skip]
-----
-WHERE n.prop1 = 'x' AND n.prop2 = 1 AND n.prop3 > 5 AND n.prop4 IS NOT NULL AND n.prop5 IS NOT NULL AND n.prop6 IS NOT NULL
-----
-
-with filters on `n.prop4 < 'e'` and `n.prop5 = true`, since `n.prop3` has a `range search` predicate.
-
-And an index on nodes with `:Label(prop1,prop2)` with predicates:
-
-[source, cypher, role=test-skip]
-----
-WHERE n.prop1 ENDS WITH 'x' AND n.prop2 = false
-----
-
-will be planned as:
-
-[source, cypher, role=test-skip]
-----
-WHERE n.prop1 IS NOT NULL AND n.prop2 IS NOT NULL
-----
-
-with filters on `n.prop1 ENDS WITH 'x'` and `n.prop2 = false`, since `n.prop1` has a `suffix search` predicate.
-
-Composite indexes require predicates on all properties indexed.
-If there are predicates on only a subset of the indexed properties, it will not be possible to use the composite index.
-To get this kind of fallback behavior, it is necessary to create additional indexes on the relevant sub-set of properties or on single properties.
