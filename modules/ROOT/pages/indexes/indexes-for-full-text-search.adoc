@@ -4,6 +4,7 @@
 A full-text index is used to index nodes and relationships by `STRING` properties.
 Unlike xref:indexes/indexes-for-search-performance.adoc#indexes-create-range-index[range] and xref:indexes/indexes-for-search-performance.adoc#indexes-create-text-index[text] indexes, which can only perform limited `STRING` matching (exact, prefix, substring, or suffix matches), full-text indexes stores individual words in any given `STRING` property.
 This means that full-text indexes can be used to match within the _content_ of a `STRING` property.
+Full-text indexes also return a score of proximity between a given query string and the `STRING` values stored in the database, thus enabling them to semantically interpret data.
 
 Full-text indexes are powered by the link:https://lucene.apache.org/[Apache Lucene] indexing and search library.
 
@@ -37,33 +38,7 @@ When creating a full-text index, you need to specify the labels/relationship typ
 [TIP]
 Creating a full-text index requires the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/database-administration/#access-control-database-administration-index[`CREATE INDEX` privilege].
 
-
-.Syntax for creating full-text indexes
-[options="header", width="100%", cols="5a, 3"]
-|===
-| Command | Description
-
-| [source, syntax]
-----
-CREATE FULLTEXT INDEX [index_name] [IF NOT EXISTS]
-FOR (n:LabelName["\|" ...])
-ON EACH "[" n.propertyName[, ...] "]"
-[OPTIONS "{" option: value[, ...] "}"]
-----
-| Create a full-text index on nodes.
-
-| [source, syntax]
-----
-CREATE FULLTEXT INDEX [index_name] [IF NOT EXISTS]
-FOR ()-"["r:TYPE_NAME["\|" ...]"]"-()
-ON EACH "[" r.propertyName[, ...] "]"
-[OPTIONS "{" option: value[, ...] "}"]
-----
-| Create a full-text index on relationships.
-
-|===
-
-This query creates a full-text index named `namesAndTeams` on each `name` and `team` property for nodes with the label `Employee` or `Manager`:
+This statement creates a full-text index named `namesAndTeams` on each `name` and `team` property for nodes with the label `Employee` or `Manager`:
 
 .Create full-text index on node label and property combination
 [source, cypher]
@@ -74,12 +49,12 @@ CREATE FULLTEXT INDEX namesAndTeams FOR (n:Employee|Manager) ON EACH [n.name, n.
 This query highlights two key differences between full-text and xref:indexes/indexes-for-search-performance.adoc[search-performance indexes]:
 
 * Full-text indexes can be applied to more than one node label.
-* Full-text indexes can be applied to more than one property, but unlike xref:indexes/indexes-for-search-performance.adoc#indexes-create-a-composite-range-index-for-nodes[composite search-performance indexes], a full-text index stores entities that have _at least_ one of the indexed labels or relationship types, and _at least_ one of the indexed properties.
+* Full-text indexes can be applied to more than one property, but unlike xref:indexes/indexes-for-search-performance.adoc#create-a-composite-range-index-for-nodes[composite search-performance indexes], a full-text index stores entities that have _at least_ one of the indexed labels or relationship types, and _at least_ one of the indexed properties.
 
 Similarly, though a relationship can have only one type, a full-text index can store multiple relationship types.
 In that case, all types matching _at least one_ of the relationship types and _at least one_ of the indexed properties will be included.
 
-This query creates a full-text index named `communications` on the `message` property for the relationship types `REVIEWED` and `EMAILED`:
+This statement creates a full-text index named `communications` on the `message` property for the relationship types `REVIEWED` and `EMAILED`:
 
 .Create full-text index on relationship type and property combination
 [source, cypher]
@@ -108,24 +83,33 @@ For more information, see the link:{neo4j-docs-base-uri}/java-reference/{page-ve
 === Configuration settings
 
 The `CREATE FULLTEXT INDEX` command takes an optional `OPTIONS` clause, where the `indexConfig` can be specified.
+The following statement creates a full-text index using a parameter for nodes with the label `Employee` or `Manager`.
+Creating and dropping indexes using parameters was introduced in Neo4j 5.16.
+
+.Parameters
+[source,javascript, indent=0]
+----
+{
+  "name": "peerReviews"
+}
+----
 
 .Create full-text index using `OPTIONS`
 [source, cypher]
 ----
-CREATE FULLTEXT INDEX peerReviews FOR (n:Employee|Manager) ON EACH [n.peerReviews] // <1>
+CREATE FULLTEXT INDEX $name FOR (n:Employee|Manager) ON EACH [n.peerReviews] //
 OPTIONS { 
   indexConfig: {
-    `fulltext.analyzer`: 'english', // <2>
-    `fulltext.eventually_consistent`: true // <3>
+    `fulltext.analyzer`: 'english', // <1>
+    `fulltext.eventually_consistent`: true // <2>
   }
 }
 ----
 
-<1>  Creates a `peerReviews` full-text index on the `peerReviews` property for nodes with the label `Employee` or `Manager`.
-<2> The `fulltext.analyzer` setting can be used to configure an index-specific analyzer.
+<1> The `fulltext.analyzer` setting can be used to configure an index-specific analyzer.
 In this case, it is set to the `english` analyzer.
 The possible values for the `fulltext.analyzer` setting can be listed with the `db.index.fulltext.listAvailableAnalyzers` procedure.
-<3>  The `fulltext.eventually_consistent` setting, if set to `true`, will put the index in an _eventually consistent_ update mode.
+<2>  The `fulltext.eventually_consistent` setting, if set to `true`, will put the index in an _eventually consistent_ update mode.
 This means that updates will be applied in a background thread "as soon as possible", instead of during a transaction commit, which is true for other indexes.
 
 For more information on how to configure full-text indexes, refer to the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/performance/index-configuration#index-configuration-fulltext[Operations Manual -> Indexes to support full-text search].
@@ -335,7 +319,7 @@ SHOW FULLTEXT INDEXES YIELD *
 +-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 
-For a full description of all return columns, see xref:indexes/indexes-for-search-performance.adoc#listing-indexes-result-columns[Search-performance indexes -- Listing indexes: result columns].
+For a full description of all return columns, see xref:indexes/indexes-for-search-performance.adoc#listing-indexes-result-columns[Search-performance indexes -> Result columns for listing indexes].
 
 
 [[drop-full-text-indexes]]
@@ -350,6 +334,8 @@ In the following example, the previously created `communications` full-text inde
 ----
 DROP INDEX communications
 ----
+
+As of Neo4j 5.16, the index name can also be given as a parameter when dropping an index:  `DROP INDEX $name`.
 
 [[full--text-index-procedures]]
 == List of full-text index procedures
