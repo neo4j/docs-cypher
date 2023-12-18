@@ -2,278 +2,276 @@
 [[indexes-syntax]]
 = Syntax
 
-This page contains the syntax for creating, modifying, and dropping the various indexes available in Neo4j.
-It also includes information about naming rules. 
+This page contains the syntax for creating, listing, and dropping the indexes available in Neo4j.
+It also contains the signatures for the procedures necessary to call in order to use full-text and vector indexes.
 
+[[create-index]]
+== CREATE INDEX
 
-== Indexes for search performance
+The general structure of the `CREATE INDEX` command is:
 
-.+Create a range index on nodes+
-[options="noheader", width="100%", cols="2, 8a"]
-|===
+[source, syntax]
+----
+CREATE [index_type] INDEX [index_name] [IF NOT EXISTS]
+FOR {node_pattern | relationship_pattern}
+ON property_or_token_lookup_pattern
+[OPTIONS “{“ option: value[, …] “}”]
+----
 
-| Syntax
-|
-[source, syntax, role="noheader"]
+The `CREATE … INDEX …` command is optionally idempotent.
+This means that its default behavior is to throw an error if an attempt is made to create an index with the same name twice.
+With `IF NOT EXISTS`, no error is thrown and nothing happens should an index with the same name or same schema and index type already exist (it may still throw an error if conflicting constraints exist, such as constraints with the same name or with the same schema and backing index).
+
+The index name must be unique among both indexes and constraints.
+A random name will be assigned if no name is explicitly given when an index is created.
+
+Index providers and configuration settings can be specified using the `OPTIONS` clause.
+However, not all indexes have available configuration settings or more than one provider.In those cases, nothing needs to be specified and the `OPTIONS` map should be omitted from the query.
+
+[TIP]
+Creating an index requires link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/database-administration/#access-control-database-administration-index[the `CREATE INDEX` privilege].
+
+[[create-range-index]]
+=== Range indexes
+
+Range indexes have only one index provider, `range-1.0`, and no supported index configuration.
+Since the index provider will be assigned by default, the `OPTIONS` map has been omitted from the syntax below.
+
+.Create a range index for a node label, either on a single property or composite
+[source,syntax]
 ----
 CREATE [RANGE] INDEX [index_name] [IF NOT EXISTS]
-FOR (n:LabelName)
+FOR (n:LabelName) 
 ON (n.propertyName_1[,
     n.propertyName_2,
     ...
     n.propertyName_n])
-[OPTIONS "{" option: value[, ...] "}"]
 ----
 
-| Description
-|
-Create a range index on nodes, either on a single property or composite.
-
-Index provider can be specified using the `OPTIONS` clause.
-There is only one available index provider for this index.
-
-|===
-
-
-.+Create a range index on relationships+
-[options="noheader", width="100%", cols="2, 8a"]
-|===
-
-| Syntax
-|
-[source, syntax, role="noheader"]
+.Create a range index for a relationship type, either on a single property or composite
+[source,syntax]
 ----
 CREATE [RANGE] INDEX [index_name] [IF NOT EXISTS]
-FOR ()-"["r:TYPE_NAME"]"-()
+FOR ()-”[“r:TYPE_NAME”]”-() 
 ON (r.propertyName_1[,
     r.propertyName_2,
     ...
     r.propertyName_n])
-[OPTIONS "{" option: value[, ...] "}"]
 ----
 
-| Description
-|
-Create a range index on relationships, either on a single property or composite.
+[[create-text-index]]
+=== Text indexes
 
-Index provider can be specified using the `OPTIONS` clause.
-There is only one available index provider for this index.
-
-|===
-
-
-.+Create a text index on nodes+
-[options="noheader", width="100%", cols="2, 8a"]
-|===
-
-| Syntax
-|
-[source, syntax, role="noheader"]
+.Create a text index for a node label on a single property
+[source,syntax]
 ----
 CREATE TEXT INDEX [index_name] [IF NOT EXISTS]
-FOR (n:LabelName)
-ON (n.propertyName)
-[OPTIONS "{" option: value[, ...] "}"]
+FOR (n:LabelName) 
+ON (n.propertyName_1)
+[OPTIONS “{“ option: value[, …] “}”]
 ----
 
-| Description
-|
-Create a text index on nodes where the property has a string value.
-
-Index provider can be specified using the `OPTIONS` clause.
-
-|===
-
-
-.+Create a text index on relationships+
-[options="noheader", width="100%", cols="2, 8a"]
-|===
-
-| Syntax
-|
-[source, syntax, role="noheader"]
+.Create a text index for a relationship type on a single property
+[source,syntax]
 ----
 CREATE TEXT INDEX [index_name] [IF NOT EXISTS]
-FOR ()-"["r:TYPE_NAME"]"-()
-ON (r.propertyName)
-[OPTIONS "{" option: value[, ...] "}"]
+FOR ()-”[“r:TYPE_NAME”]”-() 
+ON (r.propertyName_1)
+[OPTIONS “{“ option: value[, …] “}”]
 ----
 
-| Description
-|
-Create a text index on relationships where the property has a string value.
+Text indexes have no supported index configuration and, as of Neo4j 5.1, they have two index providers available, `text-2.0` (default) and `text-1.0` (deprecated).
 
-Index provider can be specified using the `OPTIONS` clause.
+[NOTE]
+It is not possible to create composite text indexes on multiple properties.
 
-|===
+[[create-point-index]]
+=== Point indexes
 
-
-.+Create a point index on nodes+
-[options="noheader", width="100%", cols="2, 8a"]
-|===
-
-| Syntax
-|
-[source, syntax, role="noheader"]
+.Create a point index for a node label on a single property
+[source, syntax]
 ----
 CREATE POINT INDEX [index_name] [IF NOT EXISTS]
-FOR (n:LabelName)
-ON (n.propertyName)
-[OPTIONS "{" option: value[, ...] "}"]
+FOR (n:LabelName) 
+ON (n.propertyName_1)
+[OPTIONS “{“ option: value[, …] “}”]
 ----
 
-| Description
-|
-Create a point index on nodes where the property has a point value.
-
-Index provider and configuration can be specified using the `OPTIONS` clause.
-There is only one available index provider for this index.
-
-|===
-
-
-.+Create a point index on relationships+
-[options="noheader", width="100%", cols="2, 8a"]
-|===
-
-| Syntax
-|
-[source, syntax, role="noheader"]
+[source, syntax]
+.Create a point index for a relationship type on a single property
 ----
 CREATE POINT INDEX [index_name] [IF NOT EXISTS]
-FOR ()-"["r:TYPE_NAME"]"-()
-ON (r.propertyName)
-[OPTIONS "{" option: value[, ...] "}"]
+FOR ()-”[“r:TYPE_NAME”]”-() 
+ON (r.propertyName_1)
+[OPTIONS “{“ option: value[, …] “}”]
 ----
 
-| Description
-|
-Create a point index on relationships where the property has a point value.
+Point indexes have only one index provider available, `point-1.0`.
+The following settings can be specified for point indexes:
 
-Index provider and configuration can be specified using the `OPTIONS` clause.
-There is only one available index provider for this index.
+* `spatial.cartesian.min`
+* `spatial.cartesian.max`
+* `spatial.cartesian-3d.min`
+* `spatial.cartesian-3d.max`
+* `spatial.wgs-84.min`
+* `spatial.wgs-84.max`
+* `spatial.wgs-84-3d.min`
+* `spatial.wgs-84-3d.max`
 
-|===
+[NOTE]
+It is not possible to create composite point indexes on multiple properties.
 
 
-.+Create a node label lookup index+
-[options="noheader", width="100%", cols="2, 8a"]
-|===
+[[create-lookup-index]]
+=== Token lookup indexes
 
-| Syntax
-|
-[source, syntax, role="noheader"]
+Token lookup indexes have only one index provider, `token-lookup-1.0`, and no supported index configuration.
+Since the index provider will be assigned by default, the `OPTIONS` map has been omitted from the syntax below.
+
+.Create a node label lookup index
+[source,syntax]
 ----
-CREATE LOOKUP INDEX [index_name] [IF NOT EXISTS]
-FOR (n)
+CREATE LOOKUP INDEX [index name] [IF NOT EXISTS]
+FOR (n) 
 ON EACH labels(n)
-[OPTIONS "{" option: value[, ...] "}"]
 ----
 
-| Description
-|
-Create a node label lookup index.
-
-Index provider can be specified using the `OPTIONS` clause.
-There is only one available index provider for this index.
-
-|===
-
-
-.+Create a relationship type lookup index+
-[options="noheader", width="100%", cols="2, 8a"]
-|===
-
-| Syntax
-|
-[source, syntax, role="noheader"]
+.Create a relationship type lookup index
+[source,syntax]
 ----
-CREATE LOOKUP INDEX [index_name] [IF NOT EXISTS]
-FOR ()-"["r"]"-()
+CREATE LOOKUP INDEX [index name] [IF NOT EXISTS]
+FOR ()-”[“r”]”-() 
 ON [EACH] type(r)
-[OPTIONS "{" option: value[, ...] "}"]
 ----
 
-| Description
-|
-Create a relationship type lookup index.
+Two token lookup indexes are present by default when creating a Neo4j database, and only one node label lookup index and one relationship type lookup index can exist at the same time.
 
-Index provider can be specified using the `OPTIONS` clause.
-There is only one available index provider for this index.
+[[create-full-text-index]]
+=== Full-text indexes
 
-|===
+.Create a full-text index for one or more node labels, either on a single property or multiple properties
+[source,syntax]
+----
+CREATE FULLTEXT INDEX [index_name] [IF NOT EXISTS]
+FOR (n:LabelName[“|” …]) 
+ON EACH “[“ n.propertyName[, ...] “]”
+[OPTIONS “{“ option: value[, …] “}”]
+----
 
+.Create a full-text index for one or more relationship types, either on a single property or multiple properties
+[source,syntax]
+----
+CREATE FULLTEXT INDEX [index_name] [IF NOT EXISTS]
+FOR ()-”[“r:TYPE_NAME[“|” ...]”]”-()
+ON EACH “[“ r.propertyName[, ...] “]”
+[OPTIONS “{“ option: value[, …] “}”]
+----
 
-.+Drop an index+
-[options="noheader", width="100%", cols="2, 8a"]
-|===
+Full-text indexes have only one index provider available, `fulltext-1.0`.
+The following settings can be specified for full-text indexes:
 
-| Syntax
-|
-[source, syntax, role="noheader"]
+* `fulltext.analyzer` - specifies what analyzer to use (the `db.index.fulltext.listAvailableAnalyzers` procedure lists what analyzers are available).
+* `fulltext.eventually_consistent` - specifies whether a full-text index is eventually consistent.
+If set to `true`, it will ensure that updates from committing transactions are applied in a background thread.
+
+[[create-vector-index]]
+=== Vector indexes
+
+.Create a vector index for a node label on a single property
+[source,syntax]
+----
+CREATE VECTOR INDEX [index_name] [IF NOT EXISTS]
+FOR (n:LabelName) 
+ON (n.propertyName)
+[OPTIONS “{“ option: value[, …] “}”]
+----
+
+Vector indexes have only one index provider available, `vector-1.0`.
+The `OPTIONS` clause is mandatory when creating a vector index, because it is necessary to configure the `vector.dimensions` and `vector.similarity_function` settings:
+
+[source,syntax]
+----
+OPTIONS {
+  indexConfig: {
+    `vector.dimensions`: $dimension,
+     `vector.similarity_function`: $similarityFunction 
+  }
+}
+----
+
+[NOTE]
+It is not possible to create composite vector indexes on multiple properties.
+
+[[list-index]]
+== SHOW INDEX
+
+[TIP]
+Listing indexes requires link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/database-administration/#access-control-database-administration-index[the `SHOW INDEX` privilege].
+
+.List indexes in the database (either all or filtered on index type)
+[source, syntax]
+----
+SHOW [ALL | FULLTEXT | LOOKUP | POINT | RANGE | TEXT | VECTOR] INDEX[ES]
+[YIELD { * | field[,...] } [ORDER BY field[,...]] [SKIP n] [LIMIT n]]
+[WHERE expression]
+[RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+----
+
+When using the `RETURN` clause, the `YIELD` clause is mandatory.
+
+[[query-semantic-indexes]]
+== Query semantic indexes
+
+Neo4j’s semantic indexes are not used automatically in Cypher queries.
+To use them, specific procedures must be called. Their signatures can be seen below.
+
+[[query-full-text-index]]
+=== Full-text indexes
+
+.Query full-text index on nodes: db.index.fulltext.queryNodes
+[source,syntax]
+----
+CALL db.index.fulltext.queryNodes(indexName :: STRING, queryString :: STRING, options = {} :: MAP)
+----
+
+.Query full-text index on relationships: db.index.fulltext.queryRelationships
+[source, syntax]
+----
+CALL db.index.fulltext.queryRelationships(indexName :: STRING, queryString :: STRING, options = {} :: MAP) 
+----
+
+The valid _key: value_ pairs for the `options` map are:
+
+* skip: <number> — skip the top N results.
+* limit: <number> — limit the number of results returned.
+* analyzer: <string> — use the specified analyzer as a search analyzer for this query.
+
+The `options` map and all of the keys are optional. 
+
+[[query-vector-index]]
+=== Vector indexes
+
+.Query vector-text index on nodes: db.index.vector.queryNodes
+[source,syntax]
+----
+CALL db.index.vector.queryNodes(indexName :: STRING, numberOfNearestNeighbours :: INTEGER, query :: LIST<FLOAT>) 
+----
+
+The `numberOfNearestNeighbours` refers to the number of nearest neighbors to return as the neighborhood.
+The `query` vector refers to the `LIST<FLOAT>` in which to search for the neighborhood.
+
+[[drop-index]]
+== DROP INDEX
+
+The `DROP INDEX` command is optionally idempotent.
+This means that its default behavior is to throw an error if an attempt is made to drop the same index twice.
+With `IF EXISTS`, no error is thrown and nothing happens should the index not exist.
+
+[TIP]
+Dropping indexes requires link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/database-administration/#access-control-database-administration-index[the `DROP INDEX` privilege].
+
+.Drop an index of any index type
+[source,syntax]
 ----
 DROP INDEX index_name [IF EXISTS]
 ----
-
-| Description
-| Drop an index of any index type.
-
-| Note
-|
-The command is optionally idempotent. This means that its default behavior is to throw an error if an attempt is made to drop the same index twice.
-With `IF EXISTS`, no error is thrown and nothing happens should the index not exist.
-
-|===
-
-
-.List indexes
-[options="noheader", width="100%", cols="2, 8a"]
-|===
-
-| Syntax
-|
-[source, syntax, role="noheader"]
-----
-SHOW [ALL \| FULLTEXT \| LOOKUP \| POINT \| RANGE \| TEXT] INDEX[ES]
-  [YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
-  [WHERE expression]
-  [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
-----
-
-| Description
-| List indexes in the database, either all or filtered on index type.
-
-| Note
-| When using the `RETURN` clause, the `YIELD` clause is mandatory and must not be omitted.
-
-|===
-
-
-== Full-text search indexes
-
-.Syntax for creating full-text indexes
-[options="header", width="100%", cols="5a, 3"]
-|===
-| Command | Description
-
-| [source, syntax, role=noplay, indent=0]
-----
-CREATE FULLTEXT INDEX [index_name] [IF NOT EXISTS]
-FOR (n:LabelName["\|" ...])
-ON EACH "[" n.propertyName[, ...] "]"
-[OPTIONS "{" option: value[, ...] "}"]
-----
-| Create a full-text index on nodes.
-
-| [source, syntax, role=noplay, indent=0]
-----
-CREATE FULLTEXT INDEX [index_name] [IF NOT EXISTS]
-FOR ()-"["r:TYPE_NAME["\|" ...]"]"-()
-ON EACH "[" r.propertyName[, ...] "]"
-[OPTIONS "{" option: value[, ...] "}"]
-----
-| Create a full-text index on relationships.
-
-|===
-
-== Vector search indexes
