@@ -1,12 +1,231 @@
-= Using search performance indexes
+:description: Information about how to use the search-performance indexes in Neo4j.
+:test-skip: true
+= Using search-performance indexes
 
-Include:
+Search-performance indexes enable quicker and more efficient pattern matching by solving a particular combination of node label/relationship type and property predicate. 
+They are used automatically by the Cypher planner in `MATCH` clauses, usually at the start of a query, to scan the graph for the most appropriate place to start the pattern-matching process.
 
-- when to index
-- over-indexing
-- when not to index
-- indexes in query plans
-- deciding what indexes to use (
-When you write a Cypher query, you do not need to specify which indexes to use. Cypher’s query planner decides which of the available indexes to use.
-)
+By examining xref:planning-and-tuning/execution-plans.adoc[query execution plans], this page will explain the scenarios in which the various search-performance indexes are used to improve the performance of Cypher queries.
+It will also provide some general heuristics for when to use indexes, and advice about how to avoid over-indexing.
+
+[[graph-example]]
+== Graph example
+
+The examples on this page center around finding routes and points of interest in Central Park, New York, based on data provided by link:https://www.openstreetmap.org/[OpenStreetMap].
+The data model contains two node labels:
+
+* `OSMNode` (Open Street Map Node) - a junction node with geospatial properties, linking together routes from specific points.
+* `PointOfInterest`  - a subcategory of `OSMNode`.
+In addition to geospatial properties, these nodes also contain information about specific points of interest, such as statues, baseball courts, etc. in Central Park.
+
+The data model also contains one relationship type: `ROUTE`, which specifies the distance in meters between the nodes in the graph.
+
+image::using_indexes_example_graph.svg[width="600",role="middle"]
+
+To recreate the graph, download and import the link:https://github.com/neo4j-graph-examples/openstreetmap/blob/main/data/openstreetmap-50.dump[5.0 dump file] to an empty Neo4j database.
+Dump files can be imported for both link:{neo4j-docs-base-uri}/aura/auradb/importing/import-database/[Aura] and link:{neo4j-docs-base-uri}/operations-manual/{page-version}/backup-restore/restore-dump/[on-prem] instances.
+
+[[token-lookup-indexes]]
+== Token lookup indexes
+
+Two token lookup indexes are present by default when creating a Neo4j database.
+They store copies of all node labels and relationship types in the database and only solve node label and relationship type predicates.
+
+The following query footnote:[The example queries on this page are prepended with `PROFILE`. This both runs the query and generates its execution plan.
+For more information, see xref:planning-and-tuning/index.adoc#profile-and-explain[Execution plans and query tuning -> Note on PROFILE and EXPLAIN].], which counts the number of `PointOfInterest` nodes that have a `baseball` `type` value, will access the token lookup node label index:
+
+.Query
+[source,cypher]
+----
+PROFILE
+MATCH (n:PointOfInterest)
+WHERE n.type = 'baseball'
+RETURN count(n) 
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="m"]
+|===
+| count(n)
+| 26
+d|Rows:1
+|===
+
+.Execution plan
+----
++-------------------+----+------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator          | Id | Details                | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-------------------+----+------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults   |  0 | `count(n)`             |              1 |    1 |       0 |              0 |                    0/0 |     0.075 | In Pipeline 1       |
+| |                 +----+------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +EagerAggregation |  1 | count(n) AS `count(n)` |              1 |    1 |       0 |             32 |                        |           |                     |
+| |                 +----+------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Filter           |  2 | n.type = $autostring_0 |              9 |   26 |     376 |                |                        |           |                     |
+| |                 +----+------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeByLabelScan  |  3 | n:PointOfInterest      |            188 |  188 |     189 |            376 |                  116/0 |     8.228 | Fused in Pipeline 0 |
++-------------------+----+------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 565, total allocated memory: 472
+----
+
+The following details are worth highlighting in the execution plan:
+
+* The xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-node-by-label-scan[NodeByLabelScan] operator accesses the node label lookup index and produces 188 rows, representing the 188 nodes with the `PointOfInterest` label in the database.
+* The query required 565 DB hits (each xref:planning-and-tuning/operators/index.adoc#operators-dbhits[DB hit] represents an instance when the query required access to the database).
+* The query completed in just over 8 milliseconds.
+
+Token lookup indexes are very important because they improve the performance of Cypher queries and the population of other indexes, and *deleting them may lead to severe performance degradation*.
+They are not, however, particularly efficient because they cannot solve any property-related predicates, and will rarely be sufficient when querying databases of a non-trivial size.
+
+For more information about the predicates supported by token lookup indexes, see xref:indexes/indexes-for-search-performance.adoc#lookup-index-supported-predicates[Managing search-performance indexes -> Token lookup indexes: supported predicates]. 
+
+[[range-indexes]]
+== Range indexes
+
+Range indexes solve most types of predicates, and they are used for efficiently retrieving data based on a range of values.
+They are particularly useful for dealing with properties that have ordered, comparable values.
+
+The following example first creates a relevant index on the type property for `PointOfInterest` nodes, and then runs the same query, counting the number of `PointOfInterest` nodes that have a `baseball` `type` value:
+
+.Create range index
+[source,cypher]
+----
+CREATE INDEX range_index_type FOR (n:PointOfInterest) ON (n.type)
+----
+
+[TIP]
+If no index type is specified when creating an index, Neo4j will default to create a range index.
+For more information about creating indexes, see xref:indexes/indexes-for-search-performance.adoc#create-indexes[Managing search-performance indexes -> CREATE INDEX].
+
+.Rerun query
+[source,cypher]
+----
+PROFILE
+MATCH (n:PointOfInterest)
+WHERE n.type = 'baseball'
+RETURN count(n) 
+----
+
+.Execution plan
+----
++-------------------+----+----------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator          | Id | Details                                                        | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-------------------+----+----------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults   |  0 | `count(n)`                                                     |              1 |    1 |       0 |              0 |                    0/0 |     0.057 | In Pipeline 1       |
+| |                 +----+----------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +EagerAggregation |  1 | count(n) AS `count(n)`                                         |              1 |    1 |       0 |             32 |                        |           |                     |
+| |                 +----+----------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeIndexSeek    |  2 | RANGE INDEX n:PointOfInterest(type) WHERE type = $autostring_0 |              5 |   26 |      27 |            376 |                    0/1 |     0.945 | Fused in Pipeline 0 |
++-------------------+----+----------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 27, total allocated memory: 472
+----
+
+Comparing this query plan with the plan generated before the creation of a relevant range index, the following has changed:
+
+* NodeByLabelScan has been replaced by xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-node-index-seek[NodeIndexSeek].
+This only produces 26 rows (representing the 26 `PointOfInterest` nodes in the database with a `type` value set to `baseball`).
+* The query now only requires 27 DB hits.
+* The query completed in less than 1 milliseconds - around 8 times faster than it took the query to complete without a range index.
+
+These points all illustrate the fundamental point that search-performance indexes can significantly improve the performance of Cypher queries.
+
+For more information about the predicates supported by range indexes, see xref:indexes/indexes-for-search-performance.adoc#range-indexes-supported-predicates[Managing search-performance indexes -> Range indexes: supported predicates].
+
+[[text-indexes]]
+== Text indexes 
+
+Text indexes are used for queries filtering on `STRING` properties and are only used if it is known that the predicate evaluates to `false` or `null` for non-`STRING` values. 
+
+If no range index exists on the queried `STRING` property, then an existing text index will be used.
+However, if there exists a range index and a text index on the queried property, then a text index will *only* be selected by the Cypher planner if the query filters on either what a `STRING` property `CONTAINS` or `ENDS WITH`.
+
+To show this behavior, it is necessary to create a text index and a range index on the same property:
+
+.Create text index
+[source,cypher]
+----
+CREATE TEXT INDEX text_index_name FOR (n:PointOfInterest) ON (n.name)
+----
+
+.Create range index
+[source,cypher]
+----
+CREATE INDEX range_index_name FOR (n:PointOfInterest) ON (n.name)
+----
+
+The following query filters all `PointOfInterest` nodes with a `name` property that `CONTAINS` `“William”`:
+
+.Query filtering on what a `STRING` property `CONTAINS`
+[source,cypher]
+----
+PROFILE
+MATCH (n:PointOfInterest)
+WHERE n.name CONTAINS “William”
+RETURN n.name AS name, n.type AS type
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*m"]
+|===
+| name | type
+| “William Shakespeare” | "statue"
+| “William Tecumseh Sherman” | "equestrian statue"
+
+2+d|Rows:2
+|===
+
+.Execution plan
+----
++------------------------+----+----------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator               | Id | Details                                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++------------------------+----+----------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults        |  0 | name, type                                                           |              1 |    2 |       0 |              0 |                        |           |                     |
+| |                      +----+----------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Projection            |  1 | cache[n.name] AS name, cache[n.type] AS type                         |              1 |    2 |       0 |                |                        |           |                     |
+| |                      +----+----------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +CacheProperties       |  2 | cache[n.type], cache[n.name]                                         |              1 |    2 |       6 |                |                        |           |                     |
+| |                      +----+----------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeIndexContainsScan |  3 | TEXT INDEX n:PointOfInterest(name) WHERE name CONTAINS $autostring_0 |              1 |    2 |       3 |            248 |                    4/0 |    53.297 | Fused in Pipeline 0 |
++------------------------+----+----------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 9, total allocated memory: 312
+----
+
+The plan shows that this query uses the text index to find all relevant nodes.
+If, however, the query is changed to use `STARTS WITH` operator instead of `CONTAINS` the query will use the range index instead:
+
+.Query filtering on what a `STRING` property `STARTS WITH`
+[source,cypher]
+----
+PROFILE
+MATCH (n:PointOfInterest)
+WHERE n.name STARTS WITH “William”
+RETURN n.name, n.type
+----
+
+.Execution plan
+----
++-----------------------+----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator              | Id | Details                                                                                 | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-----------------------+----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults       |  0 | `n.name`, `n.type`                                                                      |              1 |    2 |       0 |              0 |                        |           |                     |
+| |                     +----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Projection           |  1 | cache[n.name] AS `n.name`, n.type AS `n.type`                                           |              1 |    2 |       4 |                |                        |           |                     |
+| |                     +----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeIndexSeekByRange |  2 | RANGE INDEX n:PointOfInterest(name) WHERE name STARTS WITH $autostring_0, cache[n.name] |              1 |    2 |       3 |            248 |                    4/1 |     1.276 | Fused in Pipeline 0 |
++-----------------------+----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 7, total allocated memory: 312
+----
+
+The reason for is that range indexes store `STRING` values alphabetically.
+This means that, while they are very efficient for retrieving exact matches of a `STRING`, or for prefix matching, they are less efficient for suffix and contains searches, where they have to scan all relevant properties to filter any matches.
+Text indexes do not store `STRING` properties alphabetically, and are instead optimized for suffix and contains searches.
+
+For more information about range index ordering, see the section on xref:indexes/using-indexes.adoc#index-backed-order-by[Range index-backed ORDER BY].
+
+
+[[range-index-backed-order-by]]
+== Range index-backed ORDER BY
 
