@@ -1,0 +1,383 @@
+:description: Information about using full-text indexes in Neo4j.
+= Full-text indexes
+
+A full-text index is used to index nodes and relationships by `STRING` properties.
+Unlike xref:indexes/indexes-for-search-performance.adoc#indexes-create-range-index[range] and xref:indexes/indexes-for-search-performance.adoc#indexes-create-text-index[text] indexes, which can only perform limited `STRING` matching (exact, prefix, substring, or suffix matches), full-text indexes stores individual words in any given `STRING` property.
+This means that full-text indexes can be used to match within the _content_ of a `STRING` property.
+Full-text indexes also return a score of proximity between a given query string and the `STRING` values stored in the database, thus enabling them to semantically interpret data.
+
+Full-text indexes are powered by the link:https://lucene.apache.org/[Apache Lucene] indexing and search library.
+
+[[example-graph]]
+== Example graph
+
+The following graph is used for the examples below:
+
+image::full_text_graph.svg[width="700",role="middle"]
+
+To recreate it, run the following query against an empty Neo4j database:
+
+[source, cypher, role=test-setup]
+----
+CREATE (nilsE:Employee {name: "Nils-Erik Karlsson", position: "Engineer", team: "Kernel", peerReviews: ['Nils-Erik is difficult to work with.', 'Nils-Erik is often late for work.']}),
+(lisa:Manager {name: "Lisa Danielsson", position: "Engineering manager"}),
+(nils:Employee {name: "Nils Johansson", position: "Engineer", team: "Operations"}),
+(maya:Employee {name: "Maya Tanaka", position: "Senior Engineer", team:"Operations"}),
+(lisa)-[:REVIEWED {message: "Nils-Erik is reportedly difficult to work with."}]->(nilsE),
+(maya)-[:EMAILED {message: "I have booked a team meeting tomorrow."}]->(nils)
+----
+
+[[create-full-text-indexes]]
+== Create full-text indexes
+
+Full-text indexes are created with the `CREATE FULLTEXT INDEX` command.
+An index can be given a unique name when created, which is used to reference the index when querying or dropping it.
+If no name is given when created, a random name will be assigned to the full-text index.
+When creating a full-text index, you need to specify the labels/relationship types and property names it should apply to.
+
+[TIP]
+Creating a full-text index requires the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/database-administration/#access-control-database-administration-index[`CREATE INDEX` privilege].
+
+This statement creates a full-text index named `namesAndTeams` on each `name` and `team` property for nodes with the label `Employee` or `Manager`:
+
+.Create full-text index on node label and property combination
+[source, cypher]
+----
+CREATE FULLTEXT INDEX namesAndTeams FOR (n:Employee|Manager) ON EACH [n.name, n.team]
+----
+
+This query highlights two key differences between full-text and xref:indexes/indexes-for-search-performance.adoc[search-performance indexes]:
+
+* Full-text indexes can be applied to more than one node label.
+* Full-text indexes can be applied to more than one property, but unlike xref:indexes/indexes-for-search-performance.adoc#create-a-composite-range-index-for-nodes[composite search-performance indexes], a full-text index stores entities that have _at least_ one of the indexed labels or relationship types, and _at least_ one of the indexed properties.
+
+Similarly, though a relationship can have only one type, a full-text index can store multiple relationship types.
+In that case, all types matching _at least one_ of the relationship types and _at least one_ of the indexed properties will be included.
+
+This statement creates a full-text index named `communications` on the `message` property for the relationship types `REVIEWED` and `EMAILED`:
+
+.Create full-text index on relationship type and property combination
+[source, cypher]
+----
+CREATE FULLTEXT INDEX communications FOR ()-[r:REVIEWED|EMAILED]-() ON EACH [r.message]
+----
+
+Full-text indexes follow the same xref:indexes/index.adoc#naming-rules-and-recommendations[naming rules and best-practices] as search-performance indexes.
+
+[[tokenization-analyzers]]
+=== Tokenization and analyzers
+
+Full-text indexes store individual words in a `STRING` property.
+This is achieved by _tokenizer_, which breaks up a stream of characters into individual tokens (usually individual words).
+How a `STRING` is tokenized is determined by what _analyzer_ the full-text index is configured with.
+The default analyzer (`standard-no-stop-words`) analyzes both the indexed values and the query string.
+In some cases, however, using different analyzers for the indexed values and query string is more appropriate.
+For example, if handling `STRING` values written in Swedish, it may be beneficial to select the _swedish_ analyzer, which knows how to tokenize Swedish words, and will avoid indexing Swedish stop words.
+
+A complete list of all available analyzers is included in the result of the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_index_fulltext_listavailableanalyzers[`db.index.fulltext.listAvailableAnalyzers`] procedure.
+
+Neo4j also supports the use of custom analyzers.
+For more information, see the link:{neo4j-docs-base-uri}/java-reference/{page-version}/extending-neo4j/full-text-analyzer-provider[Java Reference Manual -> Full-text index analyzer providers].
+
+[[configuration-settings]]
+=== Configuration settings
+
+The `CREATE FULLTEXT INDEX` command takes an optional `OPTIONS` clause, where the `indexConfig` can be specified.
+The following statement creates a full-text index using a parameter for nodes with the label `Employee` or `Manager`.
+Creating and dropping indexes using parameters was introduced in Neo4j 5.16.
+
+.Parameters
+[source,javascript, indent=0]
+----
+{
+  "name": "peerReviews"
+}
+----
+
+.Create full-text index using `OPTIONS`
+[source, cypher]
+----
+CREATE FULLTEXT INDEX $name FOR (n:Employee|Manager) ON EACH [n.peerReviews] //
+OPTIONS { 
+  indexConfig: {
+    `fulltext.analyzer`: 'english', // <1>
+    `fulltext.eventually_consistent`: true // <2>
+  }
+}
+----
+
+<1> The `fulltext.analyzer` setting can be used to configure an index-specific analyzer.
+In this case, it is set to the `english` analyzer.
+The possible values for the `fulltext.analyzer` setting can be listed with the `db.index.fulltext.listAvailableAnalyzers` procedure.
+<2>  The `fulltext.eventually_consistent` setting, if set to `true`, will put the index in an _eventually consistent_ update mode.
+This means that updates will be applied in a background thread "as soon as possible", instead of during a transaction commit, which is true for other indexes.
+
+For more information on how to configure full-text indexes, refer to the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/performance/index-configuration#index-configuration-fulltext[Operations Manual -> Indexes to support full-text search].
+
+[[query-full-text-indexes]]
+== Query full-text indexes
+
+To query a full-text index, use either the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_index_fulltext_querynodes[`db.index.fulltext.queryNodes`] or the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_index_fulltext_relationships[`db.index.fulltext.queryRelationships`] procedure.
+
+[NOTE]
+====
+Unlike other xref:indexes/indexes-for-search-performance.adoc[search-performance indexes], full-text indexes are not automatically used by the xref:planning-and-tuning/execution-plans.adoc[Cypher query planner].
+To access full-text indexes, they must be explicitly called with the above-mentioned procedures.
+====
+
+This query uses the `db.index.fulltext.queryNodes` to look for `nils` in the previously created full-text index `namesAndTeams`:
+
+.Query a full-text index for a node property
+[source, cypher]
+----
+CALL db.index.fulltext.queryNodes("namesAndTeams", "nils") YIELD node, score
+RETURN node.name, score
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| node.name | score
+
+| "Nils Johansson" | 0.3300700783729553
+| "Nils-Erik Karlsson" | 0.27725890278816223
+
+2+d|Rows: 2
+
+|===
+
+[NOTE]
+Many full-text index analyzers (including Neo4j's default analyzer) normalize tokens to lower case.
+Full-text indexes are therefore case-insensitive by default when used on Neo4j.
+
+
+The `score` column represents how well the index thinks that the entry matches the given query string.
+Thus, in addition to any exact matches, full-text indexes return _approximate_ matches to a given query string.
+This is possible because both the property values that are indexed, and the queries to the index, are processed through the analyzer such that the index can find data entities which do not exactly match the provided `STRING`.
+
+The `score` results are always returned in _descending score order_, where the best matching result entry is put first.
+
+This query uses the `db.index.fulltext.queryRelationships` to query the previously created `communications` full-text index for any `message` containing "meeting":
+
+.Query a full-text index for a relationship property
+[source, cypher]
+----
+CALL db.index.fulltext.queryRelationships("communications", "meeting") YIELD relationship, score
+RETURN type(relationship), relationship.message, score
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| type(relationship) | relationship.message | score
+
+| "EMAILED" | "I have booked a team meeting tomorrow." | 0.3239005506038666
+
+3+d|Rows: 1
+
+|===
+
+To only obtain exact matches, quote the `STRING` you are searching for:
+
+.Query a full-text index for exact matches
+[source, cypher]
+----
+CALL db.index.fulltext.queryNodes("namesAndTeams", '"Nils-Erik"') YIELD node, score
+RETURN node.name, score
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| node.name | score
+| "Nils-Erik Karlsson" | 0.7588480710983276
+2+d|Rows: 1
+|===
+
+Query strings also support the use of the link:https://lucene.apache.org/core/2_9_4/queryparsersyntax.html#Boolean%20operators[Lucene boolean operators] (`AND`, `OR`, `NOT`, `+`, `-`):
+
+.Query a full-text index using logical operators
+[source, cypher]
+----
+CALL db.index.fulltext.queryNodes("namesAndTeams", 'nils AND kernel') YIELD node, score
+RETURN node.name, node.team, score
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+
+| node.name | node.team | score
+| "Nils-Erik Karlsson" | "Kernel" | 0.723090410232544
+3+d|Rows: 1
+
+|===
+
+It is possible to limit the search to specific properties, by prefixing `<propertyName>:` to the query string.
+
+.Query a full-text index for specific properties
+[source, cypher]
+----
+CALL db.index.fulltext.queryNodes("namesAndTeams", 'team:"Operations"') YIELD node, score
+RETURN node.name, node.team, score
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+
+| node.name | node.team | score
+| "Nils Johansson" | "Operations" | 0.21363800764083862
+| "Maya Tanaka"   | "Operations" | 0.21363800764083862
+3+d|Rows: 2
+
+|===
+
+A complete description of the Lucene query syntax can be found in the link:https://lucene.apache.org/core/8_2_0/queryparser/org/apache/lucene/queryparser/classic/package-summary.html#package.description[Lucene documentation].
+
+
+[[string-list-properties]]
+=== Lists of `STRING` values
+
+If the indexed property contains a list of `STRING` values, each entry is analyzed independently and all produced tokens are associated to the same property name.
+This means that when querying such an indexed node or relationship, there is a match if any of the list elements matches the query string.
+For scoring purposes, the full-text index treats it as a single-property value, and the score will represent how close the query is to matching the entire list.
+
+.Query a full-text index for content present in a list of `STRING` properties
+[source, cypher]
+----
+CALL db.index.fulltext.queryNodes('peerReviews', 'late') YIELD node, score
+RETURN node.name, node.peerReviews, score
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+
+| node.name | node.peerReviews| score
+| "Nils-Erik Karlsson" | ["Nils-Erik is difficult to work with.", "Nils-Erik is often late for work."] | 0.13076457381248474
+
+|===
+
+[[show-full-text-indexes]]
+== Show full-text indexes 
+
+To list all full-text indexes in a database, use the `SHOW FULLTEXT INDEXES` command:
+
+.Show all full-text indexes in a database
+[source, cypher, test-exclude-cols=id]
+----
+SHOW FULLTEXT INDEXES
+----
+
+.Result
+[role="queryresult"]
+----
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| id | name             | state    | populationPercent | type       | entityType     | labelsOrTypes           | properties       | indexProvider  | owningConstraint | lastRead                 | readCount |
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 4  | "communications" | "ONLINE" | 100.0             | "FULLTEXT" | "RELATIONSHIP" | ["REVIEWED", "EMAILED"] | ["message"]      | "fulltext-1.0" | NULL             | 2023-10-31T15:06:10.270Z | 2         |
+| 3  | "namesAndTeams"  | "ONLINE" | 100.0             | "FULLTEXT" | "NODE"         | ["Employee", "Manager"] | ["name", "team"] | "fulltext-1.0" | NULL             | 2023-10-31T15:07:48.874Z | 5         |
+| 6  | "peerReviews"    | "ONLINE" | 100.0             | "FULLTEXT" | "NODE"         | ["Employee", "Manager"] | ["peerReviews"]  | "fulltext-1.0" | NULL             | 2023-10-31T15:09:05.391Z | 3         |
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
+
+Similar to search-performance indexes, the `SHOW` command can be filtered for particular columns:
+
+.Show full-text indexes using filtering
+[source, cypher, test-exclude-cols=id]
+----
+SHOW FULLTEXT INDEXES WHERE name CONTAINS "Team"
+----
+
+.Result
+----
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| id | name            | state    | populationPercent | type       | entityType | labelsOrTypes           | properties       | indexProvider  | owningConstraint | lastRead | readCount |
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 5  | "namesAndTeams" | "ONLINE" | 100.0             | "FULLTEXT" | "NODE"     | ["Employee", "Manager"] | ["name", "team"] | "fulltext-1.0" | NULL             | NULL     | 0         |
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
+
+To return full index details, use the `YIELD` clause.
+For example:
+
+.Show all full-text indexes and all return columns
+[source, cypher, test-exclude-cols=id]
+----
+SHOW FULLTEXT INDEXES YIELD *
+----
+
+.Result
+----
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| id | name             | state    | populationPercent | type       | entityType     | labelsOrTypes           | properties       | indexProvider  | owningConstraint | lastRead | readCount | trackedSince             | options                                                                                                                                | failureMessage | createStatement                                                                                                                                                                                                                                 |
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 4  | "communications" | "ONLINE" | 100.0             | "FULLTEXT" | "RELATIONSHIP" | ["REVIEWED", "EMAILED"] | ["message"]      | "fulltext-1.0" | NULL             | NULL     | 0         | 2023-11-01T09:27:57.024Z | {indexConfig: {`fulltext.analyzer`: "standard-no-stop-words", `fulltext.eventually_consistent`: FALSE}, indexProvider: "fulltext-1.0"} | ""             | "CREATE FULLTEXT INDEX `communications` FOR ()-[r:`REVIEWED`|`EMAILED`]-() ON EACH [r.`message`] OPTIONS {indexConfig: {`fulltext.analyzer`: 'standard-no-stop-words',`fulltext.eventually_consistent`: false}, indexProvider: 'fulltext-1.0'}" |
+| 5  | "namesAndTeams"  | "ONLINE" | 100.0             | "FULLTEXT" | "NODE"         | ["Employee", "Manager"] | ["name", "team"] | "fulltext-1.0" | NULL             | NULL     | 0         | 2023-11-01T12:24:48.002Z | {indexConfig: {`fulltext.analyzer`: "standard-no-stop-words", `fulltext.eventually_consistent`: FALSE}, indexProvider: "fulltext-1.0"} | ""             | "CREATE FULLTEXT INDEX `namesAndTeams` FOR (n:`Employee`|`Manager`) ON EACH [n.`name`, n.`team`] OPTIONS {indexConfig: {`fulltext.analyzer`: 'standard-no-stop-words',`fulltext.eventually_consistent`: false}, indexProvider: 'fulltext-1.0'}" |
+| 6  | "peerReviews"    | "ONLINE" | 100.0             | "FULLTEXT" | "NODE"         | ["Employee", "Manager"] | ["peerReviews"]  | "fulltext-1.0" | NULL             | NULL     | 0         | 2023-11-01T12:25:41.495Z | {indexConfig: {`fulltext.analyzer`: "english", `fulltext.eventually_consistent`: TRUE}, indexProvider: "fulltext-1.0"}                 | ""             | "CREATE FULLTEXT INDEX `peerReviews` FOR (n:`Employee`|`Manager`) ON EACH [n.`peerReviews`] OPTIONS {indexConfig: {`fulltext.analyzer`: 'english',`fulltext.eventually_consistent`: true}, indexProvider: 'fulltext-1.0'}"                      |
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
+
+For a full description of all return columns, see xref:indexes/indexes-for-search-performance.adoc#listing-indexes-result-columns[Search-performance indexes -> Result columns for listing indexes].
+
+
+[[drop-full-text-indexes]]
+== Drop full-text indexes
+
+A full-text node index is dropped by using the xref:indexes/indexes-for-search-performance.adoc#drop-an-index[same command as for other indexes], `DROP INDEX`.
+
+In the following example, the previously created `communications` full-text index is deleted from the database:
+
+.Drop a full-text index
+[source, cypher]
+----
+DROP INDEX communications
+----
+
+As of Neo4j 5.16, the index name can also be given as a parameter when dropping an index:  `DROP INDEX $name`.
+
+[[full--text-index-procedures]]
+== List of full-text index procedures
+
+The procedures for full-text indexes are listed in the table below:
+
+[options="header"]
+|===
+| Usage | Procedure/Command | Description
+
+| Eventually consistent indexes.
+| https://neo4j.com/docs/operations-manual/current/reference/procedures/#procedure_db_index_fulltext_awaiteventuallyconsistentindexrefresh[`db.index.fulltext.awaitEventuallyConsistentIndexRefresh`]
+| Wait for the updates from recently committed transactions to be applied to any eventually-consistent full-text indexes.
+
+| List available analyzers.
+| https://neo4j.com/docs/operations-manual/current/reference/procedures/#procedure_db_index_fulltext_listavailableanalyzers[`db.index.fulltext.listAvailableAnalyzers`]
+| List the available analyzers that the full-text indexes can be configured with.
+
+| Use full-text node index.
+| https://neo4j.com/docs/operations-manual/current/reference/procedures/#procedure_db_index_fulltext_querynodes[`db.index.fulltext.queryNodes`]
+| Query the given full-text index. Returns the matching nodes and their Lucene query score, ordered by score.
+
+| Use full-text relationship index.
+| https://neo4j.com/docs/operations-manual/current/reference/procedures/#procedure_db_index_fulltext_queryrelationships[`db.index.fulltext.queryRelationships`]
+| Query the given full-text index. Returns the matching relationships and their Lucene query score, ordered by score.
+
+|===
+
+[[summary]]
+== Summary
+
+* Full-text indexes support the indexing of both nodes and relationships.
+* Full-text indexes include only property values of types `STRING` or `LIST<STRING>`.
+* Full-text indexes are accessed via Cypher procedures.
+* Full-text indexes return the _score_ for each result from a query.
+* Full-text indexes support configuring custom analyzers, including analyzers that are not included with Lucene itself.
+* Full-text indexes can be queried using the Lucene query language.
+* Full-text indexes are kept up to date automatically, as nodes and relationships are added, removed, and modified.
+* Full-text indexes will automatically populate newly created indexes with the existing data in a store.
+* Full-text indexes can be checked by the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/tools/neo4j-admin/consistency-checker[consistency checker], and they can be rebuilt if there is a problem with them.
+* Newly created full-text indexes get automatically populated with the existing data in the database.
+* Full-text indexes can support any number of properties in a single index.
+* Full-text indexes are created, dropped, and updated transactionally, and are automatically replicated throughout a cluster.
+* Full-text indexes can be configured to be _eventually consistent_, in which index updating is moved from the commit path to a background thread.
+Using this feature, it is possible to work around the slow Lucene writes from the performance-critical commit process, thus removing the main bottlenecks for Neo4j write performance.
