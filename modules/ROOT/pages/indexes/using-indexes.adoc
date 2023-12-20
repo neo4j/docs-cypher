@@ -137,8 +137,8 @@ For more information about the predicates supported by range indexes, see xref:i
 
 Text indexes are used for queries filtering on `STRING` properties and are only used if it is known that the predicate evaluates to `false` or `null` for non-`STRING` values. 
 
-If no range index exists on the queried `STRING` property, then an existing text index will be used.
-However, if there exists a range index and a text index on the queried property, then a text index will *only* be selected by the Cypher planner if the query filters on either what a `STRING` property `CONTAINS` or `ENDS WITH`.
+If there exists both a range and a text index on a given `STRING` property, the text index will only be used by the Cypher planner for queries filtering with the `CONTAINS` or `ENDS WITH` operators.
+In all other cases, the range index will be used. 
 
 To show this behavior, it is necessary to create a text index and a range index on the same property:
 
@@ -193,7 +193,7 @@ Total database accesses: 9, total allocated memory: 312
 ----
 
 The plan shows that this query uses the text index to find all relevant nodes.
-If, however, the query is changed to use `STARTS WITH` operator instead of `CONTAINS` the query will use the range index instead:
+If, however, the query is changed to use the `STARTS WITH` operator instead of `CONTAINS`, the query will use the range index instead:
 
 .Query filtering on what a `STRING` property `STARTS WITH`
 [source,cypher]
@@ -235,9 +235,9 @@ For more information about the predicates supported by text indexes, see xref:in
 
 The size of the indexed `STRING` properties is also relevant to the planner’s selection between range and text indexes. 
 
-Range indexes have a maximum key size limit of around 8kb.
-This means that range indexes cannot be used to index `STRING` values larger than 8kb.
-Text indexes, on the other hand, have a maximum key size limit of around `32` kb.
+Range indexes have a maximum key size limit of around 8 kb.
+This means that range indexes cannot be used to index `STRING` values larger than 8 kb.
+Text indexes, on the other hand, have a maximum key size limit of around 32 kb.
 As a result, they can be used to index `STRING` values up to that size.
 
 For information about calculating the size of indexes, see link:https://neo4j.com/developer/kb/a-method-to-calculate-index-size/[Neo4j Knowledge Base -> A method to calculate the size of an index in Neo4j].
@@ -366,7 +366,7 @@ OPTIONS {
 }
 ----
 
-Restricting the geographic area of a point index can improve the performance of spatial queries by making the index more efficient at retrieving with the indexed `POINT` values.
+Restricting the geographic area of a point index can improve the performance of spatial queries by making the index more efficient at retrieving the indexed `POINT` values.
 This is especially beneficial when dealing with complex, large geo-spatial data, and when spatial queries are a significant part of an application’s functionality.
 
 [[index-compatibility-type-constraints]]
@@ -507,7 +507,7 @@ This plan shows two important points about indexes and the ordering of results:
 * No index was used in this query.
 * As a result, the planner has to perform a `Sort` operation to order the results by the distance property (in this case, it required 540472 bytes of memory).
 
-To see how an index could impact the query plan, it is first necessary to create a range index on the name property:
+To see how an index could impact the query plan, it is first necessary to create a range index on the `distance` property:
 
 .Create range index on relationship type property
 [source,cypher]
@@ -557,9 +557,10 @@ Indexes are principally used to find the starting points of patterns.
 If a query contains one `MATCH` clause, then, as a general rule, only the index that best suits the predicates in that clause will be selected by the planner.
 If, however, a query contains two or more `MATCH` clauses, it is possible to use several indexes.
 
-To show multiple indexes used in one query, the following example will first create a new index on the `lon` (longitude) property for `PointOfInterest` nodes.  It then uses a query that finds all `PointOfInterest` nodes north of the `William Shakespeare` statue in Central Park.
+To show multiple indexes used in one query, the following example will first create a new index on the `lon` (longitude) property for `PointOfInterest` nodes.
+It then uses a query that finds all `PointOfInterest` nodes north of the `William Shakespeare` statue in Central Park.
 
-.Create range index on `lon` property
+.Create range index on the longitude property
 [source,cypher]
 ----
 CREATE INDEX range_index_lon FOR (n:PointOfInterest) ON (n.lon)
@@ -649,10 +650,11 @@ If any unused indexes are identified, it may be beneficial to delete them using 
 * Range indexes can be used to solve most predicates.
 There are only two scenarios in which this is not true:
 
-** Text indexes are used over range indexes for `CONTAINS` and `ENDS WITH` predicates on `STRING` properties, and if the queried `STRING` properties exceed 8kb.
+** Text indexes are used over range indexes for `CONTAINS` and `ENDS WITH` predicates on `STRING` properties, and if the queried `STRING` properties exceed 8 kb.
 ** Point indexes are used when queries filter on distances and bounding boxes.
 
 * Token lookup indexes are not defined in this order since they never solve the same predicates as other indexes.
+Deleting them will negatively impact query performance.
 
 * Composite indexes are only used if the query filters on all properties indexed by the composite index.
 
