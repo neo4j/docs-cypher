@@ -70,12 +70,14 @@ Total database accesses: 565, total allocated memory: 472
 
 The following details are worth highlighting in the execution plan:
 
-* The xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-node-by-label-scan[NodeByLabelScan] operator accesses the node label lookup index and produces 188 rows, representing the 188 nodes with the `PointOfInterest` label in the database.
+* The xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-node-by-label-scan[`NodeByLabelScan`] operator accesses the node label lookup index and produces 188 rows, representing the 188 nodes with the `PointOfInterest` label in the database.
 * The query required 565 DB hits (each xref:planning-and-tuning/operators/index.adoc#operators-dbhits[DB hit] represents an instance when the query required access to the database).
 * The query completed in just over 8 milliseconds.
 
 Token lookup indexes are very important because they improve the performance of Cypher queries and the population of other indexes, and *deleting them may lead to severe performance degradation*.
-They are not, however, particularly efficient because they cannot solve any property-related predicates, and will rarely be sufficient when querying databases of a non-trivial size.
+In the above example, had a node label lookup index not existed, the `NodeByLabelScan` operator would have been replaced with xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-all-nodes-scan[`AllNodesScan`], which would have had to read all 69165 nodes from the database before returning a result.
+
+While useful, token lookup indexes will rarely be sufficient for applications querying databases of a non-trivial size because they cannot solve any property-related predicates.
 
 For more information about the predicates supported by token lookup indexes, see xref:indexes/search-performance-indexes/managing-indexes.adoc#lookup-index-supported-predicates[Managing search-performance indexes -> Token lookup indexes: supported predicates]. 
 
@@ -375,7 +377,7 @@ This is especially beneficial when dealing with complex, large geo-spatial data,
 _This feature was introduced in Neo4j 5.11._
 
 For indexes that are compatible only with specific types (i.e. text and point indexes), the Cypher planner needs to be able to deduce that a predicate will evaluate to `null` for non-compatible values.
-Since type constraints guarantee that a property is always of the same type, they can be used to extend the scenarios in which text and point indexes are compatible with a predicate.
+Since xref:constraints/examples.adoc#constraints-examples-node-property-type[type constraints] guarantee that a property is always of the same type, they can be used to extend the scenarios in which text and point indexes are compatible with a predicate.
 
 For example, if the property `prop` in the below clause has been constrained to have type `STRING`, then a text index can also be planned for the `IS NOT NULL` predicate.
 
@@ -456,12 +458,135 @@ This is because the composite index solves the queried predicate simultaneously,
 [[composite-index-rules]]
 === Composite index rules
 
-Composite indexes are only used when the query contains predicates on all properties indexed by the composite index.
-If there are predicates on only a subset of the indexed properties, it will not be possible to use the composite index. 
-In other words, if the `MATCH` clause in the example query would only filter on the `name` property and not the `type` property, the query would not use the composite index.
+Like single-property range indexes, composite indexes support all predicates:
 
-Moreover, it is only possible to create composite range indexes.
-Point and text indexes only store single properties. 
+* Equality check: `n.prop = value`
+* List membership check: `n.prop IN [value, ...]`
+* Existence check: `n.prop IS NOT NULL`
+* Range search: `n.prop > value`
+* Prefix search: `n.prop STARTS WITH value`
+
+However, there are three rules concerning the use of composite indexes specifically that are useful to know: 
+
+1. Composite indexes are only used when the query filters on all properties indexed by the composite index.
+If there are predicates on a subset of the indexed properties, the composite index will not be used.
+In other words, if the `MATCH` clause in the above query would only filter on the name property and not the type property, the composite index would not have been used.
+
+2. It is only possible to create composite range indexes.
+Point and text indexes only store single properties.
+
+3. The order of the indexed properties when creating a composite index impacts how the planner will use the index.
+The following example demonstrates this by examining how composite indexes on the same properties defined in a different order will generate different execution plans.
+
+.Create a composite index on three properties
+[source,cypher]
+----
+CREATE INDEX composite_2 FOR (n:PointOfInterest) ON (n.lat, n.name, n.type)
+----
+
+Note the order in which the properties are defined when creating the index, with `lat` first, `name` second, and `type` last.
+
+.Query with a filter on the three indexed properties
+[source, cypher]
+----
+PROFILE
+MATCH (n:PointOfInterest)
+WHERE n.lat = 40.769798 AND n.name STARTS WITH “William” AND n.type IS NOT NULL
+RETURN n.name AS name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*m"]
+|===
+| name
+| "William Shakespeare"
+1+d|Rows:1
+|===
+
+.Execution plan
+----
++-----------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator        | Id | Details                                                                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-----------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults |  0 | name                                                                                                 |              0 |    0 |       0 |              0 |                        |           |                     |
+| |               +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Projection     |  1 | cache[n.name] AS name                                                                                |              0 |    0 |       0 |                |                        |           |                     |
+| |               +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeIndexSeek  |  2 | RANGE INDEX n:PointOfInterest(lat, name, type) WHERE lat = $autodouble_0 AND name STARTS WITH $autos |              0 |    0 |       1 |            248 |                    0/2 |     1.276 | Fused in Pipeline 0 |
+|                 |    | tring_1 AND type IS NOT NULL, cache[n.name]                                                          |                |      |         |                |                        |           |                     |
++-----------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 1, total allocated memory: 312
+----
+
+The execution plan shows the recently created composite index is used.
+It also shows that the predicates are filtered as specified in the query (i.e. an equality check on the `lat` property, a prefix search on the `name` property, and an existence check on the `type` property). 
+
+
+However, if the order of the properties is altered when creating the index, a different query plan will be generated.
+To demonstrate this behavior, it is first necessary to drop the recently created `composite_2` index and create a new composite index on the same properties defined in a different order:
+
+.Drop index
+[source, cypher]
+----
+DROP INDEX composite_2
+----
+
+.Create a composite index on the same properties defined in a different order
+[source, cypher]
+----
+CREATE INDEX composite_3 FOR (n:PointOfInterest) ON (n.name, n.type, n.lat)
+----
+
+Note that the order of the properties has been changed: the `name` property is now the first property defined in the composite index, and the `lat` property is indexed last.
+
+.Rerun the same query
+[source, cypher]
+----
+PROFILE
+MATCH (n:PointOfInterest)
+WHERE n.lat = 40.769798 AND n.name STARTS WITH “William” AND n.type IS NOT NULL
+RETURN n.name AS name
+----
+
+.Execution plan
+----
++-----------------+----+-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator        | Id | Details                                                                                             | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-----------------+----+-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults |  0 | name                                                                                                |              0 |    0 |       0 |              0 |                        |           |                     |
+| |               +----+-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Projection     |  1 | cache[n.name] AS name                                                                               |              0 |    0 |       0 |                |                        |           |                     |
+| |               +----+-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Filter         |  2 | cache[n.lat] = $autodouble_0                                                                        |              0 |    0 |       0 |                |                        |           |                     |
+| |               +----+-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeIndexSeek  |  3 | RANGE INDEX n:PointOfInterest(name, type, lat) WHERE name STARTS WITH $autostring_1 AND type IS NOT |              0 |    2 |       3 |            248 |                    0/2 |     0.987 | Fused in Pipeline 0 |
+|                 |    | NULL AND lat IS NOT NULL, cache[n.name], cache[n.lat]                                               |                |      |         |                |                        |           |                     |
++-----------------+----+-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 3, total allocated memory: 312
+----
+
+This plan now shows that, while a prefix search has been used to solve the `name` property predicate, the `lat` property predicate is no longer solved with an equality check, but rather with an existence check and an explicit xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-filter[filter] operation afterward. 
+
+This is because, when using composite indexes, any predicate after a prefix search will automatically be planned as an existence check predicate.
+This and the following rules apply when using composite indexes:
+
+* If a query contains an equality check or a list membership check predicates, they need to be for the first properties defined when creating the composite index.
+
+* Queries utilizing a composite index can contain up to one range search or prefix search predicate.
+
+* There can be any number of existence check predicates.
+
+* Any predicates following a prefix search or an existence check will also be planned as existence checks.
+
+* Suffix (`ENDS WITH`) and substring search (`CONTAINS`) predicates can utilize composite indexes.
+However, they are always planned as an existence check and any subsequent query predicates will accordingly also be planned as such.
+Note that if these predicates are used, and a text index also exists on any of the indexed (`STRING`) properties, the planner will use the text index instead of a composite index.
+
+These rules can be important when creating composite indexes, as some checks are more efficient than others.
+For instance, it is generally more efficient for the planner to perform an equality check on a property than an existence check.
+Depending on the queries and the application, it may, therefore, be cost-effective to consider the order in which properties are defined when creating a composite index.
 
 [[range-index-backed-order-by]]
 == Range index-backed ORDER BY
@@ -657,6 +782,7 @@ There are only two scenarios in which this is not true:
 Deleting them will negatively impact query performance.
 
 * Composite indexes are only used if the query filters on all properties indexed by the composite index.
+The order in which the properties are defined when creating a composite index impacts how the planner solves query predicates.
 
 * Queries ordering results using `ORDER BY` can leverage the pre-existing order in range indexes and thereby improve query performance.
 
