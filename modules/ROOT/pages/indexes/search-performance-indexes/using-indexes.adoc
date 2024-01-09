@@ -9,18 +9,20 @@ By examining xref:planning-and-tuning/execution-plans.adoc[query execution plans
 It will also provide some general heuristics for when to use indexes, and advice about how to avoid over-indexing.
 
 [[graph-example]]
-== Graph example
+== Example graph
 
 The examples on this page center around finding routes and points of interest in Central Park, New York, based on data provided by link:https://www.openstreetmap.org/[OpenStreetMap].
 The data model contains two node labels:
 
-* `OSMNode` (Open Street Map Node) - a junction node with geo-spatial properties, linking together routes from specific points.
+* `OSMNode` (Open Street Map Node) - a junction node with geo-spatial properties linking together routes from specific points.
 * `PointOfInterest`  - a subcategory of `OSMNode`.
 In addition to geospatial properties, these nodes also contain information about specific points of interest, such as statues, baseball courts, etc. in Central Park.
 
 The data model also contains one relationship type: `ROUTE`, which specifies the distance in meters between the nodes in the graph.
 
 image::using_indexes_example_graph.svg[width="600",role="middle"]
+
+In total, the graph contains 69165 nodes (of which 188 have the label `PointOfInterest`) and 152077 `ROUTE` relationships.
 
 To recreate the graph, download and import the link:https://github.com/neo4j-graph-examples/openstreetmap/blob/main/data/openstreetmap-50.dump[5.0 dump file] to an empty Neo4j database.
 Dump files can be imported for both link:{neo4j-docs-base-uri}/aura/auradb/importing/import-database/[Aura] and link:{neo4j-docs-base-uri}/operations-manual/{page-version}/backup-restore/restore-dump/[on-prem] instances.
@@ -32,14 +34,14 @@ Two token lookup indexes are present by default when creating a Neo4j database.
 They store copies of all node labels and relationship types in the database and only solve node label and relationship type predicates.
 
 The following query footnote:[The example queries on this page are prepended with `PROFILE`. This both runs the query and generates its execution plan.
-For more information, see xref:planning-and-tuning/index.adoc#profile-and-explain[Execution plans and query tuning -> Note on PROFILE and EXPLAIN].], which counts the number of `PointOfInterest` nodes that have a `baseball` `type` value, will access the token lookup node label index:
+For more information, see xref:planning-and-tuning/index.adoc#profile-and-explain[Execution plans and query tuning -> Note on PROFILE and EXPLAIN].], which counts the number of `PointOfInterest` nodes that have a `baseball` `type` value, will access the  node label lookup index:
 
 .Query
 [source,cypher]
 ----
 PROFILE
 MATCH (n:PointOfInterest)
-WHERE n.type = "baseball"
+WHERE n.type = 'baseball'
 RETURN count(n) 
 ----
 
@@ -74,7 +76,7 @@ The following details are worth highlighting in the execution plan:
 * The query required 565 DB hits (each xref:planning-and-tuning/operators/index.adoc#operators-dbhits[DB hit] represents an instance when the query required access to the database).
 * The query completed in just over 8 milliseconds.
 
-Token lookup indexes are very important because they improve the performance of Cypher queries and the population of other indexes, and *deleting them may lead to severe performance degradation*.
+Token lookup indexes are very important because they improve the performance of Cypher queries and the population of other indexes, and *deleting them will lead to severe performance degradation*.
 In the above example, had a node label lookup index not existed, the `NodeByLabelScan` operator would have been replaced with xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-all-nodes-scan[`AllNodesScan`], which would have had to read all 69165 nodes from the database before returning a result.
 
 While useful, token lookup indexes will rarely be sufficient for applications querying databases of a non-trivial size because they cannot solve any property-related predicates.
@@ -87,7 +89,7 @@ For more information about the predicates supported by token lookup indexes, see
 Range indexes solve most types of predicates, and they are used for efficiently retrieving data based on a range of values.
 They are particularly useful for dealing with properties that have ordered, comparable values.
 
-The following example first creates a relevant index on the type property for `PointOfInterest` nodes, and then runs the same query, counting the number of `PointOfInterest` nodes that have a `baseball` `type` value:
+The following example first creates a relevant index on the type property for `PointOfInterest` nodes, and then runs the above query again, counting the number of `PointOfInterest` nodes that have a `baseball` `type` value:
 
 .Create range index
 [source,cypher]
@@ -104,7 +106,7 @@ For more information about creating indexes, see xref:indexes/search-performance
 ----
 PROFILE
 MATCH (n:PointOfInterest)
-WHERE n.type = "baseball"
+WHERE n.type = 'baseball'
 RETURN count(n) 
 ----
 
@@ -128,7 +130,7 @@ Comparing this query plan with the plan generated before the creation of a relev
 * NodeByLabelScan has been replaced by xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-node-index-seek[NodeIndexSeek].
 This only produces 26 rows (representing the 26 `PointOfInterest` nodes in the database with a `type` value set to `baseball`).
 * The query now only requires 27 DB hits.
-* The query completed in less than 1 milliseconds - around 8 times faster than it took the query to complete without a range index.
+* The query completed in less than 1 milliseconds - almost 8 times faster than it took the query to complete without a range index.
 
 These points all illustrate the fundamental point that search-performance indexes can significantly improve the performance of Cypher queries.
 
@@ -137,7 +139,7 @@ For more information about the predicates supported by range indexes, see xref:i
 [[text-indexes]]
 == Text indexes 
 
-Text indexes are used for queries filtering on `STRING` properties and are only used if it is known that the predicate evaluates to `false` or `null` for non-`STRING` values. 
+Text indexes are used for queries filtering on `STRING` properties.
 
 If there exists both a range and a text index on a given `STRING` property, the text index will only be used by the Cypher planner for queries filtering with the `CONTAINS` or `ENDS WITH` operators.
 In all other cases, the range index will be used. 
@@ -156,14 +158,14 @@ CREATE TEXT INDEX text_index_name FOR (n:PointOfInterest) ON (n.name)
 CREATE INDEX range_index_name FOR (n:PointOfInterest) ON (n.name)
 ----
 
-The following query filters all `PointOfInterest` nodes with a `name` property that `CONTAINS` `“William”`:
+The following query filters all `PointOfInterest` nodes with a `name` property that `CONTAINS` `'William'`:
 
 .Query filtering on what a `STRING` property `CONTAINS`
 [source,cypher]
 ----
 PROFILE
 MATCH (n:PointOfInterest)
-WHERE n.name CONTAINS "William"
+WHERE n.name CONTAINS 'William'
 RETURN n.name AS name, n.type AS type
 ----
 
@@ -171,8 +173,8 @@ RETURN n.name AS name, n.type AS type
 [role="queryresult",options="header,footer",cols="2*m"]
 |===
 | name | type
-| “William Shakespeare” | "statue"
-| “William Tecumseh Sherman” | "equestrian statue"
+| "William Shakespeare" | "statue"
+| "William Tecumseh Sherman" | "equestrian statue"
 
 2+d|Rows:2
 |===
@@ -194,7 +196,7 @@ RETURN n.name AS name, n.type AS type
 Total database accesses: 9, total allocated memory: 312
 ----
 
-The plan shows that this query uses the text index to find all relevant nodes.
+The plan shows that the query uses the text index to find all relevant nodes.
 If, however, the query is changed to use the `STARTS WITH` operator instead of `CONTAINS`, the query will use the range index instead:
 
 .Query filtering on what a `STRING` property `STARTS WITH`
@@ -202,7 +204,7 @@ If, however, the query is changed to use the `STARTS WITH` operator instead of `
 ----
 PROFILE
 MATCH (n:PointOfInterest)
-WHERE n.name STARTS WITH "William"
+WHERE n.name STARTS WITH 'William'
 RETURN n.name, n.type
 ----
 
@@ -224,13 +226,17 @@ Total database accesses: 7, total allocated memory: 312
 The reason for is that range indexes store `STRING` values alphabetically.
 This means that, while they are very efficient for retrieving exact matches of a `STRING`, or for prefix matching, they are less efficient for suffix and contains searches, where they have to scan all relevant properties to filter any matches.
 Text indexes do not store `STRING` properties alphabetically, and are instead optimized for suffix and contains searches.
+That said, if no range index had been present on the name property, the previous query would still have been able to utilize the text index.
+It would have done so less efficiently than a range index, but it still would have been useful.
 
-For more information about range index ordering, see the section on xref:indexes/search-performance-indexes/using-indexes.adoc#index-backed-order-by[Range index-backed ORDER BY].
+
+For more information about range index ordering, see the section on xref:indexes/search-performance-indexes/using-indexes.adoc#range-index-backed-order-by[Range index-backed ORDER BY].
 
 [TIP]
-Text indexes are only used for exact query matches. To search the content of `STRING` properties, use xref:indexes/semantic-indexes/full-text-indexes.adoc[full-text indexes] instead.
+Text indexes are only used for exact query matches. To perform approximate matches (including, for example, variations and typos), and to compute a similarity score between `STRING` values, use semantic xref:indexes/semantic-indexes/full-text-indexes.adoc[full-text indexes] instead.
 
 For more information about the predicates supported by text indexes, see xref:indexes/search-performance-indexes/managing-indexes.adoc#text-indexes-supported-predicates[Managing search-performance indexes -> Text indexes: supported predicates].
+
 
 [[text-index-string-size]]
 === Text indexes and STRING sizes
@@ -244,44 +250,10 @@ As a result, they can be used to index `STRING` values up to that size.
 
 For information about calculating the size of indexes, see link:https://neo4j.com/developer/kb/a-method-to-calculate-index-size/[Neo4j Knowledge Base -> A method to calculate the size of an index in Neo4j].
 
-[[text-indexes-type-predicate-expressions]]
-=== Text indexes and type predicate expressions
-
-Text indexes only solve predicates if it is known that the predicate evaluates to false or null for non-`STRING` values.
-However, in Cypher, `null` `IS {two-colons} STRING` is `true`, and indexes do not store `null` values.
-This means that text indexes cannot be used if any of the queried properties are null instead of a `STRING` value.
-
-To use text indexes in situations where any of the queried properties may be `null` rather than a `STRING` value, add the type predicate expression `IS {two-colons} STRING NOT NULL` (or its alias, introduced in Neo4j 5.14, `IS {two-colons} STRING!`) to the query.
-This will enforce both the existence of a property and its `STRING` type, discarding any rows where the property is missing or not of type `STRING`, and thereby enable the use of text indexes.
-
-For example, the following `MATCH` clause may not be solvable with a text index because some of the queried properties may be `null`:
-
-[source,syntax]
-----
-MATCH (n:Label) WHERE n.prop = $param
-----
-
-The same clause, with `IS {two-colons} STRING NOT NULL` added, would, however, be solvable with an existing text index:
-
-[source,syntax]
-----
-MATCH (n:Label) WHERE n.prop IS :: STRING NOT NULL AND n.prop = $param
-----
-
-[NOTE]
-While type predicate expressions were introduced in Neo4j 5.9, the `IS {two-colons} STRING NOT NULL` syntax only became an index-compatible predicate in Neo4j 5.15.
-For more information, see the page about xref:values-and-types/type-predicate.adoc[type predicate expressions].
-
-Two further methods can be used to ensure that an expression is of type `STRING`:
-
-* The xref:functions/string.adoc#functions-tostring[toString()] function can be used to convert an expression to `STRING` values.
-
-* If it is known that the property is always of type `STRING`, then a xref:constraints/examples.adoc#constraints-examples-node-property-type[type constraint] can be created to help the planner.
-
 [[point-indexes]]
 == Point indexes 
 
-Point indexes solve predicates operating on spatial xref:values-and-types/spatial.adoc#spatial-values-point-type[`POINT`] values, and are only used when it is known that the predicate evaluates to `null` or `false` for all non-`POINT` values.
+Point indexes solve predicates operating on spatial xref:values-and-types/spatial.adoc#spatial-values-point-type[`POINT`] values.
 Point indexes are optimized for queries filtering for the xref:functions/spatial.adoc#functions-distance[distance] between property values, or for property values within a xref:functions/spatial.adoc#functions-withinBBox[bounding box].
 
 The following example creates a point index which is then accessed by a query that uses the `point.distance()` function to return the `name` and `type` of all `PointOfInterest` nodes within 100 meters of the  `William Shakespeare` statue:
@@ -296,7 +268,7 @@ CREATE POINT INDEX point_index_location FOR (n:PointOfInterest) ON (n.location)
 [source,cypher]
 ----
 PROFILE
-MATCH (p1:PointOfInterest {name:"William Shakespeare"}),(p2:PointOfInterest)
+MATCH (p1:PointOfInterest {name:'William Shakespeare'}),(p2:PointOfInterest)
 WHERE p1<>p2 AND point.distance(p1.location, p2.location) < 100
 RETURN p2.name AS name, p2.type AS type
 ----
@@ -305,10 +277,10 @@ RETURN p2.name AS name, p2.type AS type
 [role="queryresult",options="header,footer",cols="2*m"]
 |===
 | name | type
-| “Walter Scott” | "statue"
-| “Robert Burns” | "statue"
-| “Christopher Columbus” | "statue"
-| “Fitz-Greene Halleck” | "statue"
+| "Walter Scott" | "statue"
+| "Robert Burns" | "statue"
+| "Christopher Columbus" | "statue"
+| "Fitz-Greene Halleck" | "statue"
 
 2+d|Rows:4
 |===
@@ -371,23 +343,6 @@ OPTIONS {
 Restricting the geographic area of a point index can improve the performance of spatial queries by making the index more efficient at retrieving the indexed `POINT` values.
 This is especially beneficial when dealing with complex, large geo-spatial data, and when spatial queries are a significant part of an application’s functionality.
 
-[[index-compatibility-type-constraints]]
-== Index compatibility and type constraints
-
-_This feature was introduced in Neo4j 5.11._
-
-For indexes that are compatible only with specific types (i.e. text and point indexes), the Cypher planner needs to be able to deduce that a predicate will evaluate to `null` for non-compatible values.
-Since xref:constraints/examples.adoc#constraints-examples-node-property-type[type constraints] guarantee that a property is always of the same type, they can be used to extend the scenarios in which text and point indexes are compatible with a predicate.
-
-For example, if the property `prop` in the below clause has been constrained to have type `STRING`, then a text index can also be planned for the `IS NOT NULL` predicate.
-
-[source,syntax]
-----
-MATCH (n: Label) WHERE n.prop IS NOT NULL
-----
-
-Similarly, if the property had been constrained to have the type `POINT`, then a point index could have been used.
-
 [[composite-indexes]]
 == Composite indexes
 
@@ -405,9 +360,9 @@ CREATE INDEX composite_index FOR (n:PointOfInterest) ON (n.name, n.type)
 .Query with a filter on both properties indexed by the composite index
 [source,cypher]
 ----
-MATCH (tennisPitch: PointOfInterest {name: "tennis", type: "pitch"})
+MATCH (tennisPitch: PointOfInterest {name: 'tennis', type: 'pitch'})
 WITH tennisPitch
-MATCH path = shortestPath((tennisPitch)-[:ROUTE*]-(:PointOfInterest {name: "Zoo School"}))
+MATCH path = shortestPath((tennisPitch)-[:ROUTE*]-(:PointOfInterest {name: 'Zoo School'}))
 WITH path, relationships(path) AS relationships
 ORDER BY length(path) ASC
 LIMIT 1
@@ -455,8 +410,8 @@ Total database accesses: 181501, total allocated memory: 116040
 The query plan shows the composite index being used, and not the previously created xref:indexes/search-performance-indexes/using-indexes.adoc#range-indexes[range index] on the `type` property.
 This is because the composite index solves the queried predicate simultaneously, while the single propertied index would only be able to solve part of the predicate.
 
-[[composite-index-rules]]
-=== Composite index rules
+[[composite-indexes-property-order]]
+=== Property order and query planning
 
 Like single-property range indexes, composite indexes support all predicates:
 
@@ -466,17 +421,10 @@ Like single-property range indexes, composite indexes support all predicates:
 * Range search: `n.prop > value`
 * Prefix search: `n.prop STARTS WITH value`
 
-However, there are three rules concerning the use of composite indexes specifically that are useful to know: 
+However, the order in which properties are defined when creating a composite index impacts how the planner will use the index to solve predicates.
+For example, a composite index on `(n.prop1, n.prop2, n.prop3)` will generate a different query plan than a composite index created on `(n.prop3, n.prop2, n.prop1)`. 
 
-1. Composite indexes are only used when the query filters on all properties indexed by the composite index.
-If there are predicates on a subset of the indexed properties, the composite index will not be used.
-In other words, if the `MATCH` clause in the above query would only filter on the name property and not the type property, the composite index would not have been used.
-
-2. It is only possible to create composite range indexes.
-Point and text indexes only store single properties.
-
-3. The order of the indexed properties when creating a composite index impacts how the planner will use the index.
-The following example demonstrates this by examining how composite indexes on the same properties defined in a different order will generate different execution plans.
+The following example shows how composite indexes on the same properties defined in a different order will generate different execution plans:
 
 .Create a composite index on three properties
 [source,cypher]
@@ -491,7 +439,7 @@ Note the order in which the properties are defined when creating the index, with
 ----
 PROFILE
 MATCH (n:PointOfInterest)
-WHERE n.lat = 40.769798 AND n.name STARTS WITH “William” AND n.type IS NOT NULL
+WHERE n.lat = 40.769798 AND n.name STARTS WITH 'William' AND n.type IS NOT NULL
 RETURN n.name AS name
 ----
 
@@ -519,33 +467,32 @@ RETURN n.name AS name
 Total database accesses: 1, total allocated memory: 312
 ----
 
-The execution plan shows the recently created composite index is used.
+The plan shows the recently created composite index is used.
 It also shows that the predicates are filtered as specified in the query (i.e. an equality check on the `lat` property, a prefix search on the `name` property, and an existence check on the `type` property). 
-
 
 However, if the order of the properties is altered when creating the index, a different query plan will be generated.
 To demonstrate this behavior, it is first necessary to drop the recently created `composite_2` index and create a new composite index on the same properties defined in a different order:
 
 .Drop index
-[source, cypher]
+[source,cypher]
 ----
 DROP INDEX composite_2
 ----
 
-.Create a composite index on the same properties defined in a different order
-[source, cypher]
+.Create a composite index on same three properties defined in a different order
+[source,cypher]
 ----
 CREATE INDEX composite_3 FOR (n:PointOfInterest) ON (n.name, n.type, n.lat)
 ----
 
-Note that the order of the properties has been changed: the `name` property is now the first property defined in the composite index, and the `lat` property is indexed last.
+Note that the order of the properties has changed: the `name` property is now the first property defined in the composite index, and the `lat` property is indexed last.
 
 .Rerun the same query
 [source, cypher]
 ----
 PROFILE
 MATCH (n:PointOfInterest)
-WHERE n.lat = 40.769798 AND n.name STARTS WITH “William” AND n.type IS NOT NULL
+WHERE n.lat = 40.769798 AND n.name STARTS WITH 'William' AND n.type IS NOT NULL
 RETURN n.name AS name
 ----
 
@@ -560,17 +507,23 @@ RETURN n.name AS name
 | |               +----+-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
 | +Filter         |  2 | cache[n.lat] = $autodouble_0                                                                        |              0 |    0 |       0 |                |                        |           |                     |
 | |               +----+-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +NodeIndexSeek  |  3 | RANGE INDEX n:PointOfInterest(name, type, lat) WHERE name STARTS WITH $autostring_1 AND type IS NOT |              0 |    2 |       3 |            248 |                    0/2 |     0.987 | Fused in Pipeline 0 |
+| +NodeIndexSeek  |  3 | RANGE INDEX n:PointOfInterest(name, type, lat) WHERE name STARTS WITH $autostring_1 AND type IS NOT |              0 |    2 |       3 |            248 |                    2/0 |     0.807 | Fused in Pipeline 0 |
 |                 |    | NULL AND lat IS NOT NULL, cache[n.name], cache[n.lat]                                               |                |      |         |                |                        |           |                     |
 +-----------------+----+-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
 Total database accesses: 3, total allocated memory: 312
 ----
 
-This plan now shows that, while a prefix search has been used to solve the `name` property predicate, the `lat` property predicate is no longer solved with an equality check, but rather with an existence check and an explicit xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-filter[filter] operation afterward. 
+This plan now shows that, while a prefix search has been used to solve the `name` property predicate, the `lat` property predicate is no longer solved with an equality check, but rather with an existence check and an explicit xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-filter[filter] operation afterward.
+Note that if the `composite_2` index had not been dropped before the query was rerun, the planner would have used it instead of the `composite_3` index.
 
-This is because, when using composite indexes, any predicate after a prefix search will automatically be planned as an existence check predicate.
-This and the following rules apply when using composite indexes:
+This is because, when using composite indexes, any predicate after a prefix search will automatically be planned as an existence check predicate. 
+
+[[composite-index-rules]]
+=== Composite index rules
+
+As indicated in the previous section, composite indexes follow specific rules that are useful to know before using them.
+All rules concerning how composite indexes solve property predicates are listed below:
 
 * If a query contains an equality check or a list membership check predicates, they need to be for the first properties defined when creating the composite index.
 
@@ -578,9 +531,9 @@ This and the following rules apply when using composite indexes:
 
 * There can be any number of existence check predicates.
 
-* Any predicates following a prefix search or an existence check will also be planned as existence checks.
+* Any predicates following a prefix search or an existence check will be planned as existence checks.
 
-* Suffix (`ENDS WITH`) and substring search (`CONTAINS`) predicates can utilize composite indexes.
+* Suffix and substring search predicates can utilize composite indexes.
 However, they are always planned as an existence check and any subsequent query predicates will accordingly also be planned as such.
 Note that if these predicates are used, and a text index also exists on any of the indexed (`STRING`) properties, the planner will use the text index instead of a composite index.
 
@@ -588,15 +541,17 @@ These rules can be important when creating composite indexes, as some checks are
 For instance, it is generally more efficient for the planner to perform an equality check on a property than an existence check.
 Depending on the queries and the application, it may, therefore, be cost-effective to consider the order in which properties are defined when creating a composite index.
 
+Additionally, it bears repeating that composite indexes can only be used if a predicate filters on all the properties indexed by the composite index, and that composite indexes can only be created for range indexes (point and text indexes are single-property only).
+
 [[range-index-backed-order-by]]
 == Range index-backed ORDER BY
 
 Range indexes store properties in ascending order (alphabetically for `STRING` values, and numerically for other `FLOAT` and `INTEGER` values).
-This can have important implications for query performance, because the planner may be able to take advantage of a pre-existing index order and therefore not have to perform an expensive xref:planning-and-tuning/operators/operators-detail.adoc#quey-plan-sort[`Sort`] operation later in the query.
+This can have important implications for query performance, because the planner may be able to take advantage of a pre-existing index order and therefore not have to perform an expensive xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-sort[`Sort`] operation later in the query.
 
 To demonstrate this behavior, the following query will filter out any `ROUTE` relationships with a `distance` property less than `30`, and return the `distance` property of the matched relationships in ascending numerical order using the xref:clauses/order-by.adoc[ORDER BY] clause.
 
-.Query to return order of results without relevant index
+.Query to return order of results without a relevant index
 [source,syntax]
 ----
 PROFILE
@@ -634,7 +589,7 @@ This plan shows two important points about indexes and the ordering of results:
 
 To see how an index could impact the query plan, it is first necessary to create a range index on the `distance` property:
 
-.Create range index on relationship type property
+.Create a range index on a relationship type property
 [source,cypher]
 ----
 CREATE INDEX range_index_relationships FOR ()-[r:ROUTE]-() ON (r.distance)
@@ -685,17 +640,17 @@ If, however, a query contains two or more `MATCH` clauses, it is possible to use
 To show multiple indexes used in one query, the following example will first create a new index on the `lon` (longitude) property for `PointOfInterest` nodes.
 It then uses a query that finds all `PointOfInterest` nodes north of the `William Shakespeare` statue in Central Park.
 
-.Create range index on the longitude property
+.Create a range index on the longitude property
 [source,cypher]
 ----
 CREATE INDEX range_index_lon FOR (n:PointOfInterest) ON (n.lon)
 ----
 
-.Query to find all PointOfInterest nodes north of William Shakespeare
+.Query to find all `PointOfInterest` nodes north of the `William Shakespeare` statue
 [source,cypher]
 ----
 PROFILE
-MATCH (ws:PointOfInterest {name:"William Shakespeare"})
+MATCH (ws:PointOfInterest {name:'William Shakespeare'})
 WITH ws
 MATCH (poi:PointOfInterest)
 WHERE poi.lon > ws.lon
@@ -722,6 +677,270 @@ Total database accesses: 431, total allocated memory: 2616
 ----
 
 This plan shows that a separate index is used to improve the performance of each `MATCH` clause (first by utilizing the index on the `name` property to find the `William Shakespeare` node, and then by using the index on the `lon` property to find all nodes with a greater longitudinal value).
+
+
+[[indexes-and-null]]
+== Indexes and `null` values
+
+Neo4j indexes do not store `null` values.
+This means that the planner must be able to rule out the possibility of `null` values in order for queries to use an index.
+
+The following query demonstrates the incompatibility between `null` values and indexes by counting all `PointOfInterest` nodes with an unset `name` property: 
+
+.Query count nodes with a `null` `name` value
+[source,cypher]
+----
+PROFILE
+ATCH (n:PointOfInterest)
+WHERE n.name IS NULL
+RETURN count(n) AS nodes
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*m"]
+|===
+| nodes
+| 3
+1+d|Rows:1
+|===
+
+.Execution plan
+----
++-------------------+----+-------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator          | Id | Details           | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-------------------+----+-------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults   |  0 | nodes             |              1 |    1 |       0 |              0 |                    0/0 |     0.012 | In Pipeline 1       |
+| |                 +----+-------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +EagerAggregation |  1 | count(n) AS nodes |              1 |    1 |       0 |             32 |                        |           |                     |
+| |                 +----+-------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Filter           |  2 | n.name IS NULL    |            141 |    3 |     373 |                |                        |           |                     |
+| |                 +----+-------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeByLabelScan  |  3 | n:PointOfInterest |            188 |  188 |     189 |            376 |                  115/0 |     0.769 | Fused in Pipeline 0 |
++-------------------+----+-------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 562, total allocated memory: 472
+----
+
+The plan shows that neither of the two available indexes (range and text) on the `name` property is used to solve the predicate. 
+
+However, if a query predicate is added which is able to exclude the presence of any `null` values, then an index can be used.
+The following query shows this by adding a substring predicate to the above query:
+
+.Query count nodes with a `null` `name` value or nodes with a `name` property containing `William`
+[source,cypher]
+----
+PROFILE
+MATCH (n:PointOfInterest)
+WHERE n.name IS NULL OR n.name CONTAINS 'William'
+RETURN count(n) AS nodes
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*m"]
+|===
+| nodes
+| 5
+1+d|Rows:1
+|===
+
+The query result now includes both the three nodes with an unset `name` value found in the previous query and the two nodes with a `name` value containing the `STRING` `'William'` (`William Shakespeare` and `William Tecumseh Sherman`).
+
+.Execution plan
+----
++--------------------------+----+----------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                 | Id | Details                                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++--------------------------+----+----------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults          |  0 | nodes                                                                |              1 |    1 |       0 |              0 |                    0/0 |     0.010 | In Pipeline 3       |
+| |                        +----+----------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +EagerAggregation        |  1 | count(n) AS nodes                                                    |              1 |    1 |       0 |             32 |                        |           |                     |
+| |                        +----+----------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Distinct                |  2 | n                                                                    |            141 |    5 |       0 |            352 |                        |           |                     |
+| |                        +----+----------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Union                   |  3 |                                                                      |            142 |    5 |       0 |            352 |                    0/0 |     0.220 | Fused in Pipeline 2 |
+| |\                       +----+----------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +NodeIndexContainsScan |  4 | TEXT INDEX n:PointOfInterest(name) WHERE name CONTAINS $autostring_0 |              1 |    2 |       3 |            376 |                    4/0 |     0.456 | In Pipeline 1       |
+| |                        +----+----------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Filter                  |  5 | n.name IS NULL                                                       |            141 |    3 |     373 |                |                        |           |                     |
+| |                        +----+----------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeByLabelScan         |  6 | n:PointOfInterest                                                    |            188 |  188 |     189 |            376 |                  115/0 |     0.673 | Fused in Pipeline 0 |
++--------------------------+----+----------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 565, total allocated memory: 1352
+----
+
+This plan shows that an index is only used to solve the second part of the `WHERE` clause, which excludes the presence of `null` values.
+
+The presence of `null` values within an indexed property therefore does not negate the use of an index.
+Index use is only negated if the planner is unable to rule out the inclusion of any unset properties in the matching process.
+
+The presence of `null` values may not be known in advance, and this can cause unexpected instances of indexes not being used. There are, however, a few strategies to ensure that an index will be used.
+
+[[property-existence-check]]
+=== Property existence checks
+
+One method to ensure an index is used is to explicitly filter out any `null` values by appending `IS NOT NULL` to the queried property.
+The following example uses the same query as above but exchanges `IS NULL` with `IS NOT NULL` in the `WHERE` clause:
+
+.Query count `PointOfInterest` nodes without a `null` `name` value
+[source,cypher]
+----
+PROFILE
+MATCH (n:PointOfInterest)
+WHERE n.name IS NOT NULL
+RETURN count(n) AS nodes
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*m"]
+|===
+| nodes
+| 185
+1+d|Rows:1
+|===
+
+.Execution plan
+----
++-------------------+----+------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator          | Id | Details                                                    | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-------------------+----+------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults   |  0 | nodes                                                      |              1 |    1 |       0 |              0 |                    0/0 |     0.013 | In Pipeline 1       |
+| |                 +----+------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +EagerAggregation |  1 | count(n) AS nodes                                          |              1 |    1 |       0 |             32 |                        |           |                     |
+| |                 +----+------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeIndexScan    |  2 | RANGE INDEX n:PointOfInterest(name) WHERE name IS NOT NULL |            185 |  185 |     186 |            376 |                    0/1 |     0.691 | Fused in Pipeline 0 |
++-------------------+----+------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 186, total allocated memory: 472
+----
+
+This plan shows that the previously created range index on the `name` property is now used to solve the predicate.
+
+[[text-indexes-type-predicate-expressions]]
+=== Text indexes and type predicate expressions
+
+Text indexes require that predicates only include `STRING` properties.
+
+To use text indexes in situations where any of the queried properties may be either of an incompatible type or null rather than a STRING value, add the type predicate expression `IS {two-colons} STRING NOT NULL` (or its alias, introduced in Neo4j 5.14, `IS {two-colons} STRING!`) to the query.
+This will enforce both the existence of a property and its `STRING` type, discarding any rows where the property is missing or not of type `STRING`, and thereby enable the use of text indexes.
+
+For example, if the `WHERE` predicate in the previous query is altered to instead append `IS {two-colons} STRING NOT NULL`, then the text index rather than the range index is used (range indexes do not support type predicate expressions):
+
+.Query using type predicate expression
+[source,cypher]
+----
+PROFILE
+MATCH (n:PointOfInterest)
+WHERE n.name IS :: STRING NOT NULL
+RETURN count(n) AS nodes
+----
+
+.Execution plan
+----
++-------------------+----+-----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator          | Id | Details                                                   | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-------------------+----+-----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults   |  0 | nodes                                                     |              1 |    1 |       0 |              0 |                    0/0 |     0.009 | In Pipeline 1       |
+| |                 +----+-----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +EagerAggregation |  1 | count(n) AS nodes                                         |              1 |    1 |       0 |             32 |                        |           |                     |
+| |                 +----+-----------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeIndexScan    |  2 | TEXT INDEX n:PointOfInterest(name) WHERE name IS NOT NULL |            185 |  185 |     186 |            376 |                    0/0 |     0.343 | Fused in Pipeline 0 |
++-------------------+----+-----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 186, total allocated memory: 472
+----
+
+[TIP]
+While type predicate expressions were introduced in Neo4j 5.9, the `IS {two-colons} STRING NOT NULL` syntax only became an index-compatible predicate in Neo4j 5.15.
+For more information, see the page about xref:values-and-types/type-predicate.adoc[type predicate expressions].
+
+The xref:functions/string.adoc#functions-tostring[`toString`] function can also be used to convert an expression to `STRING` values, and thereby help the planner to select a text index.
+
+[[type-constraints]]
+=== Type constraints
+
+_This feature was introduced in Neo4j 5.11._
+
+For indexes that are compatible only with specific types (i.e. text and point indexes), the Cypher planner needs to deduce that a predicate will evaluate to `null` for non-compatible values in order to use the index.
+If a predicate is not explicitly defined as the required type (`STRING` or `POINT`), this can lead to situations where a text or point index is not used.
+
+Since xref:constraints/examples.adoc#constraints-examples-node-property-type[type constraints] guarantee that a property is always of the same type, they can be used to extend the scenarios in which text and point indexes are compatible with a predicate.
+
+To show this, the following example will first drop the existing range index on the `name` property (this is necessary because type constraints only extend the compatibility of type-specific indexes - range indexes are not limited by a value type).
+It will then run the same query with a `WHERE` predicate on the `name` property (for which there exists a previously created text index) before and after creating a type constraint, and compare the resulting execution plans.
+
+.Query range index
+[source,cypher]
+----
+DROP INDEX range_index_name
+----
+
+.Query count `PointOfInterest` nodes without a `null` `name` value
+[source,cypher]
+----
+PROFILE
+MATCH (n:PointOfInterest)
+WHERE n.name IS NOT NULL
+RETURN count(n) AS nodes
+----
+
+.Execution plan
+----
++------------------+----+---------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator         | Id | Details                   | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++------------------+----+---------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults  |  0 | name                      |            187 |  185 |       0 |              0 |                        |           |                     |
+| |                +----+---------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Projection      |  1 | cache[n.name] AS name     |            187 |  185 |       0 |                |                        |           |                     |
+| |                +----+---------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Filter          |  2 | cache[n.name] IS NOT NULL |            187 |  185 |     373 |                |                        |           |                     |
+| |                +----+---------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeByLabelScan |  3 | n:PointOfInterest         |            188 |  188 |     189 |            248 |                  119/0 |     1.004 | Fused in Pipeline 0 |
++------------------+----+---------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 562, total allocated memory: 312
+----
+
+This plan shows that the available text index on the `name` property was not used to solve the predicate.
+This is because the planner was not able to deduce that all `name` values are of type `STRING`.
+
+However, if a type constraint is created to ensure that all `name` properties have a `STRING` value, a different query plan is generated.
+
+.Create `STRING` type constraint on the `name` property
+[source,cypher]
+----
+CREATE CONSTRAINT type_constraint
+FOR (n:PointOfInterest) REQUIRE n.name IS :: STRING
+----
+
+.Rerun the same query
+[source,cypher]
+----
+PROFILE
+MATCH (n:PointOfInterest)
+WHERE n.name IS NOT NULL
+RETURN count(n) AS nodes
+----
+
+.Execution plan
+----
++-----------------+----+-----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator        | Id | Details                                                   | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-----------------+----+-----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults |  0 | name                                                      |            187 |  185 |       0 |              0 |                        |           |                     |
+| |               +----+-----------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Projection     |  1 | n.name AS name                                            |            187 |  185 |     370 |                |                        |           |                     |
+| |               +----+-----------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeIndexScan  |  2 | TEXT INDEX n:PointOfInterest(name) WHERE name IS NOT NULL |            187 |  185 |     186 |            248 |                  115/0 |     1.671 | Fused in Pipeline 0 |
++-----------------+----+-----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 556, total allocated memory: 312
+----
+
+Because of the type constraint on the `name` property, the planner is now able to deduce that all `name` properties are of type `STRING`, and therefore use the available text index. 
+
+Point indexes can be extended in the same way if a type constraint is created to ensure that all properties are `POINT` values.
+
+Note that xref:constraints/examples.adoc#constraints-examples-node-property-existence[property existence constraints] do not currently leverage index use in the same way.
 
 [[Heuristics]]
 == Heuristics: deciding what to index
@@ -787,5 +1006,8 @@ The order in which the properties are defined when creating a composite index im
 * Queries ordering results using `ORDER BY` can leverage the pre-existing order in range indexes and thereby improve query performance.
 
 * A Cypher query can use several indexes if the planner deems it beneficial to the performance of a query.
+
+* Neo4j indexes do not store `null` values, and the planner must be able to rule out any unset properties in order to use an index.
+There are several strategies to ensure the use of indexes.
 
 * The columns `lastRead`, `readCount`, and `trackedSince` returned by the `SHOW INDEX` command can be used to identify redundant indexes that take up unnecessary space.
