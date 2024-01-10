@@ -1,6 +1,6 @@
 :description: Information about how to use the search-performance indexes in Neo4j.
 :test-skip: true
-= Using search-performance indexes
+= The impact of indexes on query performance
 
 Search-performance indexes enable quicker and more efficient pattern matching by solving a particular combination of node label/relationship type and property predicate. 
 They are used automatically by the Cypher planner in `MATCH` clauses, usually at the start of a query, to scan the graph for the most appropriate place to start the pattern-matching process.
@@ -14,8 +14,8 @@ It will also provide some general heuristics for when to use indexes, and advice
 The examples on this page center around finding routes and points of interest in Central Park, New York, based on data provided by link:https://www.openstreetmap.org/[OpenStreetMap].
 The data model contains two node labels:
 
-* `OSMNode` (Open Street Map Node) - a junction node with geo-spatial properties linking together routes from specific points.
-* `PointOfInterest`  - a subcategory of `OSMNode`.
+* `OSMNode` (Open Street Map Node) -- a junction node with geo-spatial properties linking together routes from specific points.
+* `PointOfInterest`  -- a subcategory of `OSMNode`.
 In addition to geospatial properties, these nodes also contain information about specific points of interest, such as statues, baseball courts, etc. in Central Park.
 
 The data model also contains one relationship type: `ROUTE`, which specifies the distance in meters between the nodes in the graph.
@@ -34,7 +34,7 @@ Two token lookup indexes are present by default when creating a Neo4j database.
 They store copies of all node labels and relationship types in the database and only solve node label and relationship type predicates.
 
 The following query footnote:[The example queries on this page are prepended with `PROFILE`. This both runs the query and generates its execution plan.
-For more information, see xref:planning-and-tuning/index.adoc#profile-and-explain[Execution plans and query tuning -> Note on PROFILE and EXPLAIN].], which counts the number of `PointOfInterest` nodes that have a `baseball` `type` value, will access the  node label lookup index:
+For more information, see xref:planning-and-tuning/index.adoc#profile-and-explain[Execution plans and query tuning -> Note on PROFILE and EXPLAIN].], which counts the number of `PointOfInterest` nodes that have value `baseball` for the `type` property, will access the node label lookup index:
 
 .Query
 [source,cypher]
@@ -223,7 +223,7 @@ RETURN n.name, n.type
 Total database accesses: 7, total allocated memory: 312
 ----
 
-The reason for is that range indexes store `STRING` values alphabetically.
+This is because range indexes store `STRING` values alphabetically.
 This means that, while they are very efficient for retrieving exact matches of a `STRING`, or for prefix matching, they are less efficient for suffix and contains searches, where they have to scan all relevant properties to filter any matches.
 Text indexes do not store `STRING` properties alphabetically, and are instead optimized for suffix and contains searches.
 That said, if no range index had been present on the name property, the previous query would still have been able to utilize the text index.
@@ -256,7 +256,7 @@ For information about calculating the size of indexes, see link:https://neo4j.co
 Point indexes solve predicates operating on spatial xref:values-and-types/spatial.adoc#spatial-values-point-type[`POINT`] values.
 Point indexes are optimized for queries filtering for the xref:functions/spatial.adoc#functions-distance[distance] between property values, or for property values within a xref:functions/spatial.adoc#functions-withinBBox[bounding box].
 
-The following example creates a point index which is then accessed by a query that uses the `point.distance()` function to return the `name` and `type` of all `PointOfInterest` nodes within 100 meters of the  `William Shakespeare` statue:
+The following example creates a point index which is then accessed through the `point.distance()` function to return the `name` and `type` of all `PointOfInterest` nodes within 100 meters of the  `William Shakespeare` statue:
 
 .Create a point index
 [source,cypher]
@@ -315,7 +315,7 @@ For more information about the predicates supported by text indexes, see xref:in
 [[point-index-config-settings]]
 === Point index configuration settings
 
-It is possible to configure point indexes to only index properties within a specific geographical area.
+It is possible to xref:indexes/search-performance-indexes/managing-indexes.adoc#create-a-point-index-specifying-the-index-configuration[configure point indexes] to only index properties within a specific geographical area.
 This is done by specifying either of the following settings in the `indexConfig` part of the `OPTIONS` clause when creating a point index:
 
 * `spatial.cartesian.min` and `spatial.cartesian.max`: used for xref:values-and-types/spatial.adoc#spatial-values-crs-cartesian[Cartesian 2D] coordinate systems.
@@ -340,7 +340,7 @@ OPTIONS {
 }
 ----
 
-Restricting the geographic area of a point index can improve the performance of spatial queries by making the index more efficient at retrieving the indexed `POINT` values.
+Restricting the geographic area of a point index improves the performance of spatial queries.
 This is especially beneficial when dealing with complex, large geo-spatial data, and when spatial queries are a significant part of an application’s functionality.
 
 [[composite-indexes]]
@@ -521,9 +521,6 @@ This is because, when using composite indexes, any predicate after a prefix sear
 
 [[composite-index-rules]]
 === Composite index rules
-
-As indicated in the previous section, composite indexes follow specific rules that are useful to know before using them.
-All rules concerning how composite indexes solve property predicates are listed below:
 
 * If a query contains an equality check or a list membership check predicates, they need to be for the first properties defined when creating the composite index.
 
@@ -743,7 +740,7 @@ RETURN count(n) AS nodes
 1+d|Rows:1
 |===
 
-The query result now includes both the three nodes with an unset `name` value found in the previous query and the two nodes with a `name` value containing the `STRING` `'William'` (`William Shakespeare` and `William Tecumseh Sherman`).
+The query result now includes both the three nodes with an unset `name` value found in the previous query and the two nodes with a `name` value containing `William` (`William Shakespeare` and `William Tecumseh Sherman`).
 
 .Execution plan
 ----
@@ -820,7 +817,7 @@ This plan shows that the previously created range index on the `name` property i
 
 Text indexes require that predicates only include `STRING` properties.
 
-To use text indexes in situations where any of the queried properties may be either of an incompatible type or null rather than a STRING value, add the type predicate expression `IS {two-colons} STRING NOT NULL` (or its alias, introduced in Neo4j 5.14, `IS {two-colons} STRING!`) to the query.
+To use text indexes in situations where any of the queried properties may be either of an incompatible type or `null` rather than a `STRING` value, add the type predicate expression `IS {two-colons} STRING NOT NULL` (or its alias, introduced in Neo4j 5.14, `IS {two-colons} STRING!`) to the query.
 This will enforce both the existence of a property and its `STRING` type, discarding any rows where the property is missing or not of type `STRING`, and thereby enable the use of text indexes.
 
 For example, if the `WHERE` predicate in the previous query is altered to instead append `IS {two-colons} STRING NOT NULL`, then the text index rather than the range index is used (range indexes do not support type predicate expressions):
@@ -868,7 +865,7 @@ Since xref:constraints/examples.adoc#constraints-examples-node-property-type[typ
 To show this, the following example will first drop the existing range index on the `name` property (this is necessary because type constraints only extend the compatibility of type-specific indexes - range indexes are not limited by a value type).
 It will then run the same query with a `WHERE` predicate on the `name` property (for which there exists a previously created text index) before and after creating a type constraint, and compare the resulting execution plans.
 
-.Query range index
+.Drop range index
 [source,cypher]
 ----
 DROP INDEX range_index_name
@@ -947,7 +944,7 @@ Note that xref:constraints/examples.adoc#constraints-examples-node-property-exis
 
 While it is impossible to give exact directions on when a search-performance index might be beneficial for a particular use-case, the following points provide some useful heuristics for when creating an index might improve query performance:
 
-* *Frequent property-based queries*: if particular node label/relationship type properties are used frequently for filtering or matching, consider creating an index on those properties. 
+* *Frequent property-based queries*: if some properties are used frequently for filtering or matching, consider creating an index on them.
 * *Performance optimization*: If certain queries are too slow, re-examine the properties that are filtered on, and consider creating indexes for those properties that may cause bottlenecking. 
 * *High cardinality properties*: high cardinality properties have many distinct values (e.g., unique identifiers, timestamps, or user names). Queries that seek to retrieve such properties will likely benefit from indexing.
 * *Complex queries*: if queries traverse complex paths in a graph (for example, by involving multiple hops and several layers of filtering), adding indexes to the properties used in those queries can improve query performance.
@@ -962,7 +959,7 @@ They should, however, be used judiciously for the following reasons:
 * *Storage space*: because each index is a secondary copy of the data in the primary database, each index essentially doubles the amount of storage space occupied by the indexed data.
 * *Slower write queries*: adding indexes impacts the performance of write queries.
 This is because indexes are updated with each write query. If a system needs to perform a lot of writes quickly, it may be counterproductive to have an index on the affected data entities.
-In other words, if write performance is crucial for a particular use case, it may be beneficial to only add indexes where they are necessary for read-query purposes.
+In other words, if write performance is crucial for a particular use case, it may be beneficial to only add indexes where they are necessary for read purposes.
 
 As a result of these two points, deciding what to index (and what not to index) is an important and non-trivial task.
 
@@ -997,8 +994,9 @@ If any unused indexes are identified, it may be beneficial to delete them using 
 
 * Point indexes are used when queries filter on distances and bounding boxes.
 
-* Token lookup indexes are not defined in this order since they never solve the same predicates as other indexes.
-Deleting them will negatively impact query performance.
+* Token lookup indexes only solve node label and relationship type predicates.
+They do not solve any property predicates.
+Deleting token lookup indexes will negatively impact query performance.
 
 * Composite indexes are only used if the query filters on all properties indexed by the composite index.
 The order in which the properties are defined when creating a composite index impacts how the planner solves query predicates.
@@ -1007,7 +1005,7 @@ The order in which the properties are defined when creating a composite index im
 
 * A Cypher query can use several indexes if the planner deems it beneficial to the performance of a query.
 
-* Neo4j indexes do not store `null` values, and the planner must be able to rule out any unset properties in order to use an index.
+* * Neo4j indexes do not store `null` values, and the planner must be able to rule out any entities with properties containing `null` values in order to use an index.
 There are several strategies to ensure the use of indexes.
 
 * The columns `lastRead`, `readCount`, and `trackedSince` returned by the `SHOW INDEX` command can be used to identify redundant indexes that take up unnecessary space.
