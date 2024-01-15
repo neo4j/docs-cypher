@@ -1897,6 +1897,58 @@ Total database accesses: 166, total allocated memory: 976
 
 ======
 
+[query-plan-transaction-apply]]
+== TransactionApply
+// TransactionApply
+
+`TransactionApply` works like normal `Apply` but will commit the current transaction after a specified number of rows.
+
+.TransactionApply
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+LOAD CSV FROM 'https://neo4j.com/docs/cypher-refcard/3.3/csv/artists.csv' AS line
+CALL {
+  WITH line
+  CREATE (a: Artist {name: line[0]})
+  RETURN a
+} IN TRANSACTIONS OF 100 ROWS
+RETURN a;
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++-------------------+----+--------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator          | Id | Details                                          | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-------------------+----+--------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults   |  0 | a                                                |             10 |    4 |       8 |              0 |                        |           |                     |
+| |                 +----+--------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +TransactionApply |  1 | IN TRANSACTIONS OF $autoint_1 ROWS ON ERROR FAIL |             10 |    4 |       0 |           2152 |                    0/0 |     2.036 | Fused in Pipeline 3 |
+| |\                +----+--------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Create         |  2 | (a:Artist {name: line[$autoint_0]})              |             10 |    4 |      16 |                |                        |           |                     |
+| | |               +----+--------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +Argument       |  3 | line                                             |             10 |    4 |       0 |           3472 |                    0/0 |    32.746 | Fused in Pipeline 2 |
+| |                 +----+--------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +LoadCSV          |  4 | line                                             |             10 |    4 |       0 |            328 |                        |           | In Pipeline 1       |
++-------------------+----+--------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 24, total allocated memory: 5472
+----
+
+======
+
 
 [[query-plan-anti]]
 == Anti
@@ -3760,6 +3812,58 @@ Runtime version {neo4j-version-minor}
 +-----------------+---------------------------------------------------------+----------------+------+---------+------------------------+
 
 Total database accesses: 9, total allocated memory: 64
+----
+
+======
+
+[query-plan-transaction-foreach]]
+== TransactionForeach
+// TransactionForeach
+
+`TransactionForeach` works like normal `Foreach` but will commit the current transaction after a specified number of rows.
+
+.TransactionForeach
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+LOAD CSV FROM 'https://neo4j.com/docs/cypher-refcard/3.3/csv/artists.csv' AS line
+CALL {
+  WITH line
+  CREATE (a: Artist {name: line[0]})
+} IN TRANSACTIONS OF 100 ROWS
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
+++---------------------+----+--------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+ | Operator            | Id | Details                                          | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
+ +---------------------+----+--------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+ | +ProduceResults     |  0 |                                                  |             10 |    0 |       0 |              0 |                        |           |                     |
+ | |                   +----+--------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+ | +EmptyResult        |  1 |                                                  |             10 |    0 |       0 |                |                    0/0 |     0.000 | Fused in Pipeline 3 |
+ | |                   +----+--------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+ | +TransactionForeach |  2 | IN TRANSACTIONS OF $autoint_1 ROWS ON ERROR FAIL |             10 |    4 |       0 |           4856 |                        |           |                     |
+ | |\                  +----+--------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+ | | +Create           |  3 | (a:Artist {name: line[$autoint_0]})              |             10 |    4 |      12 |                |                        |           |                     |
+ | | |                 +----+--------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+ | | +Argument         |  4 | line                                             |             10 |    4 |       0 |           3472 |                    0/0 |     0.712 | Fused in Pipeline 2 |
+ | |                   +----+--------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+ | +LoadCSV            |  5 | line                                             |             10 |    4 |       0 |            328 |                        |           | In Pipeline 1       |
+ +---------------------+----+--------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+ Total database accesses: 12, total allocated memory: 5704
 ----
 
 ======
@@ -5997,4 +6101,6 @@ Total database accesses: 47, total allocated memory: 4144
 ----
 
 ======
+
+
 
