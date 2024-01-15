@@ -3002,6 +3002,60 @@ Total database accesses: 318, total allocated memory: 208
 
 ======
 
+[[query-plan-nullify-metadata]]
+== Nullify Metadata
+// NullifyMetadata
+_This feature was introduced in Neo4j 5.9._
+
+TBD
+
+.NullifyMetadata
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH (me:Person) ((a)-[:FRIENDS_WITH]-(b) WHERE a.name <> b.name){1,2} (friend:Person)
+RETURN me, friend
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++------------------+----+-----------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator         | Id | Details                                             | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++------------------+----+-----------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults  |  0 | me, friend                                          |             15 |   48 |       0 |                |                        |           |                     |
+| |                +----+-----------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Filter          |  1 | friend:Person                                       |             15 |   48 |      96 |                |                        |           |                     |
+| |                +----+-----------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NullifyMetadata |  7 |                                                     |             15 |   48 |       0 |                |                        |           |                     |
+| |                +----+-----------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Repeat(Trail)   |  2 | (me) (...){1, 2} (friend)                           |             15 |   48 |       0 |          16784 |                    0/0 |     1.146 | Fused in Pipeline 2 |
+| |\               +----+-----------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Filter        |  3 | not a.name = b.name AND isRepeatTrailUnique(anon_2) |              5 |   48 |     216 |                |                        |           |                     |
+| | |              +----+-----------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +Expand(All)   |  4 | (a)-[anon_2:FRIENDS_WITH]-(b)                       |             10 |   72 |     151 |                |                        |           |                     |
+| | |              +----+-----------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +Argument      |  5 | a                                                   |             14 |   38 |       0 |           3112 |                    3/0 |     6.279 | Fused in Pipeline 1 |
+| |                +----+-----------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +NodeByLabelScan |  6 | me:Person                                           |             14 |   14 |      15 |            376 |                    1/0 |     3.970 | In Pipeline 0       |
++------------------+----+-----------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 318, total allocated memory: 208
+----
+
+======
+
 [[query-plan-assert-same-node]]
 == Assert Same Node
 // AssertSameNode
@@ -3684,7 +3738,6 @@ In an analogous manner to the xref::planning-and-tuning/operators/operators-deta
 [source, cypher]
 ----
 PROFILE
-CYPHER runtime=slotted
 FOREACH (value IN [1,2,3] | CREATE (:Person {age: value}))
 ----
 
