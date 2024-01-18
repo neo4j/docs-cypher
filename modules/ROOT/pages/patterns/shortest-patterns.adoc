@@ -3,9 +3,8 @@
 
 The Cypher keyword `SHORTEST` is used to find variations of the shortest paths between nodes.
 This includes the ability to look for the shortest, second-shortest (and so on) paths, all available shortest paths, and groups of paths containing the same pattern length.
+The ANY keyword, which can be used to test the reachability of nodes from a given node(s), is also explained, as is how to apply filters on queries using `SHORTEST`.
 
-This page also discusses how to apply filters on queries using `SHORTEST`, and how to find the shortest path within a graph pattern.
-The `ANY` keyword, which can be used to test the reachability of nodes from a given node(s), is also explained.
 
 [NOTE]
 `SHORTEST` functionally replaces and extends the `shortestPath()` and `allShortestPaths()` procedures.
@@ -61,8 +60,8 @@ For example, the following example uses `SHORTEST 1` to return the length of the
 .Query
 [source, cypher]
 ----
-MATCH p = SHORTEST 1 (hby)-[:LINK]-+(cnm)
-WHERE hby.name = "Worcester Shrub Hill" AND cnm.name = "Bromsgrove"
+MATCH p = SHORTEST 1 (wos:Station)-[:LINK]-+(bmv:Station)
+WHERE hby.name = "Hartlebury" AND bmv.name = "Bromsgrove"
 RETURN length(p) AS result
 ----
 
@@ -92,7 +91,7 @@ If instead `SHORTEST 2` is specified, all shortest paths in this example would b
 .Query
 [source, cypher]
 ----
-MATCH p = SHORTEST 2 (hby)-[:LINK]-+(cnm)
+MATCH p = SHORTEST 2 (hby:Station)-[:LINK]-+(cnm:Station)
 WHERE hby.name = "Worcester Shrub Hill" AND cnm.name = "Bromsgrove"
 RETURN [n in nodes(p) | n.name] AS stops
 ----
@@ -119,7 +118,7 @@ The following query returns all three of the second shortest paths, along with t
 .Query
 [source, cypher]
 ----
-MATCH p = SHORTEST 5 (hby)-[:LINK]-+(cnm)
+MATCH p = SHORTEST 5 (hby:Station)-[:LINK]-+(cnm:Station)
 WHERE hby.name = "Worcester Shrub Hill" AND cnm.name = "Bromsgrove"
 RETURN [n in nodes(p) | n.name] AS stops
 ----
@@ -193,8 +192,6 @@ WHERE hby.name = "Worcester Shrub Hill" AND cnm.name = "Bromsgrove"
 RETURN length(p) AS pathLength, count(*) AS numPaths
 ----
 
-
-
 .Result
 [role="queryresult",options="header,footer",cols="2*m"]
 |===
@@ -210,6 +207,184 @@ RETURN length(p) AS pathLength, count(*) AS numPaths
 
 2+d|Rows: 7
 |===
+
+[[any]]
+== `ANY`
+
+The `ANY` keyword can be used to test the reachability of nodes from a given node(s).
+It returns the same as `SHORTEST 1`, but by using the ANY keyword the intent of the query is clearer.
+For example, the following query shows all stations reachable from `Pershore` where the distance between each pair of stations is less than 6 miles:
+
+.Query
+[source,cypher]
+----
+MATCH ANY ({name: 'Pershore'})-[l:LINK WHERE l.distance < 6]-+(b)
+RETURN b.name AS stops ORDER BY stops
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="m"]
+|===
+
+| stops
+
+| "Droitwich Spa"
+| "Hartlebury"
+| "Worcester Foregate Street"
+| "Worcester Shrub Hill"
+| "Worcestershire Parkway Ll"
+
+1+d|Rows: 5
+|===
+
+[[partitions]]
+== Partitions
+
+When there are multiple starting or ending nodes matching a path pattern, the matches are partitioned into distinct pairs of start and end nodes prior to selecting the shortest paths; a partition is one distinct pair of start node and end node.
+The selection of shortest paths is then done from all paths that join the start and end node of a given partition. The results are then formed from the union of all the shortest paths found for each partition.
+
+For example, if the start nodes of matches are bound to either `Droitwich Spa` or `Hartlebury`, and the end nodes are bound to either `Ashchurch` or `Cheltenham Spa`, there will be four distinct pairs of start and end nodes, and therefore four partitions:
+
+[options="header",cols="a,a"]
+|===
+| *Start node* | *End node*
+
+| `Droitwich Spa` | `Ashchurch`
+| `Droitwich Spa` | `Cheltenham Spa`
+| `Hartlebury` | `Ashchurch`
+| `Hartlebury` | `Cheltenham Spa``
+
+|===
+
+The following query illustrates how these partitions define the sets of results within which the shortest paths are selected.
+It uses a pair of xref:clauses/unwind.adoc[`UNWIND`] clauses to generate a Cartesian product of the names of the `Stations`, followed by the `MATCH` clause to find the shortest two groups of paths for each pair of distinct start and end `Stations`:
+
+.Query
+[source,cypher]
+----
+UNWIND ["Droitwich Spa", "Hartlebury"] AS a
+UNWIND ["Ashchurch", "Cheltenham Spa"] AS b
+MATCH SHORTEST 2 GROUPS (o {name: a})-[l]-+(d {name: b})
+RETURN o.name AS start, d.name AS end,
+    size(l) AS pathLength, count(*) AS numPaths
+ORDER BY origin, destination, pathLength
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="4*m"]
+|===
+
+| start | end | pathLength | numPaths
+
+| "Droitwich Spa" | "Ashchurch" | 2 | 1
+| "Droitwich Spa" | "Ashchurch" | 3 | 4
+| "Droitwich Spa" | "Cheltenham Spa" | 2 | 1
+| "Droitwich Spa" | "Cheltenham Spa" | 3 | 1
+| "Hartlebury" | "Ashchurch" | 3 | 1
+| "Hartlebury" | "Ashchurch" | 4 | 4
+| "Hartlebury" | "Cheltenham Spa" | 3 | 1
+| "Hartlebury" | "Cheltenham Spa" | 4 | 1
+
+4+d|Rows: 8
+|===
+
+Each partition appears twice: once for the group of shortest paths and once for the group of second shortest paths.
+For example, for the partition of `Droitwich Spa` as the origin and `Ashchurch` as the destination, the shortest path group (paths with length 2) has one path, and the second shortest path group (paths with length 3) has four paths.
+
+[[filters]]
+== Pre-filters and post-filters
+
+The position of a filter in a shortest path query will affect whether it is applied before or after selecting the shortest paths. To see the difference, first consider a query that returns the shortest path from `Hartlebury` to `Cheltenham Spa`:
+
+.Query
+[source,cypher]
+----
+MATCH SHORTEST 1
+  (:Station {name: 'Hartlebury'}) (()--(n))+ (:Station {name: 'Cheltenham Spa'})
+RETURN [stop in n[..-1] | stop.name] AS stops
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="m"]
+|===
+| stops
+
+| ["Droitwich Spa", "Bromsgrove"]
+
+1+d|Rows:1
+|===
+
+Note that `n[..-1]` is a slicing operation that returns all elements of `n` except the last.
+If instead, the query uses a `WHERE` clause at the `MATCH` level to filter out routes that go via Bromsgrove, the filtering is applied after the shortest paths are selected.
+This results in the only solution being removed, and no results being returned:
+
+.Query
+[source,cypher]
+----
+MATCH SHORTEST 1 
+  (:Station {name: 'Hartlebury'}) 
+  (()--(n:Station))+ 
+  (:Station {name: 'Cheltenham Spa'})
+WHERE none(stop IN n[..-1] WHERE stop.name = 'Bromsgrove')
+RETURN [stop in n[..-1] | stop.name] AS stops
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="m"]
+|===
+| stops
+
+1+d|Rows:0
+|===
+
+There are two ways to turn a post-filter without solutions into a pre-filter that returns solutions.
+One is to inline the predicate into the path pattern:
+
+.Query
+[source,cypher]
+----
+MATCH SHORTEST 1
+  (:Station {name: 'Hartlebury'}) 
+  (()--(n:Station WHERE n.name <> 'Bromsgrove'))+
+  (:Station {name: 'Cheltenham Spa'})
+RETURN [stop in n[..-1] | stop.name] AS stops
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="m"]
+|===
+| stops
+
+| ["Droitwich Spa", "Worcester Shrub Hill", "Ashchurch"]
+
+1+d|Rows:1
+|===
+
+The shortest journey that avoids `Bromsgrove` is now returned.
+
+An alternative is to wrap the path pattern and filter in parentheses (leaving the `SHORTEST` keyword on the outside):
+
+.Query
+[source,cypher]
+----
+MATCH SHORTEST 1
+  ( (:Station {name: 'Hartlebury'}) 
+    (()--(n:Station))+ 
+    (:Station {name: 'Cheltenham Spa'})
+     WHERE none(stop IN n[..-1] WHERE stop.name = 'Bromsgrove') )
+RETURN [stop in n[..-1] | stop.name] AS stops
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="m"]
+|===
+| stops
+
+| ["Droitwich Spa", "Worcester Shrub Hill", "Ashchurch"]
+
+1+d|Rows:1
+|===
+
 
 
 
