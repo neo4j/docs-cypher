@@ -1,7 +1,215 @@
 :description: Information about finding the `SHORTEST` path patterns.
-= Shortest path patterns
+= Shortest paths
+
+The Cypher keyword `SHORTEST` is used to find variations of the shortest paths between nodes.
+This includes the ability to look for the shortest, second-shortest (and so on) paths, all available shortest paths, and groups of paths containing the same pattern length.
+
+This page also discusses how to apply filters on queries using `SHORTEST`, and how to find the shortest path within a graph pattern.
+The `ANY` keyword, which can be used to test the reachability of nodes from a given node(s), is also explained.
+
+[NOTE]
+`SHORTEST` functionally replaces and extends the `shortestPath()` and `allShortestPaths()` procedures.
+However, both procedures can still be used.
+For more information, see *ADD LINK*
+
+[[shortest]]
+== `SHORTEST k`
+
+This section uses the following graph:
+
+image::patterns_shortest_graph.svg[width="600", role="middle"]
+
+To recreate it, run the following query against an empty Neo4j database:
+
+[source,cypher, role=test-setup]
+----
+CREATE (asc:Station {name:"Ashchurch"}),
+  (bmv:Station {name:"Bromsgrove"}),
+  (cnm:Station {name:"Cheltenham Spa"}),
+  (dtw:Station {name:"Droitwich Spa"}),
+  (hby:Station {name:"Hartlebury"}),
+  (psh:Station {name:"Pershore"}),
+  (wop:Station {name:"Worcestershire Parkway Ll"}),
+  (wof:Station {name:"Worcester Foregate Street"}),
+  (wos:Station {name:"Worcester Shrub Hill"})
+SET asc.location = point({longitude: -2.10876, latitude: 51.9989}),
+  bmv.location = point({longitude: -2.04978, latitude: 52.3206}),
+  cnm.location = point({longitude: -2.09962, latitude: 51.8974}),
+  dtw.location = point({longitude: -2.15836, latitude: 52.2682}),
+  hby.location = point({longitude: -2.22112, latitude: 52.33449}),
+  psh.location = point({longitude: -2.07154, latitude: 52.13055}),
+  wop.location = point({longitude: -2.16003, latitude: 52.15605}),
+  wof.location = point({longitude: -2.2216, latitude: 52.19514}),
+  wos.location = point({longitude: -2.20941, latitude: 52.19473})
+CREATE (asc)-[:LINK {distance: 7.25}]->(cnm), 
+  (asc)-[:LINK {distance: 11.29}]->(wop), 
+  (asc)-[:LINK {distance: 14.75}]->(wos), 
+  (bmv)-[:LINK {distance: 31.14}]->(cnm), 
+  (bmv)-[:LINK {distance: 6.16}]->(dtw), 
+  (bmv)-[:LINK {distance: 12.6}]->(wop), 
+  (dtw)-[:LINK {distance: 5.64}]->(hby), 
+  (dtw)-[:LINK {distance: 6.03}]->(wof), 
+  (dtw)-[:LINK {distance: 5.76}]->(wos), 
+  (psh)-[:LINK {distance: 4.16}]->(wop), 
+  (wop)-[:LINK {distance: 3.71}]->(wos), 
+  (wof)-[:LINK {distance: 0.65}]->(wos)
+----
+
+The paths matched by a xref:patterns/fixed-length-patterns.adoc#path-patterns[path pattern] can be restricted to only the shortest (by number of hops) by including the keyword `SHORTEST k`, where `k` is the number of paths to match.
+For example, the following example uses `SHORTEST 1` to return the length of the shortest path between `Hartlebury` and `Bromsgrove`:
+
+.Query
+[source, cypher]
+----
+MATCH p = SHORTEST 1 (hby)-[:LINK]-+(cnm)
+WHERE hby.name = "Worcester Shrub Hill" AND cnm.name = "Bromsgrove"
+RETURN length(p) AS result
+----
+
+Note that this and the following examples on this page use a quantified relationship (as indicated by the postfix quantifier `+`) after the declared relationship pattern to search for paths that include one or more iterations of a pattern.
+For more information, see xref:patterns/reference.adoc#quantified-relationships[Syntax and semantics - quantified relationships].
+
+.Result
+[role="queryresult",options="header,footer",cols="m"]
+|===
+| result
+
+| 2
+
+1+d|Rows:1
+
+|===
+
+Although the query returned a single result, there are in fact two paths that are tied for shortest:
+
+image::patterns_shortest_tie.svg[width="500",role="middle"]
+
+Because `1` was specified in `SHORTEST`, only one of the paths is returned.
+Which one is returned is non-deterministic.
+
+If instead `SHORTEST 2` is specified, all shortest paths in this example would be returned, and the result would be deterministic:
+
+.Query
+[source, cypher]
+----
+MATCH p = SHORTEST 2 (hby)-[:LINK]-+(cnm)
+WHERE hby.name = "Worcester Shrub Hill" AND cnm.name = "Bromsgrove"
+RETURN [n in nodes(p) | n.name] AS stops
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="m"]
+|===
+| stops
+
+| ["Worcester Shrub Hill", "Droitwich Spa", "Bromsgrove"]
+| ["Worcester Shrub Hill", "Worcestershire Parkway Ll", "Bromsgrove"]
+
+1+d|Rows:2
+
+|===
+
+Increasing the number of paths will return the next shortest paths.
+Three paths are tied for the second shortest:
+
+image::patterns_second_shortest_paths.svg[width="500",role="middle"]
+
+The following query returns all three of the second shortest paths, along with the two shortest paths:
+
+.Query
+[source, cypher]
+----
+MATCH p = SHORTEST 5 (hby)-[:LINK]-+(cnm)
+WHERE hby.name = "Worcester Shrub Hill" AND cnm.name = "Bromsgrove"
+RETURN [n in nodes(p) | n.name] AS stops
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="m"]
+|===
+
+| stops
+
+| ["Worcester Shrub Hill", "Droitwich Spa", "Bromsgrove"]
+| ["Worcester Shrub Hill", "Worcestershire Parkway Ll", "Bromsgrove"]
+| ["Worcester Shrub Hill", "Worcester Foregate Street", "Droitwich Spa", "Bromsgrove"]
+| ["Worcester Shrub Hill", "Ashchurch", "Worcestershire Parkway Ll", "Bromsgrove"]
+| ["Worcester Shrub Hill", "Ashchurch", "Cheltenham Spa", "Bromsgrove"]
+
+1+d|Rows: 5
+|===
+
+If there had been only four possible paths between the two Stations, then only those four would have been returned.
+
+[[all-shortest]]
+== `ALL SHORTEST`
+
+An alternative way to return all paths that are tied for the shortest length is to use the keywords `ALL SHORTEST`:
+
+.Query
+[source,cypher]
+----
+MATCH p = ALL SHORTEST (hby)-[:LINK]-+(cnm)
+WHERE hby.name = "Worcester Shrub Hill" AND cnm.name = "Bromsgrove"
+RETURN [n in nodes(p) | n.name] AS stops
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="m"]
+|===
+| stops
+
+| ["Worcester Shrub Hill", "Droitwich Spa", "Bromsgrove"]
+| ["Worcester Shrub Hill", "Worcestershire Parkway Ll", "Bromsgrove"]
+
+1+d|Rows:2
+
+|===
 
 
-== SHORTEST _k_
+[[shortest-groups]]
+== `SHORTEST k GROUPS`
 
-image::patterns_shortestpath_graph.svg[width="600", role="middle"]
+To return all paths that are tied for first, second, and so on up to the kth shortest length, use `SHORTEST k GROUPS`.
+For example, the following returns the first and second shortest length paths between  `Worcester Shrub Hill` and `Bromsgrove`:
+
+.Query
+[source,cypher]
+----
+MATCH p = SHORTEST 2 GROUPS (hby)-[:LINK]-+(cnm)
+WHERE hby.name = "Worcester Shrub Hill" AND cnm.name = "Bromsgrove"
+RETURN [n in nodes(p) | n.name] AS stops, length(p) AS pathLength
+----
+
+The first group includes the two shortest paths with `pathLength = 2` (as seen in the first two rows of the results), and the second group includes the three second shortest paths with `pathLength = 3` (as seen in the last three rows of the results).
+If more groups are specified than exist in the graph, only those paths that exist are returned.
+For example, if the paths equal to one of the eight shortest paths are specified for `Worcester Shrub Hill` to `Bromsgrove`, only seven groups are returned:
+
+.Query
+[source,cypher]
+----
+MATCH p = SHORTEST 8 GROUPS (hby)-[:LINK]-+(cnm)
+WHERE hby.name = "Worcester Shrub Hill" AND cnm.name = "Bromsgrove"
+RETURN length(p) AS pathLength, count(*) AS numPaths
+----
+
+
+
+.Result
+[role="queryresult",options="header,footer",cols="2*m"]
+|===
+| pathLength | numPaths
+
+| 2 | 2
+| 3 | 3
+| 4 | 1
+| 5 | 4
+| 6 | 8
+| 7 | 10
+| 8 | 6
+
+2+d|Rows: 7
+|===
+
+
+
