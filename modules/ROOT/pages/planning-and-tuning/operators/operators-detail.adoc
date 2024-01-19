@@ -1855,7 +1855,7 @@ Total database accesses: 166, total allocated memory: 976
 
 ======
 
-[query-plan-transaction-apply]]
+[[query-plan-transaction-apply]]
 == TransactionApply
 // TransactionApply
 
@@ -2555,6 +2555,63 @@ Total database accesses: 15, total allocated memory: 2232
 
 ======
 
+[[query-plan-argument-tracker]]
+== Argument Tracker
+// ArgumentTracker
+
+The `ArgumentTracker` operator is used to ensure row-by-row semantics.
+This restricts the xref:planning-and-tuning/runtimes/index.adoc[Cypher runtime] to not batch operations in larger chunks.
+
+.ArgumentTracker
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH (s:Person {name: 'me'})
+CALL {
+   WITH s
+   SET s.seen = coalesce(s.seen + 1,1)
+   RETURN s.seen AS result
+}
+RETURN result;
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
++--------------------+----+-------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator           | Id | Details                                               | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++--------------------+----+-------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults    |  0 | result                                                |              0 |    0 |       0 |                |                        |           |                     |
+| |                  +----+-------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Projection        |  1 | s.seen AS result                                      |              0 |    0 |       0 |                |                        |           |                     |
+| |                  +----+-------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Apply             |  2 |                                                       |              0 |    0 |       0 |                |                        |           |                     |
+| |\                 +----+-------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +ArgumentTracker |  7 |                                                       |              0 |    0 |       0 |            696 |                        |           |                     |
+| | |                +----+-------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +Eager           |  3 |                                                       |              0 |    0 |       0 |            696 |                    0/0 |     0.000 | Fused in Pipeline 2 |
+| | |                +----+-------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +SetProperty     |  4 | s.seen = coalesce(s.seen + $autoint_1, $autoint_2)    |              0 |    0 |       0 |                |                        |           |                     |
+| | |                +----+-------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +Argument        |  5 | s                                                     |              0 |    0 |       0 |            256 |                    0/0 |     0.000 | Fused in Pipeline 1 |
+| |                  +----+-------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +NodeIndexSeek     |  6 | RANGE INDEX s:Person(name) WHERE name = $autostring_0 |              0 |    0 |       1 |            376 |                    1/0 |     0.286 | In Pipeline 0       |
++--------------------+----+-------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+
+Total database accesses: 47, total allocated memory: 4144
+----
+
+======
 
 
 // --- expand operators ---
@@ -3017,7 +3074,7 @@ Total database accesses: 318, total allocated memory: 208
 // NullifyMetadata
 _This feature was introduced in Neo4j 5.9._
 
-`NullifyMetadata` is responsible for cleaning up the state produced by xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-repeat-trail[`Repeat(Trail)`].
+`NullifyMetadata` is responsible for cleaning up the state produced by xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-repeat[`Repeat(Trail)`].
 It is only planned directly after `Repeat(Trail)`.
 
 .NullifyMetadata
@@ -3776,7 +3833,7 @@ Total database accesses: 9, total allocated memory: 64
 
 ======
 
-[query-plan-transaction-foreach]]
+[[query-plan-transaction-foreach]]
 == TransactionForeach
 // TransactionForeach
 
@@ -3828,7 +3885,7 @@ Batch size 128
 
 ======
 
-[query-plan-subquery-foreach]]
+[[query-plan-subquery-foreach]]
 == SubqueryForeach
 // SubqueryForeach
 
@@ -6051,64 +6108,6 @@ Runtime version {neo4j-version-minor}
 +------------------------+--------------------------------------------------------+----------------+------+---------+------------------------+
 
 Total database accesses: 0, total allocated memory: 64
-----
-
-======
-
-[[query-plan-argument-tracker]]
-== Argument Tracker
-// ArgumentTracker
-
-The `ArgumentTracker` operator is used to ensure row-by-row semantics.
-This restricts the xref:planning-and-tuning/runtimes/index.adoc[Cypher runtime] to not batch operations in larger chunks.
-
-.ArgumentTracker
-======
-
-.Query
-[source, cypher]
-----
-PROFILE
-MATCH (s:Person {name: 'me'})
-CALL {
-   WITH s
-   SET s.seen = coalesce(s.seen + 1,1)
-   RETURN s.seen AS result
-}
-RETURN result;
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version {neo4j-version-minor}
-
-+--------------------+----+-------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator           | Id | Details                                               | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+--------------------+----+-------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults    |  0 | result                                                |              0 |    0 |       0 |                |                        |           |                     |
-| |                  +----+-------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Projection        |  1 | s.seen AS result                                      |              0 |    0 |       0 |                |                        |           |                     |
-| |                  +----+-------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Apply             |  2 |                                                       |              0 |    0 |       0 |                |                        |           |                     |
-| |\                 +----+-------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| | +ArgumentTracker |  7 |                                                       |              0 |    0 |       0 |            696 |                        |           |                     |
-| | |                +----+-------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| | +Eager           |  3 |                                                       |              0 |    0 |       0 |            696 |                    0/0 |     0.000 | Fused in Pipeline 2 |
-| | |                +----+-------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| | +SetProperty     |  4 | s.seen = coalesce(s.seen + $autoint_1, $autoint_2)    |              0 |    0 |       0 |                |                        |           |                     |
-| | |                +----+-------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| | +Argument        |  5 | s                                                     |              0 |    0 |       0 |            256 |                    0/0 |     0.000 | Fused in Pipeline 1 |
-| |                  +----+-------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +NodeIndexSeek     |  6 | RANGE INDEX s:Person(name) WHERE name = $autostring_0 |              0 |    0 |       1 |            376 |                    1/0 |     0.286 | In Pipeline 0       |
-+--------------------+----+-------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-
-Total database accesses: 47, total allocated memory: 4144
 ----
 
 ======
