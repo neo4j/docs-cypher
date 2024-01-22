@@ -173,7 +173,7 @@ RETURN n.name AS name, n.type AS type
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols="2*m"]
+[options="header,footer",cols="2*m"]
 |===
 | name | type
 | "William Shakespeare" | "statue"
@@ -279,7 +279,7 @@ RETURN p2.name AS name, p2.type AS type
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols="2*m"]
+[options="header,footer",cols="2*m"]
 |===
 | name | type
 | "Walter Scott" | "statue"
@@ -293,27 +293,29 @@ RETURN p2.name AS name, p2.type AS type
 .Execution plan
 [role="queryplan"]
 ----
-+-------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator                | Id | Details                                                                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+-------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults         |  0 | name, type                                                                                           |              8 |    4 |       0 |              0 |                        |           |                     |
-| |                       +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Projection             |  1 | cache[p2.name] AS name, cache[p2.type] AS type                                                       |              8 |    4 |       0 |                |                        |           |                     |
-| |                       +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +CacheProperties        |  2 | cache[p2.type], cache[p2.name]                                                                       |              8 |    4 |      12 |                |                        |           |                     |
-| |                       +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Filter                 |  3 | NOT p1 = p2 AND p1.name = $autostring_0 AND point.distance(cache[p1.location], cache[p2.location]) < |              8 |    4 |    2891 |                |                        |           |                     |
-| |                       |    | $autoint_1                                                                                           |                |      |         |                |                        |           |                     |
-| |                       +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Apply                  |  4 |                                                                                                      |           1060 | 1448 |       0 |                |                        |           |                     |
-| |\                      +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| | +NodeIndexSeekByRange |  5 | POINT INDEX p1:PointOfInterest(location) WHERE point.distance(location, cache[p2.location]) < $autoi |           1060 | 1448 |    1638 |          16616 |                 1529/1 |   125.886 | Fused in Pipeline 1 |
-| |                       |    | nt_1, cache[p1.location]                                                                             |                |      |         |                |                        |           |                     |
-| |                       +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +NodeByLabelScan        |  6 | p2:PointOfInterest                                                                                   |            188 |  188 |     189 |            376 |                    2/0 |     0.533 | In Pipeline 0       |
-+-------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++--------------------+----+-------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator           | Id | Details                                                                             | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++--------------------+----+-------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults    |  0 | name, type                                                                          |              8 |    4 |       0 |              0 |                    0/0 |     0.029 |                     |
+| |                  +----+-------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+                     |
+| +Projection        |  1 | cache[p2.name] AS name, cache[p2.type] AS type                                      |              8 |    4 |       0 |                |                    0/0 |     0.011 |                     |
+| |                  +----+-------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+                     |
+| +CacheProperties   |  2 | cache[p2.type], cache[p2.name]                                                      |              8 |    4 |      12 |                |                    7/0 |     0.078 |                     |
+| |                  +----+-------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+                     |
+| +Filter            |  3 | point.distance(cache[p1.location], cache[p2.location]) < $autoint_1 AND NOT p1 = p2 |              8 |    4 |       0 |                |                    0/0 |     0.241 |                     |
+| |                  +----+-------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+                     |
+| +CartesianProduct  |  4 |                                                                                     |            285 |  188 |       0 |          13008 |                        |     0.139 | In Pipeline 2       |
+| |\                 +----+-------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +CacheProperties |  5 | cache[p2.location]                                                                  |            188 |  188 |     376 |                |                        |           |                     |
+| | |                +----+-------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +NodeByLabelScan |  6 | p2:PointOfInterest                                                                  |            188 |  188 |     189 |            400 |                  354/0 |     0.396 | Fused in Pipeline 1 |
+| |                  +----+-------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +CacheProperties   |  7 | cache[p1.location]                                                                  |              2 |    1 |       2 |                |                        |           |                     |
+| |                  +----+-------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeIndexSeek     |  8 | RANGE INDEX p1:PointOfInterest(name) WHERE name = $autostring_0                     |              2 |    1 |       2 |            376 |                    4/0 |     0.223 | Fused in Pipeline 0 |
++--------------------+----+-------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
-Total database accesses: 4730, total allocated memory: 16952
+Total database accesses: 581, total allocated memory: 13776
 ----
 
 For more information about the predicates supported by text indexes, see xref:indexes/search-performance-indexes/managing-indexes.adoc#point-indexes-supported-predicates[Managing search-performance indexes -> Point indexes: supported predicates].
@@ -379,7 +381,7 @@ RETURN length(path) AS pathLength, sum(rel.distance) AS geographicalDistance
 
 
 .Result
-[role="queryresult",options="header,footer",cols="2*m"]
+[options="header,footer",cols="2*m"]
 |===
 |pathLength | geographicalDistance
 
@@ -452,7 +454,7 @@ RETURN n.name AS name
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols="1*m"]
+[options="header,footer",cols="1*m"]
 |===
 | name
 | "William Shakespeare"
@@ -559,7 +561,7 @@ This can have important implications for query performance, because the planner 
 To demonstrate this behavior, the following query will filter out any `ROUTE` relationships with a `distance` property less than `30`, and return the `distance` property of the matched relationships in ascending numerical order using the xref:clauses/order-by.adoc[ORDER BY] clause.
 
 .Query to return order of results without a relevant index
-[source,syntax]
+[source,cypher]
 ----
 PROFILE
 MATCH ()-[r:ROUTE]-()
@@ -707,7 +709,7 @@ RETURN count(n) AS nodes
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols="1*m"]
+[options="header,footer",cols="1*m"]
 |===
 | nodes
 | 3
@@ -747,7 +749,7 @@ RETURN count(n) AS nodes
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols="1*m"]
+[options="header,footer",cols="1*m"]
 |===
 | nodes
 | 5
@@ -803,7 +805,7 @@ RETURN count(n) AS nodes
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols="1*m"]
+[options="header,footer",cols="1*m"]
 |===
 | nodes
 | 185
@@ -900,19 +902,19 @@ RETURN count(n) AS nodes
 .Execution plan
 [role="queryplan"]
 ----
-+------------------+----+---------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator         | Id | Details                   | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+------------------+----+---------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults  |  0 | name                      |            187 |  185 |       0 |              0 |                        |           |                     |
-| |                +----+---------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Projection      |  1 | cache[n.name] AS name     |            187 |  185 |       0 |                |                        |           |                     |
-| |                +----+---------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Filter          |  2 | cache[n.name] IS NOT NULL |            187 |  185 |     373 |                |                        |           |                     |
-| |                +----+---------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +NodeByLabelScan |  3 | n:PointOfInterest         |            188 |  188 |     189 |            248 |                  119/0 |     1.004 | Fused in Pipeline 0 |
-+------------------+----+---------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++-------------------+----+--------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator          | Id | Details            | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-------------------+----+--------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults   |  0 | nodes              |              1 |    1 |       0 |              0 |                    0/0 |     0.012 | In Pipeline 1       |
+| |                 +----+--------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +EagerAggregation |  1 | count(n) AS nodes  |              1 |    1 |       0 |             32 |                        |           |                     |
+| |                 +----+--------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Filter           |  2 | n.name IS NOT NULL |            187 |  185 |     373 |                |                        |           |                     |
+| |                 +----+--------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeByLabelScan  |  3 | n:PointOfInterest  |            188 |  188 |     189 |            376 |                  259/0 |     0.363 | Fused in Pipeline 0 |
++-------------------+----+--------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
-Total database accesses: 562, total allocated memory: 312
+Total database accesses: 562, total allocated memory: 472
 ----
 
 This plan shows that the available text index on the `name` property was not used to solve the predicate.
@@ -939,20 +941,20 @@ RETURN count(n) AS nodes
 .Execution plan
 [role="queryplan"]
 ----
-+-----------------+----+-----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator        | Id | Details                                                   | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+-----------------+----+-----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults |  0 | name                                                      |            187 |  185 |       0 |              0 |                        |           |                     |
-| |               +----+-----------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Projection     |  1 | n.name AS name                                            |            187 |  185 |     370 |                |                        |           |                     |
-| |               +----+-----------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +NodeIndexScan  |  2 | TEXT INDEX n:PointOfInterest(name) WHERE name IS NOT NULL |            187 |  185 |     186 |            248 |                  115/0 |     1.671 | Fused in Pipeline 0 |
-+-----------------+----+-----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++-------------------+----+-----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator          | Id | Details                                                   | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-------------------+----+-----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults   |  0 | nodes                                                     |              1 |    1 |       0 |              0 |                    0/0 |     0.013 | In Pipeline 1       |
+| |                 +----+-----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +EagerAggregation |  1 | count(n) AS nodes                                         |              1 |    1 |       0 |             32 |                        |           |                     |
+| |                 +----+-----------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeIndexScan    |  2 | TEXT INDEX n:PointOfInterest(name) WHERE name IS NOT NULL |            187 |  185 |     186 |            376 |                    0/0 |     0.328 | Fused in Pipeline 0 |
++-------------------+----+-----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
-Total database accesses: 556, total allocated memory: 312
+Total database accesses: 186, total allocated memory: 472
 ----
 
-Because of the type constraint on the `name` property, the planner is now able to deduce that all `name` properties are of type `STRING`, and therefore use the available text index. 
+Because of the type constraint on the `name` property, the planner is now able to deduce that all `name` properties are of type `STRING`, and therefore use the available text index.
 
 Point indexes can be extended in the same way if a type constraint is created to ensure that all properties are `POINT` values.
 
