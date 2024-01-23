@@ -16,7 +16,7 @@ This page contains an overview of the available Cypher operators.
 | xref::syntax/operators.adoc#query-operators-comparison[Comparison operators]     | `+=+`, `+<>+`, `+<+`, `+>+`, `+<=+`, `+>=+`, `IS NULL`, `IS NOT NULL`
 | xref::syntax/operators.adoc#query-operators-comparison[String-specific comparison operators] | `STARTS WITH`, `ENDS WITH`, `CONTAINS`, `=~` (regex matching)
 | xref::syntax/operators.adoc#query-operators-boolean[Boolean operators] | `AND`, `OR`, `XOR`, `NOT`
-| xref::syntax/operators.adoc#query-operators-string[String operators]   | `+` (string concatenation)
+| xref::syntax/operators.adoc#query-operators-string[String operators]   | `+` (string concatenation), `IS NORMALIZED`
 | xref::syntax/operators.adoc#query-operators-temporal[Temporal operators]   | `+` and `-` for operations between durations and temporal instants/durations, `*` and `/` for operations between durations and numbers
 | xref::syntax/operators.adoc#query-operators-map[Map operators]       |  `.` for static value access by key, `[]` for dynamic value access by key
 | xref::syntax/operators.adoc#query-operators-list[List operators]       | `+` (list concatenation), `IN` to check existence of an element in a list, `[]` for accessing element(s) dynamically
@@ -543,6 +543,7 @@ RETURN number
 The string operators comprise:
 
 * concatenating strings: `+`
+* checking if a string is normalized: `IS NORMALIZED`
 
 
 [[syntax-concatenating-two-strings]]
@@ -562,6 +563,102 @@ RETURN 'neo' + '4j' AS result
 1+d|Rows: 1
 |===
 
+
+[[match-string-is-normalized]]
+=== Checking if a `STRING` `IS NORMALIZED`
+
+_This feature was introduced in Neo4j 5.17._
+
+The `IS NORMALIZED` operator is used to check whether the given `STRING` is in the `NFC` Unicode normalization form:
+
+[NOTE]
+====
+Unicode normalization is a process that transforms different representations of the same string into a standardized form.
+For more information, see the documentation for link:https://unicode.org/reports/tr15/#Norm_Forms[Unicode normalization forms].
+====
+
+.Query
+[source, cypher]
+----
+RETURN "the \u212B char" IS NORMALIZED AS normalized
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| normalized
+| false
+2+|Rows: 1
+|===
+
+Because the given `STRING` contains a non-normalized Unicode character (`\u212B`), `false` is returned.
+
+To normalize a `STRING`, use the xref:functions/string.adoc#functions-normalize[normalize()] function.
+
+Note that the `IS NORMALIZED` operator returns `null` when used on a non-`STRING` value.
+For example, `RETURN 1 IS NORMALIZED` returns `null`.
+
+[[match-string-is-not-normalized]]
+=== Checking if a `STRING` `IS NOT NORMALIZED`
+
+_This feature was introduced in Neo4j 5.17._
+
+The `IS NOT NORMALIZED` operator is used to check whether the given `STRING` is not in the `NFC` Unicode normalization form:
+
+.Query
+[source, cypher]
+----
+RETURN "the \u212B char" IS NOT NORMALIZED AS notNormalized
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| notNormalized
+| true
+2+|Rows: 1
+|===
+
+Because the given `STRING` contains a non-normalized Unicode character (`\u212B`), and is not normalized, `true` is returned.
+
+To normalize a `STRING`, use the xref:functions/string.adoc#functions-normalize[normalize()] function.
+
+Note that the `IS NOT NORMALIZED` operator returns `null` when used on a non-`STRING` value.
+For example, `RETURN 1 IS NOT NORMALIZED` returns `null`.
+
+
+[[match-string-is-normalized-specified-normal-form]]
+==== Using `IS NORMALIZED` with a specified normalization type
+
+It is possible to define which Unicode normalization type is used (the default is `NFC`).
+
+The available normalization types are:
+
+* `NFC`
+* `NFD`
+* `NFKC`
+* `NFKD`
+
+.Query
+[source, cypher]
+----
+WITH "the \u00E4 char" as myString
+RETURN myString IS NFC NORMALIZED AS nfcNormalized,
+    myString IS NFD NORMALIZED AS nfdNormalized
+----
+
+The given `STRING` contains the Unicode character: `\u00E4`, which is considered normalized in `NFC` form, but not in `NFD` form.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| nfcNormalized | nfdNormalized
+| true          | false
+2+|Rows: 2
+|===
+
+It is also possible to specify the normalization form when using the negated normalization operator.
+For example, `RETURN "string" IS NOT NFD NORMALIZED`.
 
 [[query-operators-temporal]]
 == Temporal operators
