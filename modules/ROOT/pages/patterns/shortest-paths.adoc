@@ -30,15 +30,6 @@ CREATE (asc:Station {name:"Ashchurch"}),
   (wop:Station {name:"Worcestershire Parkway Ll"}),
   (wof:Station {name:"Worcester Foregate Street"}),
   (wos:Station {name:"Worcester Shrub Hill"})
-SET asc.location = point({longitude: -2.10876, latitude: 51.9989}),
-  bmv.location = point({longitude: -2.04978, latitude: 52.3206}),
-  cnm.location = point({longitude: -2.09962, latitude: 51.8974}),
-  dtw.location = point({longitude: -2.15836, latitude: 52.2682}),
-  hby.location = point({longitude: -2.22112, latitude: 52.33449}),
-  psh.location = point({longitude: -2.07154, latitude: 52.13055}),
-  wop.location = point({longitude: -2.16003, latitude: 52.15605}),
-  wof.location = point({longitude: -2.2216, latitude: 52.19514}),
-  wos.location = point({longitude: -2.20941, latitude: 52.19473})
 CREATE (asc)-[:LINK {distance: 7.25}]->(cnm),
   (asc)-[:LINK {distance: 11.29}]->(wop),
   (asc)-[:LINK {distance: 14.75}]->(wos),
@@ -118,7 +109,7 @@ The following query returns all three of the second shortest paths, along with t
 .Query
 [source, cypher]
 ----
-MATCH p = SHORTEST 5 (hby:Station)-[:LINK]-+(bmv:Station)
+MATCH p = SHORTEST 5 (wos:Station)-[:LINK]-+(bmv:Station)
 WHERE wos.name = "Worcester Shrub Hill" AND bmv.name = "Bromsgrove"
 RETURN [n in nodes(p) | n.name] AS stops
 ----
@@ -148,7 +139,7 @@ An alternative way to return all paths that are tied for the shortest length is 
 .Query
 [source,cypher]
 ----
-MATCH p = ALL SHORTEST (hby)-[:LINK]-+(cnm)
+MATCH p = ALL SHORTEST (wos)-[:LINK]-+(cnm)
 WHERE hby.name = "Worcester Shrub Hill" AND cnm.name = "Bromsgrove"
 RETURN [n in nodes(p) | n.name] AS stops
 ----
@@ -180,7 +171,20 @@ WHERE wos.name = "Worcester Shrub Hill" AND bmv.name = "Bromsgrove"
 RETURN [n in nodes(p) | n.name] AS stops, length(p) AS pathLength
 ----
 
+.Result
+[role="queryresult",options="header,footer",cols="2m,m"]
+|===
+| stops | pathLength
+| ["Worcester Shrub Hill", "Droitwich Spa", "Bromsgrove"] | 2
+| ["Worcester Shrub Hill", "Worcestershire Parkway Ll", "Bromsgrove"] | 2
+| ["Worcester Shrub Hill", "Worcester Foregate Street", "Droitwich Spa", "Bromsgrove"] | 3
+| ["Worcester Shrub Hill", "Ashchurch", "Worcestershire Parkway Ll", "Bromsgrove"] | 3
+| ["Worcester Shrub Hill", "Ashchurch", "Cheltenham Spa", "Bromsgrove"] | 3
+2+d|Rows: 5
+|===
+
 The first group includes the two shortest paths with `pathLength = 2` (as seen in the first two rows of the results), and the second group includes the three second shortest paths with `pathLength = 3` (as seen in the last three rows of the results).
+
 If more groups are specified than exist in the graph, only those paths that exist are returned.
 For example, if the paths equal to one of the eight shortest paths are specified for `Worcester Shrub Hill` to `Bromsgrove`, only seven groups are returned:
 
@@ -212,7 +216,7 @@ RETURN length(p) AS pathLength, count(*) AS numPaths
 == `ANY`
 
 The `ANY` keyword can be used to test the reachability of nodes from a given node(s).
-It returns the same as `SHORTEST 1`, but by using the ANY keyword the intent of the query is clearer.
+It returns the same as `SHORTEST 1`, but by using the `ANY` keyword the intent of the query is clearer.
 For example, the following query shows all stations reachable from `Pershore` where the distance between each pair of stations is less than 6 miles:
 
 .Query
@@ -242,7 +246,8 @@ RETURN b.name AS stops ORDER BY stops
 == Partitions
 
 When there are multiple start or end nodes matching a path pattern, the matches are partitioned into distinct pairs of start and end nodes prior to selecting the shortest paths; a partition is one distinct pair of start node and end node.
-The selection of shortest paths is then done from all paths that join the start and end node of a given partition. The results are then formed from the union of all the shortest paths found for each partition.
+The selection of shortest paths is then done from all paths that join the start and end node of a given partition.
+The results are then formed from the union of all the shortest paths found for each partition.
 
 For example, if the start nodes of matches are bound to either `Droitwich Spa` or `Hartlebury`, and the end nodes are bound to either `Ashchurch` or `Cheltenham Spa`, there will be four distinct pairs of start and end nodes, and therefore four partitions:
 
@@ -265,10 +270,10 @@ It uses a pair of xref:clauses/unwind.adoc[`UNWIND`] clauses to generate a Carte
 ----
 UNWIND ["Droitwich Spa", "Hartlebury"] AS a
 UNWIND ["Ashchurch", "Cheltenham Spa"] AS b
-MATCH SHORTEST 2 GROUPS (o {name: a})-[l]-+(d {name: b})
+MATCH SHORTEST 2 GROUPS (o:Station {name: a})-[l]-+(d:Station {name: b})
 RETURN o.name AS start, d.name AS end,
     size(l) AS pathLength, count(*) AS numPaths
-ORDER BY origin, destination, pathLength
+ORDER BY start, end, pathLength
 ----
 
 .Result
@@ -290,18 +295,21 @@ ORDER BY origin, destination, pathLength
 |===
 
 Each partition appears twice: once for the group of shortest paths and once for the group of second shortest paths.
-For example, for the partition of `Droitwich Spa` as the origin and `Ashchurch` as the destination, the shortest path group (paths with length 2) has one path, and the second shortest path group (paths with length 3) has four paths.
+For example, for the partition of `Droitwich Spa` as the `start` and `Ashchurch` as the `end`, the shortest path group (paths with length `2`) has one path, and the second shortest path group (paths with length `3`) has four paths.
 
 [[filters]]
 == Pre-filters and post-filters
 
-The position of a filter in a shortest path query will affect whether it is applied before or after selecting the shortest paths. To see the difference, first consider a query that returns the shortest path from `Hartlebury` to `Cheltenham Spa`:
+The position of a filter in a shortest path query will affect whether it is applied before or after selecting the shortest paths.
+To see the difference, first consider a query that returns the shortest path from `Hartlebury` to `Cheltenham Spa`:
 
 .Query
 [source,cypher]
 ----
 MATCH SHORTEST 1
-  (:Station {name: 'Hartlebury'}) (()--(n))+ (:Station {name: 'Cheltenham Spa'})
+  (:Station {name: 'Hartlebury'}) 
+  (()--(n))+ 
+  (:Station {name: 'Cheltenham Spa'})
 RETURN [stop in n[..-1] | stop.name] AS stops
 ----
 
@@ -312,7 +320,7 @@ RETURN [stop in n[..-1] | stop.name] AS stops
 
 | ["Droitwich Spa", "Bromsgrove"]
 
-1+d|Rows:1
+1+d|Rows: 1
 |===
 
 Note that `n[..-1]` is a slicing operation that returns all elements of `n` except the last.
@@ -335,7 +343,7 @@ RETURN [stop in n[..-1] | stop.name] AS stops
 |===
 | stops
 
-1+d|Rows:0
+1+d|Rows: 0
 |===
 
 There are two ways to turn a post-filter without solutions into a pre-filter that returns solutions.
@@ -358,7 +366,7 @@ RETURN [stop in n[..-1] | stop.name] AS stops
 
 | ["Droitwich Spa", "Worcester Shrub Hill", "Ashchurch"]
 
-1+d|Rows:1
+1+d|Rows: 1
 |===
 
 The shortest journey that avoids `Bromsgrove` is now returned.
@@ -383,7 +391,7 @@ RETURN [stop in n[..-1] | stop.name] AS stops
 
 | ["Droitwich Spa", "Worcester Shrub Hill", "Ashchurch"]
 
-1+d|Rows:1
+1+d|Rows: 1
 |===
 
 [[pre-filter-path-variable]]
@@ -417,7 +425,7 @@ ORDER BY pathLength, destination
 | "Worcestershire Parkway Ll" | 3
 | "Pershore" | 4
 
-2+d|Rows:8
+2+d|Rows: 8
 
 |===
 
@@ -472,14 +480,14 @@ ORDER BY pathLength, destination
 | "Pershore" | 4
 | "Worcestershire Parkway Ll" | 4
 
-2+d|Rows:8
+2+d|Rows: 8
 |===
 
 [[shortest-path-graph-patterns]]
 == Single shortest path per graph pattern
 
 xref:patterns/non-linear-patterns.adoc#graph-patterns[Graph patterns] can contain more than one path pattern.
-The exception is when one of those path patterns has a selective shortest path keyword (For more information, see xref:patterns/reference.adoc#shortest-paths-rules-selective[Syntax and semantics -> selective path selectors]), in which case it can be the only path pattern in the graph pattern.
+The exception is when one of those path patterns has a selective shortest path keyword (for more information, see xref:patterns/reference.adoc#shortest-paths-rules-selective[Syntax and semantics -> selective path selectors]), in which case it can be the only path pattern in the graph pattern.
 Consider the following example of finding the shortest paths from `Droitwich Spa` to `Worcestershire Parkway` and from `Droitwich Spa` to `Cheltenham Spa` with a single `MATCH` statement:
 
 .Invalid query
@@ -533,5 +541,5 @@ RETURN [stop IN nodes(p) | stop.name] AS r1,
 | ["Droitwich Spa", "Bromsgrove", "Worcestershire Parkway Ll"]
 | ["Droitwich Spa", "Bromsgrove", "Cheltenham Spa"]
 
-2+d|Rows:1
+2+d|Rows: 1
 |===
