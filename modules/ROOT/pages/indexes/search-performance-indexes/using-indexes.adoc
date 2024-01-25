@@ -1,5 +1,6 @@
 :description: Information about how to use the search-performance indexes in Neo4j.
 :test-skip: true
+:test-setup-dump: https://github.com/neo4j-graph-examples/openstreetmap/raw/main/data/openstreetmap-50.dump
 = The impact of indexes on query performance
 
 Search-performance indexes enable quicker and more efficient pattern matching by solving a particular combination of node label/relationship type and property predicate. 
@@ -54,6 +55,7 @@ d|Rows:1
 |===
 
 .Execution plan
+[role="queryplan"]
 ----
 +-------------------+----+------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 | Operator          | Id | Details                | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
@@ -111,6 +113,7 @@ RETURN count(n)
 ----
 
 .Execution plan
+[role="queryplan"]
 ----
 +-------------------+----+----------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 | Operator          | Id | Details                                                        | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
@@ -180,6 +183,7 @@ RETURN n.name AS name, n.type AS type
 |===
 
 .Execution plan
+[role="queryplan"]
 ----
 +------------------------+----+----------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 | Operator               | Id | Details                                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
@@ -209,6 +213,7 @@ RETURN n.name, n.type
 ----
 
 .Execution plan
+[role="queryplan"]
 ----
 +-----------------------+----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 | Operator              | Id | Details                                                                                 | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
@@ -286,6 +291,7 @@ RETURN p2.name AS name, p2.type AS type
 |===
 
 .Execution plan
+[role="queryplan"]
 ----
 +-------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 | Operator                | Id | Details                                                                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
@@ -346,7 +352,7 @@ This is especially beneficial when dealing with complex, large geo-spatial data,
 [[composite-indexes]]
 == Composite indexes
 
-It is possible to create an index on a single property or multiple properties.
+It is possible to create a range index on a single property or multiple properties (text and point indexes are single-property only).
 The latter are called composite indexes and can be useful if queries against a database frequently filter on _all_ the properties indexed by the composite index.
 
 The following example first creates a composite index on `PointOfInterest` nodes for the properties `name` and `type`, and then queries the graph using the xref:patterns/reference.adoc#shortest-functions[shortestPath function] to determine both the path length (in terms of traversed relationships in the graph) and geographical distance between the `Zoo School` and its nearest `tennis pitch` (note that there are 32 unique `PointOfInterest` `tennis pitch` nodes in the graph):
@@ -360,7 +366,8 @@ CREATE INDEX composite_index FOR (n:PointOfInterest) ON (n.name, n.type)
 .Query with a filter on both properties indexed by the composite index
 [source,cypher]
 ----
-MATCH (tennisPitch: PointOfInterest {name: 'tennis', type: 'pitch'})
+PROFILE
+MATCH (tennisPitch: PointOfInterest {name: 'pitch', type: 'tennis'})
 WITH tennisPitch
 MATCH path = shortestPath((tennisPitch)-[:ROUTE*]-(:PointOfInterest {name: 'Zoo School'}))
 WITH path, relationships(path) AS relationships
@@ -382,6 +389,7 @@ RETURN length(path) AS pathLength, sum(rel.distance) AS geographicalDistance
 |===
 
 .Execution plan
+[role="queryplan"]
 ----
 +---------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+------------------+---------------------+
 | Operator            | Id | Details                                                                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Ordered by       | Pipeline            |
@@ -439,7 +447,7 @@ Note the order in which the properties are defined when creating the index, with
 ----
 PROFILE
 MATCH (n:PointOfInterest)
-WHERE n.lat = 40.769798 AND n.name STARTS WITH 'William' AND n.type IS NOT NULL
+WHERE n.lat = 40.7697989 AND n.name STARTS WITH 'William' AND n.type IS NOT NULL
 RETURN n.name AS name
 ----
 
@@ -452,6 +460,7 @@ RETURN n.name AS name
 |===
 
 .Execution plan
+[role="queryplan"]
 ----
 +-----------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 | Operator        | Id | Details                                                                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
@@ -497,6 +506,7 @@ RETURN n.name AS name
 ----
 
 .Execution plan
+[role="queryplan"]
 ----
 +-----------------+----+-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 | Operator        | Id | Details                                                                                             | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
@@ -538,7 +548,7 @@ These rules can be important when creating composite indexes, as some checks are
 For instance, it is generally more efficient for the planner to perform an equality check on a property than an existence check.
 Depending on the queries and the application, it may, therefore, be cost-effective to consider the order in which properties are defined when creating a composite index.
 
-Additionally, it bears repeating that composite indexes can only be used if a predicate filters on all the properties indexed by the composite index, and that composite indexes can only be created for range indexes (point and text indexes are single-property only).
+Additionally, it bears repeating that composite indexes can only be used if a predicate filters on all the properties indexed by the composite index, and that composite indexes can only be created for range indexes.
 
 [[range-index-backed-order-by]]
 == Range index-backed ORDER BY
@@ -559,6 +569,7 @@ ORDER BY distance
 ----
 
 .Execution plan
+[role="queryplan"]
 ----
 +-----------------+----+--------------------------------+----------------+-------+---------+----------------+------------------------+-----------+--------------+---------------------+
 | Operator        | Id | Details                        | Estimated Rows | Rows  | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Ordered by   | Pipeline            |
@@ -605,6 +616,7 @@ ORDER BY distance
 ----
 
 .Execution plan
+[role="queryplan"]
 ----
 
 +-----------------------------------------+----+--------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+----------------+---------------------+
@@ -655,6 +667,7 @@ RETURN poi.name AS name
 ----
 
 .Execution plan
+[role="queryplan"]
 ----
 +-------------------------+----+-----------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 | Operator                | Id | Details                                                         | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
@@ -688,7 +701,7 @@ The following query demonstrates the incompatibility between `null` values and i
 [source,cypher]
 ----
 PROFILE
-ATCH (n:PointOfInterest)
+MATCH (n:PointOfInterest)
 WHERE n.name IS NULL
 RETURN count(n) AS nodes
 ----
@@ -702,6 +715,7 @@ RETURN count(n) AS nodes
 |===
 
 .Execution plan
+[role="queryplan"]
 ----
 +-------------------+----+-------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 | Operator          | Id | Details           | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
@@ -743,6 +757,7 @@ RETURN count(n) AS nodes
 The query result now includes both the three nodes with an unset `name` value found in the previous query and the two nodes with a `name` value containing `William` (`William Shakespeare` and `William Tecumseh Sherman`).
 
 .Execution plan
+[role="queryplan"]
 ----
 +--------------------------+----+----------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 | Operator                 | Id | Details                                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
@@ -796,6 +811,7 @@ RETURN count(n) AS nodes
 |===
 
 .Execution plan
+[role="queryplan"]
 ----
 +-------------------+----+------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 | Operator          | Id | Details                                                    | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
@@ -832,6 +848,7 @@ RETURN count(n) AS nodes
 ----
 
 .Execution plan
+[role="queryplan"]
 ----
 +-------------------+----+-----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 | Operator          | Id | Details                                                   | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
@@ -881,6 +898,7 @@ RETURN count(n) AS nodes
 ----
 
 .Execution plan
+[role="queryplan"]
 ----
 +------------------+----+---------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 | Operator         | Id | Details                   | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
@@ -919,6 +937,7 @@ RETURN count(n) AS nodes
 ----
 
 .Execution plan
+[role="queryplan"]
 ----
 +-----------------+----+-----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 | Operator        | Id | Details                                                   | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
@@ -1005,7 +1024,7 @@ The order in which the properties are defined when creating a composite index im
 
 * A Cypher query can use several indexes if the planner deems it beneficial to the performance of a query.
 
-* * Neo4j indexes do not store `null` values, and the planner must be able to rule out any entities with properties containing `null` values in order to use an index.
+* Neo4j indexes do not store `null` values, and the planner must be able to rule out any entities with properties containing `null` values in order to use an index.
 There are several strategies to ensure the use of indexes.
 
 * The columns `lastRead`, `readCount`, and `trackedSince` returned by the `SHOW INDEX` command can be used to identify redundant indexes that take up unnecessary space.
