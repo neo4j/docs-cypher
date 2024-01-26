@@ -356,3 +356,189 @@ RETURN origin.departs + [stop in m | stop.departs] AS departureTimes,
 2+d|Rows: 2
 
 |===
+
+[[quantified-path-patterns-predicates]]
+== Predicates in quantified path patterns
+
+One of the pitfalls of quantified path patterns is that, depending on the graph, they can end up matching very large numbers of paths, resulting in a slow query performance.
+This is especially true when searching for paths with a large maximum length or when the pattern is too general.
+However, by using inline predicates that specify precisely which nodes and relationships should be included in the results, unwanted results will be pruned as the graph is traversed.
+
+Here are some examples of the types of constraints you can impose on quantified path pattern traversals:
+
+* Nodes must have certain combinations of labels.
+For example, all nodes must be an `Employee`, but not a `Contractor`.
+
+* Relationships must have certain types.
+For example, all relationships in the path must be of type `EMPLOYED_BY`.
+
+* Nodes or relationships must have properties satisfying some condition.
+For example, all relationships must have the property `distance > 10`.
+
+To demonstrate the utility of predicates in quantified path patterns, this section considers an example of finding the shortest path by physical distance and compares that to the results yielded by using the xref:patterns/shortest-paths.adoc[`SHORTEST`] keyword.
+The graph in this example continues with `Station` nodes, but adds both a geospatial `location` property to the `Stations`, as well as `LINK` relationships with a `distance` property representing the distance between pairs of `Stations`:
+
+image::patterns_qpp_predicates.svg[width="500",role="middle"]
+
+To recreate the graph, run the following query against an empty Neo4j database:
+
+////
+[source,cypher,role=test-setup]
+----
+MATCH (n)
+DETACH DELETE n
+----
+////
+
+[source,cypher,role=test-setup]
+----
+CREATE (lbg:Station {name: "London Bridge"}),
+    (bfr:Station {name: "London Blackfriars"}),
+    (eph:Station {name: "Elephant & Castle"}),
+    (dmk:Station {name: "Denmark Hill"}),
+    (pmr:Station {name: "Peckham Rye"}),
+    (qrp:Station {name: "Queens Rd Peckham"}),
+    (sbm:Station {name: "South Bermondsey"}),
+    (lgj:Station {name: "Loughborough Jn"}),
+    (hnh:Station {name: "Herne Hill"}),
+    (tuh:Station {name: "Tulse Hill"}),
+    (ndl:Station {name: "North Dulwich"}),
+    (edw:Station {name: "East Dulwich"}),
+    (brx:Station {name: "Brixton"})
+ SET lbg.location = point({longitude: -0.08609, latitude: 51.50502}),
+    bfr.location = point({longitude: -0.10333, latitude: 51.51181}),
+    eph.location = point({longitude: -0.09873, latitude: 51.49403}),
+    dmk.location = point({longitude: -0.08936, latitude: 51.46820}),
+    pmr.location = point({longitude: -0.06941, latitude: 51.47003}),
+    qrp.location = point({longitude: -0.05731, latitude: 51.47357}),
+    sbm.location = point({longitude: -0.05468, latitude: 51.48814}),
+    lgj.location = point({longitude: -0.10218, latitude: 51.46630}),
+    hnh.location = point({longitude: -0.10229, latitude: 51.45331}),
+    tuh.location = point({longitude: -0.10508, latitude: 51.43986}),
+    ndl.location = point({longitude: -0.08792, latitude: 51.45451}),
+    edw.location = point({longitude: -0.08057, latitude: 51.46149}),
+    brx.location = point({longitude: -0.11418, latitude: 51.46330})
+CREATE (lbg)<-[:LINK {distance: 1.13}]-(bfr),
+    (bfr)<-[:LINK {distance: 1.21}]-(eph),
+    (eph)-[:LINK {distance: 2.6}]->(dmk),
+    (dmk)-[:LINK {distance: 0.86}]->(pmr),
+    (pmr)-[:LINK {distance: 0.71}]->(qrp),
+    (qrp)<-[:LINK {distance: 0.95}]-(sbm),
+    (sbm)<-[:LINK {distance: 1.8}]-(lbg),
+    (lgj)-[:LINK {distance: 0.88}]->(hnh),
+    (hnh)-[:LINK {distance: 1.08}]->(tuh),
+    (tuh)<-[:LINK {distance: 1.29}]-(ndl),
+    (ndl)-[:LINK {distance: 0.53}]->(edw),
+    (edw)-[:LINK {distance: 0.84}]->(pmr),
+    (eph)-[:LINK {distance: 2.01}]->(lgj),
+    (dmk)-[:LINK {distance: 1.11}]->(brx),
+    (brx)-[:LINK {distance: 0.51}]->(hnh)
+----
+
+The following query finds the total distance from `London Blackfriars` to `North Dulwich` following the path yielded by `SHORTEST`:
+
+.Query
+[source,cypher]
+----
+MATCH (bfr:Station {name: 'London Blackfriars'}),
+      (ndl:Station {name: 'North Dulwich'})
+MATCH p = SHORTEST 1 (bfr)-[:LINK]-+(ndl)
+RETURN reduce(acc = 0, r in relationships(p) | round(acc + r.distance, 2))
+  AS distance
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="m"]
+|===
+| distance
+
+| 6.47
+
+1+d|Rows: 1
+|===
+
+`SHORTEST` finds the shortest path by number of hops.
+Whether this corresponds to the shortest path by distance can be checked by looking at each path between the two end `Stations` and returning the first result after ordering by `distance`:
+
+.Query
+[source,cypher]
+----
+MATCH (bfr:Station {name: 'London Blackfriars'}),
+      (ndl:Station {name: 'North Dulwich'})
+MATCH p = (bfr)-[:LINK]-+(ndl)
+RETURN reduce(acc = 0, r in relationships(p) | round(acc + r.distance, 2))
+    AS distance
+ORDER BY distance LIMIT 1
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="m"]
+|===
+| distance
+
+| 5.96
+
+1+d|Rows: 1
+|===
+
+This shows that there is a route with a shorter distance than the one with fewer `Stations`.
+But to get this result, the query had to first find all paths from `London Blackfriars` to `North Dulwich` before it could select the shortest one.
+The following query shows the number of possible paths:
+
+.Query
+[source,cypher]
+----
+MATCH (bfr:Station {name: 'London Blackfriars'}),
+      (ndl:Station {name: 'North Dulwich'})
+MATCH p = (bfr)-[:LINK]-+(ndl)
+RETURN count(*) AS numPaths
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="m"]
+|===
+| numPaths
+
+| 7
+
+1+d|Rows: 1
+|===
+
+For a small dataset like this, finding all the paths will be fast.
+But as the size of the graph grows, the execution time will increase exponentially.
+For a real dataset, such as the entire rail network of the UK, it might be unacceptably long.
+
+One approach to avoid the exponential explosion in paths is to put a finite upper bound to the quantified path pattern (e.g. `{,10}`) to limit the amount of path iterations returned.
+This works fine where the solution is known to lie within some range of hops.
+But in cases where this is not known, one alternative would be to make the pattern more specific by, for example, adding node labels, or by specifying a relationship direction.
+Another alternative would be to add an inline predicate to the quantified path pattern.
+
+In this example, an inline predicate can be added that takes advantage of the geospatial `location` property of the `Stations`: for each pair of `Stations` on the path, the second `Station` will be closer to the endpoint (not always true, but is assumed here to keep the example simple).
+To compose the predicate, the xref:functions/spatial.adoc#functions-distance[point.distance()] function is used to compare the distance of the left-hand `Station` (`a`) and the right-hand `Station` (`b`) in each node-pair along the path to the destination `North Dulwich`:
+
+.Query
+[source,cypher]
+----
+MATCH (bfr:Station {name: "London Blackfriars"}),
+      (ndl:Station {name: "North Dulwich"})
+MATCH p = (bfr)
+          ((a)-[:LINK]-(b:Station)
+            WHERE point.distance(a.location, ndl.location) >
+              point.distance(b.location, ndl.location))+ (ndl)
+RETURN reduce(acc = 0, r in relationships(p) | round(acc + r.distance, 2))
+  AS distance
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="m"]
+|===
+| distance
+
+| 5.96
+
+1+d|Rows: 1
+|===
+
+This query avoids having to find all possible paths and then imposing a `LIMIT 1` to find the shortest one by distance.
+It also shows that there is only one path to solving the query (a number that remains constant even if the data from the rest of the UK railway network was included).
+Using inline predicates or making quantified path patterns more specific where possible can thus greatly improve query performance.
