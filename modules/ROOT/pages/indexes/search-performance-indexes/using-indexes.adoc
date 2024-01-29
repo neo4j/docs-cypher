@@ -1,7 +1,5 @@
-:description: Information about how to use the search-performance indexes in Neo4j.
+:description: Information about how search-performance indexes impact query performance in Neo4j.
 :test-setup-dump: https://github.com/neo4j-graph-examples/openstreetmap/raw/main/data/openstreetmap-50.dump
-:test-skip: true
-
 
 = The impact of indexes on query performance
 
@@ -53,7 +51,7 @@ RETURN count(n)
 |===
 | count(n)
 | 26
-d|Rows:1
+d|Rows: 1
 |===
 
 .Execution plan
@@ -181,7 +179,7 @@ RETURN n.name AS name, n.type AS type
 | "William Shakespeare" | "statue"
 | "William Tecumseh Sherman" | "equestrian statue"
 
-2+d|Rows:2
+2+d|Rows: 2
 |===
 
 .Execution plan
@@ -263,7 +261,7 @@ For information about calculating the size of indexes, see link:https://neo4j.co
 Point indexes solve predicates operating on spatial xref:values-and-types/spatial.adoc#spatial-values-point-type[`POINT`] values.
 Point indexes are optimized for queries filtering for the xref:functions/spatial.adoc#functions-distance[distance] between property values, or for property values within a xref:functions/spatial.adoc#functions-withinBBox[bounding box].
 
-The following example creates a point index which is then accessed through the `point.distance()` function to return the `name` and `type` of all `PointOfInterest` nodes within 100 meters of the  `William Shakespeare` statue:
+The following example creates a point index which is then used in an query returning the `name` and `type` of all `PointOfInterest` nodes within a set bounding box:
 
 .Create a point index
 [source,cypher]
@@ -271,49 +269,51 @@ The following example creates a point index which is then accessed through the `
 CREATE POINT INDEX point_index_location FOR (n:PointOfInterest) ON (n.location)
 ----
 
-.Query using the `point.distance()` function
+.Query using the `point.withinBBox()` function
 [source,cypher]
 ----
-PROFILE
-MATCH (p1:PointOfInterest {name:'William Shakespeare'}),(p2:PointOfInterest)
-WHERE p1<>p2 AND point.distance(p1.location, p2.location) < 100
-RETURN p2.name AS name, p2.type AS type
+PROFILE 
+MATCH (n:PointOfInterest)
+WHERE point.withinBBox(
+  n.location,
+  point({srid: 4326, x: -73.9723702, y: 40.7697989}),
+  point({srid: 4326, x: -73.9725659, y: 40.770193}))
+RETURN n.name AS name, n.type AS type
 ----
 
 .Result
 [options="header,footer",cols="2*m"]
 |===
 | name | type
-| "Walter Scott" | "statue"
+| "Heckscher Ballfield 3" | "baseball"
+| "Heckscher Ballfield 4" | "baseball"
+| "Heckscher Ballfield 1" | "baseball"
 | "Robert Burns" | "statue"
 | "Christopher Columbus" | "statue"
-| "Fitz-Greene Halleck" | "statue"
+| "Walter Scott" | "statue"
+| "William Shakespeare" | "statue"
+| "Balto" | "statue"
 
-2+d|Rows:4
+2+d|Rows: 8
 |===
 
 .Execution plan
 [role="queryplan"]
 ----
-+--------------------+----+-----------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
-| Operator           | Id | Details                                                               | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline      |
-+--------------------+----+-----------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
-| +ProduceResults    |  0 | name, type                                                            |              0 |    0 |       0 |                |                    0/0 |     0.000 |               |
-| |                  +----+-----------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+               |
-| +Projection        |  1 | cache[p2.name] AS name, cache[p2.type] AS type                        |              0 |    0 |       0 |                |                    0/0 |     0.000 |               |
-| |                  +----+-----------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+               |
-| +CacheProperties   |  2 | cache[p2.type], cache[p2.name]                                        |              0 |    0 |       0 |                |                    0/0 |     0.000 |               |
-| |                  +----+-----------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+               |
-| +Filter            |  3 | NOT p1 = p2 AND point.distance(p1.location, p2.location) < $autoint_1 |              0 |    0 |       0 |                |                    0/0 |     0.000 |               |
-| |                  +----+-----------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+               |
-| +CartesianProduct  |  4 |                                                                       |              0 |    0 |       0 |           1392 |                    0/0 |     0.021 | In Pipeline 2 |
-| |\                 +----+-----------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
-| | +NodeByLabelScan |  5 | p2:PointOfInterest                                                    |              0 |    0 |       0 |            256 |                    0/0 |     0.000 | In Pipeline 1 |
-| |                  +----+-----------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
-| +NodeIndexSeek     |  6 | RANGE INDEX p1:PointOfInterest(name) WHERE name = $autostring_0       |              0 |    0 |       1 |            376 |                    1/0 |     0.372 | In Pipeline 0 |
-+--------------------+----+-----------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
++-----------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator              | Id | Details                                                                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-----------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults       |  0 | `n.name`, `n.type`                                                                                   |              4 |    8 |       0 |              0 |                        |           |                     |
+| |                     +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Projection           |  1 | cache[n.name] AS `n.name`, cache[n.type] AS `n.type`                                                 |              4 |    8 |       0 |                |                        |           |                     |
+| |                     +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +CacheProperties      |  2 | cache[n.type], cache[n.name]                                                                         |              4 |    8 |      24 |                |                        |           |                     |
+| |                     +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeIndexSeekByRange |  3 | POINT INDEX n:PointOfInterest(location) WHERE point.withinBBox(location, point($autoint_0, $autodoub |              4 |    8 |      10 |            248 |                  302/0 |     2.619 | Fused in Pipeline 0 |
+|                       |    | le_1, $autodouble_2), point($autoint_3, $autodouble_4, $autodouble_5))                               |                |      |         |                |                        |           |                     |
++-----------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
-Total database accesses: 1, total allocated memory: 2104
+Total database accesses: 34, total allocated memory: 312
 ----
 
 For more information about the predicates supported by text indexes, see xref:indexes/search-performance-indexes/managing-indexes.adoc#point-indexes-supported-predicates[Managing search-performance indexes -> Point indexes: supported predicates].
@@ -385,7 +385,7 @@ RETURN length(path) AS pathLength, sum(rel.distance) AS geographicalDistance
 
 |  25  | 2410.4495689536334
 
-2+d|Rows:1
+2+d|Rows: 1
 |===
 
 .Execution plan
@@ -456,7 +456,7 @@ RETURN n.name AS name
 |===
 | name
 | "William Shakespeare"
-1+d|Rows:1
+1+d|Rows: 1
 |===
 
 .Execution plan
@@ -751,7 +751,7 @@ RETURN count(n) AS nodes
 |===
 | nodes
 | 5
-1+d|Rows:1
+1+d|Rows: 1
 |===
 
 The query result now includes both the three nodes with an unset `name` value found in the previous query and the two nodes with a `name` value containing `William` (`William Shakespeare` and `William Tecumseh Sherman`).
@@ -807,7 +807,7 @@ RETURN count(n) AS nodes
 |===
 | nodes
 | 185
-1+d|Rows:1
+1+d|Rows: 1
 |===
 
 .Execution plan
