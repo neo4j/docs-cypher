@@ -1,9 +1,9 @@
-:description: Information about how to use the search-performance indexes in Neo4j.
-:test-skip: true
+:description: Information about how search-performance indexes impact query performance in Neo4j.
 :test-setup-dump: https://github.com/neo4j-graph-examples/openstreetmap/raw/main/data/openstreetmap-50.dump
+
 = The impact of indexes on query performance
 
-Search-performance indexes enable quicker and more efficient pattern matching by solving a particular combination of node label/relationship type and property predicate. 
+Search-performance indexes enable quicker and more efficient pattern matching by solving a particular combination of node label/relationship type and property predicate.
 They are used automatically by the Cypher planner in `MATCH` clauses, usually at the start of a query, to scan the graph for the most appropriate place to start the pattern-matching process.
 
 By examining xref:planning-and-tuning/execution-plans.adoc[query execution plans], this page will explain the scenarios in which the various search-performance indexes are used to improve the performance of Cypher queries.
@@ -43,15 +43,15 @@ For more information, see xref:planning-and-tuning/index.adoc#profile-and-explai
 PROFILE
 MATCH (n:PointOfInterest)
 WHERE n.type = 'baseball'
-RETURN count(n) 
+RETURN count(n)
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols="m"]
+[options="header,footer",cols="m"]
 |===
 | count(n)
 | 26
-d|Rows:1
+d|Rows: 1
 |===
 
 .Execution plan
@@ -83,7 +83,7 @@ In the above example, had a node label lookup index not existed, the `NodeByLabe
 
 While useful, token lookup indexes will rarely be sufficient for applications querying databases of a non-trivial size because they cannot solve any property-related predicates.
 
-For more information about the predicates supported by token lookup indexes, see xref:indexes/search-performance-indexes/managing-indexes.adoc#lookup-index-supported-predicates[Managing search-performance indexes -> Token lookup indexes: supported predicates]. 
+For more information about the predicates supported by token lookup indexes, see xref:indexes/search-performance-indexes/managing-indexes.adoc#lookup-index-supported-predicates[Managing search-performance indexes -> Token lookup indexes: supported predicates].
 
 [[range-indexes]]
 == Range indexes
@@ -109,7 +109,7 @@ For more information about creating indexes, see xref:indexes/search-performance
 PROFILE
 MATCH (n:PointOfInterest)
 WHERE n.type = 'baseball'
-RETURN count(n) 
+RETURN count(n)
 ----
 
 .Execution plan
@@ -140,12 +140,12 @@ These points all illustrate the fundamental point that search-performance indexe
 For more information about the predicates supported by range indexes, see xref:indexes/search-performance-indexes/managing-indexes.adoc#range-indexes-supported-predicates[Managing search-performance indexes -> Range indexes: supported predicates].
 
 [[text-indexes]]
-== Text indexes 
+== Text indexes
 
 Text indexes are used for queries filtering on `STRING` properties.
 
 If there exists both a range and a text index on a given `STRING` property, the text index will only be used by the Cypher planner for queries filtering with the `CONTAINS` or `ENDS WITH` operators.
-In all other cases, the range index will be used. 
+In all other cases, the range index will be used.
 
 To show this behavior, it is necessary to create a text index and a range index on the same property:
 
@@ -173,13 +173,13 @@ RETURN n.name AS name, n.type AS type
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols="2*m"]
+[options="header,footer",cols="2*m"]
 |===
 | name | type
 | "William Shakespeare" | "statue"
 | "William Tecumseh Sherman" | "equestrian statue"
 
-2+d|Rows:2
+2+d|Rows: 2
 |===
 
 .Execution plan
@@ -246,7 +246,7 @@ For more information about the predicates supported by text indexes, see xref:in
 [[text-index-string-size]]
 === Text indexes and `STRING` sizes
 
-The size of the indexed `STRING` properties is also relevant to the planner’s selection between range and text indexes. 
+The size of the indexed `STRING` properties is also relevant to the planner’s selection between range and text indexes.
 
 Range indexes have a maximum key size limit of around 8 kb.
 This means that range indexes cannot be used to index `STRING` values larger than 8 kb.
@@ -256,12 +256,12 @@ As a result, they can be used to index `STRING` values up to that size.
 For information about calculating the size of indexes, see link:https://neo4j.com/developer/kb/a-method-to-calculate-index-size/[Neo4j Knowledge Base -> A method to calculate the size of an index in Neo4j].
 
 [[point-indexes]]
-== Point indexes 
+== Point indexes
 
 Point indexes solve predicates operating on spatial xref:values-and-types/spatial.adoc#spatial-values-point-type[`POINT`] values.
 Point indexes are optimized for queries filtering for the xref:functions/spatial.adoc#functions-distance[distance] between property values, or for property values within a xref:functions/spatial.adoc#functions-withinBBox[bounding box].
 
-The following example creates a point index which is then accessed through the `point.distance()` function to return the `name` and `type` of all `PointOfInterest` nodes within 100 meters of the  `William Shakespeare` statue:
+The following example creates a point index which is then used in a query returning the `name` and `type` of all `PointOfInterest` nodes within a set bounding box:
 
 .Create a point index
 [source,cypher]
@@ -269,54 +269,54 @@ The following example creates a point index which is then accessed through the `
 CREATE POINT INDEX point_index_location FOR (n:PointOfInterest) ON (n.location)
 ----
 
-.Query using the `point.distance()` function
+.Query using the `point.withinBBox()` function
 [source,cypher]
 ----
-PROFILE
-MATCH (p1:PointOfInterest {name:'William Shakespeare'}),(p2:PointOfInterest)
-WHERE p1<>p2 AND point.distance(p1.location, p2.location) < 100
-RETURN p2.name AS name, p2.type AS type
+PROFILE 
+MATCH (n:PointOfInterest)
+WHERE point.withinBBox(
+  n.location,
+  point({srid: 4326, x: -73.9723702, y: 40.7697989}),
+  point({srid: 4326, x: -73.9725659, y: 40.770193}))
+RETURN n.name AS name, n.type AS type
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols="2*m"]
+[options="header,footer",cols="2*m"]
 |===
 | name | type
-| "Walter Scott" | "statue"
+| "Heckscher Ballfield 3" | "baseball"
+| "Heckscher Ballfield 4" | "baseball"
+| "Heckscher Ballfield 1" | "baseball"
 | "Robert Burns" | "statue"
 | "Christopher Columbus" | "statue"
-| "Fitz-Greene Halleck" | "statue"
+| "Walter Scott" | "statue"
+| "William Shakespeare" | "statue"
+| "Balto" | "statue"
 
-2+d|Rows:4
+2+d|Rows: 8
 |===
 
 .Execution plan
 [role="queryplan"]
 ----
-+-------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator                | Id | Details                                                                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+-------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults         |  0 | name, type                                                                                           |              8 |    4 |       0 |              0 |                        |           |                     |
-| |                       +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Projection             |  1 | cache[p2.name] AS name, cache[p2.type] AS type                                                       |              8 |    4 |       0 |                |                        |           |                     |
-| |                       +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +CacheProperties        |  2 | cache[p2.type], cache[p2.name]                                                                       |              8 |    4 |      12 |                |                        |           |                     |
-| |                       +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Filter                 |  3 | NOT p1 = p2 AND p1.name = $autostring_0 AND point.distance(cache[p1.location], cache[p2.location]) < |              8 |    4 |    2891 |                |                        |           |                     |
-| |                       |    | $autoint_1                                                                                           |                |      |         |                |                        |           |                     |
-| |                       +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Apply                  |  4 |                                                                                                      |           1060 | 1448 |       0 |                |                        |           |                     |
-| |\                      +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| | +NodeIndexSeekByRange |  5 | POINT INDEX p1:PointOfInterest(location) WHERE point.distance(location, cache[p2.location]) < $autoi |           1060 | 1448 |    1638 |          16616 |                 1529/1 |   125.886 | Fused in Pipeline 1 |
-| |                       |    | nt_1, cache[p1.location]                                                                             |                |      |         |                |                        |           |                     |
-| |                       +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +NodeByLabelScan        |  6 | p2:PointOfInterest                                                                                   |            188 |  188 |     189 |            376 |                    2/0 |     0.533 | In Pipeline 0       |
-+-------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++-----------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator              | Id | Details                                                                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-----------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults       |  0 | `n.name`, `n.type`                                                                                   |              4 |    8 |       0 |              0 |                        |           |                     |
+| |                     +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Projection           |  1 | cache[n.name] AS `n.name`, cache[n.type] AS `n.type`                                                 |              4 |    8 |       0 |                |                        |           |                     |
+| |                     +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +CacheProperties      |  2 | cache[n.type], cache[n.name]                                                                         |              4 |    8 |      24 |                |                        |           |                     |
+| |                     +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeIndexSeekByRange |  3 | POINT INDEX n:PointOfInterest(location) WHERE point.withinBBox(location, point($autoint_0, $autodoub |              4 |    8 |      10 |            248 |                  302/0 |     2.619 | Fused in Pipeline 0 |
+|                       |    | le_1, $autodouble_2), point($autoint_3, $autodouble_4, $autodouble_5))                               |                |      |         |                |                        |           |                     |
++-----------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
-Total database accesses: 4730, total allocated memory: 16952
+Total database accesses: 34, total allocated memory: 312
 ----
 
-For more information about the predicates supported by text indexes, see xref:indexes/search-performance-indexes/managing-indexes.adoc#point-indexes-supported-predicates[Managing search-performance indexes -> Point indexes: supported predicates].
+For more information about the predicates supported by point indexes, see xref:indexes/search-performance-indexes/managing-indexes.adoc#point-indexes-supported-predicates[Managing search-performance indexes -> Point indexes: supported predicates].
 
 [[point-index-config-settings]]
 === Point index configuration settings
@@ -329,7 +329,7 @@ This is done by specifying either of the following settings in the `indexConfig`
 * `spatial.wgs-84.min` and `spatial.wgs-84.max`: used for xref:values-and-types/spatial.adoc#spatial-values-crs-geographic[WGS-84 2D] coordinate systems.
 * `spatial.wgs-84-3d.min` and `spatial.wgs-84-3d.max`: used for xref:values-and-types/spatial.adoc#spatial-values-crs-geographic[WGS-84 3D] coordinate systems.
 
-The `min` and `max` of each setting define the minimum and maximum bounds for the spatial data in each coordinate system. 
+The `min` and `max` of each setting define the minimum and maximum bounds for the spatial data in each coordinate system.
 
 For example, the following index would only store `OSMNodes` in the northern half of Central Park:
 
@@ -379,13 +379,13 @@ RETURN length(path) AS pathLength, sum(rel.distance) AS geographicalDistance
 
 
 .Result
-[role="queryresult",options="header,footer",cols="2*m"]
+[options="header,footer",cols="2*m"]
 |===
 |pathLength | geographicalDistance
 
 |  25  | 2410.4495689536334
 
-2+d|Rows:1
+2+d|Rows: 1
 |===
 
 .Execution plan
@@ -430,7 +430,7 @@ Like single-property range indexes, composite indexes support all predicates:
 * Prefix search: `n.prop STARTS WITH value`
 
 However, the order in which properties are defined when creating a composite index impacts how the planner will use the index to solve predicates.
-For example, a composite index on `(n.prop1, n.prop2, n.prop3)` will generate a different query plan than a composite index created on `(n.prop3, n.prop2, n.prop1)`. 
+For example, a composite index on `(n.prop1, n.prop2, n.prop3)` will generate a different query plan than a composite index created on `(n.prop3, n.prop2, n.prop1)`.
 
 The following example shows how composite indexes on the same properties defined in a different order will generate different execution plans:
 
@@ -452,11 +452,11 @@ RETURN n.name AS name
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols="1*m"]
+[options="header,footer",cols="1*m"]
 |===
 | name
 | "William Shakespeare"
-1+d|Rows:1
+1+d|Rows: 1
 |===
 
 .Execution plan
@@ -477,7 +477,7 @@ Total database accesses: 1, total allocated memory: 312
 ----
 
 The plan shows the recently created composite index is used.
-It also shows that the predicates are filtered as specified in the query (i.e. an equality check on the `lat` property, a prefix search on the `name` property, and an existence check on the `type` property). 
+It also shows that the predicates are filtered as specified in the query (i.e. an equality check on the `lat` property, a prefix search on the `name` property, and an existence check on the `type` property).
 
 However, if the order of the properties is altered when creating the index, a different query plan will be generated.
 To demonstrate this behavior, it is first necessary to drop the recently created `composite_2` index and create a new composite index on the same properties defined in a different order:
@@ -527,7 +527,7 @@ Total database accesses: 3, total allocated memory: 312
 This plan now shows that, while a prefix search has been used to solve the `name` property predicate, the `lat` property predicate is no longer solved with an equality check, but rather with an existence check and an explicit xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-filter[filter] operation afterward.
 Note that if the `composite_2` index had not been dropped before the query was rerun, the planner would have used it instead of the `composite_3` index.
 
-This is because, when using composite indexes, any predicate after a prefix search will automatically be planned as an existence check predicate. 
+This is because, when using composite indexes, any predicate after a prefix search will automatically be planned as an existence check predicate.
 
 [[composite-index-rules]]
 === Composite index rules
@@ -559,7 +559,7 @@ This can have important implications for query performance, because the planner 
 To demonstrate this behavior, the following query will filter out any `ROUTE` relationships with a `distance` property less than `30`, and return the `distance` property of the matched relationships in ascending numerical order using the xref:clauses/order-by.adoc[ORDER BY] clause.
 
 .Query to return order of results without a relevant index
-[source,syntax]
+[source,cypher]
 ----
 PROFILE
 MATCH ()-[r:ROUTE]-()
@@ -606,7 +606,7 @@ CREATE INDEX range_index_relationships FOR ()-[r:ROUTE]-() ON (r.distance)
 Re-running the query, it now generates a different plan:
 
 .Rerun query after the creation of a relevant index
-[source,syntax]
+[source,cypher]
 ----
 PROFILE
 MATCH ()-[r:ROUTE]-()
@@ -695,7 +695,7 @@ This plan shows that a separate index is used to improve the performance of each
 Neo4j indexes do not store xref:values-and-types/working-with-null.adoc[`null`] values.
 This means that the planner must be able to rule out the possibility of `null` values in order for queries to use an index.
 
-The following query demonstrates the incompatibility between `null` values and indexes by counting all `PointOfInterest` nodes with an unset `name` property: 
+The following query demonstrates the incompatibility between `null` values and indexes by counting all `PointOfInterest` nodes with an unset `name` property:
 
 .Query to count nodes with a `null` `name` value
 [source,cypher]
@@ -707,7 +707,7 @@ RETURN count(n) AS nodes
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols="1*m"]
+[options="header,footer",cols="1*m"]
 |===
 | nodes
 | 3
@@ -732,7 +732,7 @@ RETURN count(n) AS nodes
 Total database accesses: 562, total allocated memory: 472
 ----
 
-The plan shows that neither of the two available indexes (range and text) on the `name` property is used to solve the predicate. 
+The plan shows that neither of the two available indexes (range and text) on the `name` property is used to solve the predicate.
 
 However, if a query predicate is added which is able to exclude the presence of any `null` values, then an index can be used.
 The following query shows this by adding a substring predicate to the above query:
@@ -747,11 +747,11 @@ RETURN count(n) AS nodes
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols="1*m"]
+[options="header,footer",cols="1*m"]
 |===
 | nodes
 | 5
-1+d|Rows:1
+1+d|Rows: 1
 |===
 
 The query result now includes both the three nodes with an unset `name` value found in the previous query and the two nodes with a `name` value containing `William` (`William Shakespeare` and `William Tecumseh Sherman`).
@@ -803,11 +803,11 @@ RETURN count(n) AS nodes
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols="1*m"]
+[options="header,footer",cols="1*m"]
 |===
 | nodes
 | 185
-1+d|Rows:1
+1+d|Rows: 1
 |===
 
 .Execution plan
@@ -900,19 +900,19 @@ RETURN count(n) AS nodes
 .Execution plan
 [role="queryplan"]
 ----
-+------------------+----+---------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator         | Id | Details                   | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+------------------+----+---------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults  |  0 | name                      |            187 |  185 |       0 |              0 |                        |           |                     |
-| |                +----+---------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Projection      |  1 | cache[n.name] AS name     |            187 |  185 |       0 |                |                        |           |                     |
-| |                +----+---------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Filter          |  2 | cache[n.name] IS NOT NULL |            187 |  185 |     373 |                |                        |           |                     |
-| |                +----+---------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +NodeByLabelScan |  3 | n:PointOfInterest         |            188 |  188 |     189 |            248 |                  119/0 |     1.004 | Fused in Pipeline 0 |
-+------------------+----+---------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++-------------------+----+--------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator          | Id | Details            | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-------------------+----+--------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults   |  0 | nodes              |              1 |    1 |       0 |              0 |                    0/0 |     0.012 | In Pipeline 1       |
+| |                 +----+--------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +EagerAggregation |  1 | count(n) AS nodes  |              1 |    1 |       0 |             32 |                        |           |                     |
+| |                 +----+--------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Filter           |  2 | n.name IS NOT NULL |            187 |  185 |     373 |                |                        |           |                     |
+| |                 +----+--------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeByLabelScan  |  3 | n:PointOfInterest  |            188 |  188 |     189 |            376 |                  259/0 |     0.363 | Fused in Pipeline 0 |
++-------------------+----+--------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
-Total database accesses: 562, total allocated memory: 312
+Total database accesses: 562, total allocated memory: 472
 ----
 
 This plan shows that the available text index on the `name` property was not used to solve the predicate.
@@ -939,20 +939,20 @@ RETURN count(n) AS nodes
 .Execution plan
 [role="queryplan"]
 ----
-+-----------------+----+-----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator        | Id | Details                                                   | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+-----------------+----+-----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults |  0 | name                                                      |            187 |  185 |       0 |              0 |                        |           |                     |
-| |               +----+-----------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Projection     |  1 | n.name AS name                                            |            187 |  185 |     370 |                |                        |           |                     |
-| |               +----+-----------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +NodeIndexScan  |  2 | TEXT INDEX n:PointOfInterest(name) WHERE name IS NOT NULL |            187 |  185 |     186 |            248 |                  115/0 |     1.671 | Fused in Pipeline 0 |
-+-----------------+----+-----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++-------------------+----+-----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator          | Id | Details                                                   | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-------------------+----+-----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults   |  0 | nodes                                                     |              1 |    1 |       0 |              0 |                    0/0 |     0.013 | In Pipeline 1       |
+| |                 +----+-----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +EagerAggregation |  1 | count(n) AS nodes                                         |              1 |    1 |       0 |             32 |                        |           |                     |
+| |                 +----+-----------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeIndexScan    |  2 | TEXT INDEX n:PointOfInterest(name) WHERE name IS NOT NULL |            187 |  185 |     186 |            376 |                    0/0 |     0.328 | Fused in Pipeline 0 |
++-------------------+----+-----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
-Total database accesses: 556, total allocated memory: 312
+Total database accesses: 186, total allocated memory: 472
 ----
 
-Because of the type constraint on the `name` property, the planner is now able to deduce that all `name` properties are of type `STRING`, and therefore use the available text index. 
+Because of the type constraint on the `name` property, the planner is now able to deduce that all `name` properties are of type `STRING`, and therefore use the available text index.
 
 Point indexes can be extended in the same way if a type constraint is created to ensure that all properties are `POINT` values.
 
@@ -964,7 +964,7 @@ Note that xref:constraints/examples.adoc#constraints-examples-node-property-exis
 While it is impossible to give exact directions on when a search-performance index might be beneficial for a particular use-case, the following points provide some useful heuristics for when creating an index might improve query performance:
 
 * *Frequent property-based queries*: if some properties are used frequently for filtering or matching, consider creating an index on them.
-* *Performance optimization*: If certain queries are too slow, re-examine the properties that are filtered on, and consider creating indexes for those properties that may cause bottlenecking. 
+* *Performance optimization*: If certain queries are too slow, re-examine the properties that are filtered on, and consider creating indexes for those properties that may cause bottlenecking.
 * *High cardinality properties*: high cardinality properties have many distinct values (e.g., unique identifiers, timestamps, or user names). Queries that seek to retrieve such properties will likely benefit from indexing.
 * *Complex queries*: if queries traverse complex paths in a graph (for example, by involving multiple hops and several layers of filtering), adding indexes to the properties used in those queries can improve query performance.
 * *Experiment and test*: It is good practice to experiment with different indexes and query patterns, and to measure the performance of critical queries with and without different indexes to evaluate their effectiveness.
