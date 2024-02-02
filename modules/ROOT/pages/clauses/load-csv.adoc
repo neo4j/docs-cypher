@@ -57,26 +57,29 @@ Typically, there are three steps in `LOAD CSV` queries:
 
 The CSV file format allows for a number of different flavors, for example, using different field delimiters or optional column headers.
 CSV files can be read from different sources, and `LOAD CSV` has a mechanism for handling large amounts of data.
-Finally, multiple `LOAD CSV` queries can import data from multiple CSV files.
+Finally, multiple subsequent `LOAD CSV` queries can import data from multiple CSV files.
+
 Each data set can be transformed as needed in the process, preparing for the creation of nodes and relationships.
-See below for details on these topics.
+Since all CSV data imported via `LOAD CSV` is string data, a common transformation is the casting to specific data types.
 
+See the following sections for details on these topics.
+
+[NOTE]
+====
 `LOAD CSV` is regulated by the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/load-privileges/[load privileges].
-
+====
 
 [[csv-file-format]]
 == CSV file format
 
-A CSV file to use with `LOAD CSV` must have the following characteristics:
-
-* the character encoding is UTF-8;
-* the end line termination is system dependent, e.g., it is `\n` on unix and `\r\n` on windows.
+A CSV file to use with `LOAD CSV` must have UTF-8 as its character encoding.
+The line terminator is system-dependent, e.g., it is `\n` for Unix and `\r\n` for Windows.
 
 
 [[headers]]
 === Headers
 
-When your CSV file has headers, you can view each row in the file as a map instead of as an array of strings.
+If the CSV file starts with a header row containing column names, each subsequent row in the file acts as a map instead of an array of strings:
 
 .artists-with-headers.csv
 [source, csv, role="noheaders", filename="artists-with-headers.csv"]
@@ -88,15 +91,15 @@ Id,Name,Year
 4,The Cardigans,1992
 ----
 
+Indicate the header row by adding `WITH HEADERS` to the query.
+This way, you can access specific fields by their corresponding column name:
+
 .Query
 [source, cypher]
 ----
 LOAD CSV WITH HEADERS FROM 'file:///artists-with-headers.csv' AS line
 CREATE (:Artist {name: line.Name, year: toInteger(line.Year)})
 ----
-
-This time, the file starts with a single row containing column names.
-Indicate this using `WITH HEADERS` and you can access specific fields by their corresponding column name.
 
 .Result
 [role="queryresult"]
@@ -113,10 +116,7 @@ Labels added: 4
 === Field delimiter
 
 The default field delimiter is `,`.
-Sometimes a CSV file may have other field delimiters.
-In that case, the field delimiter character can be changed by using the option `FIELDTERMINATOR` available to the `LOAD CSV` command.
-The hexadecimal representation of the unicode character can be used if prepended by `{backslash}u`.
-The encoding must be written with four digits, for example, `{backslash}u003B` is equivalent to `;` (semicolon).
+Sometimes a CSV file may have other field delimiters:
 
 .artists-fieldterminator.csv
 [source, csv, role="noheaders", filename="artists-fieldterminator.csv"]
@@ -126,6 +126,8 @@ The encoding must be written with four digits, for example, `{backslash}u003B` i
 3;Europe;1979
 4;The Cardigans;1992
 ----
+
+In that case, change the field delimiter character by using the optional `FIELDTERMINATOR` in your query:
 
 .Query
 [source, cypher]
@@ -147,14 +149,24 @@ Properties set: 8
 Labels added: 4
 ----
 
+[NOTE]
+====
+You can use the hexadecimal representation of the unicode character for the field delimiter if you prepend `{backslash}u`.
+Write the encoding with four digits, for example, `{backslash}u003B` is equivalent to `;` (semicolon).
+====
 
-[[escaped-characters]]
-=== Escaped characters
 
-If `dbms.import.csv.legacy_quote_escaping` is set to the default value of `true`, `\` is used as an escape character.
+[[quotes]]
+=== Character escaping and quotes
 
+If `dbms.import.csv.legacy_quote_escaping` is set to `true` (the default value), `\` is used as the escape character: `"The {backslash}"Symbol{backslash}""`.
+The inner double quote characters are escaped, leaving them unprocessed by `LOAD CSV`.
+Only for the double quote character, you can achieve the same by repeating it- the escape sequence above is equivalent to `"The ""Symbol"""`.
 
-The example below has both additional quotes around the values as well as escaped quotes inside the second value.
+Quoted strings are allowed in the CSV file and the quotes are dropped when reading the data with `LOAD CSV`.
+To apply quotation to a string, wrap it with double quote characters: `"my_string"`.
+
+The example below has both additional quotes around each value as well as escaped quotes in the second value:
 
 .artists-with-escaped-char.csv
 [source, csv, role="noheaders", filename="artists-with-escaped-char.csv"]
@@ -173,9 +185,9 @@ RETURN
   size(a.name) AS size
 ----
 
-Note that `name` is a String and that it is wrapped in single quotes in the output below.
-The third column outputs the String length as `size`.
-The length only counts what is between the single quotes, but not the quotes themselves.
+Note that `name` is a string and that it is wrapped in single quotes in the output below.
+The third column outputs the string length as `size`.
+The length only counts what is between the single quotes, but not the quotes themselves:
 
 .Result
 [role="queryresult",options="header,footer",cols="3*<m"]
@@ -186,14 +198,6 @@ The length only counts what is between the single quotes, but not the quotes the
 Properties set: 2 +
 Labels added: 1
 |===
-
-[[quotes]]
-=== Quotes
-
-Quoted strings are allowed in the CSV file and the quotes are dropped when reading the data.
-To apply quotation to a String, wrap it with double quote characters, e.g. `"my_string"`.
-To avoid escaping, double quote must be in a quoted string and escaped, either with the escape character or a second double quote.
-
 
 [[load-csv-using-linenumber-with-load-csv]]
 === Access line numbers with `linenumber()`
@@ -235,8 +239,8 @@ RETURN linenumber() AS number, line
 [[load-csv-using-file-with-load-csv]]
 === Access the CSV file path with `file()`
 
-For certain scenarios, like debugging a problem with a CSV file, it may be useful to get the absolute path of the file that `LOAD CSV` is operating on.
-The `file()` function provides exactly that or `null` if called without a `LOAD CSV` context.
+For certain scenarios, it may be useful to get the absolute path of the file that `LOAD CSV` is operating on.
+The `file()` function provides exactly if it is called in a `LOAD CSV` context (`null` otherwise).
 
 .artists.csv
 [source, csv, role="noheaders", filename="artists.csv"]
@@ -274,14 +278,12 @@ If `LOAD CSV` is invoked with a `file:///` URL that points to your disk `file()`
 
 === CSV data sources
 
-* CSV files can be stored on the database server and are then accessible using a `+file:///+` URL.
-  Alternatively, `LOAD CSV` also supports accessing CSV files via _HTTPS_, _HTTP_, and _FTP_.
-* `LOAD CSV` supports resources compressed with _gzip_ and _Deflate_. Additionally `LOAD CSV` supports locally stored CSV files compressed with _ZIP_.
-* `LOAD CSV` will follow _HTTP_ redirects but for security reasons it will not follow redirects that changes the protocol, for example if the redirect is going from _HTTPS_ to _HTTP_.
+You can store CSV files on the database server and then access them by using a `+file:///+` URL, depending on the configuration settings.
+// How to store them?
 
 .Configuration settings for file URLs
 link:{neo4j-docs-base-uri}/operations-manual/{page-version}/configuration/configuration-settings#config_dbms.security.allow_csv_import_from_file_urls[dbms.security.allow_csv_import_from_file_urls]::
-This setting determines if Cypher will allow the use of `+file:///+` URLs when loading data using `LOAD CSV`.
+This setting determines if Cypher allows the use of `+file:///+` URLs when loading data using `LOAD CSV`.
 Such URLs identify files on the filesystem of the database server.
 Default is _true_.
 Setting `dbms.security.allow_csv_import_from_file_urls=false` will completely disable access to the file system for `LOAD CSV`.
@@ -289,31 +291,20 @@ Setting `dbms.security.allow_csv_import_from_file_urls=false` will completely di
 link:{neo4j-docs-base-uri}/operations-manual/{page-version}/configuration/configuration-settings#config_server.directories.import[server.directories.import]::
 Sets the root directory for `+file:///+` URLs used with the Cypher `LOAD CSV` clause.
 This should be set to a single directory relative to the Neo4j installation path on the database server.
-All requests to load from `+file:///+` URLs will then be relative to the specified directory.
+All requests to load from `+file:///+` URLs are then relative to the specified directory.
 The default value set in the config settings is _import_.
 This is a security measure which prevents the database from accessing files outside the standard link:{neo4j-docs-base-uri}/operations-manual/{page-version}/configuration/file-locations[import directory],
 similar to how a Unix `chroot` operates.
-Setting this to an empty field will allow access to all files within the Neo4j installation folder.
-Commenting out this setting will disable the security feature, allowing all files in the local system to be imported.
+Setting this to an empty field allows access to all files within the Neo4j installation folder.
+Commenting out this setting disables the security feature, allowing all files in the local system to be imported.
 This is definitely not recommended.
 
-File URLs will be resolved relative to the `server.directories.import` directory.
-For example, a file URL will typically look like `+file:///myfile.csv+` or `+file:///myproject/myfile.csv+`.
+File URLs are resolved relative to the `server.directories.import` directory.
+For example, a file URL typically looks like `+file:///myfile.csv+` or `+file:///myproject/myfile.csv+`.
 
-* When using `+file:///+` URLs, spaces and other non-alphanumeric characters must be {url_encoded_link}.
-*  If `server.directories.import` is set to the default value _import_, using the above URLs in `LOAD CSV` would read from _<NEO4J_HOME>/import/myfile.csv_ and _<NEO4J_HOME>/import/myproject/myfile.csv_ respectively.
+When using `+file:///+` URLs, spaces and other non-alphanumeric characters must be {url_encoded_link}.
+If `server.directories.import` is set to the default value _import_, using the above URLs in `LOAD CSV` would read from _<NEO4J_HOME>/import/myfile.csv_ and _<NEO4J_HOME>/import/myproject/myfile.csv_ respectively.
 *  If it is set to _/data/csv_, using the above URLs in `LOAD CSV` would read from _<NEO4J_HOME>/data/csv/myfile.csv_ and _<NEO4J_HOME>/data/csv/myproject/myfile.csv_ respectively.
-
-[NOTE]
-====
-The file location is relative to the import.
-The config setting `server.directories.import` only applies to local disc and **not** to remote URLs.
-====
-
-// where to put?
-
-Accordingly, you can import data from a CSV file in a remote location into Neo4j.
-Note that this applies to all variations of CSV files (see examples below for other variations).
 
 .data.neo4j.com/bands/artists.csv
 [source, csv, role="noheader", filename="artists.csv"]
@@ -341,6 +332,22 @@ Nodes created: 4
 Properties set: 8
 Labels added: 4
 ----
+
+
+Alternatively, you can import data from a CSV file in a remote location into Neo4j.
+`LOAD CSV` supports accessing CSV files via _HTTPS_, _HTTP_, and _FTP_.
+`LOAD CSV` will follow _HTTP_ redirects but for security reasons it won't follow redirects which change the protocol, for example, if the redirect is going from _HTTPS_ to _HTTP_.
+//Example
+
+[NOTE]
+====
+The file location is relative to the import.
+The config setting `server.directories.import` only applies to a local disc but doesn't to remote URLs.
+====
+
+`LOAD CSV` supports resources compressed with _gzip_ and _Deflate_.
+Additionally `LOAD CSV` supports locally stored CSV files compressed with _ZIP_.
+//Add links
 
 
 [[large-amounts-of-data]]
@@ -423,21 +430,39 @@ Transactions committed: 1
 ----
 
 
-== Use cases
-
-
-=== Import data from a relational data base
+=== Type cast CSV data
 
 Lipsum.
 
 
-=== Use CSV as an intermediate format
+=== Split list values
+
+Lipsum.
+
+=== Create nodes and relationships
+
+Lipsum.
+
+
+== Usecase: Import data from multiple CSV files
 
 Lipsum.
 
 
 == Best practices
 
+Lipsum.
+
+
+=== Inspect imported data with MATCH
+
+Lipsum.
+
+
 === Prepare DELETE queries
+
+Lipsum.
+
+=== Set CONSTRAINTS
 
 Lipsum.
