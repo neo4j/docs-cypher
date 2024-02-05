@@ -2,10 +2,10 @@
 
 :url_encoded_link: link:https://developer.mozilla.org/en-US/docs/Glossary/percent-encoding[URL-encoded]
 
-[[query-load-csv]]
+[[load-csv]]
 = LOAD CSV
 
-[[query-load-csv-introduction]]
+[[load-csv-introduction]]
 == Introduction
 
 `LOAD CSV` is used to import data from CSV files.
@@ -30,8 +30,13 @@ LOAD CSV FROM 'file:///artists.csv' AS line
 CREATE (:Artist {name: line[1], year: toInteger(line[2])})
 ----
 
+`FROM` expects a string which represents a URL where the CSV file is located.
+It is required to specify a variable for the CSV data using `AS`.
+This variable represents the current line while LOAD CSV iterates through the lines of the CSV file.
+This way, the data can then be accessed in subsequent clauses.
+
 A new node with the `Artist` label is created for each row in the CSV file.
-In addition, two columns from the CSV file are set as properties on the nodes.
+In addition, values from two columns of the CSV file are set as properties on the nodes.
 
 .Result
 [role="queryresult"]
@@ -44,23 +49,18 @@ Properties set: 8
 Labels added: 4
 ----
 
-`FROM` expects a string which represents a URL where the CSV file is located.
-It is required to specify a variable for the CSV data using `AS`.
-LOAD CSV iterates through the lines of the CSV data and the variable represents the current line.
-This way, the data can then be accessed in subsequent clauses.
-
 Typically, there are three steps in `LOAD CSV` queries:
 
 * Reading CSV data
 * Transforming the CSV data
-* Creating graph data base entities from the CSV data
+* Creating nodes and relationships from the CSV data
 
 The CSV file format allows for a number of different flavors, for example, using different field delimiters or optional column headers.
 CSV files can be read from different sources, and `LOAD CSV` has a mechanism for handling large amounts of data.
-Finally, multiple subsequent `LOAD CSV` queries can import data from multiple CSV files.
 
+It is entirely possible to import data from multiple CSV files with multiple `LOAD CSV` queries.
 Each data set can be transformed as needed in the process, preparing for the creation of nodes and relationships.
-Since all CSV data imported via `LOAD CSV` is string data, a common transformation is the casting to specific data types.
+Since all CSV data imported via `LOAD CSV` is string data, a common transformation is type casting to specific data types.
 
 See the following sections for details on these topics.
 
@@ -69,14 +69,15 @@ See the following sections for details on these topics.
 `LOAD CSV` is regulated by the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/load-privileges/[load privileges].
 ====
 
-[[csv-file-format]]
+[[load-csv-file-format]]
 == CSV file format
+
+The Wikipedia article on link:https://en.wikipedia.org/wiki/Comma-separated_values[Comma-separated values] summarizes why there are different flavors of the CSV format.
 
 A CSV file to use with `LOAD CSV` must have UTF-8 as its character encoding.
 The line terminator is system-dependent, e.g., it is `\n` for Unix and `\r\n` for Windows.
 
-
-[[headers]]
+[[load-csv-headers]]
 === Headers
 
 If the CSV file starts with a header row containing column names, each subsequent row in the file acts as a map instead of an array of strings:
@@ -112,11 +113,11 @@ Properties set: 8
 Labels added: 4
 ----
 
-[[field-delimiter]]
+[[load-csv-field-delimiter]]
 === Field delimiter
 
 The default field delimiter is `,`.
-Sometimes a CSV file may have other field delimiters:
+A CSV file may have other field delimiters:
 
 .artists-fieldterminator.csv
 [source, csv, role="noheaders", filename="artists-fieldterminator.csv"]
@@ -156,12 +157,12 @@ Write the encoding with four digits, for example, `{backslash}u003B` is equivale
 ====
 
 
-[[quotes]]
+[[load-csv-character-escaping-and-quotes]]
 === Character escaping and quotes
 
-If `dbms.import.csv.legacy_quote_escaping` is set to `true` (the default value), `\` is used as the escape character: `"The {backslash}"Symbol{backslash}""`.
+If the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/configuration/configuration-settings[configuration setting] `dbms.import.csv.legacy_quote_escaping` is set to `true` (the default value), `\` is used as the escape character: `"The {backslash}"Symbol{backslash}""`.
 The inner double quote characters are escaped, leaving them unprocessed by `LOAD CSV`.
-Only for the double quote character, you can achieve the same by repeating it- the escape sequence above is equivalent to `"The ""Symbol"""`.
+Only for the double quote character, you can achieve the same thing by repeating it - the escape sequence above is equivalent to `"The ""Symbol"""`.
 
 Quoted strings are allowed in the CSV file and the quotes are dropped when reading the data with `LOAD CSV`.
 To apply quotation to a string, wrap it with double quote characters: `"my_string"`.
@@ -199,7 +200,7 @@ Properties set: 2 +
 Labels added: 1
 |===
 
-[[load-csv-using-linenumber-with-load-csv]]
+[[load-csv-access-line-numbers-with-linenumber]]
 === Access line numbers with `linenumber()`
 
 For certain scenarios, like debugging a problem with a CSV file, it may be useful to get the current line number that `LOAD CSV` is operating on.
@@ -236,7 +237,7 @@ RETURN linenumber() AS number, line
 ----
 
 
-[[load-csv-using-file-with-load-csv]]
+[[load-csv-access-the-csv-file-path-with-file]]
 === Access the CSV file path with `file()`
 
 For certain scenarios, it may be useful to get the absolute path of the file that `LOAD CSV` is operating on.
@@ -273,12 +274,14 @@ If `LOAD CSV` is invoked with a `file:///` URL that points to your disk `file()`
 ----
 
 
-[[get-csv-data-into-neo4j]]
+[[load-csv-get-csv-data-into-neo4j]]
 == Get CSV data into Neo4j
 
+[[load-csv-data-sources]]
 === CSV data sources
 
 You can store CSV files on the database server and then access them by using a `+file:///+` URL, depending on the configuration settings.
+
 // How to store them?
 
 .Configuration settings for file URLs
@@ -350,10 +353,12 @@ Additionally `LOAD CSV` supports locally stored CSV files compressed with _ZIP_.
 //Add links
 
 
-[[large-amounts-of-data]]
+[[load-csv-large-amounts-of-data]]
 === Large amounts of data
 
-If the CSV file contains a significant number of rows (approaching hundreds of thousands or millions), `+CALL { ... } IN TRANSACTIONS+` can be used to instruct Neo4j to commit a transaction after a number of rows.
+If the CSV file contains a significant number of rows approaching hundreds of thousands or millions, we recommend you to serialize the processing.
+You can achieve this via link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/subqueries/subqueries-in-transactions/[multiple transactions of subqueries].
+`+CALL { ... } IN TRANSACTIONS+` can be used to instruct Neo4j to commit a transaction after a number of rows.
 This reduces the memory overhead of the transaction state.
 
 [NOTE]
@@ -363,40 +368,6 @@ For more information, see xref:subqueries/subqueries-in-transactions.adoc[Subque
 ====
 
 // better example
-
-.+artists.csv+
-[source, csv, role="noheaders", filename="artists.csv"]
-----
-1,ABBA,1992
-2,Roxette,1986
-3,Europe,1979
-4,The Cardigans,1992
-----
-
-.Query
-[source, cypher]
-----
-LOAD CSV FROM 'file:///artists.csv' AS line
-CALL {
-  WITH line
-  CREATE (:Artist {name: line[1], year: toInteger(line[2])})
-} IN TRANSACTIONS
-----
-
-.Result
-[role="queryresult"]
-----
-+-------------------+
-| No data returned. |
-+-------------------+
-Nodes created: 4
-Properties set: 8
-Labels added: 4
-Transactions committed: 1
-----
-
-You can set the number of rows as in the example, where it is set to `500` rows.
-
 
 .+artists.csv+
 [source, csv, role="noheaders", filename="artists.csv"]
@@ -429,40 +400,47 @@ Labels added: 4
 Transactions committed: 1
 ----
 
+You can set the number of rows as in the example, where it is set to `500` rows.
 
+
+
+[[load-csv-type-cast-csv-data]]
 === Type cast CSV data
 
 Lipsum.
 
 
+[[load-csv-split-list-values]]
 === Split list values
 
 Lipsum.
 
+
+[[load-csv-create-nodes-and-relationships]]
 === Create nodes and relationships
 
 Lipsum.
 
 
-== Usecase: Import data from multiple CSV files
-
-Lipsum.
-
-
+[[load-csv-best-practices]]
 == Best practices
 
 Lipsum.
 
 
+[[load-csv-inspect-imported-data-with-match]]
 === Inspect imported data with MATCH
 
 Lipsum.
 
 
-=== Prepare DELETE queries
+[[load-csv-prepare-clean-up-queries]]
+=== Prepare clean-up queries
 
 Lipsum.
 
+
+[[load-csv-set-constraints]]
 === Set CONSTRAINTS
 
 Lipsum.
