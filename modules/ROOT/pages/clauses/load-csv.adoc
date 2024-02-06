@@ -26,13 +26,13 @@ The artist data from _artists.csv_ can be read with `LOAD CSV` like this:
 .Query
 [source, cypher]
 ----
-LOAD CSV FROM 'file:///artists.csv' AS line
-CREATE (:Artist {name: line[1], year: toInteger(line[2])})
+LOAD CSV FROM 'file:///artists.csv' AS row
+CREATE (:Artist {name: row[1], year: toInteger(row[2])})
 ----
 
 `FROM` expects a string which represents a URL where the CSV file is located.
 It is required to specify a variable for the CSV data using `AS`.
-This variable represents the current line while LOAD CSV iterates through the lines of the CSV file.
+This variable represents the current row while LOAD CSV iterates through the lines of the CSV file.
 This way, the data can then be accessed in subsequent clauses.
 
 A new node with the `Artist` label is created for each row in the CSV file.
@@ -83,7 +83,7 @@ The line terminator is system-dependent, e.g., it is `\n` for Unix and `\r\n` fo
 If the CSV file starts with a header row containing column names, each subsequent row in the file acts as a map instead of an array of strings:
 
 .artists-with-headers.csv
-[source, csv, role="noheaders", filename="artists-with-headers.csv"]
+[source, csv, filename="artists-with-headers.csv"]
 ----
 Id,Name,Year
 1,ABBA,1992
@@ -98,8 +98,8 @@ This way, you can access specific fields by their corresponding column name:
 .Query
 [source, cypher]
 ----
-LOAD CSV WITH HEADERS FROM 'file:///artists-with-headers.csv' AS line
-CREATE (:Artist {name: line.Name, year: toInteger(line.Year)})
+LOAD CSV WITH HEADERS FROM 'file:///artists-with-headers.csv' AS row
+CREATE (:Artist {name: row.Name, year: toInteger(row.Year)})
 ----
 
 .Result
@@ -133,8 +133,8 @@ In that case, change the field delimiter character by using the optional `FIELDT
 .Query
 [source, cypher]
 ----
-LOAD CSV FROM 'file:///artists-fieldterminator.csv' AS line FIELDTERMINATOR ';'
-CREATE (:Artist {name: line[1], year: toInteger(line[2])})
+LOAD CSV FROM 'file:///artists-fieldterminator.csv' AS row FIELDTERMINATOR ';'
+CREATE (:Artist {name: row[1], year: toInteger(row[2])})
 ----
 
 As values in this file are separated by a semicolon, a custom `FIELDTERMINATOR` is specified in the `LOAD CSV` clause.
@@ -178,8 +178,8 @@ The example below has both additional quotes around each value as well as escape
 .Query
 [source, cypher]
 ----
-LOAD CSV FROM 'file:///artists-with-escaped-char.csv' AS line
-CREATE (a:Artist {name: line[1], year: toInteger(line[2])})
+LOAD CSV FROM 'file:///artists-with-escaped-char.csv' AS row
+CREATE (a:Artist {name: row[1], year: toInteger(row[2])})
 RETURN
   a.name AS name,
   a.year AS year,
@@ -218,15 +218,15 @@ The `linenumber()` function provides exactly that or `null` if called without a 
 .Query
 [source, cypher]
 ----
-LOAD CSV FROM 'file:///artists.csv' AS line
-RETURN linenumber() AS number, line
+LOAD CSV FROM 'file:///artists.csv' AS row
+RETURN linenumber() AS number, row
 ----
 
 .Result
 [role="queryresult"]
 ----
 +---------------------------------------+
-| number | line                         |
+| number | row                          |
 +---------------------------------------+
 | 1      | ["1","ABBA","1992"]          |
 | 2      | ["2","Roxette","1986"]       |
@@ -235,6 +235,8 @@ RETURN linenumber() AS number, line
 +---------------------------------------+
 4 rows
 ----
+
+Also see link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/functions/load-csv/#functions-linenumber[linenumber()] under LOAD CSV functions.
 
 
 [[load-csv-access-the-csv-file-path-with-file]]
@@ -255,7 +257,7 @@ The `file()` function provides exactly if it is called in a `LOAD CSV` context (
 .Query
 [source, cypher, role=test-result-skip]
 ----
-LOAD CSV FROM 'file:///artists.csv' AS line
+LOAD CSV FROM 'file:///artists.csv' AS row
 RETURN DISTINCT file() AS path
 ----
 
@@ -273,6 +275,8 @@ If `LOAD CSV` is invoked with a `file:///` URL that points to your disk `file()`
 1 row
 ----
 
+Also see link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/functions/load-csv/#functions-file[file()] under LOAD CSV functions.
+
 
 [[load-csv-get-csv-data-into-neo4j]]
 == Get CSV data into Neo4j
@@ -281,8 +285,6 @@ If `LOAD CSV` is invoked with a `file:///` URL that points to your disk `file()`
 === CSV data sources
 
 You can store CSV files on the database server and then access them by using a `+file:///+` URL, depending on the configuration settings.
-
-// How to store them?
 
 .Configuration settings for file URLs
 link:{neo4j-docs-base-uri}/operations-manual/{page-version}/configuration/configuration-settings#config_dbms.security.allow_csv_import_from_file_urls[dbms.security.allow_csv_import_from_file_urls]::
@@ -321,8 +323,8 @@ If `server.directories.import` is set to the default value _import_, using the a
 .Query
 [source, cypher]
 ----
-LOAD CSV FROM 'https://data.neo4j.com/bands/artists.csv' AS line
-CREATE (:Artist {name: line[1], year: toInteger(line[2])})
+LOAD CSV FROM 'https://data.neo4j.com/bands/artists.csv' AS row
+CREATE (:Artist {name: row[1], year: toInteger(row[2])})
 ----
 
 .Result
@@ -356,10 +358,12 @@ Additionally `LOAD CSV` supports locally stored CSV files compressed with _ZIP_.
 [[load-csv-large-amounts-of-data]]
 === Large amounts of data
 
-If the CSV file contains a significant number of rows approaching hundreds of thousands or millions, we recommend you to serialize the processing.
+If the CSV file contains a significant number of rows approaching hundreds of thousands or millions, we recommend you to serialize the data processing and reduce memory overhead by doing so.
 You can achieve this via link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/subqueries/subqueries-in-transactions/[multiple transactions of subqueries].
-`+CALL { ... } IN TRANSACTIONS+` can be used to instruct Neo4j to commit a transaction after a number of rows.
-This reduces the memory overhead of the transaction state.
+The syntax for this is `+CALL { ... } IN TRANSACTIONS+` which instructs Neo4j to commit a transaction after a number of rows.
+The default is 1000 rows.
+To set a different number of rows for a single transaction, append `+OF X ROWS` to `TRANSACTIONS`, where `X` is the desired number of rows.
+
 
 [NOTE]
 ====
@@ -367,25 +371,70 @@ The query clause `CALL { ... } IN TRANSACTIONS` is only allowed in xref::introdu
 For more information, see xref:subqueries/subqueries-in-transactions.adoc[Subqueries in transactions].
 ====
 
-// better example
+The file link:https://data.neo4j.com/importing-cypher/persons.csv[_persons.csv_] contains a header line and a total of 869 lines with data about people:
 
-.+artists.csv+
-[source, csv, role="noheaders", filename="artists.csv"]
+.+persons.csv+
+[source, csv, filename="persons.csv"]
 ----
-1,ABBA,1992
-2,Roxette,1986
-3,Europe,1979
-4,The Cardigans,1992
+person_tmdbId,bio,born,bornIn,died,person_imdbId,name,person_poster,person_url
+3,"Legendary Hollywood Icon Harrison Ford was born on July 13, 1942 in Chicago, Illinois.   His family history includes a strong lineage of actors, radio personalities, and models.   Harrison attended public high school in Park Ridge, Illinois where he was a member of the school Radio Station WMTH.  Harrison worked as the lead voice for sports reporting at WMTH for several years.   Acting wasn’t a major interest to Ford until his junior year at Ripon College when he first took an acting class...",1942-07-13,"Chicago, Illinois, USA",,148,Harrison Ford,https://image.tmdb.org/t/p/w440_and_h660_face/5M7oN3sznp99hWYQ9sX0xheswWX.jpg,https://themoviedb.org/person/3
+...
 ----
+
+The file is more complex than the previous examples throughout this chapter.
+For now, only the `name` and `born` columns are relevant.
+To split the processing into chunks of 200 lines per transaction, use the following query:
 
 .Query
 [source, cypher]
 ----
-LOAD CSV FROM 'file:///artists.csv' AS line
 CALL {
-  WITH line
-  CREATE (:Artist {name: line[1], year: toInteger(line[2])})
-} IN TRANSACTIONS OF 500 ROWS
+  LOAD CSV FROM 'https://data.neo4j.com/importing-cypher/persons.csv' AS row
+  CREATE (p:Person {name: row.name, born: row.born})
+} IN TRANSACTIONS OF 200 ROWS
+----
+
+With a total of five transactions, Neo4j creates 868 `Person` nodes and sets two properties on each of them: a name and information about where the person was born.
+
+.Result
+[role="queryresult"]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Nodes created: 868
+Properties set: 1736
+Labels added: 868
+Transactions committed: 5
+----
+
+
+[[load-csv-type-cast-csv-data]]
+=== Type cast CSV data
+
+All CSV data imported via `LOAD CSV` is string data.
+The file link:https://data.neo4j.com/importing-cypher/persons.csv[_persons.csv_] contains several columns which are not best represented by a string:
+
+.+persons.csv+
+[source, csv, filename="persons.csv"]
+----
+person_tmdbId,bio,born,bornIn,died,person_imdbId,name,person_poster,person_url
+3,"Legendary Hollywood Icon Harrison Ford was born on July 13, 1942 in Chicago, Illinois.   His family history includes a strong lineage of actors, radio personalities, and models.   Harrison attended public high school in Park Ridge, Illinois where he was a member of the school Radio Station WMTH.  Harrison worked as the lead voice for sports reporting at WMTH for several years.   Acting wasn’t a major interest to Ford until his junior year at Ripon College when he first took an acting class...",1942-07-13,"Chicago, Illinois, USA",,148,Harrison Ford,https://image.tmdb.org/t/p/w440_and_h660_face/5M7oN3sznp99hWYQ9sX0xheswWX.jpg,https://themoviedb.org/person/3
+...
+----
+
+Values in the columns `person_tmdbId` and `person_imdbId` are integers, while values in the `born` column are dates.
+To type-cast the values while importing data, use the functions `toInteger()` and `date()`:
+
+.Query
+[source, cypher]
+----
+LOAD CSV FROM 'https://data.neo4j.com/importing-cypher/persons.csv' AS row
+MERGE (p:Person {tmdbId: toInteger(row.person_tmdbId)})
+SET
+p.name = row.name,
+p.imdbId = toInteger(row.person_imdbId),
+p.born = date(row.born)
 ----
 
 .Result
@@ -394,32 +443,91 @@ CALL {
 +-------------------+
 | No data returned. |
 +-------------------+
-Nodes created: 4
-Properties set: 8
-Labels added: 4
-Transactions committed: 1
+Nodes created: 868
+Properties set: 3472
+Labels added: 868
 ----
 
-You can set the number of rows as in the example, where it is set to `500` rows.
-
-
-
-[[load-csv-type-cast-csv-data]]
-=== Type cast CSV data
-
-Lipsum.
-
+Neo4j has a couple more link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/values-and-types/casting-data/[type-casting functions].
 
 [[load-csv-split-list-values]]
 === Split list values
 
-Lipsum.
+The file link:https://data.neo4j.com/importing-cypher/movies.csv[_movies.csv_] contains a header line and a total of 94 lines with data about movies.
+Two columns contain list values, `languages` and `genres`:
+
+.+movies.csv+
+[source, csv, filename="movies.csv"]
+----
+movieId,title,budget,countries,movie_imdbId,imdbRating,imdbVotes,languages,plot,movie_poster,released,revenue,runtime,movie_tmdbId,movie_url,year,genres
+1,Toy Story,30000000.0,USA,114709,8.3,591836,English,A cowboy doll is profoundly threatened and jealous when a new spaceman figure supplants him as top toy in a boy's room.,https://image.tmdb.org/t/p/w440_and_h660_face/uXDfjJbdP4ijW5hWSBrPrlKpxab.jpg,1995-11-22,373554033.0,81,862,https://themoviedb.org/movie/862,1995,Adventure|Animation|Children|Comedy|Fantasy
+2,Jumanji,65000000.0,USA,113497,6.9,198355,English|French,"When two kids find and play a magical board game, they release a man trapped for decades in it and a host of dangers that can only be stopped by finishing the game.",https://image.tmdb.org/t/p/w440_and_h660_face/vgpXmVaVyUL7GGiDeiK1mKEKzcX.jpg,1995-12-15,262797249.0,104,8844,https://themoviedb.org/movie/8844,1995,Adventure|Children|Fantasy
+...
+----
+
+Both lists are separated by the character `|`.
+Use the `split()` function to separate the single values and create a list while importing the data:
+
+.Query
+[source, cypher]
+----
+LOAD CSV FROM 'https://data.neo4j.com/importing-cypher/movies.csv' AS row
+MERGE (m:Movie {movieId: toInteger(row.movieId)})
+SET
+m.title = row.title,
+m.languages = split(row.languages, '|'),
+m.genres = split(row.genres, '|')
+----
+
+.Result
+[role="queryresult"]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Nodes created: 93
+Properties set: 372
+Labels added: 93
+----
 
 
-[[load-csv-create-nodes-and-relationships]]
-=== Create nodes and relationships
+[[load-csv-create-node-labels-and-relationships]]
+=== Create node labels and relationships
 
-Lipsum.
+The next example builds upon the person and movie nodes created in <<load-csv-type-cast-csv-data>> and <<load-csv-split-list-values>>.
+It makes use of the following additional CSV files:
+
+* link:https://data.neo4j.com/importing-cypher/acted_in.csv[_acted_in.csv_]
+* link:https://data.neo4j.com/importing-cypher/acted_in.csv[_directed.csv_]
+
+_acted_in.csv_ contains data about the relationship between actors and the movies they acted in while _directed.csv_ contains data about the relationship between directors and the movies they directed.
+Both actors and directors are subsets of the set of people in _persons.csv_ and refer to movies from _movies.csv_.
+The connection between actors, directors and movies is established by the properties `person_tmdbId` and `movieId`:
+
+.+movies.csv+
+[source, csv, filename="acted_in.csv"]
+----
+movieId,person_tmdbId,role
+1,12899,Slinky Dog (voice)
+1,12898,Buzz Lightyear (voice)
+...
+----
+
+.+movies.csv+
+[source, csv, filename="directed.csv"]
+----
+movieId,person_tmdbId
+1,7879
+2,4945
+...
+----
+
+The example uses data that is deliberately modeled like it could have been exported like this from a relational database.
+
+To apply the actor node label where it is applicable and create the ACTED_IN relationship:
+
+To apply the director node label where it is applicable and create the DIRECTED relationship:
+
 
 
 [[load-csv-best-practices]]
