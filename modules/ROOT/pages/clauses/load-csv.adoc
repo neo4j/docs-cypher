@@ -2,26 +2,22 @@
 
 :url_encoded_link: link:https://developer.mozilla.org/en-US/docs/Glossary/percent-encoding[URL-encoded]
 
-[[load-csv]]
 = LOAD CSV
 
-[[load-csv-introduction]]
 == Introduction
 
 `LOAD CSV` is used to import data from CSV files.
 
-In this example, the CSV file _artists.csv_ contains a line index, a name and a year for a number of artists:
+The following example loads the name an year information for a number of artists into the database:
 
 .artists.csv
-[source, csv, role="noheader", filename="artists.csv"]
+[source, csv, filename="artists.csv"]
 ----
 1,ABBA,1992
 2,Roxette,1986
 3,Europe,1979
 4,The Cardigans,1992
 ----
-
-The artist data from _artists.csv_ can be read with `LOAD CSV` like this:
 
 .Query
 [source, cypher]
@@ -30,7 +26,7 @@ LOAD CSV FROM 'file:///artists.csv' AS row
 MERGE (:Artist {name: row[1], year: toInteger(row[2])})
 ----
 
-`FROM` expects a string which represents a URL where the CSV file is located.
+`FROM` expects a string representing the URL where the CSV file is located.
 It is required to specify a variable for the CSV data using `AS`.
 This variable represents the current row while LOAD CSV iterates through the lines of the CSV file.
 This way, the data can then be accessed in subsequent clauses.
@@ -48,34 +44,27 @@ Properties set: 8
 Labels added: 4
 ----
 
-`LOAD CSV` queries have three steps:
-
-* Reading CSV data
-* Transforming the CSV data
-* Creating nodes and relationships from the CSV data
-
-The CSV file format allows for a number of different flavors, for example, using different field delimiters or optional column headers.
-CSV files can be read from different sources, and `LOAD CSV` has a mechanism for handling large amounts of data.
-
-It is possible to import data from multiple CSV files with multiple `LOAD CSV` queries.
-Each data set can be transformed as needed in the process, preparing for the creation of nodes and relationships.
-Since all CSV data imported via `LOAD CSV` is string data, a common transformation is type casting to specific data types.
-
 [NOTE]
 ====
-`LOAD CSV` is regulated by the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/load-privileges/[load privileges].
+Your user needs link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/load-privileges/[load privileges] to run `LOAD CSV` statements.
 ====
 
-[[load-csv-file-format]]
 == CSV file format
 
-A CSV file to use with `LOAD CSV` must have UTF-8 as its character encoding.
-The line terminator is system-dependent, for example, it is `\n` for Unix and `\r\n` for Windows.
+The CSV file format and `LOAD CSV` interact as follows:
 
-[[load-csv-headers]]
+* the character encoding is UTF-8;
+* the line terminator is system dependent, for example, it is `\n` for Unix and `\r\n` for Windows;
+* the default field delimiter is `,`. Change it using the option `FIELDTERMINATOR`;
+* CSV files may contain quoted string values, wrapped in double quotes `"`, but the quotes are dropped when `LOAD CSV` reads the data;
+* if `dbms.import.csv.legacy_quote_escaping` is `true`, `\` is the escape character; to escape a double quote, it must be in a quoted string and escaped, either with the escape character or a second double quote.
+
+
 === Headers
 
-If the CSV file starts with a header row containing column names, each subsequent row in the file acts as a map instead of an array of strings when imported:
+If the CSV file starts with a header row containing column names, each import row in the file acts as a map instead of an array.
+Indicate the presence of the header row by adding `WITH HEADERS` to the query.
+This way, you can access specific fields by their corresponding column name:
 
 .artists-with-headers.csv
 [source, csv, filename="artists-with-headers.csv"]
@@ -86,9 +75,6 @@ Id,Name,Year
 3,Europe,1979
 4,The Cardigans,1992
 ----
-
-Indicate the header row by adding `WITH HEADERS` to the query.
-This way, you can access specific fields by their corresponding column name:
 
 .Query
 [source, cypher]
@@ -108,22 +94,19 @@ Properties set: 8
 Labels added: 4
 ----
 
-[[load-csv-field-delimiter]]
 === Field delimiter
 
 The default field delimiter is `,`.
-A CSV file may have other field delimiters, for example, the semicolon character `;`:
+Use the `FIELDTERMINATOR` option to specify a different field delimiter.
 
 .artists-fieldterminator.csv
-[source, csv, role="noheaders", filename="artists-fieldterminator.csv"]
+[source, csv, filename="artists-fieldterminator.csv"]
 ----
 1;ABBA;1992
 2;Roxette;1986
 3;Europe;1979
 4;The Cardigans;1992
 ----
-
-In that case, change the field delimiter character by using the optional `FIELDTERMINATOR` in your query:
 
 .Query
 [source, cypher]
@@ -143,9 +126,8 @@ Properties set: 8
 Labels added: 4
 ----
 
-If you don't change the field delimiter character, `LOAD CSV` uses the default value of `,`.
-This results in the example CSV being interpreted as rows in a single column without delimiters.
-The first row for example, is interpreted as the string`'1;ABBA;1992'`. 
+If you don't change the field delimiter character, `LOAD CSV` interprets the example CSV as having a single column without delimiters.
+The first row, for example, is read as the string `'1;ABBA;1992'`. 
 
 [NOTE]
 ====
@@ -154,7 +136,6 @@ Write the encoding with four digits, for example, `{backslash}u003B` is equivale
 ====
 
 
-[[load-csv-character-escaping-and-quotes]]
 === Character escaping and quotes
 
 If the configuration setting `dbms.import.csv.legacy_quote_escaping` is set to `true` (the default value), `\` is used as the escape character: `"The {backslash}"Symbol{backslash}""`.
@@ -167,7 +148,7 @@ To apply quotation to a string, wrap it with double quote characters: `"my_strin
 The example below has both additional quotes around each value as well as escaped quotes in the second value:
 
 .artists-with-escaped-char.csv
-[source, csv, role="noheaders", filename="artists-with-escaped-char.csv"]
+[source, csv, filename="artists-with-escaped-char.csv"]
 ----
 "1","The ""Symbol""","1992"
 ----
@@ -197,14 +178,13 @@ Properties set: 2 +
 Labels added: 1
 |===
 
-[[load-csv-access-line-numbers-with-linenumber]]
+
 === Access line numbers with `linenumber()`
 
-For certain scenarios, like debugging a problem with a CSV file, it may be useful to get the current line number which `LOAD CSV` is operating on.
-The `linenumber()` function provides exactly that or `null` if called without a `LOAD CSV` context.
+The xref:{neo4j-docs-base-uri}/cypher-manual/{page-version}/functions/load-csv/#functions-linenumber[`linenumber()`] function provides the line number which `LOAD CSV` is operating on, or `null` if called without a `LOAD CSV` context.
 
 .artists.csv
-[source, csv, role="noheaders", filename="artists.csv"]
+[source, csv, filename="artists.csv"]
 ----
 1,ABBA,1992
 2,Roxette,1986
@@ -233,17 +213,13 @@ RETURN linenumber() AS number, row
 4 rows
 ----
 
-Also see link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/functions/load-csv/#functions-linenumber[linenumber()] under LOAD CSV functions.
 
-
-[[load-csv-access-the-csv-file-path-with-file]]
 === Access the CSV file path with `file()`
 
-For certain scenarios, like debugging a problem with a CSV file, it may be useful to get the absolute path of the file that `LOAD CSV` is operating on.
-The `file()` function provides exactly that if it is called in a `LOAD CSV` context (`null` otherwise).
+The link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/functions/load-csv/#functions-file[`file()`] function provides the absolute path of the file that `LOAD CSV` is operating on, or `null` if called without a `LOAD CSV` context.
 
 .artists.csv
-[source, csv, role="noheaders", filename="artists.csv"]
+[source, csv, filename="artists.csv"]
 ----
 1,ABBA,1992
 2,Roxette,1986
@@ -258,9 +234,6 @@ LOAD CSV FROM 'file:///artists.csv' AS row
 RETURN DISTINCT file() AS path
 ----
 
-Since `LOAD CSV` can temporary download a file to process it, it is important to note that `file()` always returns the path on disk.
-If `LOAD CSV` is invoked with a `file:///` URL that points to your disk, `file()` returns that same path.
-
 .Result
 [role="queryresult"]
 ----
@@ -272,13 +245,14 @@ If `LOAD CSV` is invoked with a `file:///` URL that points to your disk, `file()
 1 row
 ----
 
-Also see link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/functions/load-csv/#functions-file[file()] under LOAD CSV functions.
+[TIP]
+====
+`file()` always returns a local path, even when loading remote CSV files. For remote resources, `file()` returns the temporary local path it was downloaded to.
+====
+
+== Import CSV data into Neo4j
 
 
-[[load-csv-get-csv-data-into-neo4j]]
-== Get CSV data into Neo4j
-
-[[load-csv-file-location]]
 === CSV file location
 
 You can store CSV files on the database server and then access them by using a `+file:///+` URL, depending on the configuration settings:
@@ -311,7 +285,7 @@ If `server.directories.import` is set to the default value _import_, using the a
 Alternatively, you can import data from a CSV file in a remote location into Neo4j:
 
 .data.neo4j.com/bands/artists.csv
-[source, csv, role="noheader", filename="artists.csv"]
+[source, csv, filename="artists.csv"]
 ----
 1,ABBA,1992
 2,Roxette,1986
@@ -350,7 +324,6 @@ The config setting `server.directories.import` only applies to a local disc but 
 Additionally `LOAD CSV` supports locally stored CSV files compressed with _ZIP_.
 
 
-[[load-csv-large-amounts-of-data]]
 === Large amounts of data
 
 If the CSV file contains a significant number of rows approaching hundreds of thousands or millions, it is recommended that you serialize the data processing and reduce memory overhead by doing so.
@@ -412,7 +385,6 @@ Transactions committed: 5
 ----
 
 
-[[load-csv-type-cast-csv-data]]
 === Typecast CSV data
 
 All CSV data imported via `LOAD CSV` is string data.
@@ -455,7 +427,6 @@ Neo4j has many more link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/valu
 See link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/functions/temporal/#functions-date[date()] and subsequent sections for more information about time-related type casting.
 
 
-[[load-csv-split-list-values]]
 === Split list values
 
 The file link:https://data.neo4j.com/importing-cypher/movies.csv[_movies.csv_] contains a header line and a total of 94 lines with data about movies.
@@ -500,7 +471,6 @@ Labels added: 93
 See also link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/functions/string/[String functions] for more options to work with string data.
 
 
-[[load-csv-create-relationships]]
 === Create relationships
 
 The next query builds upon the person and movie nodes created in <<load-csv-type-cast-csv-data>> and <<load-csv-split-list-values>>.
@@ -548,11 +518,9 @@ Properties set: 372
 For another example, see link:https://neo4j.com/docs/getting-started/appendix/tutorials/guide-import-relational-and-etl/[Tutorial: Import data from a relational database into Neo4j].
 
 
-[[load-csv-best-practices]]
 == Best practices
 
 
-[[load-csv-create-constraints]]
 === Create CONSTRAINTS
 
 The CSV files _persons.csv_ and _movies.csv_ processed in <<load-csv-type-cast-csv-data>>, <<load-csv-split-list-values>> and <<load-csv-create-relationships>> both contain IDs for the created nodes.
@@ -590,7 +558,6 @@ Therefore, it is recommended to create constraints prior to importing data.
 There are many more link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/constraints/[types of constraints].
 
 
-[[load-csv-create-additional-node-labels]]
 === Create additional node labels
 
 The `ACTED_IN` relationship created in <<load-csv-create-relationships>> implicitly defines actors as a subset of people in _persons.csv_.
@@ -615,7 +582,6 @@ Labels added: 104
 By adding the `Actor` label to the relevant person nodes, queries which target the label rather than the relationship are quicker to return, see link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/appendix/tutorials/basic-query-tuning/[Basic query tuning].
 
 
-[[load-csv-build-an-import-process]]
 === Build an import process
 
 Generally speaking, data import is a process where the first attempts might not immediately succeed.
@@ -714,7 +680,6 @@ You can run this query at any point to refresh the database with the latest data
 A single process to build your graph provides a consistent mechanism to test your import.
 
 
-[[load-csv-further-reading]]
 == Further reading
 
 link:https://neo4j.com/docs/getting-started/data-modeling/guide-data-modeling/[Data modeling] considerations are relevant for the data import via `LOAD CSV` as well.
