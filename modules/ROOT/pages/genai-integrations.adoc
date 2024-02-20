@@ -153,21 +153,28 @@ CREATE (:Page { index: index, text: resource, vector: vector })-[:OF]->(book)
 .Generate embeddings for many text properties
 ====
 
-If you want to generate embeddings for the text content of all nodes with the label `Tweet`, you can use `CALL ... IN TRANSACTIONS` to split the work up into batches and issue one API request per batch.
+If you want to generate embeddings for the text content of all nodes with the label `Tweet`, you can
+divide the nodes up into batches, and issue one API request per batch.
 
-Assuming nodes with the `Tweet` label have a `text` property, you can generate vector embeddings for each one and write them to the `embedding` property on each one in batches of 1000, for example:
+Assuming nodes with the `Tweet` label have a `text` property, you can generate vector embeddings
+for each one and write them to their `embedding` property in batches of a thousand at a time, for example.
+Here we use `CALL ... IN TRANSACTIONS` to commit each batch separately to manage transaction memory consumption:
 
 .Query
 [source,cypher]
 ----
 MATCH (n:Tweet)
-WHERE n.text IS NOT NULL
+WHERE size(n.text) <> 0 AND n.embedding IS NULL
+WITH collect(n) AS nodes,
+     count(*) AS total,
+     1000 AS batchSize
+UNWIND range(0, total, batchSize) AS batchStart
 CALL {
-    WITH n
-    WITH collect(n) AS nodes, collect(n.text) AS resources
-    CALL genai.vector.encodeBatch(resources, "VertexAI", { token: $token, projectId: $project }) YIELD index, vector
-    CALL db.create.setNodeVectorProperty(nodes[index], "vector", vector)
-} IN TRANSACTIONS OF 1000 ROWS
+    WITH nodes, batchStart, batchSize
+    WITH nodes, batchStart, [node IN nodes[batchStart .. batchStart + batchSize] | node.text] AS batch
+    CALL genai.vector.encodeBatch(batch, "OpenAI", { token: $token }) YIELD index, vector
+    CALL db.create.setNodeVectorProperty(nodes[batchStart + index], "embedding", vector)
+} IN TRANSACTIONS OF 1 ROW
 ----
 ====
 
