@@ -69,10 +69,15 @@ This setting sets the root directory relative to which `+file:///+` URLs are par
 
 When using `+file:///+` URLs, spaces and other non-alphanumeric characters must be link:https://developer.mozilla.org/en-US/docs/Glossary/percent-encoding[URL-encoded].
 
+Note that since link:https://neo4j.com/cloud/platform/aura-graph-database/[AuraDB] is cloud based, this local file approach does not work with AuraDB.
+
 
 === Import from a remote location
 
-You can import data from a CSV file in a remote location into Neo4j:
+You can import data from a CSV file in a remote location into Neo4j.
+
+`LOAD CSV` supports accessing CSV files via _HTTPS_, _HTTP_, and _FTP_.
+`LOAD CSV` follows _HTTP_ redirects but for security reasons it doesn't follow redirects which change the protocol.
 
 .data.neo4j.com/bands/artists.csv
 [source, csv, filename="artists.csv"]
@@ -101,8 +106,77 @@ Properties set: 8
 Labels added: 4
 ----
 
-`LOAD CSV` supports accessing CSV files via _HTTPS_, _HTTP_, and _FTP_.
-`LOAD CSV` will follow _HTTP_ redirects but for security reasons it won't follow redirects which change the protocol.
+
+=== Access line numbers with `linenumber()`
+
+The xref:functions/load-csv.adoc#functions-linenumber[`linenumber()`] function provides the line number which `LOAD CSV` is operating on, or `null` if called without a `LOAD CSV` context.
+
+.artists.csv
+[source, csv, filename="artists.csv"]
+----
+1,ABBA,1992
+2,Roxette,1986
+3,Europe,1979
+4,The Cardigans,1992
+----
+
+.Query
+[source, cypher]
+----
+LOAD CSV FROM 'file:///artists.csv' AS row
+RETURN linenumber() AS number, row
+----
+
+.Result
+[role="queryresult"]
+----
++---------------------------------------+
+| number | row                          |
++---------------------------------------+
+| 1      | ["1","ABBA","1992"]          |
+| 2      | ["2","Roxette","1986"]       |
+| 3      | ["3","Europe","1979"]        |
+| 4      | ["4","The Cardigans","1992"] |
++---------------------------------------+
+4 rows
+----
+
+
+=== Access the CSV file path with `file()`
+
+The xref:functions/load-csv.adoc#functions-file[`file()`] function provides the absolute path of the file that `LOAD CSV` is operating on, or `null` if called without a `LOAD CSV` context.
+
+.artists.csv
+[source, csv, filename="artists.csv"]
+----
+1,ABBA,1992
+2,Roxette,1986
+3,Europe,1979
+4,The Cardigans,1992
+----
+
+.Query
+[source, cypher, role=test-result-skip]
+----
+LOAD CSV FROM 'file:///artists.csv' AS row
+RETURN DISTINCT file() AS path
+----
+
+.Result
+[role="queryresult"]
+----
++------------------------------------------+
+| path                                     |
++------------------------------------------+
+| "/home/example/neo4j/import/artists.csv" |
++------------------------------------------+
+1 row
+----
+
+[TIP]
+====
+`file()` always returns a local path, even when loading remote CSV files. For remote resources, `file()` returns the temporary local path it was downloaded to.
+====
 
 
 === Import compressed CSV files
@@ -132,11 +206,26 @@ Labels added: 4
 === Create constraints
 
 Always create constraints prior to importing data.
+The CSV files _persons.csv_ and _movies.csv_ contain IDs for people and movies:
 
-// TODO: these files have not been shown because of moved section.
+.+persons.csv+
+[source, csv, filename="persons.csv"]
+----
+person_tmdbId,bio,born,bornIn,died,person_imdbId,name,person_poster,person_url
+3,"Legendary Hollywood Icon Harrison Ford was born on July 13, 1942 in Chicago, Illinois.   His family history includes a strong lineage of actors, radio personalities, and models.   Harrison attended public high school in Park Ridge, Illinois where he was a member of the school Radio Station WMTH.  Harrison worked as the lead voice for sports reporting at WMTH for several years.   Acting wasn’t a major interest to Ford until his junior year at Ripon College when he first took an acting class...",1942-07-13,"Chicago, Illinois, USA",,148,Harrison Ford,https://image.tmdb.org/t/p/w440_and_h660_face/5M7oN3sznp99hWYQ9sX0xheswWX.jpg,https://themoviedb.org/person/3
+...
+----
 
-The CSV files _persons.csv_ and _movies.csv_ processed in <<_cast_csv_columns_to_neo4j_data_types>>, <<_split_list_values>> and <<_create_relationships>> both contain IDs for the created nodes.
-They identify a person or a movie node.
+.+movies.csv+
+[source, csv, filename="movies.csv"]
+----
+movieId,title,budget,countries,movie_imdbId,imdbRating,imdbVotes,languages,plot,movie_poster,released,revenue,runtime,movie_tmdbId,movie_url,year,genres
+1,Toy Story,30000000.0,USA,114709,8.3,591836,English,A cowboy doll is profoundly threatened and jealous when a new spaceman figure supplants him as top toy in a boy's room.,https://image.tmdb.org/t/p/w440_and_h660_face/uXDfjJbdP4ijW5hWSBrPrlKpxab.jpg,1995-11-22,373554033.0,81,862,https://themoviedb.org/movie/862,1995,Adventure|Animation|Children|Comedy|Fantasy
+2,Jumanji,65000000.0,USA,113497,6.9,198355,English|French,"When two kids find and play a magical board game, they release a man trapped for decades in it and a host of dangers that can only be stopped by finishing the game.",https://image.tmdb.org/t/p/w440_and_h660_face/vgpXmVaVyUL7GGiDeiK1mKEKzcX.jpg,1995-12-15,262797249.0,104,8844,https://themoviedb.org/movie/8844,1995,Adventure|Children|Fantasy
+...
+----
+
+After import, they can identify a person or a movie node.
 Neo4j's concept of constraints can ensure uniqueness.
 With uniqueness constraints in place, trying to create a person node with an existing `tmdbId` or a movie node with an existing `movieId` raises an error and doesn't create the node.
 
@@ -163,6 +252,66 @@ REQUIRE m.movieId IS UNIQUE
 | No data returned. |
 +-------------------+
 Added 2 constraints.
+----
+
+
+=== CSV data quality
+
+Real-world data can be messy.
+When you work with such CSV data, you may see values that need a clean-up or a transformation before you can use them with `LOAD CSV`.
+Doing this early can avoid cleaning up data that has been imported incorrectly.
+
+
+==== Inconsistent headers
+
+The CSV header may be inconsistent with the data.
+It can be missing, have too many columns or have a different delimiter.
+
+Verify that the header matches the data in the file.
+Adjust the formatting, delimiters or columns.
+
+
+==== Extra or missing quotes
+
+Standalone double or single quotes in the middle of non-quoted text or non-escaped quotes in quoted text can cause issues reading the file.
+Either escape or remove stray quotes.
+See <<Character escaping and quotes>>.
+
+
+==== Special or newline characters
+
+When dealing with special characters in a file, ensure they are quoted or remove them.
+Either add quotes to newline characters or remove them from quoted or unquoted fields.
+
+
+==== Inconsistent line breaks
+
+Ensure line breaks are consistent throughout your file.
+We recommend the Unix style for compatibility with Linux systems.
+
+
+==== Binary zeros, BOM byte order mark and other non-text characters
+
+Unusual characters or tool-specific formatting are sometimes hidden in application tools, but become apparent in plain-text editors.
+If you come across these types of characters in your file, remove them entirely.
+
+
+==== Test for data consistency
+
+Using Cypher, you can see what is being imported and you can use that to your advantage.
+`LOAD CSV` does not necessarily create a graph structure.
+Instead, you can also only outputs samples, counts, or distributions to detect incorrect header column counts, delimiters, quotes, escapes, or header name spellings.
+
+[source, cypher, role= nocopy noplay]
+----
+// Assert correct line count
+LOAD CSV FROM "file-url" AS line
+RETURN count(*);
+
+// Check first 5 line-sample with header-mapping
+LOAD CSV WITH HEADERS FROM "file-url" AS line
+RETURN line
+LIMIT 5;
 ----
 
 
@@ -210,8 +359,11 @@ Transactions committed: 5
 
 === Import data from relational databases
 
-//TODO
+It is worthwhile to reason about your data model prior to importing data.
+This holds especially for CSV data coming from a relational database. 
+See link:https://neo4j.com/docs/getting-started/data-modeling/guide-data-modeling/[Data modeling].
 
+//TODO
 
 The next query builds upon the person and movie nodes created in <<_cast_csv_columns_to_neo4j_data_types>> and <<_split_list_values>>.
 It makes use of the additional CSV file link:https://data.neo4j.com/importing-cypher/acted_in.csv[_acted_in.csv_].
@@ -219,7 +371,7 @@ It makes use of the additional CSV file link:https://data.neo4j.com/importing-cy
 The _acted_in.csv_ file contains data about the relationship between actors and the movies they acted in.
 The connection between actors and movies is established by the properties `person_tmdbId` and `movieId`:
 
-.+movies.csv+
+.+acted_in.csv+
 [source, csv, filename="acted_in.csv"]
 ----
 movieId,person_tmdbId,role
@@ -228,7 +380,7 @@ movieId,person_tmdbId,role
 ...
 ----
 
-_movies.csv_ also holds the role the actor played in the movie.
+_acted_in.csv_ also holds the role the actor played in the movie.
 
 The data are deliberately modeled like they could have been exported from a relational database.
 The table represented by _acted_in.csv_ acts as a look-up table combining the primary keys, the IDs, of the tables represented by _persons.csv_ and _movies.csv_.
@@ -256,6 +408,7 @@ Properties set: 372
 ----
 
 For another example, see link:https://neo4j.com/docs/getting-started/appendix/tutorials/guide-import-relational-and-etl/[Tutorial: Import data from a relational database into Neo4j].
+
 
 == Process data during import
 
@@ -298,6 +451,48 @@ p.born = date(row.born)
 Nodes created: 868
 Properties set: 2604
 Labels added: 868
+----
+
+=== Handle null values
+
+Neo4j does not store null values.
+Null or empty fields in a CSV files can be skipped or replaced with default values in `LOAD CSV`.
+
+Suppose you have this CSV file:
+
+.companies.csv
+[source]
+----
+Id,Name,Location,Email,BusinessType
+1,Neo4j,San Mateo,contact@neo4j.com,P
+2,AAA,,info@aaa.com,
+3,BBB,Chicago,,G
+----
+
+Here are some examples of importing this data.
+
+.Examples
+[source,cypher,role=noplay]
+----
+//skip null values
+LOAD CSV WITH HEADERS FROM 'file:///companies.csv' AS row
+WITH row WHERE row.Id IS NOT NULL
+MERGE (c:Company {companyId: row.Id});
+
+// Clear data
+MATCH (n:Company) DELETE n;
+
+// Set a default for null values
+LOAD CSV WITH HEADERS FROM 'file:///companies.csv' AS row
+MERGE (c:Company {companyId: row.Id, hqLocation: coalesce(row.Location, "Unknown")})
+
+// Clear data
+MATCH (n:Company) DELETE n;
+
+// Change empty strings to null values (not stored)
+LOAD CSV WITH HEADERS FROM 'file:///companies.csv' AS row
+MERGE (c:Company {companyId: row.Id})
+SET c.emailAddress = CASE trim(row.Email) WHEN "" THEN null ELSE row.Email END
 ----
 
 
@@ -343,9 +538,6 @@ Labels added: 93
 ----
 
 See also xref:functions/string.adoc[String functions] for more options to work with string data.
-
-
-=== Create relationships
 
 
 === Create additional node labels
@@ -504,6 +696,103 @@ Labels added: 1
 == Performance recommendations
 
 
+=== Create and use indexes
+
+xref:indexes/index.adoc[Indexes] can vastly speed up queries which is particularly useful if they are queried frequently. See xref:appendix/tutorials/basic-query-tuning.adoc[Basic query tuning].
+
+Many types of constraints implicitly create indexes.
+For example, Neo4j has already created indexes for the constraints from section <<_create_constraints>> for `person_tmdbId` and `movieId`.
+The header of the file link:https://data.neo4j.com/importing-cypher/movies.csv[_movies.csv_] has more candidates for index properties: `movie_imdbId` and `title`.
+Both could be regular query indexes.
+
+To create indexes on the two properties:
+
+.Query
+[source, cypher]
+----
+CREATE INDEX movie_imdbId FOR (m:Movie) ON (m.movie_imdbId);
+CREATE INDEX movie_title FOR (m:Movie) ON (m.title);
+CALL db.awaitIndexes();
+----
+
+
+=== Separate creation of nodes and relationships
+
+// TODO: expand section
+
+The file link:https://data.neo4j.com/importing-cypher/books.csv[_books.csv_] contains book data:
+
+.books.csv
+[source, csv, filename="artists.csv"]
+----
+id,title,author,publication_year,genre,rating,still_in_print,last_purchased
+19515,The Heights,Anne Conrad,2012,Comedy,5,true,2023/4/12 8:17:00
+39913,Starship Ghost,Michael Tyler,1985,Science Fiction|Horror,4.2,false,2022/01/16 17:15:56
+60980,The Death Proxy,Tim Brown,2002,Horror,2.1,true,2023/11/26 8:34:26
+18793,Chocolate Timeline,Mary R. Robb,1924,Romance,3.5,false,2022/9/17 14:23:45
+67162,Stories of Three,Eleanor Link,2022,Romance|Comedy,2,true,2023/03/12 16:01:23
+25987,Route Down Below,Tim Brown,2006,Horror,4.1,true,2023/09/24 15:34:18
+----
+
+The following Cypher query uses multiple MERGE clauses:
+
+[source,cypher,role= nocopy noplay]
+----
+LOAD CSV WITH HEADERS
+FROM 'https://data.neo4j.com/importing-cypher/books.csv'
+AS row
+MERGE (b:Book {id: row.id})
+SET b.title = row.title
+MERGE (a:Author {name: row.author})
+MERGE (a)-[:WROTE]->(b)
+----
+
+If the data set was more complicated with significantly more rows, such a query might have experienced issues with the import as it creates related data in a single pass.
+Instead, separate the creation of nodes and relationships:
+
+[source,cypher,role=noplay]
+----
+// Create `Book` nodes
+LOAD CSV WITH HEADERS
+FROM 'https://data.neo4j.com/importing-cypher/books.csv'
+AS row
+MERGE (b:Book {id: row.id})
+SET b.title = row.title;
+
+// Create `Author` nodes
+LOAD CSV WITH HEADERS
+FROM 'https://data.neo4j.com/importing-cypher/books.csv'
+AS row
+MERGE (a:Author {name: row.author});
+
+// Create `WROTE` relationships
+LOAD CSV WITH HEADERS
+FROM 'https://data.neo4j.com/importing-cypher/books.csv'
+AS row
+MATCH (a:Author{name: row.author})
+MATCH (b:Book{id: row.id})
+MERGE (a)-[:WROTE]->(b);
+----
+
+
+=== Avoid `Eager` operators
+
+Some Cypher statements, for example, the first query in <<_separate_creation_of_nodes_and_relationships>>, pull in more rows than necessary, adding extra processing up front.
+To avoid this, you can run link:https://neo4j.com/docs/cypher-manual/current/query-tuning/#how-do-i-profile-a-query[`PROFILE`] on your queries to see if they use `Eager` loading and either modify queries or run multiple passes on the same file, so it does not do this.
+For more information about the `Eager` operator, see the link:https://neo4j.com/docs/cypher-manual/current/planning-and-tuning/operators/operators-detail/[Cypher manual -> Execution plan operators in detail^].
+
+
+=== Database heap and memory
+
+To help handle larger volumes of transactions, you can increase some configuration settings for the database and restart the instance for them to take effect.
+You can create or update one million records in a single transaction per 2 GB of heap.
+
+In `neo4j.conf`:
++
+* `server.memory.heap.initial_size` and `server.memory.heap.max_size`: set to at least 4G.
+* `server.memory.pagecache.size`: ideally, value large enough to keep the whole database in memory.
+
+
 == Full example
 
 You can reset all data in the database by running a series of DELETE and DROP queries:
@@ -538,20 +827,23 @@ A single process to build your graph provides a consistent mechanism to test you
 .Query
 [source, cypher]
 ----
-MATCH (p:Person) DETACH DELETE p;
-MATCH (m:Movie) DETACH DELETE m;
+// Clear data
+MATCH (n) DETACH DELETE n;
 
+// Drop constraints
 DROP CONSTRAINT Person_tmdbId IF EXISTS;
 DROP CONSTRAINT Movie_movieId IF EXISTS;
 
+// Create constraints
 CREATE CONSTRAINT Person_tmdbId IF NOT EXISTS
 FOR (p:Person)
-REQUIRE p.tmdbId IS UNIQUE
+REQUIRE p.tmdbId IS UNIQUE;
 
 CREATE CONSTRAINT Movie_movieId IF NOT EXISTS
 FOR (m:Movie)
-REQUIRE m.movieId IS UNIQUE
+REQUIRE m.movieId IS UNIQUE;
 
+// Create person nodes
 LOAD CSV FROM 'https://data.neo4j.com/importing-cypher/persons.csv' AS row
 MERGE (p:Person)
 SET
@@ -559,6 +851,7 @@ p.tmdbId = toInteger(row.tmdbId),
 p.name = row.name,
 p.born = date(row.born);
 
+// Create movie nodes
 LOAD CSV FROM 'https://data.neo4j.com/importing-cypher/movies.csv' AS row
 MERGE (m:Movie)
 SET
@@ -568,12 +861,14 @@ m.imdbId = toInteger(row.movie_imdbId),
 m.languages = split(row.languages, '|'),
 m.genres = split(row.genres, '|');
 
+// Create relationships
 LOAD CSV FROM 'https://data.neo4j.com/importing-cypher/acted_in.csv' AS row
 MATCH (p:Person {tmdbId: toInteger(row.person_tmdbId)})
 MATCH (m:Movie {movieId: toInteger(row.movieId)})
 MERGE (p)-[r:ACTED_IN]->(m)
 SET r.role = row.role;
 
+// Set additional node label
 MATCH (p:Person)-[:ACTED_IN]->()
 WITH DISTINCT p SET p:Actor;
 ----
@@ -591,83 +886,14 @@ Properties set: 3441
 Labels added: 1065
 ----
 
+== Other ways of importing data
 
-== Further reading
+There are a few other approaches to get CSV data into Neo4j:
 
-It is worthwhile to reason about your data model prior to importing data.
-This holds especially for CSV data coming from a relational database. 
-See link:https://neo4j.com/docs/getting-started/data-modeling/guide-data-modeling/[Data modeling].
+1. The `neo4j-admin database import` command: command-line tool useful for straightforward loading of large datasets.
+_Works with Neo4j Desktop, Neo4j EE Docker image and local installations._
+2. Neo4j ETL tool: Neo4j Labs project.
+For more details and documentation, visit link:https://neo4j.com/labs/etl-tool/[Neo4j ETL Tool page].
+3. Kettle import tool: maps and executes steps for the data process flow and works well for very large datasets, especially if you are already familiar with using this tool. _Works with any setup, including AuraDB._
 
-xref:indexes/index.adoc[Node indexes] can vastly speed up queries which is particularly useful if they are queried frequently. See xref:appendix/tutorials/basic-query-tuning.adoc[Basic query tuning].
-
-
-=== Access line numbers with `linenumber()`
-
-The xref:functions/load-csv.adoc#functions-linenumber[`linenumber()`] function provides the line number which `LOAD CSV` is operating on, or `null` if called without a `LOAD CSV` context.
-
-.artists.csv
-[source, csv, filename="artists.csv"]
-----
-1,ABBA,1992
-2,Roxette,1986
-3,Europe,1979
-4,The Cardigans,1992
-----
-
-.Query
-[source, cypher]
-----
-LOAD CSV FROM 'file:///artists.csv' AS row
-RETURN linenumber() AS number, row
-----
-
-.Result
-[role="queryresult"]
-----
-+---------------------------------------+
-| number | row                          |
-+---------------------------------------+
-| 1      | ["1","ABBA","1992"]          |
-| 2      | ["2","Roxette","1986"]       |
-| 3      | ["3","Europe","1979"]        |
-| 4      | ["4","The Cardigans","1992"] |
-+---------------------------------------+
-4 rows
-----
-
-
-=== Access the CSV file path with `file()`
-
-The xref:functions/load-csv.adoc#functions-file[`file()`] function provides the absolute path of the file that `LOAD CSV` is operating on, or `null` if called without a `LOAD CSV` context.
-
-.artists.csv
-[source, csv, filename="artists.csv"]
-----
-1,ABBA,1992
-2,Roxette,1986
-3,Europe,1979
-4,The Cardigans,1992
-----
-
-.Query
-[source, cypher, role=test-result-skip]
-----
-LOAD CSV FROM 'file:///artists.csv' AS row
-RETURN DISTINCT file() AS path
-----
-
-.Result
-[role="queryresult"]
-----
-+------------------------------------------+
-| path                                     |
-+------------------------------------------+
-| "/home/example/neo4j/import/artists.csv" |
-+------------------------------------------+
-1 row
-----
-
-[TIP]
-====
-`file()` always returns a local path, even when loading remote CSV files. For remote resources, `file()` returns the temporary local path it was downloaded to.
-====
+Finally, avoiding `LOAD CSV` and deferring the parsing and querying of CSV data to your own application is a valid choice.
