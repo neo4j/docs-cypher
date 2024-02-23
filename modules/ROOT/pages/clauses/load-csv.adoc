@@ -1,4 +1,4 @@
-:description: `LOAD CSV` is used to import data from CSV files.
+:description: `LOAD CSV` is used to import data from CSV files into a Neo4j database.
 
 = LOAD CSV
 
@@ -6,19 +6,16 @@
 
 `LOAD CSV` is used to import data from CSV files.
 
-The clause syntax is:
-
-.Query
 [source, cypher]
 ----
-LOAD CSV FROM '<file_URL>' AS row
-...
+LOAD CSV FROM 'https://data.neo4j.com/bands/artists.csv' AS row
+MERGE (:Artist {name: row[1], year: toInteger(row[2])})
 ----
 
-`FROM` expects a string representing the URL with the CSV file.
-Specify a variable for the CSV data using `AS`.
-This variable represents the current row while LOAD CSV iterates through the lines of the CSV file.
-This way, you can access the data in subsequent clauses.
+The clause takes a string containing the URL of the CSV file.
+The clause parses one row at a time, temporarily storing the current row in the variable name specified with `AS`.
+This allows to access the data in subsequent clauses, which may process and insert it into the database.
+both local and remote
 
 [NOTE]
 ====
@@ -29,8 +26,10 @@ Your user needs link:{neo4j-docs-base-uri}/operations-manual/{page-version}/auth
 
 === Import local files
 
-You can store CSV files on the database server and then access them by using a `+file:///+` URL.
-The following example loads the name and year information for a number of artists into the database:
+You can store CSV files on the database server and then access them by using a `+file:///+` URL. By default, paths are resolved relative to the Neo4j installation folder.
+
+.Import name and year information for a number of artists
+====
 
 .artists.csv
 [source, csv, filename="artists.csv"]
@@ -48,9 +47,8 @@ LOAD CSV FROM 'file:///artists.csv' AS row
 MERGE (:Artist {name: row[1], year: toInteger(row[2])})
 ----
 
-
 .Result
-[role="queryresult"]
+[source, role="queryresult"]
 ----
 +-------------------+
 | No data returned. |
@@ -59,27 +57,32 @@ Nodes created: 4
 Properties set: 8
 Labels added: 4
 ----
+====
 
-.Configuration settings for file URLs
+[NOTE]
+It's not possible to use `LOAD CSV` with file URLs against an Aura instance, only remote URLs are supported.
+For other ways of importing data, see link:https://neo4j.com/docs/aura/auradb/importing/importing-data/[Aura -> Importing data].
+
+
+==== Configuration settings for file URLs
+
 link:{neo4j-docs-base-uri}/operations-manual/{page-version}/configuration/configuration-settings#config_dbms.security.allow_csv_import_from_file_urls[dbms.security.allow_csv_import_from_file_urls]::
-This setting determines if Cypher allows the use of `+file:///+` URLs when loading data using `LOAD CSV`.
+This setting determines whether `+file:///+` URLs are allowed.
 
 link:{neo4j-docs-base-uri}/operations-manual/{page-version}/configuration/configuration-settings#config_server.directories.import[server.directories.import]::
 This setting sets the root directory relative to which `+file:///+` URLs are parsed.
 
 When using `+file:///+` URLs, spaces and other non-alphanumeric characters must be link:https://developer.mozilla.org/en-US/docs/Glossary/percent-encoding[URL-encoded].
 
-Note that since link:https://neo4j.com/cloud/platform/aura-graph-database/[AuraDB] is cloud based, this local file approach does not work with AuraDB.
-
 
 === Import from a remote location
 
-You can import data from a CSV file in a remote location into Neo4j.
+You can import data from a CSV file hosted on a remote location.
 
-`LOAD CSV` supports accessing CSV files via _HTTPS_, _HTTP_, and _FTP_.
-`LOAD CSV` follows _HTTP_ redirects but for security reasons it doesn't follow redirects which change the protocol.
+`LOAD CSV` supports accessing CSV files via HTTPS, HTTP, and FTP.
+It also follows redirects, except those changing the protocol (for security reasons).
 
-.data.neo4j.com/bands/artists.csv
+.https://data.neo4j.com/bands/artists.csv
 [source, csv, filename="artists.csv"]
 ----
 1,ABBA,1992
@@ -96,7 +99,7 @@ MERGE (:Artist {name: row[1], year: toInteger(row[2])})
 ----
 
 .Result
-[role="queryresult"]
+[source, role="queryresult"]
 ----
 +-------------------+
 | No data returned. |
@@ -107,82 +110,10 @@ Labels added: 4
 ----
 
 
-=== Access line numbers with `linenumber()`
-
-The xref:functions/load-csv.adoc#functions-linenumber[`linenumber()`] function provides the line number which `LOAD CSV` is operating on, or `null` if called without a `LOAD CSV` context.
-
-.artists.csv
-[source, csv, filename="artists.csv"]
-----
-1,ABBA,1992
-2,Roxette,1986
-3,Europe,1979
-4,The Cardigans,1992
-----
-
-.Query
-[source, cypher]
-----
-LOAD CSV FROM 'file:///artists.csv' AS row
-RETURN linenumber() AS number, row
-----
-
-.Result
-[role="queryresult"]
-----
-+---------------------------------------+
-| number | row                          |
-+---------------------------------------+
-| 1      | ["1","ABBA","1992"]          |
-| 2      | ["2","Roxette","1986"]       |
-| 3      | ["3","Europe","1979"]        |
-| 4      | ["4","The Cardigans","1992"] |
-+---------------------------------------+
-4 rows
-----
-
-
-=== Access the CSV file path with `file()`
-
-The xref:functions/load-csv.adoc#functions-file[`file()`] function provides the absolute path of the file that `LOAD CSV` is operating on, or `null` if called without a `LOAD CSV` context.
-
-.artists.csv
-[source, csv, filename="artists.csv"]
-----
-1,ABBA,1992
-2,Roxette,1986
-3,Europe,1979
-4,The Cardigans,1992
-----
-
-.Query
-[source, cypher, role=test-result-skip]
-----
-LOAD CSV FROM 'file:///artists.csv' AS row
-RETURN DISTINCT file() AS path
-----
-
-.Result
-[role="queryresult"]
-----
-+------------------------------------------+
-| path                                     |
-+------------------------------------------+
-| "/home/example/neo4j/import/artists.csv" |
-+------------------------------------------+
-1 row
-----
-
-[TIP]
-====
-`file()` always returns a local path, even when loading remote CSV files. For remote resources, `file()` returns the temporary local path it was downloaded to.
-====
-
-
 === Import compressed CSV files
 
-`LOAD CSV` can read local CSV files compressed with _ZIP_ or _gzip_.
-ZIP archives to be used with `LOAD CSV` can have arbitrary directory structures but may only contain a single CSV file.
+`LOAD CSV` can read local CSV files compressed with ZIP or gzip.
+ZIP archives can have arbitrary directory structures but may only contain a single CSV file. (so it travels down the dir tree? I gather it doesn't hold for gzip?)
 
 .Query
 [source, cypher]
@@ -191,22 +122,14 @@ LOAD CSV FROM 'file:///artists.zip' AS row
 MERGE (:Artist {name: row[1], year: toInteger(row[2])})
 ----
 
-.Result
-[role="queryresult"]
-----
-+-------------------+
-| No data returned. |
-+-------------------+
-Nodes created: 4
-Properties set: 8
-Labels added: 4
-----
 
+=== Create uniqueness constraints
 
-=== Create constraints
+Always create uniqueness xref:constraints/index.adoc[constraints] prior to importing data, to avoid duplicates or colliding entities.
 
-Always create constraints prior to importing data.
-The CSV files _persons.csv_ and _movies.csv_ contain IDs for people and movies:
+.Create xref:constraints/examples.adoc#constraints-examples-node-uniqueness[node property uniqueness constraints] on person ID
+====
+If a node uniqueness constraint on `tmdbId` is in place prior to importing `persons.csv`, `LOAD CSV` will raise an error in case the CSV file contains multiple rows with the same ID. (do we need to call the property so ugly?)
 
 .+persons.csv+
 [source, csv, filename="persons.csv"]
@@ -216,83 +139,44 @@ person_tmdbId,bio,born,bornIn,died,person_imdbId,name,person_poster,person_url
 ...
 ----
 
-.+movies.csv+
-[source, csv, filename="movies.csv"]
-----
-movieId,title,budget,countries,movie_imdbId,imdbRating,imdbVotes,languages,plot,movie_poster,released,revenue,runtime,movie_tmdbId,movie_url,year,genres
-1,Toy Story,30000000.0,USA,114709,8.3,591836,English,A cowboy doll is profoundly threatened and jealous when a new spaceman figure supplants him as top toy in a boy's room.,https://image.tmdb.org/t/p/w440_and_h660_face/uXDfjJbdP4ijW5hWSBrPrlKpxab.jpg,1995-11-22,373554033.0,81,862,https://themoviedb.org/movie/862,1995,Adventure|Animation|Children|Comedy|Fantasy
-2,Jumanji,65000000.0,USA,113497,6.9,198355,English|French,"When two kids find and play a magical board game, they release a man trapped for decades in it and a host of dangers that can only be stopped by finishing the game.",https://image.tmdb.org/t/p/w440_and_h660_face/vgpXmVaVyUL7GGiDeiK1mKEKzcX.jpg,1995-12-15,262797249.0,104,8844,https://themoviedb.org/movie/8844,1995,Adventure|Children|Fantasy
-...
-----
-
-After import, they can identify a person or a movie node.
-Neo4j's concept of constraints can ensure uniqueness.
-With uniqueness constraints in place, trying to create a person node with an existing `tmdbId` or a movie node with an existing `movieId` raises an error and doesn't create the node.
-
-There are also other xref:constraints/index.adoc[types of constraints].
-
-To create xref:constraints/examples.adoc#constraints-examples-node-uniqueness[node property uniqueness constraints] for the two IDs:
-
-.Query
+.Create a node property uniqueness constraint on person ID
 [source, cypher]
 ----
 CREATE CONSTRAINT Person_tmdbId IF NOT EXISTS
 FOR (p:Person)
 REQUIRE p.tmdbId IS UNIQUE
-
-CREATE CONSTRAINT Movie_movieId IF NOT EXISTS
-FOR (m:Movie)
-REQUIRE m.movieId IS UNIQUE
 ----
 
 .Result
-[role="queryresult"]
+[source, role="queryresult"]
 ----
 +-------------------+
 | No data returned. |
 +-------------------+
-Added 2 constraints.
+Added 1 constraint.
 ----
+====
 
 
-=== CSV data quality
+=== Check source data quality
 
 Real-world data can be messy.
 When you work with such CSV data, you may see values that need a clean-up or a transformation before you can use them with `LOAD CSV`.
 Doing this early can avoid cleaning up data that has been imported incorrectly.
 
 
-==== Inconsistent headers
-
-The CSV header may be inconsistent with the data.
+- *Inconsistent headers* -- The CSV header may be inconsistent with the data.
 It can be missing, have too many columns or have a different delimiter.
-
 Verify that the header matches the data in the file.
 Adjust the formatting, delimiters or columns.
-
-
-==== Extra or missing quotes
-
-Standalone double or single quotes in the middle of non-quoted text or non-escaped quotes in quoted text can cause issues reading the file.
+- *Extra or missing quotes* -- Standalone double or single quotes in the middle of non-quoted text or non-escaped quotes in quoted text can cause issues reading the file.
 Either escape or remove stray quotes.
 See <<Character escaping and quotes>>.
-
-
-==== Special or newline characters
-
-When dealing with special characters in a file, ensure they are quoted or remove them.
+- *Special or newline characters* -- When dealing with special characters in a file, ensure they are quoted or remove them.
 Either add quotes to newline characters or remove them from quoted or unquoted fields.
-
-
-==== Inconsistent line breaks
-
-Ensure line breaks are consistent throughout your file.
+- *Inconsistent line breaks* -- Ensure line breaks are consistent throughout your file.
 We recommend the Unix style for compatibility with Linux systems.
-
-
-==== Binary zeros, BOM byte order mark and other non-text characters
-
-Unusual characters or tool-specific formatting are sometimes hidden in application tools, but become apparent in plain-text editors.
+- *Binary zeros, BOM byte order mark and other non-text characters* -- Unusual characters or tool-specific formatting are sometimes hidden in application tools, but become apparent in plain-text editors.
 If you come across these types of characters in your file, remove them entirely.
 
 
@@ -360,7 +244,7 @@ Transactions committed: 5
 === Import data from relational databases
 
 It is worthwhile to reason about your data model prior to importing data.
-This holds especially for CSV data coming from a relational database. 
+This holds especially for CSV data coming from a relational database.
 See link:https://neo4j.com/docs/getting-started/data-modeling/guide-data-modeling/[Data modeling].
 
 Exporting data from a relational database to CSV may create one or multiple files, depending on whether the data are dumped as a single combined table or each table is dumbed as a aseparate file.
@@ -617,6 +501,83 @@ Labels added: 104
 
 By adding the `Actor` label to the relevant person nodes, queries which target the label rather than the relationship are quicker to return, see xref:appendix/tutorials/basic-query-tuning.adoc[Basic query tuning].
 
+
+== Neo4j CSV functions
+
+=== Access line numbers with `linenumber()`
+
+The xref:functions/load-csv.adoc#functions-linenumber[`linenumber()`] function provides the line number which `LOAD CSV` is operating on, or `null` if called out of a `LOAD CSV` context.
+
+A common use case for this function is to generate sequential unique IDs for CSV data that doesn't have a unique column already.
+
+.artists.csv
+[source, csv, filename="artists.csv"]
+----
+1,ABBA,1992
+2,Roxette,1986
+3,Europe,1979
+4,The Cardigans,1992
+----
+
+.Query
+[source, cypher]
+----
+LOAD CSV FROM 'file:///artists.csv' AS row
+RETURN linenumber() AS number, row
+----
+
+.Result
+[source, role="queryresult"]
+----
++---------------------------------------+
+| number | row                          |
++---------------------------------------+
+| 1      | ["1","ABBA","1992"]          |
+| 2      | ["2","Roxette","1986"]       |
+| 3      | ["3","Europe","1979"]        |
+| 4      | ["4","The Cardigans","1992"] |
++---------------------------------------+
+4 rows
+----
+
+
+=== Access the CSV file path with `file()`
+
+The xref:functions/load-csv.adoc#functions-file[`file()`] function provides the absolute path of the file that `LOAD CSV` is operating on, or `null` if called out of a `LOAD CSV` context.
+
+.artists.csv
+[source, csv, filename="artists.csv"]
+----
+1,ABBA,1992
+2,Roxette,1986
+3,Europe,1979
+4,The Cardigans,1992
+----
+
+.Query
+[source, cypher, role=test-result-skip]
+----
+LOAD CSV FROM 'file:///artists.csv' AS row
+RETURN DISTINCT file() AS path
+----
+
+.Result
+[source, role="queryresult"]
+----
++------------------------------------------+
+| path                                     |
++------------------------------------------+
+| "/home/example/neo4j/import/artists.csv" |
++------------------------------------------+
+1 row
+----
+
+[TIP]
+====
+`file()` always returns a local path, even when loading remote CSV files. For remote resources, `file()` returns the temporary local path it was downloaded to.
+====
+
+
 == CSV file format
 
 The CSV file format and `LOAD CSV` interact as follows:
@@ -695,7 +656,7 @@ Labels added: 4
 ----
 
 If you don't change the field delimiter character, `LOAD CSV` interprets the example CSV as having a single column without delimiters.
-The first row, for example, is read as the string `'1;ABBA;1992'`. 
+The first row, for example, is read as the string `'1;ABBA;1992'`.
 
 [NOTE]
 ====
