@@ -550,3 +550,83 @@ RETURN largeLists
 1+d|Rows: 2
 
 |===
+
+[[composite-databases]]
+== Composite databases
+`CALL { ... } IN TRANSACTIONS` works on composite databases.
+Composite databases are virtual databases used for querying their constituents, so the examples above are generally
+valid for composite databases, but they must be slightly modified to accommodate the nature of composite databases.
+
+The following two examples shows how `CALL { ... } IN TRANSACTIONS` can be used on a composite database.
+Both examples are the equivalent of examples presented in the previous sections, but modified for composite databases.
+The first query uses 'friends.csv' from previous examples and creates the person nodes on all constituents.
+
+.friends.csv
+[source, csv, role="noheader" filename="friends.csv"]
+----
+1,Bill,26
+2,Max,27
+3,Anna,22
+4,Gladys,29
+5,Summer,24
+----
+
+.Query
+[source, cypher]
+----
+UNWIND graph.names() AS graphName
+LOAD CSV FROM 'file:///friends.csv' AS line
+CALL {
+  USE graph.byName( graphName )
+  WITH line
+  CREATE (:Person {name: line[1], age: toInteger(line[2])})
+} IN TRANSACTIONS
+----
+
+The second query removes all nodes from all constituents.
+
+.Query
+[source, cypher]
+----
+UNWIND graph.names() AS graphName
+CALL {
+  USE graph.byName( graphName )
+  MATCH (n)
+  RETURN id(n) AS id
+}
+CALL {
+  USE graph.byName( graphName )
+  WITH id
+  MATCH (n)
+  WHERE id(n) = id
+  DETACH DELETE n
+} IN TRANSACTIONS
+----
+
+The two examples demonstrate another useful feature of `CALL { ... } IN TRANSACTIONS`.
+Even though composite databases allow accessing multiple graphs in a single query,
+only one graph can be modified in one transaction. `CALL { ... } IN TRANSACTIONS`
+offers a way how to construct queries modifying multiple graphs.
+
+[[composite-databases-batching]]
+=== Batch size in composite databases
+Since queries on composite databases can interact with more than one graph, batching is slightly more complicated there.
+The batch size declared with  `IN TRANSACTIONS OF ... ROWS` represents an upper limit of the batch size. The real batch size
+depends on the evaluation of `USE` clause. Calls targeting different graphs can't be interleaved so if a `USE` clause
+evaluates to a different target than the current one, the batch is committed and a new one started.
+This is demonstrated in the following example. It assumes existence of two constituents 'remoteGraph1' and 'remoteGraph2'
+of composite database called 'composite'.
+
+.Query
+[source, cypher]
+----
+WITH ['composite.remoteGraph1', 'composite.remoteGraph2'] AS graphs
+UNWIND [0, 0, 1, 1, 1, 1, 0, 0] AS i
+WITH graphs[i] AS g
+CALL {
+  USE graph.byName( g )
+  CREATE ()
+} IN TRANSACTIONS OF 3 ROW
+----
+The declared batch size is 3, but the evaluation of USE clause will cause the batch size to be 2 on 'composite.remoteGraph1',
+followed by 3 on 'composite.remoteGraph2', followed by 1 on 'composite.remoteGraph2' and finally 2 on 'composite.remoteGraph1'.
