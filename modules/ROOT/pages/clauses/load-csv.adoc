@@ -28,7 +28,7 @@ Your user needs link:{neo4j-docs-base-uri}/operations-manual/{page-version}/auth
 
 You can store CSV files on the database server and then access them by using a `+file:///+` URL. By default, paths are resolved relative to the Neo4j installation folder.
 
-.Import name and year information for a number of artists
+.Import artists name and year information from a local file
 ====
 
 .artists.csv
@@ -63,6 +63,9 @@ Labels added: 4
 It's not possible to use `LOAD CSV` with file URLs against an Aura instance, only remote URLs are supported.
 For other ways of importing data, see link:https://neo4j.com/docs/aura/auradb/importing/importing-data/[Aura -> Importing data].
 
+[TIP]
+When using `+file:///+` URLs, spaces and other non-alphanumeric characters must be link:https://developer.mozilla.org/en-US/docs/Glossary/percent-encoding[URL-encoded].
+
 
 ==== Configuration settings for file URLs
 
@@ -72,8 +75,6 @@ This setting determines whether `+file:///+` URLs are allowed.
 link:{neo4j-docs-base-uri}/operations-manual/{page-version}/configuration/configuration-settings#config_server.directories.import[server.directories.import]::
 This setting sets the root directory relative to which `+file:///+` URLs are parsed.
 
-When using `+file:///+` URLs, spaces and other non-alphanumeric characters must be link:https://developer.mozilla.org/en-US/docs/Glossary/percent-encoding[URL-encoded].
-
 
 === Import from a remote location
 
@@ -81,6 +82,9 @@ You can import data from a CSV file hosted on a remote location.
 
 `LOAD CSV` supports accessing CSV files via HTTPS, HTTP, and FTP.
 It also follows redirects, except those changing the protocol (for security reasons).
+
+.Import artists name and year information from a remote file
+====
 
 .https://data.neo4j.com/bands/artists.csv
 [source, csv, filename="artists.csv"]
@@ -108,6 +112,7 @@ Nodes created: 4
 Properties set: 8
 Labels added: 4
 ----
+====
 
 
 === Import compressed CSV files
@@ -131,7 +136,7 @@ Always create uniqueness xref:constraints/index.adoc[constraints] prior to impor
 ====
 If a node uniqueness constraint on `tmdbId` is in place prior to importing `persons.csv`, `LOAD CSV` will raise an error in case the CSV file contains multiple rows with the same ID. (do we need to call the property so ugly?)
 
-.+persons.csv+
+.persons.csv
 [source, csv, filename="persons.csv"]
 ----
 person_tmdbId,bio,born,bornIn,died,person_imdbId,name,person_poster,person_url
@@ -160,10 +165,7 @@ Added 1 constraint.
 
 === Check source data quality
 
-Real-world data can be messy.
-When you work with such CSV data, you may see values that need a clean-up or a transformation before you can use them with `LOAD CSV`.
-Doing this early can avoid cleaning up data that has been imported incorrectly.
-
+Especially in case of a failed import, there are some elements to check to ensure the source file is not corrupted.
 
 - *Inconsistent headers* -- The CSV header may be inconsistent with the data.
 It can be missing, have too many columns or have a different delimiter.
@@ -173,20 +175,17 @@ Adjust the formatting, delimiters or columns.
 Either escape or remove stray quotes.
 See <<Character escaping and quotes>>.
 - *Special or newline characters* -- When dealing with special characters in a file, ensure they are quoted or remove them.
-Either add quotes to newline characters or remove them from quoted or unquoted fields.
 - *Inconsistent line breaks* -- Ensure line breaks are consistent throughout your file.
-We recommend the Unix style for compatibility with Linux systems.
+We recommend the Unix style for compatibility with Linux systems. (and is compatible with windows? does it even matter, is not up to the jvm to do the parsing, which is system agnostic?)
 - *Binary zeros, BOM byte order mark and other non-text characters* -- Unusual characters or tool-specific formatting are sometimes hidden in application tools, but become apparent in plain-text editors.
 If you come across these types of characters in your file, remove them entirely.
 
 
 ==== Test for data consistency
 
-Using Cypher, you can see what is being imported and you can use that to your advantage.
-`LOAD CSV` does not necessarily create a graph structure.
-Instead, you can also only outputs samples, counts, or distributions to detect incorrect header column counts, delimiters, quotes, escapes, or header name spellings.
+Before actually importing data into the database, you can use `LOAD CSV` to inspect the source file and get an idea of what form the imported data will have.
 
-[source, cypher, role= nocopy noplay]
+[source, cypher]
 ----
 // Assert correct line count
 LOAD CSV FROM "file-url" AS line
@@ -198,17 +197,20 @@ RETURN line
 LIMIT 5;
 ----
 
-
-=== Large amounts of data
-
-`LOAD CSV` may timeout for files containing a significant number of rows (approaching hundreds of thousands or millions). For large files, it's recommended to split the import process in several lighter transactions through the clause xref:subqueries/subqueries-in-transactions.adoc[CALL {...} IN TRANSACTIONS].
+put a remote url and result of queries?
 
 
-The file link:https://data.neo4j.com/importing-cypher/persons.csv[_persons.csv_] contains a header line and a total of 869 lines with data about people.
+=== Handle large amounts of data
+
+`LOAD CSV` may timeout for files containing a significant number of rows (approaching hundreds of thousands or millions). For large files, it's recommended to split the import process in several lighter transactions through the clause xref:subqueries/subqueries-in-transactions.adoc[`CALL {...} IN TRANSACTIONS`].
+
+.Load a large CSV file in several transactions
+====
+The file link:https://data.neo4j.com/importing-cypher/persons.csv[_persons.csv_] contains a header line and a total of 869 lines.
 The example loads the `name` and `born` columns in transactions of 200 rows.
 
-.+persons.csv+
-[source, csv, filename="persons.csv"]
+.persons.csv
+[source, csv]
 ----
 person_tmdbId,bio,born,bornIn,died,person_imdbId,name,person_poster,person_url
 3,"Legendary Hollywood Icon Harrison Ford was born on July 13, 1942 in Chicago, Illinois.   His family history includes a strong lineage of actors, radio personalities, and models.   Harrison attended public high school in Park Ridge, Illinois where he was a member of the school Radio Station WMTH.  Harrison worked as the lead voice for sports reporting at WMTH for several years.   Acting wasn’t a major interest to Ford until his junior year at Ripon College when he first took an acting class...",1942-07-13,"Chicago, Illinois, USA",,148,Harrison Ford,https://image.tmdb.org/t/p/w440_and_h660_face/5M7oN3sznp99hWYQ9sX0xheswWX.jpg,https://themoviedb.org/person/3
@@ -229,7 +231,7 @@ CALL {
 ----
 
 .Result
-[role="queryresult"]
+[source, role="queryresult"]
 ----
 +-------------------+
 | No data returned. |
@@ -239,6 +241,7 @@ Properties set: 2604
 Labels added: 868
 Transactions committed: 5
 ----
+====
 
 
 === Import data from relational databases
@@ -297,9 +300,9 @@ MERGE (a)-[:WROTE]->(b);
 
 ==== Import from multiple CSV files
 
-Consider the two files link:https://data.neo4j.com/importing-cypher/persons.csv[_persons.csv_] and link:https://data.neo4j.com/importing-cypher/movies.csv[_movies.csv_] from <<_create_constraints>> and the additional file link:https://data.neo4j.com/importing-cypher/acted_in.csv[_acted_in.csv_]:
+Consider the two files link:https://data.neo4j.com/importing-cypher/persons.csv[_persons.csv_] and link:https://data.neo4j.com/importing-cypher/movies.csv[_movies.csv_] from <<_create_uniqueness_constraints>> and the additional file link:https://data.neo4j.com/importing-cypher/acted_in.csv[_acted_in.csv_]:
 
-.+acted_in.csv+
+.acted_in.csv
 [source, csv, filename="acted_in.csv"]
 ----
 movieId,person_tmdbId,role
@@ -348,137 +351,9 @@ Properties set: 2294
 For a fully fledged example, see link:https://neo4j.com/docs/getting-started/appendix/tutorials/guide-import-relational-and-etl/[Tutorial: Import data from a relational database into Neo4j].
 
 
-== Process data during import
+==== Create additional node labels
 
-
-=== Cast CSV columns to Neo4j data types
-
-`LOAD CSV` inserts all imported CSV data as string properties.
-The file link:https://data.neo4j.com/importing-cypher/persons.csv[_persons.csv_] contains several columns which are not best represented by a string.
-For example, values in the column `person_tmdbId` are integers, while values in the `born` column are dates.
-To type cast the values while importing data, use the functions `toInteger()` and `date()`.
-
-Neo4j has many more xref:values-and-types/casting-data.adoc[type-casting functions].
-See xref:functions/temporal/index.adoc#functions-date[date()] and subsequent sections for more information about time-related type casting.
-
-.+persons.csv+
-[source, csv, filename="persons.csv"]
-----
-person_tmdbId,bio,born,bornIn,died,person_imdbId,name,person_poster,person_url
-3,"Legendary Hollywood Icon Harrison Ford was born on July 13, 1942 in Chicago, Illinois.   His family history includes a strong lineage of actors, radio personalities, and models.   Harrison attended public high school in Park Ridge, Illinois where he was a member of the school Radio Station WMTH.  Harrison worked as the lead voice for sports reporting at WMTH for several years.   Acting wasn’t a major interest to Ford until his junior year at Ripon College when he first took an acting class...",1942-07-13,"Chicago, Illinois, USA",,148,Harrison Ford,https://image.tmdb.org/t/p/w440_and_h660_face/5M7oN3sznp99hWYQ9sX0xheswWX.jpg,https://themoviedb.org/person/3
-...
-----
-
-.Query
-[source, cypher]
-----
-LOAD CSV FROM 'https://data.neo4j.com/importing-cypher/persons.csv' AS row
-MERGE (p:Person)
-SET
-p.tmdbId = toInteger(row.tmdbId),
-p.name = row.name,
-p.born = date(row.born)
-----
-
-.Result
-[role="queryresult"]
-----
-+-------------------+
-| No data returned. |
-+-------------------+
-Nodes created: 868
-Properties set: 2604
-Labels added: 868
-----
-
-=== Handle null values
-
-Neo4j does not store null values.
-Null or empty fields in a CSV files can be skipped or replaced with default values in `LOAD CSV`.
-
-Suppose you have this CSV file:
-
-.companies.csv
-[source]
-----
-Id,Name,Location,Email,BusinessType
-1,Neo4j,San Mateo,contact@neo4j.com,P
-2,AAA,,info@aaa.com,
-3,BBB,Chicago,,G
-----
-
-Here are some examples of importing this data.
-
-.Examples
-[source,cypher,role=noplay]
-----
-// Skip null values
-LOAD CSV WITH HEADERS FROM 'file:///companies.csv' AS row
-WITH row WHERE row.Id IS NOT NULL
-MERGE (c:Company {companyId: row.Id});
-
-// Clear data
-MATCH (n:Company) DELETE n;
-
-// Set a default for null values
-LOAD CSV WITH HEADERS FROM 'file:///companies.csv' AS row
-MERGE (c:Company {companyId: row.Id, hqLocation: coalesce(row.Location, "Unknown")})
-
-// Clear data
-MATCH (n:Company) DELETE n;
-
-// Change empty strings to null values (not stored)
-LOAD CSV WITH HEADERS FROM 'file:///companies.csv' AS row
-MERGE (c:Company {companyId: row.Id})
-SET c.emailAddress = CASE trim(row.Email) WHEN "" THEN null ELSE row.Email END
-----
-
-
-=== Split list values
-
-The file link:https://data.neo4j.com/importing-cypher/movies.csv[_movies.csv_] contains a header line and a total of 94 lines with data about movies.
-Two columns contain list values, `languages` and `genres`:
-
-.+movies.csv+
-[source, csv, filename="movies.csv"]
-----
-movieId,title,budget,countries,movie_imdbId,imdbRating,imdbVotes,languages,plot,movie_poster,released,revenue,runtime,movie_tmdbId,movie_url,year,genres
-1,Toy Story,30000000.0,USA,114709,8.3,591836,English,A cowboy doll is profoundly threatened and jealous when a new spaceman figure supplants him as top toy in a boy's room.,https://image.tmdb.org/t/p/w440_and_h660_face/uXDfjJbdP4ijW5hWSBrPrlKpxab.jpg,1995-11-22,373554033.0,81,862,https://themoviedb.org/movie/862,1995,Adventure|Animation|Children|Comedy|Fantasy
-2,Jumanji,65000000.0,USA,113497,6.9,198355,English|French,"When two kids find and play a magical board game, they release a man trapped for decades in it and a host of dangers that can only be stopped by finishing the game.",https://image.tmdb.org/t/p/w440_and_h660_face/vgpXmVaVyUL7GGiDeiK1mKEKzcX.jpg,1995-12-15,262797249.0,104,8844,https://themoviedb.org/movie/8844,1995,Adventure|Children|Fantasy
-...
-----
-
-Both lists are separated by the character `|`.
-Use the `split()` function to separate the single values and create a list while importing the data:
-
-.Query
-[source, cypher]
-----
-LOAD CSV FROM 'https://data.neo4j.com/importing-cypher/movies.csv' AS row
-MERGE (m:Movie)
-SET
-m.movieId = toInteger(row.movieId),
-m.title = row.title,
-m.imdbId = toInteger(row.movie_imdbId),
-m.languages = split(row.languages, '|'),
-m.genres = split(row.genres, '|')
-----
-
-.Result
-[role="queryresult"]
-----
-+-------------------+
-| No data returned. |
-+-------------------+
-Nodes created: 93
-Properties set: 465
-Labels added: 93
-----
-
-See also xref:functions/string.adoc[String functions] for more options to work with string data.
-
-
-=== Create additional node labels
+In Neo4j, a node can have multiple labels. However, data coming from relational datasets are often broken down in files that separate the entities from each other, so that it's not possible to assign multiple labels while importing any one
 
 The `ACTED_IN` relationship created in <<_create_relationships>> implicitly defines actors as a subset of people in _persons.csv_.
 To apply an additional actor node label where it is applicable, based on the relationship:
@@ -500,6 +375,150 @@ Labels added: 104
 ----
 
 By adding the `Actor` label to the relevant person nodes, queries which target the label rather than the relationship are quicker to return, see xref:appendix/tutorials/basic-query-tuning.adoc[Basic query tuning].
+
+
+== Pre-process the data during import
+
+
+=== Cast CSV columns to Neo4j data types
+
+`LOAD CSV` inserts all imported CSV data as string properties.
+Neo4j supports however a range of xref:values-and-types/index.adoc[data types], and storing data in its most appropriate type allows both to query it more effectively and to process it with type-specific Cypher functions.
+
+For a list of type casting functions, see xref:values-and-types/casting-data.adoc[Casting data values].
+
+.Import numeric and temporal data
+====
+The column `person_tmdbId` and `born` in the file link:https://data.neo4j.com/importing-cypher/persons.csv[_persons.csv_] contains integers and dates respectively.
+The functions `toInteger()` and `date()` allow to cast those values to the appropriate types before importing them.
+
+.persons.csv
+[source, csv]
+----
+person_tmdbId,bio,born,bornIn,died,person_imdbId,name,person_poster,person_url
+3,"Legendary Hollywood Icon Harrison Ford was born on July 13, 1942 in Chicago, Illinois.   His family history includes a strong lineage of actors, radio personalities, and models.   Harrison attended public high school in Park Ridge, Illinois where he was a member of the school Radio Station WMTH.  Harrison worked as the lead voice for sports reporting at WMTH for several years.   Acting wasn’t a major interest to Ford until his junior year at Ripon College when he first took an acting class...",1942-07-13,"Chicago, Illinois, USA",,148,Harrison Ford,https://image.tmdb.org/t/p/w440_and_h660_face/5M7oN3sznp99hWYQ9sX0xheswWX.jpg,https://themoviedb.org/person/3
+...
+----
+
+.Query
+[source, cypher]
+----
+LOAD CSV FROM 'https://data.neo4j.com/importing-cypher/persons.csv' AS row
+MERGE (p:Person)
+SET
+p.tmdbId = toInteger(row.tmdbId),
+p.name = row.name,
+p.born = date(row.born)
+----
+
+.Result
+[source, role="queryresult"]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Nodes created: 868
+Properties set: 2604
+Labels added: 868
+----
+====
+
+
+=== Handle null values
+
+Neo4j does not store null values.
+Null or empty fields in a CSV files can be skipped or replaced with default values in `LOAD CSV`.
+
+.Processing a file with null values
+====
+In the file `companies.csv`, some rows do not specify values for some columns.
+The examples show several options of treating null values.
+
+.companies.csv
+[source, csv, filename=companies.csv]
+----
+Id,Name,Location,Email,BusinessType
+1,Neo4j,San Mateo,contact@neo4j.com,P
+2,AAA,,info@aaa.com,,
+3,BBB,Chicago,,G
+----
+
+.Skip null values
+[source, cypher]
+----
+LOAD CSV WITH HEADERS FROM 'file:///companies.csv' AS row
+WITH row WHERE row.Id IS NOT NULL
+MERGE (c:Company {companyId: row.Id});
+----
+
+.Provide a default for null values
+[source, cypher]
+----
+LOAD CSV WITH HEADERS FROM 'file:///companies.csv' AS row
+MERGE (c:Company {companyId: row.Id, hqLocation: coalesce(row.Location, "Unknown")})
+----
+
+.Change empty strings to null values (not stored)
+[source, cypher]
+----
+LOAD CSV WITH HEADERS FROM 'file:///companies.csv' AS row
+MERGE (c:Company {companyId: row.Id})
+SET c.emailAddress = CASE trim(row.Email) WHEN "" THEN null ELSE row.Email END
+----
+====
+
+[TIP]
+Because null values are not stored in the database, a strategy for selectively getting rid of some values is to map into null values.
+
+
+=== Split list values
+
+The function `split()` allows to convert a string of elements into a list.
+
+.Parse movies languages and genres as lists
+====
+The file link:https://data.neo4j.com/importing-cypher/movies.csv[_movies.csv_] contains a header line and a total of 94 lines.
+
+The columns `languages` and `genres` contain list-like values.
+Both lists are separated by a pipe `|`, and `split()` allows to make them into Cypher lists ahead of inserting them into the database.
+
+.movies.csv
+[source, csv]
+----
+movieId,title,budget,countries,movie_imdbId,imdbRating,imdbVotes,languages,plot,movie_poster,released,revenue,runtime,movie_tmdbId,movie_url,year,genres
+1,Toy Story,30000000.0,USA,114709,8.3,591836,English,A cowboy doll is profoundly threatened and jealous when a new spaceman figure supplants him as top toy in a boy's room.,https://image.tmdb.org/t/p/w440_and_h660_face/uXDfjJbdP4ijW5hWSBrPrlKpxab.jpg,1995-11-22,373554033.0,81,862,https://themoviedb.org/movie/862,1995,Adventure|Animation|Children|Comedy|Fantasy
+2,Jumanji,65000000.0,USA,113497,6.9,198355,English|French,"When two kids find and play a magical board game, they release a man trapped for decades in it and a host of dangers that can only be stopped by finishing the game.",https://image.tmdb.org/t/p/w440_and_h660_face/vgpXmVaVyUL7GGiDeiK1mKEKzcX.jpg,1995-12-15,262797249.0,104,8844,https://themoviedb.org/movie/8844,1995,Adventure|Children|Fantasy
+...
+----
+
+.Query
+[source, cypher]
+----
+LOAD CSV FROM 'https://data.neo4j.com/importing-cypher/movies.csv' AS row
+MERGE (m:Movie)
+SET
+m.movieId = toInteger(row.movieId),
+m.title = row.title,
+m.imdbId = toInteger(row.movie_imdbId),
+m.languages = split(row.languages, '|'),
+m.genres = split(row.genres, '|')
+----
+
+Is this not a deprecated syntax?
+
+.Result
+[source, role="queryresult"]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Nodes created: 93
+Properties set: 465
+Labels added: 93
+----
+====
+
+For more string manipulation functions, see xref:functions/string.adoc[String functions].
 
 
 == Neo4j CSV functions
