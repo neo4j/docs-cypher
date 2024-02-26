@@ -2,15 +2,26 @@
 
 :link-vector-indexes: xref:indexes/semantic-indexes/vector-indexes.adoc
 
-[role=on-aura]
 [[genai-integrations]]
 = GenAI integrations
 
-_This feature is available only in Aura._
+_This feature is available from Neo4j 5.17 in both Neo4j Aura and on-prem deployments._
 
 Neo4j provides integrations with various generative AI services using a native GenAI plugin.
 This includes support for transforming text data into vector embeddings using VertexAI, OpenAI, or Amazon Bedrock.
 The resulting vector embeddings can be used together with Neo4j's {link-vector-indexes}[vector search indexes].
+
+== Prerequisites
+
+To use the GenAI plugin, you need to have the following:
+
+* A Neo4j DBMS running Neo4j 5.17 or later.
+* A GenAI provider account, such as VertexAI, OpenAI, or Amazon Bedrock.
+* API credentials for the provider you want to use.
+* (On-prem only) the Neo4j GenAI plugin installed in your Neo4j deployment.
+The plugin JAR is located in the _<NEO4J_HOME>/products_ directory of the Neo4j installation.
+For more information on how to install and configure the plugin, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/configuration/plugins/[Operations Manual -> Configure plugins].
+The plugin is enabled by default in Neo4j Aura.
 
 [[vector-embeddings]]
 == Vector embeddings
@@ -28,8 +39,7 @@ You can use the `genai.vector.encode()` function to generate a vector embedding 
 
 [IMPORTANT]
 ====
-This function sends one API request every time it is called, which may result in a lot of overhead in terms of both
-network traffic and latency.
+This function sends one API request every time it is called, which may result in a lot of overhead in terms of both network traffic and latency.
 If you want to generate many embeddings at once, use <<multiple-embeddings, `genai.vector.encodeBatch()`>>.
 ====
 
@@ -73,8 +83,7 @@ CALL db.index.vector.queryNodes("my_index", 10, queryVector) YIELD node, score R
 .Generating an embedding on the fly
 ====
 
-Assuming nodes with the `Tweet` label have an `id` property and a `text` property, you can generate and return
-the text embedding for the tweet with ID 1234:
+Assuming nodes with the `Tweet` label have an `id` property and a `text` property, you can generate and return the text embedding for the tweet with ID 1234:
 
 .Query
 [source,cypher]
@@ -90,8 +99,7 @@ RETURN genai.vector.encode(n.text, "VertexAI", { token: $token, projectId: $proj
 You can use the `genai.vector.encodeBatch()` procedure to generate many vector embeddings with a single API request.
 This procedure takes a list of resources as an input, and returns the same number of result rows, instead of a single one.
 
-Using this procedure is recommended in cases where a single large resource is split up into multiple chunks (like the pages of a book),
-or when generating embeddings for a large number of resources.
+Using this procedure is recommended in cases where a single large resource is split up into multiple chunks (like the pages of a book), or when generating embeddings for a large number of resources.
 
 [IMPORTANT]
 ====
@@ -142,22 +150,30 @@ CREATE (:Page { index: index, text: resource, vector: vector })-[:OF]->(book)
 .Generate embeddings for many text properties
 ====
 
-If you want to generate embeddings for the text content of all nodes with the label `Tweet`, you can use `CALL ... IN TRANSACTIONS` to split the work up into batches and issue one API request per batch.
+If you want to generate embeddings for the text content of all nodes with the label `Tweet`, you can divide the nodes up into batches, and issue one API request per batch.
 
-Assuming nodes with the `Tweet` label have a `text` property, you can generate vector embeddings for each one and write them to the `embedding` property on each one in batches of 1000, for example:
+Assuming nodes with the `Tweet` label have a `text` property, you can generate vector embeddings for each one and write them to their `embedding` property in batches of, for example, a thousand at a time.
+You can use this in combination with `CALL ... IN TRANSACTIONS` to commit each batch separately to manage transaction memory consumption:
 
 .Query
 [source,cypher]
 ----
 MATCH (n:Tweet)
-WHERE n.text IS NOT NULL
+WHERE size(n.text) <> 0 AND n.embedding IS NULL
+WITH collect(n) AS nodes,
+     count(*) AS total,
+     1000 AS batchSize
+UNWIND range(0, total, batchSize) AS batchStart
 CALL {
-    WITH n
-    WITH collect(n) AS nodes, collect(n.text) AS resources
-    CALL genai.vector.encodeBatch(resources, "VertexAI", { token: $token, projectId: $project }) YIELD index, vector
-    CALL db.create.setNodeVectorProperty(nodes[index], "vector", vector)
-} IN TRANSACTIONS OF 1000 ROWS
+    WITH nodes, batchStart, batchSize
+    WITH nodes, batchStart, [node IN nodes[batchStart .. batchStart + batchSize] | node.text] AS batch
+    CALL genai.vector.encodeBatch(batch, "OpenAI", { token: $token }) YIELD index, vector
+    CALL db.create.setNodeVectorProperty(nodes[batchStart + index], "embedding", vector)
+} IN TRANSACTIONS OF 1 ROW
 ----
+
+You can control how many batches are committed by each inner transaction by modifying the `OF 1 ROW` clause.
+For example, `OF 10 ROWS` will only commit once per 10 batches. Because vector embeddings can be very large, this may require significantly more memory.
 ====
 
 [[ai-providers]]
