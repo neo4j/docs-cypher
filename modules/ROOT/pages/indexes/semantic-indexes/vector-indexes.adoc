@@ -13,7 +13,8 @@
 [[indexes-vector]]
 = Vector search indexes
 
-_Vector search indexes were released as a public beta in Neo4j 5.11 and general availability in Neo4j 5.13._
+_Node vector search indexes were released as a public beta in Neo4j 5.11 and general availability in Neo4j 5.13._
+_Relationship vector search indexes were introduced in Neo4j 5.18._
 
 Vector indexes allow users to query vector embeddings from large datasets.
 An embedding is a numerical representation of a data object, such as text, image, audio, or document.
@@ -44,10 +45,15 @@ The procedures and commands for vector indexes are listed in the following table
 |===
 | Usage | Procedure/Command | Description
 
-| Create vector index.
+| Create node vector index.
 | `+CREATE VECTOR INDEX ...+`
-| label:new[Introduced in 5.15] Create a vector index for the specified label and property with the given vector dimensionality using the given similarity function.
+| label:new[Introduced in 5.15] Create a node vector index for the specified label and property with the given vector dimensionality using the given similarity function.
 See the xref:indexes/search-performance-indexes/managing-indexes.adoc#create-indexes[`CREATE INDEX`] command for more details. Replaces {link-procedures-reference}#procedure_db_index_vector_createNodeIndex[`db.index.vector.createNodeIndex`].
+
+| Create relationship vector index.
+| `+CREATE VECTOR INDEX ...+`
+| label:new[Introduced in 5.18] Create a relationship vector index for the specified relationship type and property with the given vector dimensionality using the given similarity function.
+See the xref:indexes/search-performance-indexes/managing-indexes.adoc#create-indexes[`CREATE INDEX`] command for more details.
 
 | Create vector index.
 | {link-procedures-reference}#procedure_db_index_vector_createNodeIndex[`db.index.vector.createNodeIndex`]
@@ -89,7 +95,7 @@ Creating a vector index requires link:{neo4j-docs-base-uri}/operations-manual/{p
 The index name must be unique among both indexes and constraints.
 ====
 
-A vector index is a single-label, single-property index for nodes.
+A vector index is a single-label, single-property index for nodes or a single-relationship-type, single-property index for relationships.
 A vector index needs to be configured with both the dimensionality of the vector (`INTEGER` between `1` and `2048` _inclusive_), and the measure of similarity between two vectors (case-insensitive `STRING`).
 For details, see xref:#indexes-vector-similarity[].
 
@@ -109,6 +115,16 @@ OPTIONS "{" option: value[, ...] "}"
 | Create a vector index on nodes.
 The options map is mandatory because setting the vector dimensions and similarity function is mandatory when creating a vector index.
 
+| [source, syntax, role=noplay, indent=0]
+----
+CREATE VECTOR INDEX [index_name] [IF NOT EXISTS]
+FOR ()-”[“r:TYPE_NAME”]”-()
+ON (r.propertyName)
+OPTIONS "{" option: value[, ...] "}"
+----
+| Create a vector index on relationships.  label:new[Introduced in 5.18]
+The options map is mandatory because setting the vector dimensions and similarity function is mandatory when creating a vector index.
+
 |===
 
 It is considered best practice to give the index a name when it is created.
@@ -122,7 +138,7 @@ The index name must be unique among all indexes and constraints.
 ====
 
 The `CREATE VECTOR INDEX` command take an `OPTIONS` clause. This has two parts, the `indexProvider` and `indexConfig`.
-The provider can only have the default value, `'vector-1.0'`.
+As of Neo4j 5.18, there are two available index providers, `vector-2.0` (default) and `vector-1.0` (deprecated).
 The `indexConfig` is a `MAP` from `STRING` values to `STRING` and `INTEGER` values, and is used to set the index-specific configuration settings (the vector dimensions and similarity function).
 
 The command is optionally idempotent. This means that its default behavior is to throw an error if an attempt is made to create the same index twice.
@@ -139,17 +155,17 @@ All vectors within the index must have the same dimensionality.
 The measure of similarity is determined by the given vector similarity function.
 This defines how similar two vectors are to one another by a similarity score, how vectors are interpreted, and what vectors are valid for the index.
 
-A node is indexed if all the following are true:
+A node or relationship is indexed if all the following are true:
 
-* The node contains the configured label.
-* The node contains the configured property key.
+* The node/relationship contains the configured label/relationship type.
+* The node/relationship contains the configured property key.
 * The respective property value is of type `LIST<FLOAT>`.
 * The xref:functions/scalar.adoc#functions-size[`size()`] of the respective value is the same as the configured dimensionality.
 * The value is a valid vector for the configured similarity function.
 
-Otherwise, a node is not indexed.
+Otherwise, a node or relationship is not indexed.
 
-.Create a vector index
+.Create a node vector index
 ====
 
 For instance, assume you have a graph of research papers, and each paper has an abstract.
@@ -177,25 +193,63 @@ OPTIONS {indexConfig: {
  `vector.similarity_function`: 'cosine'
 }}
 ----
+====
 
-You can see that the vector index has been created using `SHOW INDEXES`:
+.Create a relationship vector index
+====
+
+// TODO: fix a proper example
+
+For instance, assume you have a graph of research papers, and each paper has an abstract.
+You want to find papers in the neighborhood of a paper you know.
+
+.Data model
+[source,syntax,role="noheader",indent=0]
+----
+(:Something)-[:RELEVANT]->(:SomethingElse)
+----
+
+Assume for each abstract, you have generated a 1536-dimensional vector `embedding` of the abstract's `text` using Open AI's default model, `text-embedding-ada-002`.
+This model suggests a xref:indexes-vector-similarity-cosine[cosine similarity].
+For more information, see link:https://platform.openai.com/docs/guides/embeddings/which-distance-function-should-i-use[OpenAI's official documentation].
+
+You can create a cosine vector index over the `embedding` property.
 
 .Query
 [source,cypher]
 ----
-SHOW VECTOR INDEXES YIELD name, type, labelsOrTypes, properties, options
+CREATE VECTOR INDEX `???-embeddings`
+FOR ()-[r:RELEVANT]-() ON (r.embedding)
+OPTIONS {indexConfig: {
+ `vector.dimensions`: 1536,
+ `vector.similarity_function`: 'cosine'
+}}
+----
+====
+
+.Showing the vector indexes
+====
+
+You can see that the two vector indexes have been created using `SHOW INDEXES`:
+
+.Query
+[source,cypher]
+----
+SHOW VECTOR INDEXES YIELD name, type, entityType, labelsOrTypes, properties, options
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="3m,2m,3m,3m,6m"]
 |===
 
-| name | type | labelsOrTypes | properties | options
+| name | type | entityType | labelsOrTypes | properties | options
 
+| "abstract-embeddings" | "VECTOR" | "NODE" | "["Abstract"]  | ["embedding"]
+| {indexProvider: "vector-2.0", indexConfig: {vector.dimensions: 1536, vector.similarity_function: "cosine"}}
 
-| "abstract-embeddings" | "VECTOR" | ["Abstract"]  | ["embedding"]
-| {indexProvider: "vector-1.0", indexConfig: {vector.dimensions: 1536, vector.similarity_function: "cosine"}}
-5+d|Rows: 1
+| "???-embeddings" | "VECTOR" | "RELATIONSHIP" | ["RELEVANT"]  | ["embedding"]
+| {indexProvider: "vector-2.0", indexConfig: {vector.dimensions: 1536, vector.similarity_function: "cosine"}}
+5+d|Rows: 2
 
 |===
 
@@ -435,8 +489,6 @@ The requested _k_ nearest neighbors may not be the exact _k_ nearest, but close 
 * Only one vector index can be over a schema.
 For example, you cannot have one xref:indexes-vector-similarity-euclidean[Euclidean] and one xref:indexes-vector-similarity-cosine[cosine] vector index on the same label-property key pair.
 
-* Only node vector indexes are supported.
-
 * No provided settings or options for tuning the index.
 
 * Changes made within the same transaction are not visible to the index.
@@ -450,6 +502,9 @@ The following table lists the known issues and the version in which they were fi
 [%header,cols="5a,d"]
 |===
 | Known issues | Fixed in
+
+| Only node vector indexes are supported.
+| Neo4j 5.18
 
 | Vector indexes cannot be assigned autogenerated names. 
 
