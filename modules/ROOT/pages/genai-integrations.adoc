@@ -1,0 +1,307 @@
+:description: Information about GenAI integrations.
+
+:link-vector-indexes: xref:indexes/semantic-indexes/vector-indexes.adoc
+
+[[genai-integrations]]
+= GenAI integrations
+
+_This feature is available from Neo4j 5.17 in both Neo4j Aura and on-prem deployments._
+
+Neo4j provides integrations with various generative AI services using a native GenAI plugin.
+This includes support for transforming text data into vector embeddings using VertexAI, OpenAI, or Amazon Bedrock.
+The resulting vector embeddings can be used together with Neo4j's {link-vector-indexes}[vector search indexes].
+
+== Prerequisites
+
+To use the GenAI plugin, you need to have the following:
+
+* A Neo4j DBMS running Neo4j 5.17 or later.
+* A GenAI provider account, such as VertexAI, OpenAI, or Amazon Bedrock.
+* API credentials for the provider you want to use.
+* (On-prem only) the Neo4j GenAI plugin installed in your Neo4j deployment.
+The plugin JAR is located in the _<NEO4J_HOME>/products_ directory of the Neo4j installation.
+For more information on how to install and configure the plugin, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/configuration/plugins/[Operations Manual -> Configure plugins].
+The plugin is enabled by default in Neo4j Aura.
+
+[[vector-embeddings]]
+== Vector embeddings
+
+A vector embedding is a numerical representation of some object, typically unstructured data, such as natural language text.
+For more information and examples of vector embeddings in general, see {link-vector-indexes}[Vector search indexes].
+
+Text can be transformed into vector embeddings using some model of natural language.
+Providers of LLM (Large Language Model) and Generative AI services, such as VertexAI, OpenAI, and Amazon Bedrock, expose this functionality via their APIs, which can be invoked directly from within Neo4j using this plugin.
+
+[[single-embedding]]
+=== Generate a single embedding
+
+You can use the `genai.vector.encode()` function to generate a vector embedding for a single value, for example, when applying the transformation inline in an expression when querying for or writing to a specific property.
+
+[IMPORTANT]
+====
+This function sends one API request every time it is called, which may result in a lot of overhead in terms of both network traffic and latency.
+If you want to generate many embeddings at once, use <<multiple-embeddings, `genai.vector.encodeBatch()`>>.
+====
+
+.Signature for `genai.vector.encode()` label:function[]
+[source,syntax,role="noheader",indent=0]
+----
+genai.vector.encode(resource :: STRING, provider :: STRING, configuration :: MAP = {}) :: LIST<FLOAT>
+----
+
+* The `resource` (a `STRING`) is the object to transform into an embedding, such as a chunk of natural language text.
+* The `provider` (a `STRING`) is the case-insensitive identifier of the provider to use.
+See identifiers under <<ai-providers>> for supported options.
+* The `configuration` (a `MAP`) contains provider-specific settings, such as which model to invoke, as well as any required API credentials.
+See <<ai-providers>> for details of each supported provider.
++
+[NOTE]
+====
+Note that because this argument may contain sensitive data, it is obfuscated in the _query.log_.
+However, if the function call is misspelled or the query is otherwise malformed, it may be logged without being obfuscated.
+====
++
+The returned list of floats is the vector representing the resource that was passed in.
+
+.Generating an embedding for querying a vector index
+====
+The `genai.vector.encode` function is useful for generating vectors that can be used to query a vector index.
+
+For example, a vector index can be queried for entries that are semantically near some query string by generating a vector embedding for that query string and then using that vector as the query vector in a vector index search.
+
+Here, you query a vector index called `my_index` for the 10 nearest neighbors:
+
+.Query
+[source,cypher]
+----
+WITH "embeddings are cool" AS queryString
+WITH genai.vector.encode(queryString, "VertexAI", { token: $token, projectId: $project }) AS queryVector
+CALL db.index.vector.queryNodes("my_index", 10, queryVector) YIELD node, score RETURN node, score
+----
+====
+
+.Generating an embedding on the fly
+====
+
+Assuming nodes with the `Tweet` label have an `id` property and a `text` property, you can generate and return the text embedding for the tweet with ID 1234:
+
+.Query
+[source,cypher]
+----
+MATCH (n:Tweet { id: 1234 })
+RETURN genai.vector.encode(n.text, "VertexAI", { token: $token, projectId: $project }) AS embedding
+----
+====
+
+[[multiple-embeddings]]
+=== Generating a batch of embeddings
+
+You can use the `genai.vector.encodeBatch()` procedure to generate many vector embeddings with a single API request.
+This procedure takes a list of resources as an input, and returns the same number of result rows, instead of a single one.
+
+Using this procedure is recommended in cases where a single large resource is split up into multiple chunks (like the pages of a book), or when generating embeddings for a large number of resources.
+
+[IMPORTANT]
+====
+This procedure attempts to generate embeddings for all supplied resources in a single API request.
+Therefore, it is recommended to see the respective provider's documentation for details on, for example, the maximum number of embeddings that can be generated per request.
+====
+
+.Signature for `genai.vector.encodeBatch()` label:procedure[]
+[source,syntax,role="noheader",indent=0]
+----
+genai.vector.encodeBatch(resources :: LIST<STRING>, provider :: STRING, configuration :: MAP = {}) :: (index :: INTEGER, resource :: STRING, vector :: LIST<FLOAT>)
+----
+
+* The `resources` (a `LIST<STRING>`) parameter is the list of objects to transform into embeddings, such as chunks of natural language text.
+* The `provider` (a `STRING`) is the case-insensitive identifier of the provider to use.
+See <<ai-providers>> for supported options.
+* The `configuration` (a `MAP`) specifies provider-specific settings such as which model to invoke, as well as any required API credentials.
+See <<ai-providers>> for details of each supported provider.
++
+[NOTE]
+====
+Because this argument may contain sensitive data, it is obfuscated in the _query.log_.
+However, if the function call is misspelled or the query is otherwise malformed, it may be logged without being obfuscated.
+====
++
+Each returned row contains the following columns:
+
+* The `index` (an `INTEGER`) is the index of the corresponding element in the input list, to aid in correlating results back to inputs.
+* The `resource` (a `STRING`) is the name of the input resource.
+* The `vector` (a `LIST<FLOAT>`) is the generated vector embedding for this resource.
+
+.Generate embeddings for multiple chunks of a larger text
+====
+
+Given a list of page texts, you can generate an embedding for each of the pages with a single procedure call and create a corresponding graph structure:
+
+.Query
+[source,cypher]
+----
+CREATE (b:Book { title: $bookTitle })
+WITH book
+CALL genai.vector.encodeBatch($pageTexts, "VertexAI", { token: $token, projectId: $project }) YIELD index, resource, vector
+WITH book, index, resource, vector
+CREATE (:Page { index: index, text: resource, vector: vector })-[:OF]->(book)
+----
+====
+
+.Generate embeddings for many text properties
+====
+
+If you want to generate embeddings for the text content of all nodes with the label `Tweet`, you can divide the nodes up into batches, and issue one API request per batch.
+
+Assuming nodes with the `Tweet` label have a `text` property, you can generate vector embeddings for each one and write them to their `embedding` property in batches of, for example, a thousand at a time.
+You can use this in combination with `CALL ... IN TRANSACTIONS` to commit each batch separately to manage transaction memory consumption:
+
+.Query
+[source,cypher]
+----
+MATCH (n:Tweet)
+WHERE size(n.text) <> 0 AND n.embedding IS NULL
+WITH collect(n) AS nodes,
+     count(*) AS total,
+     1000 AS batchSize
+UNWIND range(0, total, batchSize) AS batchStart
+CALL {
+    WITH nodes, batchStart, batchSize
+    WITH nodes, batchStart, [node IN nodes[batchStart .. batchStart + batchSize] | node.text] AS batch
+    CALL genai.vector.encodeBatch(batch, "OpenAI", { token: $token }) YIELD index, vector
+    CALL db.create.setNodeVectorProperty(nodes[batchStart + index], "embedding", vector)
+} IN TRANSACTIONS OF 1 ROW
+----
+
+You can control how many batches are committed by each inner transaction by modifying the `OF 1 ROW` clause.
+For example, `OF 10 ROWS` will only commit once per 10 batches. Because vector embeddings can be very large, this may require significantly more memory.
+====
+
+[[ai-providers]]
+== GenAI providers
+
+The following GenAI providers are supported for generating vector embeddings.
+Each provider has its own configuration map that can be passed to the `genai.vector.encode()` or `genai.vector.encodeBatch()` functions.
+
+=== Vertex AI
+
+* Identifier: `"VertexAI"`
+* https://cloud.google.com/vertex-ai/docs/generative-ai/embeddings/get-text-embeddings[Official Vertex AI documentation]
+
+.Configuration map
+[%header,cols="1m,1m,3d,2m"]
+|===
+| Key | Type | Description | Default
+
+| token
+| STRING
+| API access token.
+| label:required[]
+
+| projectId
+| STRING
+| GCP project ID.
+| label:required[]
+
+| model
+| STRING
+| The ID of the model you want to invoke. +
+Supported values: `"textembedding-gecko@001"`
+| "textembedding-gecko@001"
+
+| region
+| STRING
+| GCP region where to send the API requests. +
+Supported values:
+`"us-west1"`,
+`"us-west2"`,
+`"us-west3"`,
+`"us-west4"`,
+`"us-central1"`,
+`"us-east1"`,
+`"us-east4"`,
+`"us-south1"`,
+`"northamerica-northeast1"`,
+`"northamerica-northeast2"`,
+`"southamerica-east1"`,
+`"southamerica-west1"`,
+`"europe-west2"`,
+`"europe-west1"`,
+`"europe-west4"`,
+`"europe-west6"`,
+`"europe-west3"`,
+`"europe-north1"`,
+`"europe-central2"`,
+`"europe-west8"`,
+`"europe-west9"`,
+`"europe-southwest1"`,
+`"asia-south1"`,
+`"asia-southeast1"`,
+`"asia-southeast2"`,
+`"asia-east2"`,
+`"asia-east1"`,
+`"asia-northeast1"`,
+`"asia-northeast2"`,
+`"australia-southeast1"`,
+`"australia-southeast2"`,
+`"asia-northeast3"`,
+`"me-west1"`
+| "us-central1"
+|===
+
+
+=== OpenAI
+
+* Identifier: `"OpenAI"`
+* https://platform.openai.com/docs/guides/embeddings[Official OpenAI documentation]
+
+.Configuration map
+[%header,cols="1m,1m,3d,2m"]
+|===
+| Key | Type | Description | Default
+
+| token
+| STRING
+| API access token.
+| label:required[]
+
+| model
+| STRING
+| The ID of the model you want to invoke. +
+Supported values: `"text-embedding-ada-002"`
+| "text-embedding-ada-002"
+|===
+
+
+=== Amazon Bedrock
+
+* Identifier: `"Bedrock"`
+* https://docs.aws.amazon.com/bedrock/latest/APIReference/welcome.html[Official Bedrock documentation]
+
+.Configuration map
+[%header,cols="1m,1m,3d,2m"]
+|===
+| Key | Type | Description | Default
+
+| accessKeyId
+| STRING
+| AWS access key ID.
+| label:required[]
+
+| secretAccessKey
+| STRING
+| AWS secret key.
+| label:required[]
+
+| model
+| STRING
+| The ID of the model you want to invoke. +
+Supported values: `"amazon.titan-embed-text-v1"`
+| "amazon.titan-embed-text-v1"
+
+| region
+| STRING
+| AWS region where to send the API requests. +
+Supported values: `"us-east-1"`, `"us-west-2"`, `"ap-southeast-1"`, `"ap-northeast-1"`, `"eu-central-1"`
+| "us-east-1"
+
+|===
