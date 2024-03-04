@@ -168,7 +168,7 @@ Added 1 constraint.
 
 === Handle large amounts of data
 
-`LOAD CSV` may timeout for files containing a significant number of rows (approaching hundreds of thousands or millions). For large files, it's recommended to split the import process in several lighter transactions through the clause xref:subqueries/subqueries-in-transactions.adoc[`CALL {...} IN TRANSACTIONS`].
+`LOAD CSV` may run into memory issues with files containing a significant number of rows (approaching hundreds of thousands or millions). For large files, it's recommended to split the import process in several lighter transactions through the clause xref:subqueries/subqueries-in-transactions.adoc[`CALL {...} IN TRANSACTIONS`].
 
 .Load a large CSV file in several transactions
 ====
@@ -209,14 +209,19 @@ Transactions committed: 5
 ----
 ====
 
+[NOTE]
+In case of errors, `CALL {...} IN TRANSACTIONS` may only import a part of the CSV data as the transactions are _committed_.
+For example, if the first 200 rows are error free, they are committed.
+If the next 200 rows contain data that causes an error, the second transaction fails, but leaves the first transaction unaffected.
+
 
 === Import data from relational databases
 
-If the source data comes from a relational model, it's worth evaluating whether there's anything to gain in the move to a graph data model.
+If the source data comes from a relational model, it's worth evaluating how to gain the most from moving to a graph data model.
 Before running the import, think about how the data can be modeled as a graph, and adapt its structure accordingly when running the import (see link:https://neo4j.com/docs/getting-started/data-modeling/guide-data-modeling/[Graph data modeling]).
 
 Data from relational databases may consist of one or multiple CSV files, depending on the source database structure.
-In either case, the most performant approach is to run multiple passes of `LOAD CSV` to import nodes separately from relationships.
+In either case, a performant approach is to run multiple passes of `LOAD CSV` to import nodes separately from relationships.
 
 
 .Import from a single CSV file
@@ -365,7 +370,7 @@ However, Neo4j supports a range of xref:values-and-types/index.adoc[data types],
 
 .Import numeric and temporal data
 ====
-The column `person_tmdbId` and `born` in the file link:https://data.neo4j.com/importing-cypher/persons.csv[_persons.csv_] contains integers and dates respectively.
+The column `person_tmdbId` and `born` in the file link:https://data.neo4j.com/importing-cypher/persons.csv[_persons.csv_] contains `INTEGER` and `DATE` values respectively.
 The functions `toInteger()` and `date()` allow to cast those values to the appropriate types before importing them.
 
 .persons.csv
@@ -382,7 +387,7 @@ person_tmdbId,bio,born,bornIn,died,person_imdbId,name,person_poster,person_url
 LOAD CSV FROM 'https://data.neo4j.com/importing-cypher/persons.csv' AS row
 MERGE (p:Person)
 SET
-p.tmdbId = toInteger(row.tmdbId),
+p.tmdbId = toInteger(row.person_tmdbId),
 p.name = row.name,
 p.born = date(row.born)
 ----
@@ -730,7 +735,6 @@ Either escape or remove stray quotes.
 See <<Quotes escaping>>.
 - *Special or newline characters* -- When dealing with special characters in a file, ensure they are quoted or remove them.
 - *Inconsistent line breaks* -- Ensure line breaks are consistent throughout your file.
-We recommend the Unix style for compatibility with Linux systems. (and is compatible with windows? does it even matter, is not up to the jvm to do the parsing, which is system agnostic?)
 - *Binary zeros, BOM byte order mark and other non-text characters* -- Unusual characters or tool-specific formatting are sometimes hidden in application tools, but become apparent in plain-text editors.
 If you come across these types of characters in your file, remove them entirely.
 
@@ -855,7 +859,7 @@ To help handle larger volumes of transactions, there are a few memory configurat
 * link:{neo4j-docs-base-uri}/operations-manual/{page-version}/configuration/configuration-settings/#config_server.memory.heap.initial_size[`server.memory.heap.initial_size`] and link:{neo4j-docs-base-uri}/operations-manual/{page-version}/configuration/configuration-settings/#config_server.memory.heap.max_size[`server.memory.heap.max_size`]: set to at least 4G.
 * link:{neo4j-docs-base-uri}/operations-manual/{page-version}/configuration/configuration-settings/#config_server.memory.pagecache.size[`server.memory.pagecache.size`]: ideally, a value large enough to keep the whole database in memory.
 
-As a rule of thumb, you can create or update one million records in a single transaction per 2 GB of heap.
+// As a rule of thumb, you can create or update one million records in a single transaction per 2 GB of heap.
 
 
 == A full example
