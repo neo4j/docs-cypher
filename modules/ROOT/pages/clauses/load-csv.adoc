@@ -13,7 +13,7 @@ MERGE (:Artist {name: row[1], year: toInteger(row[2])})  // <3>
 ----
 
 <1> `FROM` takes a string containing the path where the CSV file is located.
-<2> The clause parses one row at a time, temporarily storing the current row in the variable name specified with `AS`.
+<2> The clause parses one row at a time, temporarily storing the current row in the variable specified with `AS`.
 <3> Use the row variable to access data in subsequent clauses, which may process and insert it into the database.
 
 `LOAD CSV` supports both local and remote URLs.
@@ -28,7 +28,8 @@ Your user needs link:{neo4j-docs-base-uri}/operations-manual/{page-version}/auth
 
 === Import local files
 
-You can store CSV files on the database server and then access them by using a `+file:///+` URL. By default, paths are resolved relative to the Neo4j installation folder.
+You can store CSV files on the database server and then access them by using a `+file:///+` URL.
+By default, paths are resolved relative to the Neo4j installation folder.
 
 .Import artists name and year information from a local file
 ====
@@ -62,7 +63,7 @@ Labels added: 4
 ====
 
 [NOTE]
-It's not possible to use `LOAD CSV` with file URLs against an Aura instance, only remote URLs are supported.
+It's not possible to use `LOAD CSV` with file URLs in an Aura instance, only remote URLs are supported.
 For other ways of importing data, see link:https://neo4j.com/docs/aura/auradb/importing/importing-data/[Aura -> Importing data].
 
 [TIP]
@@ -120,7 +121,7 @@ Labels added: 4
 === Import compressed CSV files
 
 `LOAD CSV` can read local CSV files compressed with ZIP or gzip.
-ZIP archives can have arbitrary directory structures but may only contain a single CSV file. (so it travels down the dir tree? I gather it doesn't hold for gzip?)
+ZIP archives can have arbitrary directory structures but may only contain a single CSV file.
 
 .Import a CSV file from within a ZIP file
 [source, cypher]
@@ -133,11 +134,10 @@ MERGE (:Artist {name: row[1], year: toInteger(row[2])})
 === Create uniqueness constraints
 
 Always create uniqueness xref:constraints/index.adoc[constraints] prior to importing data, to avoid duplicates or colliding entities.
-If the source file contains duplicated data and the right constraints are in place, Cypher will raise an error (skipping only the duplicated rows, or aborting the whole import?)
+If the source file contains duplicated data and the right constraints are in place, Cypher raises an error.
 
 .Create xref:constraints/examples.adoc#constraints-examples-node-uniqueness[node property uniqueness constraints] on person ID
 ====
-(do we need to call the property so ugly?)
 
 .persons.csv
 [source, csv, filename="persons.csv"]
@@ -215,8 +215,8 @@ Transactions committed: 5
 If the source data comes from a relational model, it's worth evaluating whether there's anything to gain in the move to a graph data model.
 Before running the import, think about how the data can be modeled as a graph, and adapt its structure accordingly when running the import (see link:https://neo4j.com/docs/getting-started/data-modeling/guide-data-modeling/[Graph data modeling]).
 
-Data from relational databases may consist in one or multiple CSV files, depending on the source database structure.
-In either cases, the most performant approach is to run multiple passes of `LOAD CSV` to import nodes separately from relationships.
+Data from relational databases may consist of one or multiple CSV files, depending on the source database structure.
+In either case, the most performant approach is to run multiple passes of `LOAD CSV` to import nodes separately from relationships.
 
 
 .Import from a single CSV file
@@ -224,8 +224,8 @@ In either cases, the most performant approach is to run multiple passes of `LOAD
 The source file link:https://data.neo4j.com/importing-cypher/books.csv[_books.csv_] contains information about both authors and books.
 From a graph perspective, these are nodes with different labels, so it takes different queries to load them.
 
-The example executes multiple passes of `LOAD CSV` on that one file, and each pass focuses on the creation of _one_ entity.
-This is the best performant practice, see <<_separate_creation_of_nodes_and_relationships>>.
+The example executes multiple passes of `LOAD CSV` on that one file, and each pass focuses on the creation of _one_ entity type.
+This is the most performant practice, see <<_separate_creation_of_nodes_and_relationships>>.
 
 .books.csv
 [source, csv]
@@ -246,17 +246,8 @@ id,title,author,publication_year,genre,rating,still_in_print,last_purchased
 LOAD CSV WITH HEADERS
 FROM 'https://data.neo4j.com/importing-cypher/books.csv'
 AS row
-MERGE (b:Book {id: row.id})
-SET b.title = row.title;
-// why?
-
-// Create `Author` nodes
-LOAD CSV WITH HEADERS
-FROM 'https://data.neo4j.com/importing-cypher/books.csv'
-AS row
+MERGE (b:Book {id: row.id title: row.title})
 MERGE (a:Author {name: row.author});
-
-// any loss in merging the two previous queries?
 
 // Create `WROTE` relationships
 LOAD CSV WITH HEADERS
@@ -267,7 +258,16 @@ MATCH (b:Book{id: row.id})
 MERGE (a)-[:WROTE]->(b);
 ----
 
-no result?
+.Result
+[source, role="queryresult"]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Nodes created: 868
+Properties set: 2604
+Labels added: 868
+----
 
 ====
 
@@ -277,7 +277,7 @@ no result?
 The file link:https://data.neo4j.com/importing-cypher/acted_in.csv[_acted_in.csv_] contains data about the relationship between actors and the movies they acted in (from link:https://data.neo4j.com/importing-cypher/persons.csv[_persons.csv_] and link:https://data.neo4j.com/importing-cypher/movies.csv[_movies.csv_]).
 Actors and movies are linked through their ID columns `person_tmdbId` and `movieId`.
 
-The file also holds the role the actor played in the movie, and is imported in Neo4j as a relationship property.
+The file also contains the role the actor played in the movie, and it is imported in Neo4j as a relationship property.
 
 .acted_in.csv
 [source, csv, filename="acted_in.csv"]
@@ -327,15 +327,15 @@ For a guide on importing the Northwind dataset from Postgres into Neo4j, see lin
 ==== Create additional node labels
 
 In Neo4j a node can have multiple labels, while in a relational setting it's not as straightforward to mix entities.
-For example, a node in Neo4j can be labelled both as `Dog` and `Actor`, while in a relational model dogs and actors are separate entities.
+For example, a node in Neo4j can be labeled both `Dog` and `Actor`, while in a relational model dogs and actors are separate entities.
 
-After a relational dataset has been imported, there may be further labels that can be added, depending on the use-case you intend to use the dataset for.
-Labels are one of the most performant ways of pinpointing a node, so adding more of them can be beneficial for performance.
+After a relational dataset has been imported, there may be further labels that can be added, depending on the use case.
+Additional labels can speed up pinpointing a node if you use them in your queries.
 
 .Add extra `Actor` label on `Person` nodes
 ====
 The `:ACTED_IN` relationship from _acted_in.csv_ implicitly defines actors as a subset of people.
-The following queries adds an additional `Actor` label to all people who have acted in something.
+The following queries adds an additional `Actor` label to all people who have an outgoing `:ACTED_IN` relationship.
 
 .Query
 [source, cypher]
@@ -361,8 +361,7 @@ Labels added: 104
 === Cast CSV columns to Neo4j data types
 
 `LOAD CSV` inserts all imported CSV data as string properties.
-Neo4j supports however a range of xref:values-and-types/index.adoc[data types], and storing data in its most appropriate type allows both to query it more effectively and to process it with type-specific Cypher functions.
-For these reasons, there's value in casting non-string values to the relevant Cypher types while importing it.
+However, Neo4j supports a range of xref:values-and-types/index.adoc[data types], and storing data with appropriate types allows both to query it more effectively and to process it with type-specific Cypher functions.
 
 .Import numeric and temporal data
 ====
@@ -506,6 +505,8 @@ The xref:functions/load-csv.adoc#functions-linenumber[`linenumber()`] function p
 
 A common use case for this function is to generate sequential unique IDs for CSV data that doesn't have a unique column already.
 
+.`linenumber()`
+====
 .artists.csv
 [source, csv, filename="artists.csv"]
 ----
@@ -535,12 +536,14 @@ RETURN linenumber() AS number, row
 +---------------------------------------+
 4 rows
 ----
-
+====
 
 === Access the CSV file path with `file()`
 
 The xref:functions/load-csv.adoc#functions-file[`file()`] function provides the absolute path of the file that `LOAD CSV` is operating on, or `null` if called out of a `LOAD CSV` context.
 
+.`file()`
+====
 .artists.csv
 [source, csv, filename="artists.csv"]
 ----
@@ -567,6 +570,7 @@ RETURN DISTINCT file() AS path
 +------------------------------------------+
 1 row
 ----
+====
 
 [TIP]
 `file()` always returns a local path, even when loading remote CSV files.
@@ -629,7 +633,7 @@ Labels added: 4
 The default field delimiter is `,`.
 Use the `FIELDTERMINATOR` option to specify a different field delimiter.
 
-If you try to import a file that doesn't use `,` as field delimiter, but don't specify a custom delimiter, `LOAD CSV` will interpret the example CSV as having a single column. (but multiple rows?)
+If you try to import a file that doesn't use `,` as field delimiter and you also don't specify a custom delimiter, `LOAD CSV` will interpret the CSV as having a single column.
 
 .Import a CSV using `;` as field delimiter
 ====
@@ -669,7 +673,8 @@ Write the encoding with four digits: for example, `{backslash}u003B` is equivale
 
 === Quotes escaping
 
-Quoted strings are allowed in the CSV file and the quotes are dropped when `LOAD CSV` reads the data. If quoted strings need to contain quote characters `"`, there are two ways to escape them:
+Quoted strings are allowed in the CSV file and the quotes are dropped when `LOAD CSV` reads the data.
+If quoted strings need to contain quote characters `"`, there are two ways to escape them:
 
 1. *Double quotes* -- Use another quote `"` to escape a quote (for example, the CSV encoding of the string `The "Symbol"` is `"The ""Symbol"""`).
 2. *Prefix with backslash `\`* -- If the configuration setting `dbms.import.csv.legacy_quote_escaping` is set to `true` (the default value), `\` works as the escape character for quotes (for example, the CSV encoding of the string `The "Symbol"` is `"The {backslash}"Symbol{backslash}""`).
@@ -714,7 +719,7 @@ The length only counts what is between the single quotes, but not the quotes the
 
 === Check source data quality
 
-Especially in case of a failed import, there are some elements to check to ensure the source file is not corrupted.
+In case of a failed import, there are some elements to check to ensure the source file is not corrupted.
 
 - *Inconsistent headers* -- The CSV header may be inconsistent with the data.
 It can be missing, have too many columns or have a different delimiter.
@@ -734,20 +739,32 @@ If you come across these types of characters in your file, remove them entirely.
 
 Before actually importing data into the database, you can use `LOAD CSV` to inspect a source file and get an idea of what form the imported data is going to have.
 
+.Inspect CSV files with `LOAD CSV`
+====
 [source, cypher]
 ----
 // Assert correct line count
-LOAD CSV FROM "file-url" AS line
+LOAD CSV FROM 'https://data.neo4j.com/importing-cypher/persons.csv' AS line
 RETURN count(*);
 
 // Check first 5 line-sample with header-mapping
-LOAD CSV WITH HEADERS FROM "file-url" AS line
+LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/persons.csv' AS line
 RETURN line
 LIMIT 5;
 ----
 
-put a remote url and result of queries?
+.Result
+[source, role="queryresult"]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Nodes created: 4
+Properties set: 8
+Labels added: 4
+----
 
+====
 
 == Performance recommendations
 
@@ -797,8 +814,6 @@ MERGE (a:Author {name: row.author})
 MERGE (a)-[:WROTE]->(b)
 ----
 
-merge vs create ?
-
 .Good practice -- Separate nodes and relationships creation
 [source, cypher]
 ----
@@ -824,8 +839,6 @@ MATCH (b:Book{id: row.id})
 MERGE (a)-[:WROTE]->(b);
 ----
 
-can we make this example with a significant dataset with many rows?
-
 ====
 
 
@@ -837,17 +850,18 @@ You may discover if this is the case by link:https://neo4j.com/docs/cypher-manua
 
 === Database heap and memory
 
-To help handle larger volumes of transactions, there are a few some memory configuration settings you may increase:
+To help handle larger volumes of transactions, there are a few memory configuration settings you can tweak:
 
-* `server.memory.heap.initial_size` and `server.memory.heap.max_size`: set to at least 4G.
-* `server.memory.pagecache.size`: ideally, a value large enough to keep the whole database in memory.
+* link:{neo4j-docs-base-uri}/operations-manual/{page-version}/configuration/configuration-settings/#config_server.memory.heap.initial_size[`server.memory.heap.initial_size`] and link:{neo4j-docs-base-uri}/operations-manual/{page-version}/configuration/configuration-settings/#config_server.memory.heap.max_size[`server.memory.heap.max_size`]: set to at least 4G.
+* link:{neo4j-docs-base-uri}/operations-manual/{page-version}/configuration/configuration-settings/#config_server.memory.pagecache.size[`server.memory.pagecache.size`]: ideally, a value large enough to keep the whole database in memory.
 
-As a rule of thumb, you can create or update one million records in a single transaction per 2 GB of heap. (source?)
-
-links?
+As a rule of thumb, you can create or update one million records in a single transaction per 2 GB of heap.
 
 
 == A full example
+
+.A full example
+====
 
 .Erase current database and import the full movie dataset
 [source, cypher]
@@ -906,15 +920,17 @@ Relationships created: 372
 Properties set: 3441
 Labels added: 1065
 ----
-
+====
 
 == Other ways of importing data
 
 There are a few other tools to get CSV data into Neo4j.
 
-1. *The link:https://neo4j.com/docs/operations-manual/5/tools/neo4j-admin/neo4j-admin-import/[`neo4j-admin database import`] command* is the most efficient way of importing large CSV files.
-_Available only in Neo4j Desktop or Enteprise Edition instances._ actual?
+1. *The link:{neo4j-docs-base-uri}/operations-manual/{page-version}/tools/neo4j-admin/neo4j-admin-import/[`neo4j-admin database import`] command* is the most efficient way of importing large CSV files.
 2. Use a link:https://neo4j.com/docs/create-applications/[*language library*] to parse CSV data and run creation Cypher queries against a Neo4j database.
-2. The *Neo4j ETL tool* allows to extract the schema from a relational database and turn it into a graph model. It then takes care of importing the data into Neo4j.
-For more details and documentation, visit link:https://neo4j.com/labs/etl-tool/[Neo4j ETL Tool page].
-3. The *Kettle import tool* maps and executes steps for the data process flow and works well for very large datasets, especially if you are already familiar with using this tool.
+3. link:https://neo4j.com/labs/apoc/[APOC^]: Awesome Procedures on Cypher.
+Created as an extension library to provide common procedures and functions to developers.
+This library is especially helpful for complex transformations and data manipulations.
+Useful procedures include apoc.load.jdbc, apoc.load.json, and others.
+4. The link:https://neo4j.com/labs/etl-tool/[ETL Tool^]: allows to extract the schema from a relational database and turn it into a graph model. It then takes care of importing the data into Neo4j.
+5. The link:https://medium.com/neo4j/getting-started-with-kettle-and-neo4j-32ff15b991f9[Kettle import tool^] maps and executes steps for the data process flow and works well for very large datasets, especially if you are already familiar with using this tool.
