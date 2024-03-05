@@ -53,12 +53,7 @@ MERGE (:Artist {name: row[1], year: toInteger(row[2])})
 .Result
 [source, role="queryresult"]
 ----
-+-------------------+
-| No data returned. |
-+-------------------+
-Nodes created: 4
-Properties set: 8
-Labels added: 4
+Added 4 nodes, Set 8 properties, Added 4 labels
 ----
 ====
 
@@ -108,12 +103,7 @@ MERGE (:Artist {name: row[1], year: toInteger(row[2])})
 .Result
 [source, role="queryresult"]
 ----
-+-------------------+
-| No data returned. |
-+-------------------+
-Nodes created: 4
-Properties set: 8
-Labels added: 4
+Added 4 nodes, Set 8 properties, Added 4 labels
 ----
 ====
 
@@ -221,7 +211,7 @@ If the source data comes from a relational model, it's worth evaluating how to g
 Before running the import, think about how the data can be modeled as a graph, and adapt its structure accordingly when running the import (see link:https://neo4j.com/docs/getting-started/data-modeling/guide-data-modeling/[Graph data modeling]).
 
 Data from relational databases may consist of one or multiple CSV files, depending on the source database structure.
-In either case, a performant approach is to run multiple passes of `LOAD CSV` to import nodes separately from relationships.
+A performant approach is to run multiple passes of `LOAD CSV` to import nodes separately from relationships.
 
 
 .Import from a single CSV file
@@ -423,7 +413,8 @@ The examples show several options of treating `null` values.
 Id,Name,Location,Email,BusinessType
 1,Neo4j,San Mateo,contact@neo4j.com,P
 2,AAA,,info@aaa.com,
-3,BBB,Chicago,,G
+3,BBB,Chicago, ,G
+,CCC,Michigan,info@ccc.com,G
 ----
 
 .Skip `null` values
@@ -431,22 +422,24 @@ Id,Name,Location,Email,BusinessType
 ----
 LOAD CSV WITH HEADERS FROM 'file:///companies.csv' AS row
 WITH row WHERE row.Id IS NOT NULL
-MERGE (c:Company {companyId: row.Id});
+MERGE (c:Company {id: row.Id});
 ----
 
 .Provide a default for `null` values
 [source, cypher]
 ----
 LOAD CSV WITH HEADERS FROM 'file:///companies.csv' AS row
-MERGE (c:Company {companyId: row.Id, hqLocation: coalesce(row.Location, "Unknown")})
+WITH row WHERE row.Id IS NOT NULL
+MERGE (c:Company {id: row.Id, hqLocation: coalesce(row.Location, "Unknown")})
 ----
 
 .Change empty strings to `null` values (not stored)
 [source, cypher]
 ----
 LOAD CSV WITH HEADERS FROM 'file:///companies.csv' AS row
-MERGE (c:Company {companyId: row.Id})
-SET c.emailAddress = CASE trim(row.Email) WHEN "" THEN null ELSE row.Email END
+WITH row WHERE row.Id IS NOT NULL
+MERGE (c:Company {id: row.Id})
+SET c.email = nullIf(trim(row.Email), "")
 ----
 ====
 
@@ -617,19 +610,21 @@ Id,Name,Year
 [source, cypher]
 ----
 LOAD CSV WITH HEADERS FROM 'file:///artists-with-headers.csv' AS row
-MERGE (:Artist {name: row.Name, year: toInteger(row.Year)});
-MATCH (a:Artist) RETURN a;
+MERGE (a:Artist {name: row.Name, year: toInteger(row.Year)})
+RETURN a;
 ----
 
 .Result
 [source, role="queryresult"]
 ----
-+-------------------+
-| No data returned. |
-+-------------------+
-Nodes created: 4
-Properties set: 8
-Labels added: 4
++-----------------------------------------------+
+| a                                             |
++-----------------------------------------------+
+| (:Artist {name: "ABBA", year: 1992})          |
+| (:Artist {name: "Roxette", year: 1986})       |
+| (:Artist {name: "Europe", year: 1979})        |
+| (:Artist {name: "The Cardigans", year: 1992}) |
++-----------------------------------------------+
 ----
 ====
 
@@ -753,23 +748,37 @@ RETURN count(*);
 
 // Check first 5 line-sample with header-mapping
 LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/persons.csv' AS line
-RETURN line
+RETURN line.person_tmdbId, line.name
 LIMIT 5;
 ----
 
 .Result
 [source, role="queryresult"]
 ----
-+-------------------+
-| No data returned. |
-+-------------------+
-Nodes created: 4
-Properties set: 8
-Labels added: 4
-----
++----------+
+| count(*) |
++----------+
+| 445      |
++----------+
 
+1 row
+ready to start consuming query after 3 ms, results consumed after another 62 ms
++--------------------------------------+
+| line.person_tmdbId | line.name       |
++--------------------------------------+
+| "3"                | "Harrison Ford" |
+| "31"               | "Tom Hanks"     |
+| "32"               | "Robin Wright"  |
+| "35"               | "Sally Field"   |
+| "48"               | "Sean Bean"     |
++--------------------------------------+
+
+5 rows
+ready to start consuming query after 41 ms, results consumed after another 12 ms
+----
 ====
 
+////
 == Performance recommendations
 
 
@@ -842,7 +851,6 @@ MATCH (a:Author{name: row.author})
 MATCH (b:Book{id: row.id})
 MERGE (a)-[:WROTE]->(b);
 ----
-
 ====
 
 
@@ -860,7 +868,7 @@ To help handle larger volumes of transactions, there are a few memory configurat
 * link:{neo4j-docs-base-uri}/operations-manual/{page-version}/configuration/configuration-settings/#config_server.memory.pagecache.size[`server.memory.pagecache.size`]: ideally, a value large enough to keep the whole database in memory.
 
 // As a rule of thumb, you can create or update one million records in a single transaction per 2 GB of heap.
-
+////
 
 == A full example
 
@@ -925,6 +933,9 @@ Properties set: 3441
 Labels added: 1065
 ----
 ====
+
+[NOTE]
+With increasing amounts of data, it is more efficient to create _all_ nodes first, and then add relationships with a second pass.
 
 == Other ways of importing data
 
