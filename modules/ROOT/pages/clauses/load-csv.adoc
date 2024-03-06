@@ -139,6 +139,138 @@ MERGE (:Artist {name: row[1], year: toInteger(row[2])})
 ----
 
 
+=== Import data from relational databases
+
+If the source data comes from a relational model, it's worth evaluating how to gain the most from moving to a graph data model.
+Before running the import, think about how the data can be modeled as a graph, and adapt its structure accordingly when running the import (see link:https://neo4j.com/docs/getting-started/data-modeling/guide-data-modeling/[Graph data modeling]).
+
+Data from relational databases may consist of one or multiple CSV files, depending on the source database structure.
+A performant approach is to run multiple passes of `LOAD CSV` to import nodes separately from relationships.
+
+
+.Import from a single CSV file
+====
+The source file link:https://data.neo4j.com/importing-cypher/books.csv[_books.csv_] contains information about both authors and books.
+From a graph perspective, these are nodes with different labels, so it takes different queries to load them.
+
+The example executes multiple passes of `LOAD CSV` on that one file, and each pass focuses on the creation of _one_ entity type.
+This is the most performant practice, see <<_separate_creation_of_nodes_and_relationships>>.
+
+.books.csv
+[source, csv]
+----
+id,title,author,publication_year,genre,rating,still_in_print,last_purchased
+19515,The Heights,Anne Conrad,2012,Comedy,5,true,2023/4/12 8:17:00
+39913,Starship Ghost,Michael Tyler,1985,Science Fiction|Horror,4.2,false,2022/01/16 17:15:56
+60980,The Death Proxy,Tim Brown,2002,Horror,2.1,true,2023/11/26 8:34:26
+18793,Chocolate Timeline,Mary R. Robb,1924,Romance,3.5,false,2022/9/17 14:23:45
+67162,Stories of Three,Eleanor Link,2022,Romance|Comedy,2,true,2023/03/12 16:01:23
+25987,Route Down Below,Tim Brown,2006,Horror,4.1,true,2023/09/24 15:34:18
+----
+
+.Query
+[source, cypher]
+----
+// Create `Book` nodes
+LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/books.csv' AS row
+MERGE (b:Book {id: row.id, title: row.title})
+MERGE (a:Author {name: row.author});
+
+// Create `WROTE` relationships
+LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/books.csv' AS row
+MATCH (a:Author{name: row.author})
+MATCH (b:Book{id: row.id})
+MERGE (a)-[:WROTE]->(b);
+----
+
+.Result
+[source, role="queryresult"]
+----
+Added 11 nodes, Set 17 properties, Added 11 labels
+Created 6 relationships
+----
+
+====
+
+
+.Import from multiple CSV files
+====
+The file link:https://data.neo4j.com/importing-cypher/acted_in.csv[_acted_in.csv_] contains data about the relationship between actors and the movies they acted in (from link:https://data.neo4j.com/importing-cypher/persons.csv[_persons.csv_] and link:https://data.neo4j.com/importing-cypher/movies.csv[_movies.csv_]).
+Actors and movies are linked through their ID columns `person_tmdbId` and `movieId`.
+
+The file also contains the role the actor played in the movie, and it is imported in Neo4j as a relationship property.
+
+.acted_in.csv
+[source, csv, filename="acted_in.csv"]
+----
+movieId,person_tmdbId,role
+1,12899,Slinky Dog (voice)
+1,12898,Buzz Lightyear (voice)
+...
+----
+
+It takes three `LOAD CSV` clauses to import this dataset: the first two  create `Person` nodes from _persons.csv_ and `Movie` nodes from _movies.csv_, and the third adds the `:ACTED_IN` relationship from _acted_in.csv_.
+
+.Query
+[source, cypher]
+----
+// Create person nodes
+LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/persons.csv' AS row
+MERGE (p:Person {name: row.name, tmdbId: row.person_tmdbId});
+
+// Create movie nodes
+LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/movies.csv' AS row
+MERGE (m:Movie {movieId: row.movieId, title: row.title});
+
+// Create relationships
+LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/acted_in.csv' AS row
+MATCH (p:Person {tmdbId: row.person_tmdbId})
+MATCH (m:Movie {movieId: row.movieId})
+MERGE (p)-[r:ACTED_IN {role: row.role}]->(m);
+----
+
+.Result
+[source, role="queryresult"]
+----
+Added 444 nodes, Set 888 properties, Added 444 labels
+Added 93 nodes, Set 186 properties, Added 93 labels
+Created 372 relationships, Set 372 properties
+----
+====
+
+[TIP]
+For a guide on importing the Northwind dataset from Postgres into Neo4j, see link:https://neo4j.com/docs/getting-started/appendix/tutorials/guide-import-relational-and-etl/[Tutorial: Import data from a relational database into Neo4j] in the Getting Started Guide.
+
+
+==== Create additional node labels
+
+In Neo4j a node can have multiple labels, while in a relational setting it's not as straightforward to mix entities.
+For example, a node in Neo4j can be labeled both `Dog` and `Actor`, while in a relational model dogs and actors are separate entities.
+
+After a relational dataset has been imported, there may be further labels that can be added, depending on the use case.
+Additional labels can speed up pinpointing a node if you use them in your queries.
+
+.Add extra `Actor` label on `Person` nodes
+====
+The `:ACTED_IN` relationship from _acted_in.csv_ implicitly defines actors as a subset of people.
+The following queries adds an additional `Actor` label to all people who have an outgoing `:ACTED_IN` relationship.
+
+.Query
+[source, cypher]
+----
+MATCH (p:Person)-[:ACTED_IN]->()
+WITH DISTINCT p
+SET p:Actor
+----
+
+.Result
+[source, role="queryresult"]
+----
+Added 353 labels
+----
+====
+
+
 == Pre-process the data during import
 
 
@@ -370,138 +502,6 @@ For example, if the first 200 rows are error free, they are committed.
 If the next 200 rows contain data that causes an error, the second transaction fails, but leaves the first transaction unaffected.
 
 
-=== Import data from relational databases
-
-If the source data comes from a relational model, it's worth evaluating how to gain the most from moving to a graph data model.
-Before running the import, think about how the data can be modeled as a graph, and adapt its structure accordingly when running the import (see link:https://neo4j.com/docs/getting-started/data-modeling/guide-data-modeling/[Graph data modeling]).
-
-Data from relational databases may consist of one or multiple CSV files, depending on the source database structure.
-A performant approach is to run multiple passes of `LOAD CSV` to import nodes separately from relationships.
-
-
-.Import from a single CSV file
-====
-The source file link:https://data.neo4j.com/importing-cypher/books.csv[_books.csv_] contains information about both authors and books.
-From a graph perspective, these are nodes with different labels, so it takes different queries to load them.
-
-The example executes multiple passes of `LOAD CSV` on that one file, and each pass focuses on the creation of _one_ entity type.
-This is the most performant practice, see <<_separate_creation_of_nodes_and_relationships>>.
-
-.books.csv
-[source, csv]
-----
-id,title,author,publication_year,genre,rating,still_in_print,last_purchased
-19515,The Heights,Anne Conrad,2012,Comedy,5,true,2023/4/12 8:17:00
-39913,Starship Ghost,Michael Tyler,1985,Science Fiction|Horror,4.2,false,2022/01/16 17:15:56
-60980,The Death Proxy,Tim Brown,2002,Horror,2.1,true,2023/11/26 8:34:26
-18793,Chocolate Timeline,Mary R. Robb,1924,Romance,3.5,false,2022/9/17 14:23:45
-67162,Stories of Three,Eleanor Link,2022,Romance|Comedy,2,true,2023/03/12 16:01:23
-25987,Route Down Below,Tim Brown,2006,Horror,4.1,true,2023/09/24 15:34:18
-----
-
-.Query
-[source, cypher]
-----
-// Create `Book` nodes
-LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/books.csv' AS row
-MERGE (b:Book {id: row.id, title: row.title})
-MERGE (a:Author {name: row.author});
-
-// Create `WROTE` relationships
-LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/books.csv' AS row
-MATCH (a:Author{name: row.author})
-MATCH (b:Book{id: row.id})
-MERGE (a)-[:WROTE]->(b);
-----
-
-.Result
-[source, role="queryresult"]
-----
-Added 11 nodes, Set 17 properties, Added 11 labels
-Created 6 relationships
-----
-
-====
-
-
-.Import from multiple CSV files
-====
-The file link:https://data.neo4j.com/importing-cypher/acted_in.csv[_acted_in.csv_] contains data about the relationship between actors and the movies they acted in (from link:https://data.neo4j.com/importing-cypher/persons.csv[_persons.csv_] and link:https://data.neo4j.com/importing-cypher/movies.csv[_movies.csv_]).
-Actors and movies are linked through their ID columns `person_tmdbId` and `movieId`.
-
-The file also contains the role the actor played in the movie, and it is imported in Neo4j as a relationship property.
-
-.acted_in.csv
-[source, csv, filename="acted_in.csv"]
-----
-movieId,person_tmdbId,role
-1,12899,Slinky Dog (voice)
-1,12898,Buzz Lightyear (voice)
-...
-----
-
-It takes three `LOAD CSV` passes to import this dataset: the first two  create `Person` nodes from _persons.csv_ and `Movie` nodes from _movies.csv_, and the third adds the `:ACTED_IN` relationship from _acted_in.csv_.
-
-.Query
-[source, cypher]
-----
-// Create person nodes
-LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/persons.csv' AS row
-MERGE (p:Person {name: row.name, tmdbId: row.person_tmdbId});
-
-// Create movie nodes
-LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/movies.csv' AS row
-MERGE (m:Movie {movieId: row.movieId, title: row.title});
-
-// Create relationships
-LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/acted_in.csv' AS row
-MATCH (p:Person {tmdbId: row.person_tmdbId})
-MATCH (m:Movie {movieId: row.movieId})
-MERGE (p)-[r:ACTED_IN {role: row.role}]->(m);
-----
-
-.Result
-[source, role="queryresult"]
-----
-Added 444 nodes, Set 888 properties, Added 444 labels
-Added 93 nodes, Set 186 properties, Added 93 labels
-Created 372 relationships, Set 372 properties
-----
-====
-
-[TIP]
-For a guide on importing the Northwind dataset from Postgres into Neo4j, see link:https://neo4j.com/docs/getting-started/appendix/tutorials/guide-import-relational-and-etl/[Tutorial: Import data from a relational database into Neo4j].
-
-
-==== Create additional node labels
-
-In Neo4j a node can have multiple labels, while in a relational setting it's not as straightforward to mix entities.
-For example, a node in Neo4j can be labeled both `Dog` and `Actor`, while in a relational model dogs and actors are separate entities.
-
-After a relational dataset has been imported, there may be further labels that can be added, depending on the use case.
-Additional labels can speed up pinpointing a node if you use them in your queries.
-
-.Add extra `Actor` label on `Person` nodes
-====
-The `:ACTED_IN` relationship from _acted_in.csv_ implicitly defines actors as a subset of people.
-The following queries adds an additional `Actor` label to all people who have an outgoing `:ACTED_IN` relationship.
-
-.Query
-[source, cypher]
-----
-MATCH (p:Person)-[:ACTED_IN]->()
-WITH DISTINCT p
-SET p:Actor
-----
-
-.Result
-[source, role="queryresult"]
-----
-Added 353 labels
-----
-====
-
-
 == LOAD CSV and Neo4j functions
 
 === Access line numbers with `linenumber()`
@@ -693,7 +693,7 @@ If quoted `STRING` values must contain quote characters `"`, there are two ways 
 LOAD CSV FROM 'file:///artists-with-escaped-quotes.csv' AS row
 MERGE (a:Artist {id: toInteger(row[0]), name: row[1], year: toInteger(row[2])})
 RETURN
-  a.id AS ID,
+  a.id AS id,
   a.name AS name,
   a.year AS year,
   size(a.name) AS size
@@ -704,7 +704,7 @@ RETURN
 
 [source, role="queryresult",options="header,footer",cols="4*<m"]
 |===
-| ID | name | year | size
+| id | name | year | size
 | 1 | 'The "Symbol"' | 1992 | 12
 | 2 | 'The "Symbol"' | 1992 | 12
 4+d| Added 2 nodes, Set 6 properties, Added 2 labels
