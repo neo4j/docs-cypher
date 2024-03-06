@@ -3,7 +3,7 @@
 
 = LOAD CSV
 
-`LOAD CSV` is used to import data from CSV files.
+`LOAD CSV` is used to import data from CSV files into a Neo4j database.
 
 [source, cypher]
 ----
@@ -189,7 +189,6 @@ MERGE (a)-[:WROTE]->(b);
 Added 11 nodes, Set 17 properties, Added 11 labels
 Created 6 relationships
 ----
-
 ====
 
 
@@ -298,25 +297,26 @@ person_tmdbId,bio,born,bornIn,died,person_imdbId,name,person_poster,person_url
 LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/persons.csv' AS row
 MERGE (p:Person {tmdbId: toInteger(row.person_tmdbId)})
 SET p.name = row.name, p.born = date(row.born)
-RETURN p
+RETURN
+  p.name AS name,
+  p.tmdbId AS tmdbId,
+  p.born AS born
 LIMIT 5
 ----
 
 .Result
-[source, role="queryresult"]
-----
-+----------------------------------------------------------------+
-| p                                                              |
-+----------------------------------------------------------------+
-| (:Person {name: "Harrison Ford", tmdbId: 3, born: 1942-07-13}) |
-| (:Person {name: "Tom Hanks", tmdbId: 31, born: 1956-07-09})    |
-| (:Person {name: "Robin Wright", tmdbId: 32, born: 1966-04-08}) |
-| (:Person {name: "Sally Field", tmdbId: 35, born: 1946-11-06})  |
-| (:Person {name: "Sean Bean", tmdbId: 48, born: 1959-04-17})    |
-+----------------------------------------------------------------+
-Added 444 nodes, Set 1332 properties, Added 444 labels
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| name | tmdbId | born
+| 'Harrison Ford' | 3      | 1942-07-13
+| 'Tom Hanks'     | 31     | 1956-07-09
+| 'Robin Wright'  | 32     | 1966-04-08
+| 'Sally Field'   | 35     | 1946-11-06
+| 'Sean Bean'     | 48     | 1959-04-17
+3+d|5 rows
 
-----
+Added 444 nodes, Set 1332 properties, Added 444 labels
+|===
 ====
 
 For a list of type casting functions, see xref:values-and-types/casting-data.adoc[Casting data values].
@@ -407,24 +407,27 @@ SET
     m.imdbId = toInteger(row.movie_imdbId),
     m.languages = split(row.languages, '|'), 
     m.genres = split(row.genres, '|')
-RETURN m 
+RETURN
+  m.title AS title,
+  m.imdbId AS imdbId,
+  m.languages AS languages,
+  m.genres AS genres
 LIMIT 5
 ----
 
 .Result
-[source, role="queryresult"]
-----
-+---------------------------------------------------------------------------------------------------------------------------------------------------+
-| m                                                                                                                                                 |
-+---------------------------------------------------------------------------------------------------------------------------------------------------+
-| (:Movie {id: 1, languages: ["English"], title: "Toy Story", imdbId: 114709, genres: ["Adventure", "Animation", "Children", "Comedy", "Fantasy"]}) |
-| (:Movie {id: 2, languages: ["English", "French"], title: "Jumanji", imdbId: 113497, genres: ["Adventure", "Children", "Fantasy"]})                |
-| (:Movie {id: 3, languages: ["English"], title: "Grumpier Old Men", imdbId: 113228, genres: ["Comedy", "Romance"]})                                |
-| (:Movie {id: 4, languages: ["English"], title: "Waiting to Exhale", imdbId: 114885, genres: ["Comedy", "Romance", "Drama"]})                      |
-| (:Movie {id: 5, languages: ["English"], title: "Father of the Bride Part II", imdbId: 113041, genres: ["Comedy"]})                                |
-+---------------------------------------------------------------------------------------------------------------------------------------------------+
+[role="queryresult",options="header,footer",cols="4*<m"]
+|===
+| title                         | imdbId | languages             | genres                                                      
+| 'Toy Story'                   | 114709 | ['English']           | ['Adventure', 'Animation', 'Children', 'Comedy', 'Fantasy']
+| 'Jumanji'                     | 113497 | ['English', 'French'] | ['Adventure', 'Children', 'Fantasy']                       
+| 'Grumpier Old Men'            | 113228 | ['English']           | ['Comedy', 'Romance"]                                      
+| 'Waiting to Exhale'           | 114885 | ['English']           | ['Comedy', 'Romance', 'Drama']                             
+| 'Father of the Bride Part II' | 113041 | ['English']           | ['Comedy']                                                 
+4+d|5 rows
+
 Added 93 nodes, Set 465 properties, Added 93 labels
-----
+|===
 ====
 
 For more `STRING` manipulation functions, see xref:functions/string.adoc[String functions].
@@ -615,21 +618,23 @@ Id,Name,Year
 ----
 LOAD CSV WITH HEADERS FROM 'file:///artists-with-headers.csv' AS row
 MERGE (a:Artist {name: row.Name, year: toInteger(row.Year)})
-RETURN a
+RETURN
+  a.name AS name,
+  a.year AS year
 ----
 
 .Result
-[source, role="queryresult"]
-----
-+-----------------------------------------------+
-| a                                             |
-+-----------------------------------------------+
-| (:Artist {name: "ABBA", year: 1992})          |
-| (:Artist {name: "Roxette", year: 1986})       |
-| (:Artist {name: "Europe", year: 1979})        |
-| (:Artist {name: "The Cardigans", year: 1992}) |
-+-----------------------------------------------+
-----
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name            | year 
+| "ABBA"          | 1992 
+| "Roxette"       | 1986 
+| "Europe"        | 1979 
+| "The Cardigans" | 1992 
+2+d|4 rows
+
+Added 4 nodes, Set 8 properties, Added 4 labels
+|===
 ====
 
 
@@ -700,8 +705,6 @@ RETURN
 ----
 
 .Result
-[source, role="queryresult"]
-
 [source, role="queryresult",options="header,footer",cols="4*<m"]
 |===
 | id | name | year | size
@@ -737,14 +740,28 @@ If you come across these types of characters in your file, either remove them or
 
 Before importing data into the database, you can use `LOAD CSV` to inspect a source file and get an idea of what form the imported data is going to have.
 
-.Inspect CSV files with `LOAD CSV`
+.Assert correct line count
 ====
 [source, cypher]
 ----
 // Assert correct line count
 LOAD CSV FROM 'https://data.neo4j.com/importing-cypher/persons.csv' AS line
 RETURN count(*);
+----
 
+.Result
+[source, role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| count(*) 
+| 445
+1+d| 1 row
+|===
+====
+
+.Check the first five lines with header sampling
+====
+[source, cypher]
+----
 // Check first 5 line-sample with header-mapping
 LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/persons.csv' AS line
 RETURN line.person_tmdbId, line.name
@@ -752,29 +769,16 @@ LIMIT 5;
 ----
 
 .Result
-[source, role="queryresult"]
-----
-+----------+
-| count(*) |
-+----------+
-| 445      |
-+----------+
-
-1 row
-ready to start consuming query after 3 ms, results consumed after another 62 ms
-+--------------------------------------+
-| line.person_tmdbId | line.name       |
-+--------------------------------------+
-| "3"                | "Harrison Ford" |
-| "31"               | "Tom Hanks"     |
-| "32"               | "Robin Wright"  |
-| "35"               | "Sally Field"   |
-| "48"               | "Sean Bean"     |
-+--------------------------------------+
-
-5 rows
-ready to start consuming query after 41 ms, results consumed after another 12 ms
-----
+[source, role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| line.person_tmdbId | line.name       
+| "3"                | "Harrison Ford" 
+| "31"               | "Tom Hanks"     
+| "32"               | "Robin Wright"  
+| "35"               | "Sally Field"   
+| "48"               | "Sean Bean"     
+2+d| 5 rows
+|===
 ====
 
 ////
