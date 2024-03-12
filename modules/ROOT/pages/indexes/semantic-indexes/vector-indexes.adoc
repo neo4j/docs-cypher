@@ -188,11 +188,11 @@ You want to find papers in the neighborhood of a paper you know.
 (:Title)<--(:Paper)-->(:Abstract)
 ----
 
-Assume for each abstract, you have generated a 1536-dimensional vector `embedding` of the abstract's `text` using Open AI's default model, `text-embedding-ada-002`.
+Assume for each abstract, you have generated a 1536-dimensional vector `embedding` of the abstract's `text` using Open AI's `text-embedding-ada-002` model.
 This model suggests a xref:indexes-vector-similarity-cosine[cosine similarity].
 For more information, see link:https://platform.openai.com/docs/guides/embeddings/which-distance-function-should-i-use[OpenAI's official documentation].
 
-You can create a cosine vector index over the `embedding` property.
+You can create a cosine node vector index over the `embedding` property.
 
 .Query
 [source,cypher]
@@ -209,30 +209,27 @@ OPTIONS {indexConfig: {
 .Create a relationship vector index
 ====
 
-// TODO: fix a proper example
-
-For instance, assume you have a graph of research papers, and each paper has an abstract.
-You want to find papers in the neighborhood of a paper you know.
+Assume you have a graph of employees and their managers, who are themselves employees. Managers review their reports periodically, and you wish to search for reviews of similar themes and nuances to find excellent employees.
 
 .Data model
 [source,syntax,role="noheader",indent=0]
 ----
-(:Something)-[:RELEVANT]->(:SomethingElse)
+(:Manager)-[:REVIEWED]->(:Employee)
 ----
 
-Assume for each abstract, you have generated a 1536-dimensional vector `embedding` of the abstract's `text` using Open AI's default model, `text-embedding-ada-002`.
+Assume for each abstract, you have generated a 256-dimensional vector `embedding` of the review's `text` using a shortening of Open AI's `text-embedding-3-large` model.
 This model suggests a xref:indexes-vector-similarity-cosine[cosine similarity].
 For more information, see link:https://platform.openai.com/docs/guides/embeddings/which-distance-function-should-i-use[OpenAI's official documentation].
 
-You can create a cosine vector index over the `embedding` property.
+You can create a cosine relationship vector index over the `embedding` property.
 
 .Query
 [source,cypher]
 ----
-CREATE VECTOR INDEX `???-embeddings`
-FOR ()-[r:RELEVANT]-() ON (r.embedding)
+CREATE VECTOR INDEX `review-embeddings`
+FOR ()-[r:REVIEWED]-() ON (r.embedding)
 OPTIONS {indexConfig: {
- `vector.dimensions`: 1536,
+ `vector.dimensions`: 256,
  `vector.similarity_function`: 'cosine'
 }}
 ----
@@ -255,11 +252,11 @@ SHOW VECTOR INDEXES YIELD name, type, entityType, labelsOrTypes, properties, opt
 
 | name | type | entityType | labelsOrTypes | properties | options
 
-| "abstract-embeddings" | "VECTOR" | "NODE" | "["Abstract"]  | ["embedding"]
+| "abstract-embeddings" | "VECTOR" | "NODE" | ["Abstract"]  | ["embedding"]
 | {indexProvider: "vector-2.0", indexConfig: {vector.dimensions: 1536, vector.similarity_function: "cosine"}}
 
-| "???-embeddings" | "VECTOR" | "RELATIONSHIP" | ["RELEVANT"]  | ["embedding"]
-| {indexProvider: "vector-2.0", indexConfig: {vector.dimensions: 1536, vector.similarity_function: "cosine"}}
+| "review-embeddings" | "VECTOR" | "RELATIONSHIP" | ["REVIEWED"]  | ["embedding"]
+| {indexProvider: "vector-2.0", indexConfig: {vector.dimensions: 256, vector.similarity_function: "cosine"}}
 5+d|Rows: 2
 
 |===
@@ -290,7 +287,7 @@ db.index.vector.queryRelationships(indexName :: STRING, numberOfNearestNeighbour
 The procedures return the neighborhood of nodes or relationships with their respective similarity scores, ordered by those scores.
 The scores are bounded between `0` and `1`, where the closer to `1` the score is, the more similar the indexed vector is to the query vector.
 
-.Query a vector index
+.Query a node vector index
 ====
 This example takes the paper that describes the HNSW{fn-hnsw} graph structure that the vector index implements and tries to find similar papers.
 First you `MATCH` to find the paper, and then you query the `abstract-embeddings` index for a neighborhood of `10` similar abstracts to your query.
@@ -354,7 +351,52 @@ The results are expected, with papers discussing graph-based nearest-neighbor se
 
 The most similar to this result is the query vector itself, which is to be expected as the index was queried with an indexed property.
 If the query vector itself is not wanted, you can use `WHERE score < 1` to remove equivalent vectors to the query vector.
+====
 
+.Query a relationship vector index
+====
+This example takes a query vector describing the themes and and nuances we are looking for in the reviews. This query vector can be acquired by encoding the themes using the xref:values-and-types/genai-integrations.adoc[GenAI integrations] plugin. Then you query the `review-embeddings` index for a neighborhood of `10` reviews containing similar themes and nuances to the query.
+Finally, you `MATCH` for the neighborhood's respective employees.
+
+.Query
+[source,cypher, role=test-result-skip]
+----
+CALL db.index.vector.queryRelationships('review-embeddings', 10, $query)
+YIELD relationship AS review, score
+
+MATCH ()-[review]->(employee:Employee)
+RETURN employee.name AS name, score
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="5m,2m"]
+|===
+
+| name | score
+
+| John Smith | 0.8723412752151489
+
+| Emily Johnson | 0.8456789255142212
+
+| Michael Brown | 0.8245679140090942
+
+| Sarah Lee | 0.8123456835746765
+
+| David Wilson | 0.7865431904792786
+
+| Jennifer Davis | 0.7690123319625854
+
+| Christopher Evans | 0.7356789112091064
+
+| Amanda Martinez | 0.7034567594528198
+
+| Matthew Thompson | 0.6912345886230469
+
+| Jessica Garcia | 0.6543219685554504
+
+2+d| Rows: 10
+
+|===
 ====
 
 [[indexes-vector-drop]]
