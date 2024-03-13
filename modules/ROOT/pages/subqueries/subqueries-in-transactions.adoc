@@ -114,6 +114,14 @@ CALL {
 
 ======
 
+[NOTE]
+====
+The batching is performed on the input rows fed into `CALL { ... } IN TRANSACTIONS`, so the data must be supplied from outside the call in order for the batching to have an effect.
+That is why the nodes are matched outside the subqueries in the examples above.
+If the `MATCH` clause were inside the subquery, the data deletion would run as one single transaction.
+====
+
+
 [[batching]]
 == Batching
 
@@ -195,10 +203,108 @@ The batch size of `2 ROWS` is an example given the small data set used here.
 For larger data sets, you might want to use larger batch sizes, such as `10000 ROWS`.
 ====
 
+[role=label--new-5.18]
+[[composite-databases]]
+== Composite databases
+
+As of Neo4j 5.18, `CALL { ... } IN TRANSACTIONS` can be used with link:{neo4j-docs-base-uri}/operations-manual/{page-version}/composite-databases[composite databases].
+
+Even though composite databases allow accessing multiple graphs in a single query, only one graph can be modified in a single transaction.
+`CALL { ... } IN TRANSACTIONS` offers a way of constructing queries which modify multiple graphs.
+
+While the previous examples are generally valid for composite databases, there's a few extra factors that come into play when working with composite databases in subqueries.
+The following examples show how you can use `CALL { ... } IN TRANSACTIONS` on a composite database.
+
+.Import a CSV file on all constituents
+====
+.friends.csv
+[source, csv, filename="friends.csv"]
+----
+1,Bill,26
+2,Max,27
+3,Anna,22
+4,Gladys,29
+5,Summer,24
+----
+
+.Create `Person` nodes on all constituents, drawing data from friends.csv
+[source, cypher, test-skip]
+----
+UNWIND graph.names() AS graphName
+LOAD CSV FROM 'file:///friends.csv' AS line
+CALL {
+  USE graph.byName( graphName )
+  WITH line
+  CREATE (:Person {name: line[1], age: toInteger(line[2])})
+} IN TRANSACTIONS
+----
+====
+
+.Remove all nodes and relationships from all constituents
+====
+.Query
+[source, cypher, test-skip]
+----
+UNWIND graph.names() AS graphName
+CALL {
+  USE graph.byName( graphName )
+  MATCH (n)
+  RETURN elementId(n) AS id
+}
+CALL {
+  USE graph.byName( graphName )
+  WITH id
+  MATCH (n)
+  WHERE elementId(n) = id
+  DETACH DELETE n
+} IN TRANSACTIONS
+----
+
+[TIP]
+Since the batching is performed on the input rows fed into `CALL { ... } IN TRANSACTIONS`, the data must be supplied from outside the subquery in order for the batching to have an effect.
+That is why the nodes are matched in a subquery _preceding_ the one that actually deletes the data.
+If the `MATCH` clause were inside the second subquery, the data deletion would run as one single transaction.
+
+====
+
+
+[NOTE]
+====
+There is currently a known issue.
+When an error occurs during `CALL { ... } IN TRANSACTIONS` processing, the error message includes information about how many transactions have been committed.
+That information is inaccurate on composite databases, as it always reports `(Transactions committed: 0)`.
+====
+
+[discrete]
+[[composite-databases-batching]]
+=== Batch size in composite databases
+Because `CALL { ... } IN TRANSACTIONS` subqueries targeting different graphs can't be interleaved, if a `USE` clause evaluates to a different target than the current one, the current batch is committed and the next batch is created.
+
+The batch size declared with `IN TRANSACTIONS OF ... ROWS` represents an upper limit of the batch size, but the real batch size depends on how many input rows target one database *in sequence*.
+Every time the target database changes, the batch is committed.
+
+.Behavior of `IN TRANSACTIONS OF ROWS` on composite databases
+====
+The next example assumes the existence of two constituents `remoteGraph1` and `remoteGraph2` for the composite database `composite`.
+
+While the declared batch size is 3, only the first 2 rows act on `composite.remoteGraph1`, so the batch size for the first transaction is 2. That is followed by 3 rows on `composite.remoteGraph2`, 1 on `composite.remoteGraph2` and finally 2 on `composite.remoteGraph1`.
+
+.Query
+[source, cypher, test-skip]
+----
+WITH ['composite.remoteGraph1', 'composite.remoteGraph2'] AS graphs
+UNWIND [0, 0, 1, 1, 1, 1, 0, 0] AS i
+WITH graphs[i] AS g
+CALL {
+  USE graph.byName( g )
+  CREATE ()
+} IN TRANSACTIONS OF 3 ROWS
+----
+====
+
+[role=label--new-5.7]
 [[error-behavior]]
 == Error behavior
-
-_This feature was introduced in Neo4j 5.7._
 
 Users can choose one of three different option flags to control the behavior
 in case of an error occurring in any of the inner transactions of `CALL { ... } IN TRANSACTIONS`:
