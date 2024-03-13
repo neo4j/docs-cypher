@@ -1,0 +1,210 @@
+:description: information about equijoins and graph patterns (combined path patterns).
+= Non-linear patterns
+
+Cypher can be used to express non-linear patterns, either by equijoins (an operation in which more than one node relationship in a path is the same) or by more complicated graph patterns consisting of multiple path patterns.
+
+== Equijoins
+
+An equijoin is an operation on paths that requires more than one of the nodes or relationships of the paths to be the same.
+The equality between the nodes or relationships is specified by declaring the same variable in multiple node patterns or relationship patterns.
+An equijoin allows cycles to be specified in a path pattern.
+
+This section uses the following graph:
+
+image::patterns_equijoins.svg[width="700",role="middle"]
+
+To recreate the graph, run the following query against an empty Neo4j database:
+
+[source, cypher, role=test-setup]
+----
+CREATE (bhi:Station {name: 'Birmingham International'}),
+  (cov:Station {name: 'Coventry'}),
+  (eus:Station  {name: 'London Euston'}),
+  (bhi)<-[:CALLS_AT]-(s1:Stop {departs: time('12:03')}),
+  (cov)<-[:CALLS_AT]-(s2:Stop {departs: time('11:33')})-[:NEXT]->(s1),
+  (eus)<-[:CALLS_AT]-(s3:Stop {departs: time('15:54')}),
+  (cov)<-[:CALLS_AT]-(s4:Stop {departs: time('14:45')})-[:NEXT]->(s3),
+  (cov)<-[:CALLS_AT]-(s5:Stop {departs: time('09:34')}),
+  (eus)<-[:CALLS_AT]-(s6:Stop {departs: time('08:40')})-[:NEXT]->(s5)
+----
+
+To illustrate how equijoins work, we will use the problem of finding a round trip between two `Stations`.
+
+In this example scenario, a passenger starts their outbound journey at `London Euston` `Station` and ends at `Coventry` `Station`.
+The return journey will be the reverse order of those `Stations`.
+
+The graph has three different services, two of which would compose the desired round trip, and a third which would send the passenger to `Birmingham International`.
+
+The solution is the following path with a cycle:
+
+image::patterns_equijoins_solution2.svg[width="400",role="middle"]
+
+If unique properties exist on the node where the cycle "join" occurs in the path, then it is possible to repeat the node pattern with a predicate matching on the unique property.
+The following motif demonstrates how that can be achieved, repeating a `Station` node pattern with the name `London Euston`:
+
+image::patterns_equijoins_motif.svg[width="700",role="middle"]
+
+The path pattern equivalent is:
+
+[source, role=noheader]
+----
+(:Station {name: 'London Euston'})<-[:CALLS_AT]-(:Stop)-[:NEXT]->(:Stop)
+  -[:CALLS_AT]->(:Station {name: 'Coventry'})<-[:CALLS_AT]-(:Stop)
+  -[:NEXT]->(:Stop)-[:CALLS_AT]->(:Station {name: 'London Euston'})
+----
+
+There may be cases where a unique predicate is not available.
+In this case, an equijoin can be used to define the desired cycle by using a repeated node variable.
+In the current example, if you declare the same node variable `n` in both the first and last node patterns, then the node patterns _must_ match the same node:
+
+image::patterns_equijoins_motif2.svg[width="700",role="middle"]
+
+Putting this path pattern with an equijoin in a query, the times of the outbound and return journeys can be returned:
+
+.Query
+[source, cypher]
+----
+MATCH (n:Station {name: 'London Euston'})<-[:CALLS_AT]-(s1:Stop)
+  -[:NEXT]->(s2:Stop)-[:CALLS_AT]->(:Station {name: 'Coventry'})
+  <-[:CALLS_AT]-(s3:Stop)-[:NEXT]->(s4:Stop)-[:CALLS_AT]->(n)
+RETURN s1.departs+'-'+s2.departs AS outbound,
+  s3.departs+'-'+s4.departs AS `return`
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+
+| outbound | return
+
+| "08:40:00Z-09:34:00Z" | "14:45:00Z-15:54:00Z"
+
+2+d|Rows: 1
+|===
+
+[[graph-patterns]]
+== Graph patterns
+
+In addition to the single xref:patterns/fixed-length-patterns.adoc#path-patterns[path patterns], multiple path patterns can be combined in a comma-separated list to form a graph pattern.
+In a graph pattern, each path pattern is matched separately, and where node variables are repeated in the separate path patterns, the solutions are reduced via equijoins.
+If there are no equijoins between the path patterns, the result is a Cartesian product between the separate solutions.
+
+The benefit of joining multiple path patterns in this way is that it allows the specification of more complex patterns than the linear paths allowed by a single path pattern.
+To illustrate this, another example drawn from the railway model will be used.
+In this example, a passenger is traveling from `Starbeck` to `Huddersfield`, changing trains at `Leeds`.
+To get to `Leeds` from `Starbeck`, the passenger can take a direct service that stops at all stations on the way.
+However, there is an opportunity to change at one of the stations (`Harrogate`) on the way to `Leeds`, and catch an express train, which may enable the passenger to catch an earlier train leaving from `Leeds`, reducing the overall journey time.
+
+////
+[source, cypher, role=test-setup]
+----
+MATCH (n)
+DETACH DELETE (n)
+----
+Deletes the graph used in the previous example.
+////
+
+This section uses the following graph, showing the train services the passenger can use:
+
+image::patterns_graph_patterns_graph1.svg[width="400", role="middle"]
+
+To recreate the graph, run the following query against an empty Neo4j database:
+
+[source, cypher, role=test-setup]
+----
+CREATE (hgt:Station {name: 'Harrogate'}), (lds:Station {name: 'Leeds'}),
+(sbe:Station {name: 'Starbeck'}), (hbp:Station {name: 'Hornbeam Park'}),
+(wet:Station {name: 'Weeton'}), (hrs:Station {name: 'Horsforth'}),
+(hdy:Station {name: 'Headingley'}), (buy:Station {name: 'Burley Park'}),
+(pnl:Station {name: 'Pannal'}), (hud:Station {name: 'Huddersfield'}),
+(s9:Stop {arrives: time('11:53')}),
+(s8:Stop {arrives: time('11:44'), departs: time('11:45')}),
+(s7:Stop {arrives: time('11:40'), departs: time('11:43')}),
+(s6:Stop {arrives: time('11:38'), departs: time('11:39')}),
+(s5:Stop {arrives: time('11:29'), departs: time('11:30')}),
+(s4:Stop {arrives: time('11:24'), departs: time('11:25')}),
+(s3:Stop {arrives: time('11:19'), departs: time('11:20')}),
+(s2:Stop {arrives: time('11:16'), departs: time('11:17')}),
+(s1:Stop {departs: time('11:11')}), (s21:Stop {arrives: time('11:25')}),
+(s211:Stop {departs: time('11:00')}), (s10:Stop {arrives: time('11:45')}),
+(s101:Stop {departs: time('11:20')}), (s11:Stop {arrives: time('12:05')}),
+(s111:Stop {departs: time('11:40')}), (s12:Stop {arrives: time('12:07')}),
+(s121:Stop {departs: time('11:50')}), (s13:Stop {arrives: time('12:37')}),
+(s131:Stop {departs: time('12:20')}),
+(lds)<-[:CALLS_AT]-(s9), (buy)<-[:CALLS_AT]-(s8)-[:NEXT]->(s9),
+(hdy)<-[:CALLS_AT]-(s7)-[:NEXT]->(s8), (hrs)<-[:CALLS_AT]-(s6)-[:NEXT]->(s7),
+(wet)<-[:CALLS_AT]-(s5)-[:NEXT]->(s6), (pnl)<-[:CALLS_AT]-(s4)-[:NEXT]->(s5),
+(hbp)<-[:CALLS_AT]-(s3)-[:NEXT]->(s4), (hgt)<-[:CALLS_AT]-(s2)-[:NEXT]->(s3),
+(sbe)<-[:CALLS_AT]-(s1)-[:NEXT]->(s2), (lds)<-[:CALLS_AT]-(s21), (hgt)<-[:CALLS_AT]-(s211)-[:NEXT]->(s21), (lds)<-[:CALLS_AT]-(s10), (hgt)<-[:CALLS_AT]-(s101)-[:NEXT]->(s10), (lds)<-[:CALLS_AT]-(s11), (hgt)<-[:CALLS_AT]-(s111)-[:NEXT]->(s11), (hud)<-[:CALLS_AT]-(s12), (lds)<-[:CALLS_AT]-(s121)-[:NEXT]->(s12), (hud)<-[:CALLS_AT]-(s13), (lds)<-[:CALLS_AT]-(s131)-[:NEXT]->(s13)
+----
+
+The solution to the problem assembles a set of path patterns matching the following three parts: the stopping service; the express service; and the final leg of the journey from `Leeds` to `Huddersfield`.
+Each changeover, from stopping to express service and from express to onward service, has to respect the fact that the arrival time of a previous leg has to be before the departure time of the next leg.
+This will be encoded in a single `WHERE` clause.
+
+The following visualizes the three legs with different colors, and identifies the node variables used to create the equijoins and anchoring:
+
+image::patterns_graph_patterns_graph2.svg[width="300", role="middle"]
+
+For the stopping service, it is assumed that the station the passenger needs to change at is unknown.
+As a result, the pattern needs to match a variable number of stops before and after the `Stop` `b`, the `Stop` that calls at the changeover station `l`.
+This is achieved by placing the xref:patterns/variable-length-patterns.adoc#quantified-relationships[quantified relationship] `-[:NEXT]\->*` on each side of node `b`.
+The ends of the path also needs to be anchored at a `Stop` departing from `Starbeck` at `11:11`, as well as at a `Stop` calling at `Leeds`:
+
+[source, role="noheader"]
+----
+(:Station {name: 'Starbeck'})<-[:CALLS_AT]-
+  (a:Stop {departs: time('11:11')})-[:NEXT]->*(b)-[:NEXT]->*
+  (c:Stop)-[:CALLS_AT]->(lds:Station {name: 'Leeds'})
+----
+
+For the express service, the ends of the path are anchored at the stop `b` and `Leeds` station, which `lds` will be bound to by the first leg.
+Although in this particular case there are only two stops on the service, a more general pattern that can match any number of stops is used:
+
+[source, role="noheader"]
+----
+(b)-[:CALLS_AT]->(l:Station)<-[:CALLS_AT]-(m:Stop)-[:NEXT]->*
+  (n:Stop)-[:CALLS_AT]->(lds)
+----
+
+Note that as Cypher only allows a relationship to be traversed once in a given match for a graph pattern, the first and second legs are guaranteed to be different train services.
+(See xref::patterns/reference.adoc#graph-patterns-rules-relationship-uniqueness[relationship uniqueness] for more details.)
+Similarly, another quantified relationship that bridges the stops calling at `Leeds` station and `Huddersfield` station is added:
+
+[source, role="noheader"]
+----
+(lds)<-[:CALLS_AT]-(x:Stop)-[:NEXT]->*(y:Stop)-[:CALLS_AT]->
+  (:Station {name: 'Huddersfield'})
+----
+
+The other node variables are for the `WHERE` clause or for returning data.
+Putting this together, the resulting query returns the earliest arrival time achieved by switching to an express service:
+
+.Query
+[source, cypher]
+----
+MATCH (:Station {name: 'Starbeck'})<-[:CALLS_AT]-
+        (a:Stop {departs: time('11:11')})-[:NEXT]->*(b)-[:NEXT]->*
+        (c:Stop)-[:CALLS_AT]->(lds:Station {name: 'Leeds'}),
+      (b)-[:CALLS_AT]->(l:Station)<-[:CALLS_AT]-(m:Stop)-[:NEXT]->*
+        (n:Stop)-[:CALLS_AT]->(lds),
+      (lds)<-[:CALLS_AT]-(x:Stop)-[:NEXT]->*(y:Stop)-[:CALLS_AT]->
+        (:Station {name: 'Huddersfield'})
+WHERE b.arrives < m.departs AND n.arrives < x.departs
+RETURN a.departs AS departs,
+       l.name AS changeAt,
+       m.departs AS changeDeparts,
+       y.arrives AS arrives
+ORDER BY y.arrives LIMIT 1
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="4*<m"]
+|===
+| departs | changeAt | changeDeparts | arrives
+
+| "11:11:00Z" | "Harrogate" | "11:20:00Z" | "12:07:00Z"
+
+4+d|Rows: 1
+
+|===
