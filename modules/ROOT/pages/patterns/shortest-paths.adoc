@@ -542,18 +542,24 @@ RETURN [stop IN nodes(p) | stop.name] AS r1,
 
 [[planning-StatefulShortestPath-operator]]
 == Planning the StatefulShortestPath-operator
+The `StatefulShortestPath(All)` uses a unidirectional breadth first search algorithm, while the `StatefulShortestPath(Into)` uses a bidirectional breadth first search algorithm.
 See xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-stateful-shortest-path-into[the operator-detail page] for a description of the `StatefulShortestPath(All)` and `StatefulShortestPath(Into)` operators.
 
-When the subexpression of the statefulShortestPath-operator matches only one of both boundary nodes, then a `StatefulShortestPath(All)` is planned.
+The planner decides between the two variants using this heuristic:
 
-When the subexpression of the statefulShortestPath-operator matches both boundary nodes, then a `StatefulShortestPath(Into)` is planned only when both boundary nodes match to at most one data node. Otherwise, this plan is avoided when possible.
-Another plan will be favoured where the subexpression matches only one of both boundary nodes followed by an `StatefulShortestPath(All)`.
+* When both boundary nodes have been matched in `MATCH` clause prior to the `MATCH` clause containing the shortest paths query, `StatefulShortestPath(Into)` is planned
+* Otherwise, if both boundary nodes match to at most one data node, then `StatefulShortestPath(Into)` is planned
+* Otherwise, `StatefulShortestPath(All)` is planned
+
+Sometimes the planner cannot make reliable estimations about how many data nodes a pattern nodes will match.
+Consider using a xref:constraints/index.adoc#unique-node-property[uniqueness constraint] where applicable to help the planner getting more reliable estimates.
 
 As an example, consider the case where the left boundary node matches to 10 data nodes and the right boundary node to 3 data nodes.
 Using `StatefulShortestPath(Into)` requires 30 bidirectional breath first search (BFS) invocations.
 Using `StatefulShortestPath(All)` requires only 3 unidirectional BFS invocations expanding from the right boundary node.
 
-In case you want the `StatefulShortestPath(Into)` to be chosen, then you can rewrite your query using a `CALL subquery`.
+This heuristic decision to favour `StatefulShortestPath(All)` can sometimes lead to worse query performance.
+In case you want the `StatefulShortestPath(Into)` to be chosen, you can rewrite your query using a `CALL subquery`.
 
 For example, this query
 [source,cypher]
@@ -584,7 +590,7 @@ will use `StatefulShortestPath(All)`
 
 
 
-Rewriting the query using a `CALL subquery`
+Rewriting the query using a `CALL` subquery
 [source,cypher]
 ----
 MATCH
@@ -599,7 +605,7 @@ CALL {
 RETURN p
 ----
 
-makes use of `StatefulShortestPath(Into)`, because the CALL subroutine is executed for each incoming row.  Each incoming row matches `a` to exactly one station node and `b` to exactly one station node.
+makes use of `StatefulShortestPath(Into)`, because the CALL subquery is executed for each incoming row. Each incoming row matches `a` to exactly one station node and `b` to exactly one station node.
 [role="queryplan", subs="attributes+"]
 ----
 +-----------------------------+----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
