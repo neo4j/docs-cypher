@@ -1,0 +1,543 @@
+:description: Information about quantified path patterns, quantified relationships, and group variables.
+= Variable length patterns
+
+Cypher can be used to match patterns of a variable or an unknown length.
+Such patterns can be found using quantified path patterns and quantified relationships.
+This page also discusses how variables work when declared in quantified path patterns (group variables), and how to use predicates in quantified path patterns.
+
+[role=label--new-5.9]
+[[quantified-path-patterns]]
+== Quantified path patterns 
+
+This section considers how to match paths of _varying_ length by using _quantified path patterns_, allowing you to search for paths whose lengths are unknown or within a specific range.
+
+Quantified path patterns can be useful when, for example, searching for all nodes that can be reached from an anchor node, finding all paths connecting two nodes, or when traversing a hierarchy that may have differing depths.
+
+This example uses a new graph:
+
+image::patterns_qpp_calling_points.svg[width="700",role="middle"]
+
+To recreate the graph, run the following query against an empty Neo4j database:
+
+[source, cypher, role=test-setup]
+----
+CREATE (pmr:Station {name: 'Peckham Rye'}),
+  (dmk:Station {name: 'Denmark Hill'}),
+  (clp:Station {name: 'Clapham High Street'}),
+  (wwr:Station {name: 'Wandsworth Road'}),
+  (clj:Station {name: 'Clapham Junction'}),
+  (s1:Stop {arrives: time('17:19'), departs: time('17:20')}),
+  (s2:Stop {arrives: time('17:12'), departs: time('17:13')}),
+  (s3:Stop {arrives: time('17:10'), departs: time('17:11')}),
+  (s4:Stop {arrives: time('17:06'), departs: time('17:07')}),
+  (s5:Stop {arrives: time('16:58'), departs: time('17:01')}),
+  (s6:Stop {arrives: time('17:17'), departs: time('17:20')}),
+  (s7:Stop {arrives: time('17:08'), departs: time('17:10')}),
+  (clj)<-[:CALLS_AT]-(s1), (wwr)<-[:CALLS_AT]-(s2),
+  (clp)<-[:CALLS_AT]-(s3), (dmk)<-[:CALLS_AT]-(s4),
+  (pmr)<-[:CALLS_AT]-(s5), (clj)<-[:CALLS_AT]-(s6),
+  (dmk)<-[:CALLS_AT]-(s7),
+  (s5)-[:NEXT {distance: 1.2}]->(s4),(s4)-[:NEXT {distance: 0.34}]->(s3),
+  (s3)-[:NEXT {distance: 0.76}]->(s2), (s2)-[:NEXT {distance: 0.3}]->(s1),
+  (s7)-[:NEXT {distance: 1.4}]->(s6)
+----
+
+Each `Stop` on a service `CALLS_AT` one `Station`.
+Each `Stop` has the properties `arrives` and `departs` that give the times the train is at the `Station`.
+Following the `NEXT` relationship of a `Stop` will give the next `Stop` of the service.
+
+For this example, a path pattern is constructed to match each of the services that allow passengers to travel from `Denmark Hill` to `Clapham Junction`.
+The following shows the two paths that the path pattern should match:
+
+image::patterns_qpp_solutions.svg[width="700",role="middle"]
+
+The following motif represents a fixed-length path pattern that matches the service that departs from `Denmark Hill` station at `17:07`:
+
+image::patterns_qpp_motif1.svg[width="700",role="middle"]
+
+To match the second train service, leaving `Denmark Hill` at `17:10`, a shorter path pattern is needed:
+
+image::patterns_qpp_motif2.svg[width="400",role="middle"]
+
+Translating the motifs into Cypher, and adding predicates to match the origin and destination `Stations`, yields the following two path patterns respectively:
+
+[source, role=noheader]
+----
+(:Station { name: 'Denmark Hill' })<-[:CALLS_AT]-(:Stop)
+  -[:NEXT]->(:Stop)
+  -[:NEXT]->(:Stop)
+  -[:NEXT]->(:Stop)-[:CALLS_AT]->
+(:Station { name: 'Clapham Junction' })
+----
+
+[source, role=noheader]
+----
+(:Station { name: 'Denmark Hill' })<-[:CALLS_AT]-(:Stop)
+  -[:NEXT]->(:Stop)-[:CALLS_AT]->
+(:Station { name: 'Clapham Junction' })
+----
+
+To return both solutions in the same query using these fixed-length path patterns, a xref:clauses/union.adoc[UNION] of two `MATCH` statements would be needed.
+For example, the following query returns the `departure` of the two services:
+
+.Query
+[source, cypher]
+----
+MATCH (:Station { name: 'Denmark Hill' })<-[:CALLS_AT]-(d:Stop)
+        -[:NEXT]->(:Stop)
+        -[:NEXT]->(:Stop)
+        -[:NEXT]->(a:Stop)-[:CALLS_AT]->
+      (:Station { name: 'Clapham Junction' })
+RETURN d.departs AS departureTime, a.arrives AS arrivalTime
+UNION
+MATCH (:Station { name: 'Denmark Hill' })<-[:CALLS_AT]-(d:Stop)
+        -[:NEXT]->(a:Stop)-[:CALLS_AT]->
+      (:Station { name: 'Clapham Junction' })
+RETURN d.departs AS departureTime, a.arrives AS arrivalTime
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+
+| departureTime | arrivalTime
+
+| "17:07:00Z" | "17:19:00Z"
+| "17:10:00Z" | "17:17:00Z"
+
+2+d|Rows: 2
+
+|===
+
+The problem with this solution is that not only is it verbose, it can only be used where the lengths of the target paths are known in advance.
+Quantified path patterns solve this problem by extracting repeating parts of a path pattern into parentheses and applying a *quantifier*.
+That quantifier specifies a range of possible repetitions of the extracted pattern to match on.
+For the current example, the first step is identifying the repeating pattern, which in this case is the sequence of alternating `Stop` nodes and `NEXT` relationships, representing one segment of a `Service`:
+
+[source, role=noheader]
+----
+(:Stop)-[:NEXT]->(:Stop)
+----
+
+The shortest path has one instance of this pattern, the longest three.
+So the quantifier applied to the wrapper parentheses is the range one to three, expressed as `{1,3}`:
+
+[source, role=noheader]
+----
+((:Stop)-[:NEXT]->(:Stop)){1,3}
+----
+
+This also includes repetitions of two, but in this case this repetition will not return matches.
+To understand the semantics of this pattern, it helps to work through the expansion of the repetitions.
+Here are the three repetitions specified by the quantifier, combined into a union of path patterns:
+
+[source, role=noheader]
+----
+(:Stop)-[:NEXT]->(:Stop) |
+(:Stop)-[:NEXT]->(:Stop)(:Stop)-[:NEXT]->(:Stop) |
+(:Stop)-[:NEXT]->(:Stop)(:Stop)-[:NEXT]->(:Stop)(:Stop)-[:NEXT]->(:Stop)
+----
+
+The union operator (`|`) and placing node patterns next to each other are used here for illustration only; using it this way is not part of Cypher syntax.
+Where two node patterns are next to each other in the expansion above, they must necessarily match the same node: the next segment of a `Service` starts where the previous segment ends.
+As such they can be rewritten as a single node pattern with any filtering condition combined conjunctively.
+In this example this is trivial, because the filtering applied to those nodes is just the label `Stop`:
+
+image::patterns_qpp_illustration.svg[width="400",role="middle"]
+
+With this, the union of path patterns simplifies to:
+
+[source, role=noheader]
+----
+(:Stop)-[:NEXT]->(:Stop) |
+(:Stop)-[:NEXT]->(:Stop)-[:NEXT]->(:Stop) |
+(:Stop)-[:NEXT]->(:Stop)-[:NEXT]->(:Stop)-[:NEXT]->(:Stop)
+----
+
+The segments of the original path pattern that connect the `Stations` to the `Stops` can also be rewritten.
+Here is what those segments look like when concatenated with the first repetition:
+
+[source, role=noheader]
+----
+(:Station { name: 'Denmark Hill' })<-[:CALLS_AT]-(:Stop)
+(:Stop)-[:NEXT]->(:Stop)
+(:Stop)-[:CALLS_AT]->(:Station { name: 'Clapham Junction' })
+----
+
+The original `MATCH` clause now has the following three parts:
+
+image::patterns_qpp_query_breakdown.svg[]
+
+Translating the union of fixed-length path patterns into a quantified path pattern results in a pattern that will return the correct paths.
+The following query adds a `RETURN` clause that yields the departure and arrival times of the two services:
+
+.Query
+[source, cypher]
+----
+MATCH (:Station { name: 'Denmark Hill' })<-[:CALLS_AT]-(d:Stop)
+      ((:Stop)-[:NEXT]->(:Stop)){1,3}
+      (a:Stop)-[:CALLS_AT]->(:Station { name: 'Clapham Junction' })
+RETURN d.departs AS departureTime, a.arrives AS arrivalTime
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+
+| departureTime | arrivalTime
+
+| "17:10Z" | "17:17Z"
+| "17:07Z" | "17:19Z"
+
+2+d|Rows: 2
+
+|===
+
+[role=label--new-5.9]
+[[quantified-relationships]]
+== Quantified relationships
+
+Quantified relationships allow some simple quantified path patterns to be re-written in a more succinct way.
+Continuing with the example of `Stations` and `Stops` from the previous section, consider the following query:
+
+.Query
+[source,cypher]
+----
+MATCH (d:Station { name: 'Denmark Hill' })<-[:CALLS_AT]-(n:Stop)
+      ((:Stop)-[:NEXT]->(:Stop)){1,10}
+      (m:Stop)-[:CALLS_AT]->(a:Station { name: 'Clapham Junction' })
+WHERE m.arrives < time('17:18')
+RETURN n.departs AS departureTime
+----
+
+If the relationship `NEXT` only connects `Stop` nodes, the `:Stop` label expressions can be removed:
+
+.Query
+[source, cypher]
+----
+MATCH (d:Station { name: 'Denmark Hill' })<-[:CALLS_AT]-(n:Stop)
+      (()-[:NEXT]->()){1,10}
+      (m:Stop)-[:CALLS_AT]->(a:Station { name: 'Clapham Junction' })
+WHERE m.arrives < time('17:18')
+RETURN n.departs AS departureTime
+----
+
+When the quantified path pattern has one relationship pattern, it can be abbreviated to a _quantified relationship_.
+A quantified relationship is a relationship pattern with a postfix quantifier.
+Below is the previous query rewritten with a quantified relationship:
+
+.Query
+[source, cypher]
+----
+MATCH (d:Station { name: 'Denmark Hill' })<-[:CALLS_AT]-
+        (n:Stop)-[:NEXT]->{1,10}(m:Stop)-[:CALLS_AT]->
+        (a:Station { name: 'Clapham Junction' })
+WHERE m.arrives < time('17:18')
+RETURN n.departs AS departureTime
+----
+
+The scope of the quantifier `{1,10}` is the relationship pattern `-[:NEXT]\->` and not the node patterns abutting it.
+More generally, where a path pattern contained in a quantified path pattern has the following form:
+
+[source, syntax, role=noheader]
+----
+(() <relationship pattern> ()) <quantifier>
+----
+
+then it can be re-written as follows:
+
+[source, syntax, role=noheader]
+----
+<relationship pattern> <quantifier>
+----
+
+[NOTE]
+====
+Prior to the introduction of quantified path patterns and quantified relationships in Neo4j 5.9, the only method in Cypher to match paths of a variable length was through variable-length relationships.
+This syntax is still available.
+It is very similar to the syntax for quantified relationships, with the following differences:
+
+* Position and syntax of quantifier.
+* Semantics of the asterisk symbol.
+* Type expressions are limited to the xref:patterns/reference.adoc#label-expressions[disjunction operator].
+* The xref:clauses/where.adoc[WHERE] clause is not allowed.
+
+For more information, see the reference section on xref:patterns/reference.adoc#variable-length-relationships[variable-length relationships].
+====
+
+[[group-variables]]
+== Group variables
+
+This section uses the example of `Stations` and `Stops` used in the previous section, but with an additional property `distance` added to the `NEXT` relationships:
+
+image::patterns_group_variables_graph.svg[width="700", role="middle"]
+
+As the name suggests, this property represents the distance between two `Stops`.
+To return the total distance for each service connecting a pair of `Stations`, a variable referencing each of the relationships traversed is needed.
+Similarly, to extract the `departs` and `arrives` properties of each `Stop`, variables referencing each of the nodes traversed is required.
+In this example of matching services between `Denmark Hill` and `Clapham Junction`, the variables `l` and `m` are declared to match the `Stops` and `r` is declared to match the relationships.
+The variable origin only matches the first `Stop` in the path:
+
+[source, role=noheader]
+----
+MATCH (:Station { name: 'Denmark Hill' })<-[:CALLS_AT]-(origin)
+      ((l)-[r:NEXT]->(m)){1,3}
+      ()-[:CALLS_AT]->(:Station { name: 'Clapham Junction' })
+----
+
+Variables that are declared inside quantified path patterns are known as _group variables_.
+They are so called because, when referred outside of the quantified path pattern, they are lists of the nodes or relationships they are bound to in the match.
+To understand how to think about the way group variables are bound to nodes or relationships, it helps to expand the quantified path pattern, and observe how the different variables match to the elements of the overall matched path.
+Here the three different expansions for each value in the range given by the quantifier `{1,3}`:
+
+[source, syntax, role=noheader]
+----
+(l1)-[r1:NEXT]->(m1) |
+(l1)-[r1:NEXT]->(m1)(l2)-[r2:NEXT]->(m2) |
+(l1)-[r1:NEXT]->(m1)(l2)-[r2:NEXT]->(m2)(l3)-[r3:NEXT]->(m3)
+----
+
+The subscript of each variable indicates which instance of the path pattern repetition they belong to.
+The following diagram shows the variable bindings of the path pattern with three repetitions, which matches the service that departs `Denmark Hill` at `17:07`.
+It traces the node or relationship that each indexed variable is bound to.
+Note that the index increases from right to left as the path starts at `Denmark Hill`:
+
+image::patterns_group_variables_graph2.svg[width="700", role="middle"]
+
+For this matched path, the group variables have the following bindings:
+
+[source, role=noheader]
+----
+l => [n2, n3, n4]
+r => [r2, r3, r4]
+m => [n3, n4, n5]
+----
+
+The second solution is the following path:
+
+image::patterns_group_variables_graph3.svg[width="700", role="middle"]
+
+The following table shows the bindings for both matches, including the variable origin.
+In contrast to the group variables, `origin` is a singleton variable due to being declared outside the quantification.
+Singleton variables bind at most to one node or relationship.
+
+[options="header",cols="4*<m"]
+|===
+
+| origin | l | r | m
+
+| n2 | [n2, n3, n4] | [r2, r3, r4] | [n3, n4, n5]
+| n7 | [n7] | [r8] | [n8]
+
+|===
+
+Returning to the original goal, which was to return the sequence of depart times for the `Stops` and the total distance of each service, the final query exploits the compatibility of group variables with list comprehensions and list functions such as xref::functions/list#functions-reduce[reduce()]:
+
+.Query
+[source, cypher]
+----
+MATCH (:Station {name: 'Denmark Hill'})<-[:CALLS_AT]-(origin)
+      ((l)-[r:NEXT]->(m)){1,3}
+      ()-[:CALLS_AT]->(:Station {name: 'Clapham Junction'})
+RETURN origin.departs + [stop in m | stop.departs] AS departureTimes,
+       reduce(acc = 0.0, next in r | round(acc + next.distance, 2)) AS totalDistance
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+
+| departureTimes | totalDistance
+
+| ["17:10:00Z", "17:20:00Z"] | 1.4
+| ["17:07:00Z", "17:11:00Z", "17:13:00Z", "17:20:00Z"] | 1.4
+
+2+d|Rows: 2
+
+|===
+
+[[quantified-path-patterns-predicates]]
+== Predicates in quantified path patterns
+
+One of the pitfalls of quantified path patterns is that, depending on the graph, they can end up matching very large numbers of paths, resulting in a slow query performance.
+This is especially true when searching for paths with a large maximum length or when the pattern is too general.
+However, by using inline predicates that specify precisely which nodes and relationships should be included in the results, unwanted results will be pruned as the graph is traversed.
+
+Here are some examples of the types of constraints you can impose on quantified path pattern traversals:
+
+* Nodes must have certain combinations of labels.
+For example, all nodes must be an `Employee`, but not a `Contractor`.
+
+* Relationships must have certain types.
+For example, all relationships in the path must be of type `EMPLOYED_BY`.
+
+* Nodes or relationships must have properties satisfying some condition.
+For example, all relationships must have the property `distance > 10`.
+
+To demonstrate the utility of predicates in quantified path patterns, this section considers an example of finding the shortest path by physical distance and compares that to the results yielded by using the xref:patterns/shortest-paths.adoc[`SHORTEST`] keyword.
+The graph in this example continues with `Station` nodes, but adds both a geospatial `location` property to the `Stations`, as well as `LINK` relationships with a `distance` property representing the distance between pairs of `Stations`:
+
+image::patterns_qpp_predicates.svg[width="500",role="middle"]
+
+To recreate the graph, run the following query against an empty Neo4j database:
+
+////
+[source,cypher,role=test-setup]
+----
+MATCH (n)
+DETACH DELETE n
+----
+////
+
+[source,cypher,role=test-setup]
+----
+CREATE (lbg:Station {name: "London Bridge"}),
+    (bfr:Station {name: "London Blackfriars"}),
+    (eph:Station {name: "Elephant & Castle"}),
+    (dmk:Station {name: "Denmark Hill"}),
+    (pmr:Station {name: "Peckham Rye"}),
+    (qrp:Station {name: "Queens Rd Peckham"}),
+    (sbm:Station {name: "South Bermondsey"}),
+    (lgj:Station {name: "Loughborough Jn"}),
+    (hnh:Station {name: "Herne Hill"}),
+    (tuh:Station {name: "Tulse Hill"}),
+    (ndl:Station {name: "North Dulwich"}),
+    (edw:Station {name: "East Dulwich"}),
+    (brx:Station {name: "Brixton"})
+ SET lbg.location = point({longitude: -0.08609, latitude: 51.50502}),
+    bfr.location = point({longitude: -0.10333, latitude: 51.51181}),
+    eph.location = point({longitude: -0.09873, latitude: 51.49403}),
+    dmk.location = point({longitude: -0.08936, latitude: 51.46820}),
+    pmr.location = point({longitude: -0.06941, latitude: 51.47003}),
+    qrp.location = point({longitude: -0.05731, latitude: 51.47357}),
+    sbm.location = point({longitude: -0.05468, latitude: 51.48814}),
+    lgj.location = point({longitude: -0.10218, latitude: 51.46630}),
+    hnh.location = point({longitude: -0.10229, latitude: 51.45331}),
+    tuh.location = point({longitude: -0.10508, latitude: 51.43986}),
+    ndl.location = point({longitude: -0.08792, latitude: 51.45451}),
+    edw.location = point({longitude: -0.08057, latitude: 51.46149}),
+    brx.location = point({longitude: -0.11418, latitude: 51.46330})
+CREATE (lbg)<-[:LINK {distance: 1.13}]-(bfr),
+    (bfr)<-[:LINK {distance: 1.21}]-(eph),
+    (eph)-[:LINK {distance: 2.6}]->(dmk),
+    (dmk)-[:LINK {distance: 0.86}]->(pmr),
+    (pmr)-[:LINK {distance: 0.71}]->(qrp),
+    (qrp)<-[:LINK {distance: 0.95}]-(sbm),
+    (sbm)<-[:LINK {distance: 1.8}]-(lbg),
+    (lgj)-[:LINK {distance: 0.88}]->(hnh),
+    (hnh)-[:LINK {distance: 1.08}]->(tuh),
+    (tuh)<-[:LINK {distance: 1.29}]-(ndl),
+    (ndl)-[:LINK {distance: 0.53}]->(edw),
+    (edw)-[:LINK {distance: 0.84}]->(pmr),
+    (eph)-[:LINK {distance: 2.01}]->(lgj),
+    (dmk)-[:LINK {distance: 1.11}]->(brx),
+    (brx)-[:LINK {distance: 0.51}]->(hnh)
+----
+
+The following query finds the total distance from `London Blackfriars` to `North Dulwich` following the path yielded by `SHORTEST`:
+
+.Query
+[source,cypher]
+----
+MATCH (bfr:Station {name: 'London Blackfriars'}),
+      (ndl:Station {name: 'North Dulwich'})
+MATCH p = SHORTEST 1 (bfr)-[:LINK]-+(ndl)
+RETURN reduce(acc = 0, r in relationships(p) | round(acc + r.distance, 2))
+  AS distance
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="m"]
+|===
+| distance
+
+| 6.47
+
+1+d|Rows: 1
+|===
+
+`SHORTEST` finds the shortest path by number of hops.
+Whether this corresponds to the shortest path by distance can be checked by looking at each path between the two end `Stations` and returning the first result after ordering by `distance`:
+
+.Query
+[source,cypher]
+----
+MATCH (bfr:Station {name: 'London Blackfriars'}),
+      (ndl:Station {name: 'North Dulwich'})
+MATCH p = (bfr)-[:LINK]-+(ndl)
+RETURN reduce(acc = 0, r in relationships(p) | round(acc + r.distance, 2))
+    AS distance
+ORDER BY distance LIMIT 1
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="m"]
+|===
+| distance
+
+| 5.96
+
+1+d|Rows: 1
+|===
+
+This shows that there is a route with a shorter distance than the one with fewer `Stations`.
+But to get this result, the query had to first find all paths from `London Blackfriars` to `North Dulwich` before it could select the shortest one.
+The following query shows the number of possible paths:
+
+.Query
+[source,cypher]
+----
+MATCH (bfr:Station {name: 'London Blackfriars'}),
+      (ndl:Station {name: 'North Dulwich'})
+MATCH p = (bfr)-[:LINK]-+(ndl)
+RETURN count(*) AS numPaths
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="m"]
+|===
+| numPaths
+
+| 7
+
+1+d|Rows: 1
+|===
+
+For a small dataset like this, finding all the paths will be fast.
+But as the size of the graph grows, the execution time will increase exponentially.
+For a real dataset, such as the entire rail network of the UK, it might be unacceptably long.
+
+One approach to avoid the exponential explosion in paths is to put a finite upper bound to the quantified path pattern (e.g. `{,10}`) to limit the amount of path iterations returned.
+This works fine where the solution is known to lie within some range of hops.
+But in cases where this is not known, one alternative would be to make the pattern more specific by, for example, adding node labels, or by specifying a relationship direction.
+Another alternative would be to add an inline predicate to the quantified path pattern.
+
+In this example, an inline predicate can be added that takes advantage of the geospatial `location` property of the `Stations`: for each pair of `Stations` on the path, the second `Station` will be closer to the endpoint (not always true, but is assumed here to keep the example simple).
+To compose the predicate, the xref:functions/spatial.adoc#functions-distance[point.distance()] function is used to compare the distance between the left-hand `Station` (`a`) and the right-hand `Station` (`b`) for each node-pair along the path to the destination `North Dulwich`:
+
+.Query
+[source,cypher]
+----
+MATCH (bfr:Station {name: "London Blackfriars"}),
+      (ndl:Station {name: "North Dulwich"})
+MATCH p = (bfr)
+          ((a)-[:LINK]-(b:Station)
+            WHERE point.distance(a.location, ndl.location) >
+              point.distance(b.location, ndl.location))+ (ndl)
+RETURN reduce(acc = 0, r in relationships(p) | round(acc + r.distance, 2))
+  AS distance
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="m"]
+|===
+| distance
+
+| 5.96
+
+1+d|Rows: 1
+|===
+
+This query avoids having to find all possible paths and then imposing a `LIMIT 1` to find the shortest one by distance.
+It also shows that there is only one path to solving the query (a number that remains constant even if the data from the rest of the UK railway network was included).
+Using inline predicates or making quantified path patterns more specific where possible can thus greatly improve query performance.
