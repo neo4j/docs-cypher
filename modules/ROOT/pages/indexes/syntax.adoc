@@ -22,6 +22,7 @@ ON property_or_token_lookup_pattern
 The `CREATE … INDEX …` command is optionally idempotent.
 This means that its default behavior is to throw an error if an attempt is made to create an index with the same name twice.
 With `IF NOT EXISTS`, no error is thrown and nothing happens should an index with the same name or same schema and index type already exist (it may still throw an error if conflicting constraints exist, such as constraints with the same name or with the same schema and backing index).
+As of Neo4j 5.17, an informational notification is instead returned showing the existing index which blocks the creation.
 
 The index name must be unique among both indexes and constraints.
 A random name will be assigned if no name is explicitly given when an index is created.
@@ -61,6 +62,8 @@ ON (r.propertyName_1[,
     r.propertyName_n])
 ----
 
+For more information, see xref:indexes/search-performance-indexes/managing-indexes.adoc#create-range-index[Create, show, and delete indexes -> Create a range index].
+
 [[create-text-index]]
 === Text indexes
 
@@ -86,6 +89,8 @@ Text indexes have no supported index configuration and, as of Neo4j 5.1, they ha
 
 [NOTE]
 It is not possible to create composite text indexes on multiple properties.
+
+For more information, see xref:indexes/search-performance-indexes/managing-indexes.adoc#create-text-index[Create, show, and delete indexes -> Create a text index].
 
 [[create-point-index]]
 === Point indexes
@@ -123,6 +128,7 @@ The following settings can be specified for point indexes:
 [NOTE]
 It is not possible to create composite point indexes on multiple properties.
 
+For more information, see xref:indexes/search-performance-indexes/managing-indexes.adoc#create-point-index[Create, show, and delete indexes -> Create a point index].
 
 [[create-lookup-index]]
 === Token lookup indexes
@@ -147,6 +153,8 @@ ON [EACH] type(r)
 ----
 
 Two token lookup indexes are present by default when creating a Neo4j database, and only one node label lookup index and one relationship type lookup index can exist at the same time.
+
+For more information, see xref:indexes/search-performance-indexes/managing-indexes.adoc#create-lookup-index[Create, show, and delete indexes -> Create a token lookup index].
 
 [[create-full-text-index]]
 === Full-text indexes
@@ -176,10 +184,12 @@ The following settings can be specified for full-text indexes:
 * `fulltext.eventually_consistent` - specifies whether a full-text index is eventually consistent.
 If set to `true`, it will ensure that updates from committing transactions are applied in a background thread.
 
+For more information, see xref:indexes/semantic-indexes/full-text-indexes.adoc#create-full-text-indexes[Full-text indexes - Create full-text indexes].
+
 [[create-vector-index]]
 === Vector indexes
 
-.Create a vector index for a node label on a single property
+.Create a vector index for a node label on a single property label:new[Introduced in 5.15]
 [source,syntax]
 ----
 CREATE VECTOR INDEX [index_name] [IF NOT EXISTS]
@@ -188,7 +198,18 @@ ON (n.propertyName)
 [OPTIONS “{“ option: value[, …] “}”]
 ----
 
-Vector indexes have only one index provider available, `vector-1.0`.
+[source, syntax]
+.Create a vector index for a relationship type on a single property label:new[Introduced in 5.18]
+----
+CREATE VECTOR INDEX [index_name] [IF NOT EXISTS]
+FOR ()-”[“r:TYPE_NAME”]”-()
+ON (r.propertyName)
+[OPTIONS “{“ option: value[, …] “}”]
+----
+
+Vector indexes have two settings, `vector.dimensions` and `vector.similarity_function`, which have no default values.
+As of Neo4j 5.18, they have two index providers available, `vector-2.0` (default) and `vector-1.0`.
+
 The `OPTIONS` clause is mandatory when creating a vector index, because it is necessary to configure the `vector.dimensions` and `vector.similarity_function` settings:
 
 [source,syntax]
@@ -203,6 +224,8 @@ OPTIONS {
 
 [NOTE]
 It is not possible to create composite vector indexes on multiple properties.
+
+For more information, see xref:indexes/semantic-indexes/vector-indexes.adoc#indexes-vector-create[Vector indexes - Create and configure vector indexes].
 
 [[list-index]]
 == SHOW INDEX
@@ -220,6 +243,8 @@ SHOW [ALL | FULLTEXT | LOOKUP | POINT | RANGE | TEXT | VECTOR] INDEX[ES]
 ----
 
 When using the `RETURN` clause, the `YIELD` clause is mandatory.
+
+For more information, see xref:indexes/search-performance-indexes/managing-indexes.adoc#list-indexes[Create, show, and delete indexes -> SHOW INDEXES].
 
 [[query-semantic-indexes]]
 == Query semantic indexes
@@ -250,17 +275,27 @@ The valid _key: value_ pairs for the `options` map are:
 
 The `options` map and all of the keys are optional. 
 
+For more information, see xref:indexes/semantic-indexes/full-text-indexes.adoc#query-full-text-indexes[Full-text indexes - Query full-text indexes].
+
 [[query-vector-index]]
 === Vector indexes
 
-.Query vector-text index on nodes: db.index.vector.queryNodes
+.Query vector-text index on nodes: db.index.vector.queryNodes label:new[Introduced 5.11]
 [source,syntax]
 ----
-CALL db.index.vector.queryNodes(indexName :: STRING, numberOfNearestNeighbours :: INTEGER, query :: LIST<FLOAT>) 
+CALL db.index.vector.queryNodes(indexName :: STRING, numberOfNearestNeighbours :: INTEGER, query :: LIST<INTEGER | FLOAT>)
+----
+
+.Query vector-text index on relationships: db.index.vector.queryRelationships  label:new[Introduced 5.18]
+[source,syntax]
+----
+CALL db.index.vector.queryRelationships(indexName :: STRING, numberOfNearestNeighbours :: INTEGER, query :: LIST<INTEGER | FLOAT>)
 ----
 
 The `numberOfNearestNeighbours` refers to the number of nearest neighbors to return as the neighborhood.
 The `query` vector refers to the `LIST<FLOAT>` in which to search for the neighborhood.
+
+For more information, see xref:indexes/semantic-indexes/vector-indexes.adoc#indexes-vector-query[Vector indexes - Query vector indexes].
 
 [[drop-index]]
 == DROP INDEX
@@ -271,6 +306,7 @@ The name of the index can be found using the `SHOW INDEXES` command, given in th
 The `DROP INDEX` command is optionally idempotent.
 This means that its default behavior is to throw an error if an attempt is made to drop the same index twice.
 With `IF EXISTS`, no error is thrown and nothing happens should the index not exist.
+As of Neo4j 5.17, an informational notification is instead returned detailing that the index does not exist.
 
 [TIP]
 Dropping indexes requires link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/database-administration/#access-control-database-administration-index[the `DROP INDEX` privilege].
@@ -280,3 +316,5 @@ Dropping indexes requires link:{neo4j-docs-base-uri}/operations-manual/{page-ver
 ----
 DROP INDEX index_name [IF EXISTS]
 ----
+
+For more information, see xref:indexes/search-performance-indexes/managing-indexes.adoc#drop-indexes[Create, show, and delete indexes -> DROP INDEX].
