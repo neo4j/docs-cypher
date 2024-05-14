@@ -539,3 +539,101 @@ RETURN [stop IN nodes(p) | stop.name] AS r1,
 
 2+d|Rows: 1
 |===
+
+
+== Planning shortest paths queries
+
+This section describes the operators used when planning shortest path queries.
+For readers not familiar with Cypher execution plans and operators, it is recommended to first read the section xref:planning-and-tuning/execution-plans.adoc[].
+
+There are two operators used to plan `SHORTEST` queries:
+
+* xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-stateful-shortest-path-all[`StatefulShortestPath(All)`] - uses a unidirectional breadth-first search algorithm to find shortest paths from a previously matched start node to an end node that has not yet been matched.
+
+* xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-stateful-shortest-path-into[`StatefulShortestPath(Into)`] - uses a bidirectional breadth-first search (BFS) algorithm, where two simultaneous BFS invocations are performed, one from the left boundary node and one from the right boundary node.
+
+
+`StatefulShortestPath(Into)` is used by the planner when both boundary nodes in the shortest path have been matched in a `MATCH` clause previous to that containing the `SHORTEST` keyword.
+It is also used when both boundary nodes match at most one node each.
+Otherwise, `StatefulShortestPath(All)` is used.
+
+
+For example, the left boundary node in the below query matches 9 nodes, and the right boundary node matches 3 nodes.
+Using `StatefulShortestPath(Into)` requires 27 bidirectional breadth-first search (BFS) invocations, while `StatefulShortestPath(All)` requires only 3 unidirectional BFS invocations expanding from the right boundary node.
+As a result, the query will use `StatefulShortestPath(All)`.
+
+.Query planned with `StatefulShortestPath(All)`
+[source,cypher]
+----
+MATCH
+  p = ALL SHORTEST (a:Station)(()-[]-()-[]-()){1,}(b:Station)
+WHERE b.name="Cheltenham Spa" OR b.name="Hartlebury" OR b.name="Pershore"
+RETURN p
+----
+
+.Result
+[role="queryplan", subs="attributes+"]
+----
++----------------------------+----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                   | Id | Details                                                                                 | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++----------------------------+----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults            |  0 | p                                                                                       |             52 |   45 |       0 |              0 |                    0/0 |     0.103 |                     |
+| |                          +----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+                     |
+| +Projection                |  1 | (a) ((anon_12)-[anon_14]-(anon_13)-[anon_11]-())* (b) AS p                              |             52 |   45 |       0 |                |                    0/0 |     3.000 |                     |
+| |                          +----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+                     |
+| +StatefulShortestPath(All) |  2 | SHORTEST 1 GROUPS (a) ((`anon_5`)-[`anon_6`]-(`anon_7`)-[`anon_8`]-(`anon_9`)){1, } (b) |             52 |   45 |     232 |          19687 |                    0/0 |    66.022 | In Pipeline 1       |
+| |                          |    |         expanding from: b                                                               |                |      |         |                |                        |           |                     |
+| |                          |    |     inlined predicates: a:Station                                                       |                |      |         |                |                        |           |                     |
+| |                          +----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Filter                    |  3 | b.name IN [$autostring_0, $autostring_1, $autostring_2]                                 |              1 |    3 |      18 |              0 |                        |           |                     |
+| |                          +----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeByLabelScan           |  4 | b:Station                                                                               |             10 |    9 |      10 |            376 |                    3/0 |     2.487 | Fused in Pipeline 0 |
++----------------------------+----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+----
+
+
+However, the heuristic decision to favor `StatefulShortestPath(All)` can lead to worse query performance.
+To have the planner choose the `StatefulShortestPath(Into)`, rewrite the query using a xref:subqueries/call-subquery.adoc[`CALL` subquery].
+This is because the `CALL` subquery is executed for each incoming row.
+Thus, in the below query, both `a` and `b` are matched to exactly one `Station` node respectively which enables the planner to use `StatefulShortestPath(Into)`.
+
+.Query rewritten to use `StatefulShortestPath(Into)`
+[source,cypher]
+----
+MATCH
+  (a:Station),
+  (b:Station)
+WHERE b.name="Cheltenham Spa" OR b.name="Hartlebury" OR b.name="Pershore"
+CALL {
+  WITH a, b
+  MATCH
+    p = ALL SHORTEST (a)(()-[]-()-[]-()){1,}(b)
+  RETURN p
+}
+RETURN p
+----
+
+.Result
+[role="queryplan", subs="attributes+"]
+----
++-----------------------------+----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                    | Id | Details                                                                                 | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-----------------------------+----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults             |  0 | p                                                                                       |             52 |   45 |       0 |              0 |                    0/0 |     0.110 |                     |
+| |                           +----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+                     |
+| +Projection                 |  1 | (a) ((anon_12)-[anon_14]-(anon_13)-[anon_11]-())* (b) AS p                              |             52 |   45 |       0 |                |                    0/0 |     2.371 |                     |
+| |                           +----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+                     |
+| +StatefulShortestPath(Into) |  2 | SHORTEST 1 GROUPS (a) ((`anon_5`)-[`anon_6`]-(`anon_7`)-[`anon_8`]-(`anon_9`)){1, } (b) |             52 |   45 |     592 |          24494 |                    0/0 |    69.275 | In Pipeline 3       |
+| |                           +----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +CartesianProduct           |  3 |                                                                                         |             14 |   27 |       0 |           1912 |                        |     0.965 | In Pipeline 2       |
+| |\                          +----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Filter                   |  4 | b.name IN [$autostring_0, $autostring_1, $autostring_2]                                 |              1 |    3 |      18 |              0 |                        |           |                     |
+| | |                         +----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +NodeByLabelScan          |  5 | b:Station                                                                               |             10 |    9 |      10 |            392 |                    3/0 |     2.228 | Fused in Pipeline 1 |
+| |                           +----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +NodeByLabelScan            |  6 | a:Station                                                                               |             10 |    9 |      10 |            376 |                    1/0 |     1.488 | In Pipeline 0       |
++-----------------------------+----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+----
+[TIP]
+Sometimes the planner cannot make reliable estimations about how many nodes a pattern node will match.
+Consider using a xref:constraints/index.adoc#unique-node-property[uniqueness constraint] where applicable to help the planner get more reliable estimates.
