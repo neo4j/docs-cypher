@@ -587,7 +587,46 @@ RETURN p
 ----
 
 
-This heuristic decision to favour `StatefulShortestPath(All)` can sometimes lead to worse query performance.
+However, the heuristic decision to favor `StatefulShortestPath(All)` can lead to worse query performance.
+To have the planner choose the `StatefulShortestPath(Into)`, rewrite the query using a xref:subqueries/call-subquery.adoc[`CALL` subquery].
+This is because the `CALL` subquery is executed for each incoming row.
+Thus, in the below query, both `a` and `b` are matched to exactly one `Station` node respectively which enables the planner to use `StatefulShortestPath(Into)`.
+
+.Query rewritten to use `StatefulShortestPath(Into)`
+[source,cypher]
+----
+MATCH
+  (a:Station),
+  (b:Station)
+CALL {
+  WITH a, b
+  MATCH
+    p = ALL SHORTEST (a)(()-[]-()-[]-()){1,}(b)
+  RETURN p
+}
+RETURN p
+----
+
+.Result
+role="queryplan", subs="attributes+"]
+----
++-----------------------------+----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| Operator                    | Id | Details                                                                                 | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline      |
++-----------------------------+----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| +ProduceResults             |  0 | p                                                                                       |            383 |  154 |       0 |              0 |                    0/0 |     0.166 |               |
+| |                           +----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+               |
+| +Projection                 |  1 | (a) ((anon_12)-[anon_14]-(anon_13)-[anon_11]-())* (b) AS p                              |            383 |  154 |       0 |                |                    0/0 |     2.605 |               |
+| |                           +----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+               |
+| +StatefulShortestPath(Into) |  2 | SHORTEST 1 GROUPS (a) ((`anon_5`)-[`anon_6`]-(`anon_7`)-[`anon_8`]-(`anon_9`)){1, } (b) |            383 |  154 |    1517 |          24486 |                    1/0 |    76.973 | In Pipeline 3 |
+| |                           |    |         expanding from: a                                                               |                |      |         |                |                        |           |               |
+| |                           +----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| +CartesianProduct           |  3 |                                                                                         |            100 |   81 |       0 |           2056 |                    0/0 |     1.352 | In Pipeline 2 |
+| |\                          +----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| | +NodeByLabelScan          |  4 | b:Station                                                                               |             10 |    9 |      10 |            392 |                    1/0 |     0.229 | In Pipeline 1 |
+| |                           +----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| +NodeByLabelScan            |  5 | a:Station                                                                               |             10 |    9 |      10 |            376 |                    1/0 |     1.224 | In Pipeline 0 |
++-----------------------------+----+-----------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+----
 In case you want the `StatefulShortestPath(Into)` to be chosen, you can rewrite your query using a `CALL subquery`.
 
 For example, this query
