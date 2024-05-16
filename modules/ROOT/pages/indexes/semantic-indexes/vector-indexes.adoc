@@ -54,8 +54,7 @@ This allows for mathematical operations like addition and subtraction to carry s
 For example, the vector representation of "king" minus "man" plus "woman" might be close to the vector representation of "queen."
 In other words, vector embeddings can be said to be a numerical representation of a particular data object, capturing its semantic meaning.
 
-A vector index allows you to write queries that match a neighborhood of nodes based on the similarity between the embedding properties of those nodes and the ones specified in the query.
-This similarity is represented by a `score` between `0.0` and `1.0`.
+A vector index allows you to write queries that match a neighborhood of nodes or relationships based on the similarity between the embedding properties of those nodes or relationships and the ones specified in the query.
 
 == Create vector indexes
 
@@ -69,11 +68,11 @@ It is recommended to give the index a name when it is created.
 If no name is given when created, a random name will be assigned.
 As of Neo4j 5.16, the index name can also be given as a parameter: `CREATE VECTOR INDEX $name ...`
 
-[IMPORTANT]
+[NOTE]
 The index name must be unique among both indexes and constraints.
 
 [TIP]
-Creating a vector index requires link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/database-administration/#access-control-database-administration-index[the `CREATE INDEX` privilege].
+Creating indexes requires link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/database-administration/#access-control-database-administration-index[the `CREATE INDEX` privilege].
 
 .Create vector index for `Movie` nodes on the `embedding` property label:new[Introduced in 5.15]
 [source, cypher]
@@ -104,12 +103,15 @@ You can also create a vector index for relationships with a particular type on a
 .Create a vector index for a relationship type on a single property label:new[Introduced in 5.18]
 [source, syntax]
 ----
+CREATE VECTOR INDEX name IF NOT EXISTS
 FOR ()-[r:REL_TYPE]-() ON (r.embedding)
 OPTIONS {indexConfig: {
  `vector.dimensions`: $dimension,
  `vector.similarity_function`: $similarityFunction
 }}
 ----
+
+A newly created index is not immediately available but is created in the background.
 
 == Query vector indexes
 
@@ -124,6 +126,9 @@ db.index.vector.queryNodes(indexName :: STRING, numberOfNearestNeighbours :: INT
 * The `indexName` refers to the unique name of the vector index to query.
 * The `numberOfNearestNeighbours` refers to the number of nearest neighbors to return as the neighborhood.
 * The `query` vector refers to the `LIST<INTEGER | FLOAT>` in which to search for the neighborhood.
+
+The procedure returns the neighborhood of nodes with their respective similarity scores, ordered by those scores.
+The scores are bounded between `0` and `1`, where the closer to `1` the score is, the more similar the indexed vector is to the query vector.
 
 .Find the 5 movies with the most similar plot to The Godfather
 [source,cypher, test-exclude-cols=score]
@@ -149,7 +154,7 @@ RETURN movie.title AS title, movie.plot AS plot, score
 ----
 
 Note that all movies returned have a plot centred around criminal family organizations.
-The `score` results are  returned in _descending score order_, where the best matching result entry is put first (in this case, `The Godfather` has a similarity score of `1.0`, which is to be expected as the index was queried with this specific property).
+The `score` results are  returned in _descending order_, where the best matching result entry is put first (in this case, `The Godfather` has a similarity score of `1.0`, which is to be expected as the index was queried with this specific property).
 If the query vector itself is not wanted, adding the predicate `WHERE score < 1` removes identical vectors.
 
 To query a relationship vector index, use the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_index_vector_queryRelationships[`db.index.vector.queryRelationships`] procedure.
@@ -161,7 +166,7 @@ db.index.vector.queryRelationships(indexName :: STRING, numberOfNearestNeighbour
 ----
 
 [TIP]
-To compute the similarity score between two specific vector pairs without using a vector index use xref:functions/vector.adoc[].
+Use xref:functions/vector.adoc[] to compute the similarity score between two specific vector pairs without using a vector index.
 
 == Performance suggestions
 
@@ -177,6 +182,9 @@ server.jvm.additional=--add-modules jdk.incubator.vector
 == Show vector indexes
 
 To list all vector indexes in a database, use the `SHOW VECTOR INDEXES` command:
+
+[TIP]
+Listing indexes requires link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/database-administration/#access-control-database-administration-index[the `SHOW INDEX` privilege].
 
 .Show all vector indexes in a database
 [source, cypher, test-exclude-cols=id]
@@ -236,8 +244,10 @@ For a full description of all return columns, see xref:indexes/search-performanc
 == Drop vector indexes
 
 A vector index is dropped by using the xref:indexes/search-performance-indexes/managing-indexes.adoc#drop-an-index[same command as for other indexes], `DROP INDEX`.
-
 As of Neo4j 5.16, the index name can also be given as a parameter when dropping an index:  `DROP INDEX $name`.
+
+[TIP]
+Dropping indexes requires link:{neo4j-docs-base-uri}/operations-manual/{page-version}/database-administration/authentication-authorization/database-administration/#access-control-database-administration-index[the `DROP INDEX` privilege].
 
 .Drop a vector index
 [source, cypher]
@@ -370,6 +380,7 @@ In the above equation the trigonometric cosine is given by the scalar product of
 | Create node vector index.
 | link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_index_vector_createnodeindex[`db.index.vector.createNodeIndex`]
 | Create a vector index for the specified label and property with the given vector dimensionality using the given similarity function.
+Replaced by the `CREATE VECTOR INDEX` command.
 
 | Use node vector index.
 | link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_index_vector_queryNodes[`db.index.vector.queryNodes`]
