@@ -59,14 +59,14 @@ A vector index allows you to write queries that match a neighborhood of nodes or
 == Create vector indexes
 
 A vector index is a single-label, single-property index for nodes or a single-relationship-type, single-property index for relationships.
-It can be used to index nodes by `LIST<INTEGER | FLOAT>` properties valid to the dimensions of the index and the vector similarity function.
+It can be used to index nodes or relationships by `LIST<INTEGER | FLOAT>` properties valid to the dimensions of the index and the vector similarity function.
 Note that the available vector index providers support different index schemas, property value types, and vector dimensionalities.
 For more information, see xref:indexes/semantic-indexes/vector-indexes.adoc#_vector_index_providers_for_compatibility[].
 
 A vector index is created by using the `CREATE VECTOR INDEX` command.
 It is recommended to give the index a name when it is created.
 If no name is given when created, a random name will be assigned.
-As of Neo4j 5.16, the index name can also be given as a parameter: `CREATE VECTOR INDEX $name ...`
+As of Neo4j 5.16, the index name can also be given as a parameter: `CREATE VECTOR INDEX $name ...`.
 
 [NOTE]
 The index name must be unique among both indexes and constraints.
@@ -90,13 +90,16 @@ OPTIONS {indexConfig: {
 This means that its default behavior is to throw an error if an attempt is made to create the same index twice.
 With `IF NOT EXISTS`, no error is thrown and nothing happens should an index with the same name, schema or both already exist.
 It may still throw an error should a constraint with the same name exist.
-As of Neo4j 5.17, an informational notification is instead returned showing the existing index which blocks the creation.
+As of Neo4j 5.17, an informational notification is returned when nothing happens, showing the existing index which blocks the creation.
 <2> The `OPTIONS` map is mandatory since a vector index cannot be created without setting the vector dimensions and similarity function.
 In this example, the vector dimension is set to `1536` and the vector similarity function is `cosine`, which is generally the preferred similarity function for text embeddings.
 To read more about the available similarity functions, see xref:indexes/semantic-indexes/vector-indexes.adoc#similarity-functions[].
 
 [NOTE]
 Prior to Neo4j 5.15, node vector indexes were created using the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_index_vector_createnodeindex[`db.index.vector.createNodeIndex`] procedure.
+
+[NOTE]
+A newly created index is not immediately available but is created in the background.
 
 You can also create a vector index for relationships with a particular type on a given property using the following syntax:
 
@@ -110,8 +113,6 @@ OPTIONS {indexConfig: {
  `vector.similarity_function`: $similarityFunction
 }}
 ----
-
-A newly created index is not immediately available but is created in the background.
 
 == Query vector indexes
 
@@ -165,6 +166,8 @@ To query a relationship vector index, use the link:{neo4j-docs-base-uri}/operati
 db.index.vector.queryRelationships(indexName :: STRING, numberOfNearestNeighbours :: INTEGER, query :: ANY) :: (relationship :: RELATIONSHIP, score :: FLOAT)
 ----
 
+`db.index.queryRelationships` has the same argument descriptions as `db.index.queryNodes`.
+
 [TIP]
 Use xref:functions/vector.adoc[] to compute the similarity score between two specific vector pairs without using a vector index.
 
@@ -181,7 +184,7 @@ server.jvm.additional=--add-modules jdk.incubator.vector
 
 == Show vector indexes
 
-To list all vector indexes in a database, use the `SHOW VECTOR INDEXES` command:
+To list all vector indexes in a database, use the `SHOW VECTOR INDEXES` command.
 
 [TIP]
 Listing indexes requires link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/database-administration/#access-control-database-administration-index[the `SHOW INDEX` privilege].
@@ -198,7 +201,7 @@ SHOW VECTOR INDEXES
 +----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 | id | name         | state    | populationPercent | type     | entityType | labelsOrTypes | properties        | indexProvider | owningConstraint | lastRead                 | readCount |
 +----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| 2  | "moviePlots" | "ONLINE" | 100.0             | "VECTOR" | "NODE"     | ["Movie"]     | ["embedding"] | "vector-2.0"  | NULL             | 2024-05-07T09:19:09.225Z | 47        |
+| 2  | "moviePlots" | "ONLINE" | 100.0             | "VECTOR" | "NODE"     | ["Movie"]     | ["embedding"]     | "vector-2.0"  | NULL             | 2024-05-07T09:19:09.225Z | 47        |
 +----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 
@@ -216,7 +219,7 @@ SHOW VECTOR INDEXES YIELD *
 +---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 | id | name         | state    | populationPercent | type     | entityType | labelsOrTypes | properties        | indexProvider | owningConstraint | lastRead                 | readCount | trackedSince             | options                                                                                                         | failureMessage | createStatement                                                                                                                                                                                  |
 +---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| 2  | "moviePlots" | "ONLINE" | 100.0             | "VECTOR" | "NODE"     | ["Movie"]     | ["embedding"] | "vector-2.0"  | NULL             | 2024-05-07T09:19:09.225Z | 47        | 2024-05-07T08:26:19.072Z | {indexConfig: {`vector.dimensions`: 1536, `vector.similarity_function`: "COSINE"}, indexProvider: "vector-2.0"} | ""             | "CREATE VECTOR INDEX `moviePlots` FOR (n:`Movie`) ON (n.`embedding`) OPTIONS {indexConfig: {`vector.dimensions`: 1536,`vector.similarity_function`: 'COSINE'}, indexProvider: 'vector-2.0'}" |
+| 2  | "moviePlots" | "ONLINE" | 100.0             | "VECTOR" | "NODE"     | ["Movie"]     | ["embedding"]     | "vector-2.0"  | NULL             | 2024-05-07T09:19:09.225Z | 47        | 2024-05-07T08:26:19.072Z | {indexConfig: {`vector.dimensions`: 1536, `vector.similarity_function`: "COSINE"}, indexProvider: "vector-2.0"} | ""             | "CREATE VECTOR INDEX `moviePlots` FOR (n:`Movie`) ON (n.`embedding`) OPTIONS {indexConfig: {`vector.dimensions`: 1536,`vector.similarity_function`: 'COSINE'}, indexProvider: 'vector-2.0'}"     |
 +---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 
@@ -231,11 +234,11 @@ SHOW VECTOR INDEXES YIELD name, type, entityType, labelsOrTypes, properties
 .Result
 [role=queryresult]
 ----
-+--------------------------------------------------------------------------+
-| name         | type     | entityType | labelsOrTypes | properties        |
-+--------------------------------------------------------------------------+
++----------------------------------------------------------------------+
+| name         | type     | entityType | labelsOrTypes | properties    |
++----------------------------------------------------------------------+
 | "moviePlots" | "VECTOR" | "NODE"     | ["Movie"]     | ["embedding"] |
-+--------------------------------------------------------------------------+
++----------------------------------------------------------------------+
 ----
 
 For a full description of all return columns, see xref:indexes/search-performance-indexes/managing-indexes.adoc#listing-indexes-result-columns[Search-performance indexes -> Result columns for listing indexes].
@@ -273,7 +276,7 @@ New indexes can still be created with the `vector-1.0` provider if it is specifi
 
 {nbsp}
 
-_No relationship support_
+_No relationship support._
 
 | Single-label, single-property index for nodes.
 
@@ -289,7 +292,7 @@ Single-type, single-property index for relationships.
 | `INTEGER` between `1` and `2048` _inclusive_.
 | `INTEGER` between `1` and `4096` _inclusive_.
 
-| xref:indexes-vector-similarity-cosine[Cosine similarity vector validity]
+| xref:indexes/semantic-indexes/vector-indexes.adoc#_euclidean_and_cosine_similarity_functions[Cosine similarity vector validity]
 | All vector components can be represented finitely in IEEE 754 *_single_* precision.
 
 {nbsp}
@@ -310,7 +313,6 @@ The ratio of each vector component with its {l2-norm} can be represented finitel
 |===
 ====
 
-[[similarity-functions]]
 == Euclidean and cosine similarity functions
 
 The choice of similarity function affects which indexed vectors are considered similar, and which are valid.
@@ -323,11 +325,11 @@ Otherwise, being able to differentiate between the various similarity functions 
 |===
 | Name | Case insensitive argument | Key similarity feature
 
-| xref:#indexes-vector-similarity-euclidean[Euclidean]
+| Euclidean
 | "euclidean"
 | distance
 
-| xref:indexes-vector-similarity-cosine[Cosine]
+| Cosine
 | "cosine"
 | angle
 
@@ -420,7 +422,7 @@ The requested _k_ nearest neighbors may not be the exact _k_ nearest, but close 
 * For large requested nearest neighbors, _k_, close to the total number of indexed vectors, the search may retrieve fewer than _k_ results.
 
 * Only one vector index can be over a schema.
-For example, you cannot have one xref:indexes-vector-similarity-euclidean[Euclidean] and one xref:indexes-vector-similarity-cosine[cosine] vector index on the same label-property key pair.
+For example, you cannot have one xref:indexes/semantic-indexes/vector-indexes.adoc#_euclidean_and_cosine_similarity_functions[Euclidean] and one xref:indexes/semantic-indexes/vector-indexes.adoc#_euclidean_and_cosine_similarity_functions[cosine] vector index on the same label-property key pair.
 
 * No provided settings or options for tuning the index.
 
@@ -430,7 +432,7 @@ For example, you cannot have one xref:indexes-vector-similarity-euclidean[Euclid
 .*Known issues*
 [%collapsible]
 ====
-The following table lists the known issues and the version in which they were fixed:
+The following table lists the known issues and, if fixed, the version in which they were fixed:
 
 [%header,cols="5a,d"]
 |===
@@ -438,7 +440,9 @@ The following table lists the known issues and the version in which they were fi
 
 | Procedure signatures from `SHOW PROCEDURES` will render the vector arguments with a type of `ANY` rather than the semantically correct type of `LIST<INTEGER \| FLOAT>`.
 [NOTE]
+--
 The types are still enforced as `LIST<INTEGER \| FLOAT>`.
+--
 |
 
 | Only node vector indexes are supported.
@@ -451,23 +455,27 @@ The types are still enforced as `LIST<INTEGER \| FLOAT>`.
 | There is no Cypher syntax for creating a vector index.
 
 [TIP]
+--
 Use the procedure `db.index.vector.createNodeIndex` to create the a vector index.
 Procedure signature:
 [source,syntax,role="noheader"]
 ----
 db.index.vector.createNodeIndex(indexName :: STRING, label :: STRING, propertyKey :: STRING, vectorDimension :: INTEGER, vectorSimilarityFunction :: STRING)
 ----
+--
 | Neo4j 5.15
 
 | The standard index type filtering for xref:indexes/search-performance-indexes/managing-indexes.adoc#list-indexes[`SHOW INDEXES`] command is missing.
 
 [TIP]
+--
 Filtering on vector indexes can be done with the `WHERE` clause as well:
 [source,cypher]
 ----
 SHOW INDEXES
 WHERE type = 'VECTOR'
 ----
+--
 
 | Neo4j 5.15
 
@@ -475,9 +483,11 @@ WHERE type = 'VECTOR'
 This is caused by an issue in the handling of index capabilities on followers.
 
 [TIP]
+--
 Because index capabilities will be correctly configured on a restart, this issue can be worked around by rolling the cluster after vector index creation.
 
 For more information about clustering in Neo4j, see the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/clustering[Operations Manual -> Clustering].
+--
 | Neo4j 5.14
 
 | Querying for a _single_ approximate nearest neighbor from an index would fail a validation check. Passing a `null` value would also provide an unhelpful exception.
@@ -486,7 +496,9 @@ For more information about clustering in Neo4j, see the link:{neo4j-docs-base-ur
 | Vector index queries throw an exception if the transaction state contains changes. This means that writes may only take place *after* the last vector index query in a transaction.
 
 [TIP]
+--
 To work around this issue if you need to run multiple vector index queries and make changes based on the results, you can run the queries in a `+CALL { ... } IN TRANSACTIONS+` clause to isolate them from the outer transaction's state.
+--
 | Neo4j 5.13
 
 | xref:clauses/listing-procedures.adoc[`SHOW PROCEDURES`] does not show the vector index procedures:
@@ -496,7 +508,9 @@ To work around this issue if you need to run multiple vector index queries and m
 * link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_index_vector_queryNodes[`db.index.vector.queryNodes`]
 
 [NOTE]
+--
 The procedures are still usable, just not visible.
+--
 | Neo4j 5.12
 
 | Passing `null` as an argument to some of the procedure parameters can generate a confusing exception.
@@ -505,7 +519,9 @@ The procedures are still usable, just not visible.
 | The creation of the vector index skipped the check to limit the dimensionality to `2048`.
 
 [NOTE]
+--
 Vector indexes configured with dimensionality greater than `2048` in Neo4j 5.11 should continue to work after the limitation is applied.
+--
 | Neo4j 5.12
 
 d| The validation for xref:indexes-vector-similarity-cosine[cosine similarity] verifies that the vector's {l2-norm} can be represented finitely in IEEE 754 *double* precision, rather than in _single_ precision.
@@ -515,8 +531,10 @@ This can lead to certain large component vectors being incorrectly indexed, and 
 | link:{neo4j-docs-base-uri}/operations-manual/{page-version}/#procedure_db_index_vector_queryNodes[`db.index.vector.queryNodes`] query vector validation is incorrect with a xref:indexes-vector-similarity-cosine[cosine] vector index. The {l2-norm} validation only considers the last component of the vector. If that component is `&plusmn;0.0`, an otherwise valid query vector will be thrown as invalid. This can also result in some invalid vectors being used to query, and return a similarity score of `&plusmn;0.0`.
 
 [TIP]
+--
 For {l2-norm}alized vectors (unit vectors), thus having unit length image:l2norm_is_1.svg["The l2-norm of vector v equals 1"], Euclidean and cosine similarity functions produce the same similarity ordering.
 It is _recommended_ to normalize your vectors (if needed), and use a xref:indexes-vector-similarity-euclidean[Euclidean] vector index.
+--
 | Neo4j 5.12
 
 | The vector index `createStatement` field from xref:indexes/search-performance-indexes/managing-indexes.adoc#list-indexes[`SHOW INDEXES`] does not correctly escape single quotes in index names, labels, and property keys.
@@ -532,6 +550,7 @@ java.lang.IllegalArgumentException: Did not recognize index type VECTOR
 ----
 
 [TIP]
+--
 If a store copy is required, make a note of the information in the `createStatement` column returned from the `SHOW INDEX` command.
 For example:
 [source,cypher]
@@ -540,6 +559,7 @@ SHOW INDEXES YIELD type, createStatement
 WHERE type = 'VECTOR'
 RETURN createStatement
 ----
+--
 | Neo4j 5.12
 
 | Some of the protections preventing the use of new features during a database rolling upgrade are missing.
@@ -547,7 +567,9 @@ This can result in a transaction to create a vector index on a cluster member ru
 The older Neo4j versions will fail to understand the transaction.
 
 [TIP]
+--
 Ensure that all cluster members have been updated to use Neo4j 5.11 (or a newer version) before calling `dbms.upgrade()` on the `system` database. Once committed, vector indexes can be safely created on the cluster.
+--
 
 | Neo4j 5.12
 |===
