@@ -1,103 +1,117 @@
-:description: Information about GenAI integrations.
+:description: Information about Neo4j's GenAI integrations.
 :page-role: enterprise-edition new-5.17
-:link-vector-indexes: xref:indexes/semantic-indexes/vector-indexes.adoc
+:test-setup-dump: https://github.com/neo4j-graph-examples/recommendations/raw/main/data/recommendations-50.dump
 
 [[genai-integrations]]
 = GenAI integrations
 
-Neo4j provides integrations with various generative AI services using a native GenAI plugin.
-This includes support for transforming text data into vector embeddings using VertexAI, OpenAI, Azure OpenAI, or Amazon Bedrock.
-The resulting vector embeddings can be used together with Neo4j's {link-vector-indexes}[vector search indexes].
+Neo4j's xref:indexes/semantic-indexes/vector-indexes.adoc[] and xref:functions/vector.adoc[] allow users to calculate the similarity between node and relationship properties in a graph.
+A precondition for using both features is that vector embeddings have been set to the properties of these entities.
+The GenAI plugin enables the creation of such embeddings using GenAI providers.
+To learn more about vector embeddings, see xref:indexes/semantic-indexes/vector-indexes.adoc#embeddings[Vector indexes -> Vectors and embeddings in Neo4j].
 
-== Prerequisites
+== Prerequisites and installation
 
-To use the GenAI plugin, you need to have the following:
+To use the GenAI plugin you need an account and API credentials from any of the following GenAI providers: xref:genai-integrations.adoc#vertex-ai[], xref:genai-integrations.adoc#openai[], xref:genai-integrations.adoc#azure-openai[], and xref:genai-integrations.adoc#amazon-bedrock[].
 
-* A Neo4j DBMS running Neo4j 5.17 or later.
-* A GenAI provider account, such as VertexAI, OpenAI, Azure OpenAI, or Amazon Bedrock.
-* API credentials for the provider you want to use.
-* (On-prem only) the Neo4j GenAI plugin installed in your Neo4j deployment.
-The plugin JAR is located in the _<NEO4J_HOME>/products_ directory of the Neo4j installation.
-For more information on how to install and configure the plugin, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/configuration/plugins/[Operations Manual -> Configure plugins].
-The plugin is enabled by default in Neo4j Aura.
+The GenAI plugin is enabled by default in Neo4j Aura.
 
-[[vector-embeddings]]
-== Vector embeddings
+For self-managed instances, the plugin is only available on Enterprise Edition and needs to be installed.
+This is done by moving the `neo4j-genai.jar` file from `/products` to `/plugins` in the Neo4j home directory, or, if you are using Docker, by starting the Docker container with the extra parameter `--env NEO4J_PLUGINS='["genai"]'`.
+For more information, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/configuration/plugins/[Operations Manual -> Configure plugins].
 
-A vector embedding is a numerical representation of some object, typically unstructured data, such as natural language text.
-For more information and examples of vector embeddings in general, see {link-vector-indexes}[Vector search indexes].
+[[example-graph]]
+== Example graph
 
-Text can be transformed into vector embeddings using some model of natural language.
-Providers of LLM (Large Language Model) and Generative AI services, such as VertexAI, OpenAI, Azure OpenAI, and Amazon Bedrock, expose this functionality via their APIs, which can be invoked directly from within Neo4j using this plugin.
+The examples on this page use the link:https://github.com/neo4j-graph-examples/recommendations[Neo4j movie recommendations] dataset, focusing on the `plot` property of `Movie` nodes.
+
+image::genai_graph.svg[width="600",role="middle"]
+
+The graph contains 28863 nodes and 332522 relationships.
+
+To recreate the graph, download and import this link:https://github.com/neo4j-graph-examples/recommendations/blob/main/data/recommendations-embeddings-50.dump[dump file] to an empty Neo4j database (running version 5.17 or later).
+Dump files can be imported for both link:{neo4j-docs-base-uri}/aura/auradb/importing/import-database/[Aura] and link:{neo4j-docs-base-uri}/operations-manual/{page-version}/backup-restore/restore-dump/[on-prem] instances.
 
 [[single-embedding]]
-=== Generate a single embedding
+== Generate a single embedding and store it
 
-You can use the `genai.vector.encode()` function to generate a vector embedding for a single value, for example, when applying the transformation inline in an expression when querying for or writing to a specific property.
+Use the `genai.vector.encode()` function to generate a vector embedding for a single value.
 
-[IMPORTANT]
-====
-This function sends one API request every time it is called, which may result in a lot of overhead in terms of both network traffic and latency.
-If you want to generate many embeddings at once, use <<multiple-embeddings, `genai.vector.encodeBatch()`>>.
-====
-
-.Signature for `genai.vector.encode()` label:function[]
-[source,syntax,role="noheader",indent=0]
+.Signature for `genai.vector.encode()`
+[source,syntax]
 ----
 genai.vector.encode(resource :: STRING, provider :: STRING, configuration :: MAP = {}) :: LIST<FLOAT>
 ----
 
-* The `resource` (a `STRING`) is the object to transform into an embedding, such as a chunk of natural language text.
+* The `resource` (a `STRING`) is the object to transform into an embedding, such as a chunk of natural language text or a node/relationship property.
 * The `provider` (a `STRING`) is the case-insensitive identifier of the provider to use.
-See identifiers under <<ai-providers>> for supported options.
+See identifiers under xref:genai-integrations.adoc#ai-providers[] for supported options.
 * The `configuration` (a `MAP`) contains provider-specific settings, such as which model to invoke, as well as any required API credentials.
-See <<ai-providers>> for details of each supported provider.
-+
-[NOTE]
-====
-Note that because this argument may contain sensitive data, it is obfuscated in the _query.log_.
+See xref:genai-integrations.adoc#ai-providers[] for details of each supported provider.
+Note that because this argument may contain sensitive data, it is obfuscated in the link:https://neo4j.com/docs/operations-manual/current/monitoring/logging/[_query.log_].
 However, if the function call is misspelled or the query is otherwise malformed, it may be logged without being obfuscated.
+
+[IMPORTANT]
 ====
-+
-The returned list of floats is the vector representing the resource that was passed in.
-
-.Generating an embedding for querying a vector index
-====
-The `genai.vector.encode` function is useful for generating vectors that can be used to query a vector index.
-
-For example, a vector index can be queried for entries that are semantically near some query string by generating a vector embedding for that query string and then using that vector as the query vector in a vector index search.
-
-Here, you query a vector index called `my_index` for the 10 nearest neighbors:
-
-.Query
-[source,cypher]
-----
-WITH "embeddings are cool" AS queryString
-WITH genai.vector.encode(queryString, "VertexAI", { token: $token, projectId: $project }) AS queryVector
-CALL db.index.vector.queryNodes("my_index", 10, queryVector) YIELD node, score RETURN node, score
-----
+This function sends one API request every time it is called, which may result in a lot of overhead in terms of both network traffic and latency.
+If you want to generate many embeddings at once, use xref:genai-integrations.adoc#multiple-embeddings[].
 ====
 
-.Generating an embedding on the fly
+Use the `db.create.setNodeVectorProperty` procedure to store an embedding to a node property.
+
+.Signature for `db.create.setNodeVectorProperty()`
+[source,syntax]
+----
+db.create.setNodeVectorProperty(node :: NODE, key :: STRING, vector :: ANY)
+----
+
+Use the `db.create.setRelationshipVectorProperty()` procedure to store an embedding to a relationship property.
+
+.Signature for `db.create.setRelationshipVectorProperty()` label:new[Introduced in 5.18]
+[source,syntax]
+----
+db.create.setRelationshipVectorProperty(relationship :: RELATIONSHIP, key :: STRING, vector :: ANY)
+----
+
+* `node` or `relationship` is the entity in which the new property will be stored.
+* `key` (a `STRING`) represents the name of the new property containing the embedding.
+* `vector` is the object containing the embedding.
+
+The embeddings are represented as properties on nodes or relationships with the type `LIST<INTEGER | FLOAT>`.
+
+.Create an embedding from a single property and store it
 ====
 
-Assuming nodes with the `Tweet` label have an `id` property and a `text` property, you can generate and return the text embedding for the tweet with ID 1234:
+The following query uses `genai.vector.encode` to create an 1536 dimensional embedding generated by link:https://platform.openai.com/docs/guides/embeddings[OpenAI] (using the model `text-embedding-ada-002`) from the `plot` property of the movie The Godfather, and then uses `db.create.setNodeVectorProperty` to store that embedding in an `embedding` property.
 
-.Query
-[source,cypher]
+[source,cypher,role=test-skip]
 ----
-MATCH (n:Tweet { id: 1234 })
-RETURN genai.vector.encode(n.text, "VertexAI", { token: $token, projectId: $project }) AS embedding
+MATCH (m:Movie {title:'Godfather, The'})
+WITH m, genai.vector.encode(m.plot, "OpenAI", { token: $token }) as propertyVector 
+CALL db.create.setNodeVectorProperty(m, 'embedding', propertyVector)
+RETURN m.embedding AS embedding
 ----
+
+The returned `LIST<FLOAT>` is the vector representation of the `plot` property, with each `FLOAT` representing a different dimension of the `plot`.
+
+.Result
+["queryresult"]
+----
+| embedding
+| [0.008028422482311726, -0.034532852470874786, 0.020921749994158745, -0.01975204609334469, -0.015206151641905308, ... ]
+----
+
+[NOTE]
+This result only shows the first 5 of the 1536 numbers in the embedding.
 ====
 
 [[multiple-embeddings]]
-=== Generating a batch of embeddings
+== Generating a batch of embeddings and storing them
 
-You can use the `genai.vector.encodeBatch()` procedure to generate many vector embeddings with a single API request.
+Use the `genai.vector.encodeBatch()` procedure to generate many vector embeddings with a single API request.
 This procedure takes a list of resources as an input, and returns the same number of result rows, instead of a single one.
 
-Using this procedure is recommended in cases where a single large resource is split up into multiple chunks (like the pages of a book), or when generating embeddings for a large number of resources.
+Using this procedure is recommended in cases where a single large resource is split up into multiple chunks or when generating embeddings for a large number of resources.
 
 [IMPORTANT]
 ====
@@ -113,15 +127,11 @@ genai.vector.encodeBatch(resources :: LIST<STRING>, provider :: STRING, configur
 
 * The `resources` (a `LIST<STRING>`) parameter is the list of objects to transform into embeddings, such as chunks of natural language text.
 * The `provider` (a `STRING`) is the case-insensitive identifier of the provider to use.
-See <<ai-providers>> for supported options.
+See xref:genai-integrations.adoc#ai-providers[] for supported options.
 * The `configuration` (a `MAP`) specifies provider-specific settings such as which model to invoke, as well as any required API credentials.
-See <<ai-providers>> for details of each supported provider.
-+
-[NOTE]
-====
-Because this argument may contain sensitive data, it is obfuscated in the _query.log_.
+See xref:genai-integrations.adoc#ai-providers[] for details of each supported provider.
+Note that because this argument may contain sensitive data, it is obfuscated in the link:https://neo4j.com/docs/operations-manual/current/monitoring/logging/[_query.log_].
 However, if the function call is misspelled or the query is otherwise malformed, it may be logged without being obfuscated.
-====
 +
 Each returned row contains the following columns:
 
@@ -129,49 +139,63 @@ Each returned row contains the following columns:
 * The `resource` (a `STRING`) is the name of the input resource.
 * The `vector` (a `LIST<FLOAT>`) is the generated vector embedding for this resource.
 
-.Generate embeddings for multiple chunks of a larger text
+.Create embeddings from a limited number of properties and store them
 ====
 
-Given a list of page texts, you can generate an embedding for each of the pages with a single procedure call and create a corresponding graph structure:
+The following query uses `genai.vector.encodeBatch` to create 1536 dimensional embeddings generated by link:https://platform.openai.com/docs/guides/embeddings[OpenAI] (using the model `text-embedding-ada-002`) from the `plot` property of a `LIST` containing the `plot` properties of 20 movies in the database.
+It then uses `db.create.setNodeVectorProperty` to store those embeddings in an `embedding` property on those 20 movies.
 
-.Query
-[source,cypher]
+[source, cypher]
 ----
-CREATE (book:Book { title: $bookTitle })
-WITH book
-CALL genai.vector.encodeBatch($pageTexts, "VertexAI", { token: $token, projectId: $project }) YIELD index, resource, vector
-WITH book, index, resource, vector
-CREATE (:Page { index: index, text: resource, vector: vector })-[:OF]->(book)
+MATCH (m:Movie)
+WHERE m.plot IS NOT NULL
+WITH m
+LIMIT 20 
+WITH collect(m) AS movies // <1>
+WITH movies, [movie IN movies | movie.plot] AS batch // <2>
+CALL genai.vector.encodeBatch(batch, 'OpenAI', { token: $token }) YIELD index, vector // <3>
+WITH movies, index, vector
+CALL db.create.setNodeVectorProperty(movies[index], 'embedding', vector) // <4>
 ----
+
+<1>
+<2>
+<3>
+<4>
+
 ====
 
-.Generate embeddings for many text properties
+.Create embeddings from a large number of properties and store them
 ====
+The following query uses `genai.vector.encodeBatch` to create 1536 dimensional embeddings generated by link:https://platform.openai.com/docs/guides/embeddings[OpenAI] (using the model `text-embedding-ada-002`) from the `plot` property of a `LIST` containing the `plot` properties of all `Movie` nodes in the database that do not yet have an `embedding` property.
+It then uses `db.create.setNodeVectorProperty` to store those embeddings in an `embedding` property for these movies. 
 
-If you want to generate embeddings for the text content of all nodes with the label `Tweet`, you can divide the nodes up into batches, and issue one API request per batch.
-
-Assuming nodes with the `Tweet` label have a `text` property, you can generate vector embeddings for each one and write them to their `embedding` property in batches of, for example, a thousand at a time.
-You can use this in combination with `CALL ... IN TRANSACTIONS` to commit each batch separately to manage transaction memory consumption:
-
-.Query
-[source,cypher]
+[source, cypher]
 ----
-MATCH (n:Tweet)
-WHERE size(n.text) <> 0 AND n.embedding IS NULL
-WITH collect(n) AS nodes,
+MATCH (m:Movie WHERE m.plot IS NOT NULL)
+WITH collect(m) AS movies,
      count(*) AS total,
-     1000 AS batchSize
-UNWIND range(0, total, batchSize) AS batchStart
-CALL {
-    WITH nodes, batchStart, batchSize
-    WITH nodes, batchStart, [node IN nodes[batchStart .. batchStart + batchSize] | node.text] AS batch
-    CALL genai.vector.encodeBatch(batch, "OpenAI", { token: $token }) YIELD index, vector
-    CALL db.create.setNodeVectorProperty(nodes[batchStart + index], "embedding", vector)
-} IN TRANSACTIONS OF 1 ROW
+     100 AS batchSize // <1>
+UNWIND range(0, total, batchSize) AS batchStart // <2>
+CALL { // <3>
+    WITH movies, batchStart, batchSize
+    WITH movies, batchStart, [movie IN movies[batchStart .. batchStart + batchSize] | movie.title || ': ' || movie.plot] AS batch // <4>
+    CALL genai.vector.encodeBatch(batch, 'OpenAI', { token: $token }) YIELD index, vector // <5>
+    CALL db.create.setNodeVectorProperty(movies[batchStart + index], 'embedding', vector) // <6>
+} IN TRANSACTIONS OF 1 ROW // <7>
 ----
 
-You can control how many batches are committed by each inner transaction by modifying the `OF 1 ROW` clause.
-For example, `OF 10 ROWS` will only commit once per 10 batches. Because vector embeddings can be very large, this may require significantly more memory.
+<1>
+<2>
+<3>
+<4>
+<5>
+<6>
+<7>
+
+
+To control how many batches are committed by each inner transaction by modifying the amount of rows committed per batched. For example, specifying `IN TRANSACTIONS OF 10 ROWS`  will only commit once per 10 batches.
+Because vector embeddings can be very large, this may require significantly more memory
 ====
 
 [[ai-providers]]
@@ -180,11 +204,15 @@ For example, `OF 10 ROWS` will only commit once per 10 batches. Because vector e
 The following GenAI providers are supported for generating vector embeddings.
 Each provider has its own configuration map that can be passed to the `genai.vector.encode()` or `genai.vector.encodeBatch()` functions.
 
+[[vertex-ai]]
 === Vertex AI
 
 * Identifier (`provider` argument): `"VertexAI"`
 * https://cloud.google.com/vertex-ai/docs/generative-ai/embeddings/get-text-embeddings[Official Vertex AI documentation]
 
+.Vertex AI provider details
+[%collapsible]
+====
 .Configuration map
 [%header,cols="1m,1m,3a,2"]
 |===
@@ -267,13 +295,17 @@ Supported values: +
 | The title of the document that is being encoded (see link:https://cloud.google.com/vertex-ai/generative-ai/docs/embeddings/get-text-embeddings#api_changes_to_models_released_on_or_after_august_2023[provider documentation]). The specified `title` will apply to all resources in a batch. label:new[Introduced in 5.19]
 | 
 |===
+====
 
-
+[[openai]]
 === OpenAI
 
 * Identifier (`provider` argument): `"OpenAI"`
 * https://platform.openai.com/docs/guides/embeddings[Official OpenAI documentation]
 
+.OpenAI provider details
+[%collapsible]
+====
 .Configuration map
 [%header,cols="1m,1m,3a,2"]
 |===
@@ -294,7 +326,9 @@ Supported values: +
 | The number of dimensions you want to reduce the vector to. Only supported for certain models.
 | Model-dependent.
 |===
+====
 
+[[azure-openai]]
 [role=label--new-5.18]
 === Azure OpenAI
 
@@ -303,6 +337,9 @@ Supported values: +
 
 Note that, unlike the other providers, the model is configured when creating the deployment on Azure, and is thus not part of the configuration map.
 
+.Azure OpenAI provider details
+[%collapsible]
+====
 .Configuration map
 [%header,cols="1m,1m,3a,2"]
 |===
@@ -328,13 +365,17 @@ Note that, unlike the other providers, the model is configured when creating the
 | The number of dimensions you want to reduce the vector to. Only supported for certain models.
 | Model-dependent.
 |===
+====
 
-
+[[amazon-bedrock]]
 === Amazon Bedrock
 
 * Identifier (`provider` argument): `"Bedrock"`
 * https://docs.aws.amazon.com/bedrock/latest/APIReference/welcome.html[Official Bedrock documentation]
 
+.Amazon Bedrock provider details
+[%collapsible]
+====
 .Configuration map
 [%header,cols="1m,1m,3a,2"]
 |===
@@ -375,3 +416,4 @@ Supported values: +
 | `"us-east-1"`
 
 |===
+====
