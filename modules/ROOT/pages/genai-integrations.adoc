@@ -95,7 +95,7 @@ The embeddings are stored as properties on nodes or relationships with the type 
 MATCH (m:Movie {title:'Godfather, The'})
 WHERE m.plot IS NOT NULL AND m.title IS NOT NULL
 WITH m, m.title || ' ' || m.plot AS titleAndPlot // <1>
-WITH m, genai.vector.encode(titleAndPlot, "OpenAI", { token: $token }) AS propertyVector // <2>
+WITH m, genai.vector.encode(titleAndPlot, 'OpenAI', { token: $token }) AS propertyVector // <2>
 CALL db.create.setNodeVectorProperty(m, 'embedding', propertyVector) // <3>
 RETURN m.embedding AS embedding
 ----
@@ -143,7 +143,7 @@ See xref:genai-integrations.adoc#ai-providers[] for supported options.
 See xref:genai-integrations.adoc#ai-providers[] for details of each supported provider.
 Note that because this argument may contain sensitive data, it is obfuscated in the link:https://neo4j.com/docs/operations-manual/current/monitoring/logging/[query.log].
 However, if the function call is misspelled or the query is otherwise malformed, it may be logged without being obfuscated.
-+
+
 Each returned row contains the following columns:
 
 * The `index` (an `INTEGER`) is the index of the corresponding element in the input list, to aid in correlating results back to inputs.
@@ -155,11 +155,10 @@ Each returned row contains the following columns:
 
 [source, cypher, role=test-skip]
 ----
-MATCH (m:Movie)
-WHERE m.plot IS NOT NULL
+MATCH (m:Movie WHERE m.plot IS NOT NULL)
 WITH m
 LIMIT 20
-WITH collect(m) AS moviesList // <1> 
+WITH collect(m) AS moviesList // <1>
 WITH moviesList, [movie IN moviesList | movie.title || ': ' || movie.plot] AS batch // <2>
 CALL genai.vector.encodeBatch(batch, 'OpenAI', { token: $token }) YIELD index, vector
 WITH moviesList, index, vector
@@ -175,39 +174,40 @@ CALL db.create.setNodeVectorProperty(moviesList[index], 'embedding', vector) // 
 ====
 [source, cypher, role=test-skip]
 ----
-MATCH (m:Movie)
-WHERE m.plot IS NOT NULL
-WITH collect(m) AS moviesList
+MATCH (m:Movie WHERE m.plot IS NOT NULL)
+WITH collect(m) AS moviesList // <1>
      count(*) AS total,
-     100 AS batchSize // <1>
-UNWIND range(0, total, batchSize) AS batchStart // <2>
-CALL { // <3>
+     100 AS batchSize // <2>
+UNWIND range(0, total, batchSize) AS batchStart // <3>
+CALL { // <4>
     WITH moviesList, batchStart, batchSize
-    WITH moviesList, batchStart, [movie IN moviesList[batchStart .. batchStart + batchSize] | movie.title || ': ' || movie.plot] AS batch // <4>
-    CALL genai.vector.encodeBatch(batch, 'OpenAI', { token: $token }) YIELD index, vector 
-    CALL db.create.setNodeVectorProperty(moviesList[batchStart + index], 'embedding', vector) // <5>
-} IN TRANSACTIONS OF 1 ROW <6>
+    WITH moviesList, batchStart, [movie IN moviesList[batchStart .. batchStart + batchSize] | movie.title || ': ' || movie.plot] AS resources // <5>
+    CALL genai.vector.encodeBatch(batch, 'OpenAI', { token: $token }) YIELD index, vector
+    CALL db.create.setNodeVectorProperty(moviesList[batchStart + index], 'embedding', vector) // <6>
+} IN TRANSACTIONS OF 1 ROW <7>
 ----
 
-<1>  Define a `batchSize` for processing the nodes in `moviesList`.
-Because vector embeddings can be very large, increasing the batch size may require significantly more memory, and may exceed the provider's thresholds.
-<2> Processe `Movie` nodes in increments of `batchSize`.
-<3> A xref:subqueries/subqueries-in-transactions.adoc[`CALL` subquery] is used to execute separate, inner transactions producing intermediate commits for each batch.
-<4> Extract the `title` and `plot` from each batch into separate lists of strings.
-<5> `moviesList[batchStart + index]` sets the `embedding` for each movie in the current batch.
-<6> Set the amount of batches committed for each inner transaction to `1`.
-====
+<1> xref:functions/aggregating.adoc#functions-collect[Collect] all returned `Movie` nodes into a `LIST<NODE>`.
+<2> `batchSize` defines the number of nodes in `moviesList` to be processed at once.
+Because vector embeddings can be very large, a larger batch size may require significantly more memory on the Neo4j server.
+Too large a batch size may also exceed the provider's threshold.
+<3> Process `Movie` nodes in increments of `batchSize`.
+<4> A xref:subqueries/subqueries-in-transactions.adoc[`CALL` subquery] executes a separate transaction for each batch.
+<5> `resources` is a list of strings, each being the concatenation of `title` and `plot` of one movie.
+<6> The procedure sets `vector` as value for the property named `embedding` for the node at position `batchStart + index` in the `moviesList`.
+<7> Set to `1` the amount of batches to be processed at once.
 
 [NOTE]
-This example may not be performant if replicated on a larger dataset.
-Specifically, collecting a large amount of nodes or relationship properties in a list may consume a lot of memory.
+This example may not scale to larger datasets, as `collect(m)` requires the whole result set to be loaded in memory.
 For an alternative method more suitable to processing large amounts of data, see link:https://neo4j.com/docs/genai/tutorials/embeddings-vector-indexes/[GenAI documentation - Embeddings & Vector Indexes Tutorial -> Create embeddings with cloud AI providers].
+
+====
 
 [[ai-providers]]
 == GenAI providers
 
 The following GenAI providers are supported for generating vector embeddings.
-Each provider has its own configuration map that can be passed to the `genai.vector.encode()` or `genai.vector.encodeBatch()` functions.
+Each provider has its own configuration map that can be passed to `genai.vector.encode` or `genai.vector.encodeBatch`.
 
 [[vertex-ai]]
 === Vertex AI
@@ -293,12 +293,12 @@ Supported values: +
 | taskType
 | STRING
 | The intended downstream application (see link:https://cloud.google.com/vertex-ai/generative-ai/docs/embeddings/get-text-embeddings#api_changes_to_models_released_on_or_after_august_2023[provider documentation]). The specified `taskType` will apply to all resources in a batch. label:new[Introduced in 5.19]
-| 
+|
 
 | title
 | STRING
 | The title of the document that is being encoded (see link:https://cloud.google.com/vertex-ai/generative-ai/docs/embeddings/get-text-embeddings#api_changes_to_models_released_on_or_after_august_2023[provider documentation]). The specified `title` will apply to all resources in a batch. label:new[Introduced in 5.19]
-| 
+|
 |===
 ====
 
@@ -403,7 +403,7 @@ Unlike the other providers, the model is configured when creating the deployment
  +
 Supported values: +
  +
- 
+
 * `"amazon.titan-embed-text-v1"`
 | `"amazon.titan-embed-text-v1"`
 
@@ -413,7 +413,7 @@ Supported values: +
  +
 Supported values: +
  +
- 
+
 * `"us-east-1"`
 * `"us-west-2"`
 * `"ap-southeast-1"`
