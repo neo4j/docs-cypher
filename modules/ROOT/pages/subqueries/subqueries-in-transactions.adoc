@@ -591,6 +591,77 @@ RETURN n.num, s.errorMessage;
 REPORT STATUS can only be used when specifying ON ERROR CONTINUE or ON ERROR BREAK
 ----
 
+[role=label--new-5.21]
+[[concurrent-transactions]]
+== Concurrent transactions
+
+By default, `CALL { ... } IN TRANSACTIONS` uses a single thread assigned to one CPU processor to sequentially execute batched queries.
+However, `CALL` subqueries can also execute batched inner transactions in parallel by appending `IN [n] CONCURRENT TRANSACTIONS`, where `n` is the concurrency value used to set the maximum number of transactions that can be executed in parallel.
+This allows `CALL` subqueries to utilize multiple CPU processors simultaneously, which can significantly reduce the time required to execute a large, outer transaction.
+
+.Syntax for `CALL` subqueries executed in concurrent transactions
+[source, syntax]
+----
+CALL {
+    subQuery
+} IN [[concurrency] CONCURRENT] TRANSACTIONS
+[OF batchSize ROW[S]]
+[REPORT STATUS AS statusVar]
+[ON ERROR {CONTINUE | BREAK | FAIL}];
+----
+
+[NOTE]
+The `concurrency` value is optional.
+If not specified, a default value based on the amount of available processors will be chosen. 
+
+.Load a CSV file in concurrent transactions
+====
+
+`CALL { ... } IN CONCURRENT TRANSACTIONS` is particularly suitable for importing data without dependencies.
+This example creates `Person` nodes from a csv file with over 400 lines in concurrent transactions of 200 rows.
+
+[source, cypher]
+----
+LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/persons.csv' AS row
+CALL {
+  WITH row
+  CREATE (p:Person {tmdbId: row.person_tmdbId})
+  SET p.name = row.name, p.born = row.born
+} IN  CONCURRENT TRANSACTIONS OF 200 ROWS
+----
+====
+
+=== Concurrent semantics and non-deterministic results
+
+`CALL { ... } IN TRANSACTIONS` uses _ordered_ semantics by default, where batches are committed in a sequential row-by-row order.
+For example, in `CALL { <I> } IN TRANSACTIONS [...]`, any writes done in the execution of `<I~1~>` must be observed by `<I~2~>`, and so on.
+
+In contrast, `CALL { ... } IN CONCURRENT TRANSACTIONS` uses _concurrent_ semantics, where both the number of rows committed by a particular batch and the order of committed batches is undefined.
+That is,  in `CALL { <I> } IN CONCURRENT TRANSACTIONS [...]`, writes committed in  execution of `<I~1~>` may not be observed by 
+`<I~2~>`, and so on.
+The results of `CALL` subqueries executed in concurrent transactions may, therefore, not be deterministic.
+To guarantee deterministic results, ensure that the results of committed batches are not dependent on each other.
+
+=== Dealing with deadlocks
+
+When a write transaction occurs, Neo4j takes locks to preserve data consistency while updating.
+For example, when creating a node, a write lock is taken for the specific node, and when creating or deleting a relationship, a write lock is taken on both the specific relationship and its connected nodes.
+
+A deadlock happens when two transactions are blocked by each other because they are attempting to concurrently modify a node or a relationship that is locked by the other transaction.
+This may occur when using `CALL { ... } IN CONCURRENT TRANSACTIONS` if the transactions for two or more batches tries to take the same lock on a node or relationship.
+If so, an error in thrown and the particular transaction rolled back, unless the query is appended with `ON ERROR CONTINUE`
+
+
+.Dealing with deadlocks
+
+
+
+
+=== Errors
+
+
+
+
 [[restrictions]]
 == Restrictions
 
