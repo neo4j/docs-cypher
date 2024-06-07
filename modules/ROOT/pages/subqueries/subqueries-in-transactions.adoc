@@ -13,7 +13,8 @@ Cancelling the outer transaction will cancel the inner ones as well.
 
 [NOTE]
 ====
-`CALL { ... } IN TRANSACTIONS` is only allowed in xref::introduction/cypher_neo4j.adoc#cypher-neo4j-transactions[implicit transactions].
+`CALL { ... } IN TRANSACTIONS` is only allowed in xref::introduction/cypher_neo4j.adoc#cypher-neo4j-transactions[implicit transactions]. +
+If you are using link:https://neo4j.com/docs/browser-manual/current/[Neo4j Browser], you must prepend any queries using `CALL { ... } IN TRANSACTIONS` with `:auto`.
 ====
 
 == Syntax
@@ -606,19 +607,20 @@ REPORT STATUS can only be used when specifying ON ERROR CONTINUE or ON ERROR BRE
 [[concurrent-transactions]]
 == Concurrent transactions
 
-By default, `CALL { ... } IN TRANSACTIONS` uses a single thread assigned to one CPU processor to sequentially execute batched queries.
-However, `CALL` subqueries can also execute batched inner transactions in parallel by appending `IN [n] CONCURRENT TRANSACTIONS`, where `n` is the concurrency value used to set the maximum number of transactions that can be executed in parallel.
+By default, `CALL { ... } IN TRANSACTIONS` is single-threaded; one CPU processor is used to sequentially execute batches.
+
+However, `CALL` subqueries can also execute batches in parallel by appending `IN [n] CONCURRENT TRANSACTIONS`, where `n` is a concurrency value used to set the maximum number of transactions that can be executed in parallel.
 This allows `CALL` subqueries to utilize multiple CPU processors simultaneously, which can significantly reduce the time required to execute a large, outer transaction.
 
 [NOTE]
-The `concurrency` value is optional.
+The concurrency value is optional.
 If not specified, a default value based on the amount of available processors will be chosen. 
 
 .Load a CSV file in concurrent transactions
 ====
 
 `CALL { ... } IN CONCURRENT TRANSACTIONS` is particularly suitable for importing data without dependencies.
-This example creates `Person` nodes from a csv file with over 400 lines in concurrent transactions of 200 rows.
+This example creates `Person` nodes from a unique `tmdbId` value assigned to each person row in the CSV file (444 in total) in 3 concurrent transactions.
 
 [source, cypher]
 ----
@@ -627,25 +629,43 @@ CALL {
   WITH row
   CREATE (p:Person {tmdbId: row.person_tmdbId})
   SET p.name = row.name, p.born = row.born
-} IN CONCURRENT TRANSACTIONS OF 10 ROWS
+} IN 3 CONCURRENT TRANSACTIONS OF 10 ROWS
+RETURN count(*) AS personNodes
 ----
+
+.Result
+[role="queryresult",options="header,footer",cols="m"]
+|===
+| personNodes
+| 444
+1+d| Rows: 1
+|===
+
 ====
 
-=== Non-deterministic results
+[[non-determinism]]
+=== Concurrency and non-deterministic results
 
 `CALL { ... } IN TRANSACTIONS` uses _ordered_ semantics by default, where batches are committed in a sequential row-by-row order.
-For example, in `CALL { <I> } IN TRANSACTIONS [...]`, any writes done in the execution of `<I~1~>` must be observed by `<I~2~>`, and so on.
+For example, in `CALL { <I> } IN TRANSACTIONS`, any writes done in the execution of `<I~1~>` must be observed by `<I~2~>`, and so on.
 
 In contrast, `CALL { ... } IN CONCURRENT TRANSACTIONS` uses _concurrent_ semantics, where both the number of rows committed by a particular batch and the order of committed batches is undefined.
-That is,  in `CALL { <I> } IN CONCURRENT TRANSACTIONS`, writes committed in  execution of `<I~1~>` may not be observed by 
-`<I~2~>`, and so on.
+That is,  in `CALL { <I> } IN CONCURRENT TRANSACTIONS`, writes committed in  execution of `<I~1~>` may not be observed by `<I~2~>`, and so on.
+
 The results of `CALL` subqueries executed in concurrent transactions may, therefore, not be deterministic.
 To guarantee deterministic results, ensure that the results of committed batches are not dependent on each other.
 
+[NOTE]
+Using `CALL { ... } IN CONCURRENT TRANSACTIONS` can impact xref:subqueries/subqueries-in-transactions.adoc#error-behavior[error behavior.]
+Specifically, when using `ON ERROR BREAK` or `ON ERROR FAIL` and one transaction fails, then any concurrent transactions _may_ not be interrupted and rolled back (though subsequent ones would).
+This is because no timing guarantees can be given for concurrent transactions.
+That is, an ongoing transaction may or may not commit successfully in the time window when the error is being handled.
+
+[[deadlocks]]
 === Deadlocks
 
 When a write transaction occurs, Neo4j takes locks to preserve data consistency while updating.
-For example, when creating a node, a write lock is taken for the specific node, and when creating or deleting a relationship, a write lock is taken on both the specific relationship and its connected nodes.
+For example, when creating or deleting a relationship, a write lock is taken on both the specific relationship and its connected nodes.
 
 A deadlock happens when two transactions are blocked by each other because they are attempting to concurrently modify a node or a relationship that is locked by the other transaction (for more information about locks and deadlocks in Neo4j, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/database-internals/concurrent-data-access/#_locks[Operations Manual -> Concurrent data access].
 
@@ -655,8 +675,8 @@ If so, an error in thrown and the particular transaction rolled back, unless the
 .Dealing with deadlocks
 ====
 
-This example tries to `Movie` and `Year` nodes connected by a `RELEASED_IN` relationship type.
-Note that the CSV file contains several rows with the same `year`.
+The following query tries to create `Movie` and `Year` nodes connected by a `RELEASED_IN` relationship.
+Note that there are only three different years in the CSV file, meaning hat only three `Year` nodes should be created.
 
 .Query with concurrent transaction causing a deadlock
 [source, cypher, role=test-fail]
@@ -670,7 +690,7 @@ CALL {
 } IN 2 CONCURRENT TRANSACTIONS OF 10 ROWS
 ----
 
-The query fails because two or more transactions are trying to create the same relationship concurrently:
+The deadlock occurs because the two transactions are simultaneously trying to lock and merge the same `Year`.
 
 .Error message
 [source]
@@ -695,11 +715,11 @@ CALL {
 } IN 2 CONCURRENT TRANSACTIONS OF 10 ROWS ON ERROR CONTINUE REPORT STATUS as status
 WITH status
 WHERE status.errorMessage IS NOT NULL
-RETURN status.transactionId AS transaction, status.committed AS commitStatus, status.errorMessage AS errorMessage;
+RETURN status.transactionId AS transaction, status.committed AS commitStatus, status.errorMessage AS errorMessage
 ----
 
 .Result
-[source]
+[source, "queryresult"]
 ----
 +-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 | transaction             | commitStatus   | errorMessage                                                                                                                                                                                                                                                                                                                                                       |
@@ -737,9 +757,32 @@ RETURN status.transactionId AS transaction, status.committed AS commitStatus, st
 +-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 
-====
+.Click to see an example of failed transactions being retried using Cypher
+[%collapsible]
+=====
+While failed transactions may be more efficiently retried using a link:{neo4j-docs-base-uri}/create-applications[driver], below is an example how failed transactions can be retried within the same Cypher query:
 
-=== Error behavior
+.Query retrying failed transactions
+[source, cypher]
+----
+LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/movies.csv' AS row
+CALL {
+    WITH row
+    MERGE (m:Movie {movieId: row.movieId})
+    MERGE (y:Year {year: row.year})
+    MERGE (m)-[r:RELEASED_IN]->(y)
+} IN 2 CONCURRENT TRANSACTIONS OF 10 ROWS ON ERROR CONTINUE REPORT STATUS as status
+WITH *
+WHERE status.committed = false
+CALL {
+    WITH row
+    MERGE (m:Movie {movieId: row.movieId})
+    MERGE (y:Year {year: row.year})
+    MERGE (m)-[r:RELEASED_IN]->(y)
+} IN 2 CONCURRENT TRANSACTIONS OF 10 ROWS ON ERROR FAIL
+----
+=====
+====
 
 [[restrictions]]
 == Restrictions
