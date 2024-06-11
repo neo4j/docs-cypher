@@ -499,69 +499,7 @@ ORDER BY pathLength, destination
 2+d|Rows: 8
 |===
 
-[[shortest-path-graph-patterns]]
-== Single shortest path per graph pattern
-
-xref:patterns/non-linear-patterns.adoc#graph-patterns[Graph patterns] can contain more than one path pattern.
-The exception is when one of those path patterns has a selective shortest path keyword (for more information, see xref:patterns/reference.adoc#shortest-paths-rules-selective[Syntax and semantics -> selective path selectors]), in which case it can be the only path pattern in the graph pattern.
-Consider the following example of finding the shortest paths from `Droitwich Spa` to `Worcestershire Parkway` and from `Droitwich Spa` to `Cheltenham Spa` with a single `MATCH` statement:
-
-.Invalid query
-[source,cypher, role=test-fail]
-----
-MATCH (d:Station {name: 'Droitwich Spa'}),
-      (w:Station {name: 'Worcestershire Parkway'}),
-      (c:Station {name: 'Cheltenham Spa'})
-MATCH p = SHORTEST 1 (d)--+(w), q = SHORTEST 1 (d)--+(c)
-RETURN [stop IN nodes(p) | stop.name] AS r1,
-       [stop IN nodes(q) | stop.name] AS r2
-----
-
-*Note that this is not a valid query.*
-*It is shown to illustrate a problem.*
-
-There is one shortest path from `Droitwich Spa` to `Cheltenham Spa` that goes via `Bromsgrove`.
-There are two shortest paths from `Droitwich Spa` to `Worcestershire Parkway`, one via `Worcestershire Shrub Hill`, and the other via `Bromsgrove`.
-As each path pattern is looking for a single shortest path, there are two possible solutions.
-For the first of those solutions, the two paths follow different relationships:
-
-image::patterns_shortest_graph_pattern1.svg[width="400", role="middle"]
-
-For the second solution, however, both paths go via the link between `Droitwich Spa` and `Bromsgrove`:
-
-image::patterns_shortest_graph_pattern2.svg[width="400", role="middle"]
-
-The problem with this is that relationships are required to be unique within a given match to a graph pattern (for more information, see xref:patterns/reference.adoc#graph-patterns-rules-relationship-uniqueness[Syntax and semantics -> relationship uniqueness]).
-So if this second pair of paths were selected, then the query would return no results, in contrast to the first pair of paths.
-To avoid this non-determinism in the number of results, a rule is imposed whereby selective path patterns cannot be combined with any other path patterns in the same graph pattern.
-
-If it makes sense for there to be relationships appearing more than once, the path patterns can be solved by putting them in separate `MATCH` clauses:
-
-.Valid query
-[source,cypher]
-----
-MATCH (d:Station {name: 'Droitwich Spa'}),
-      (w:Station {name: 'Worcestershire Parkway'}),
-      (c:Station {name: 'Cheltenham Spa'})
-MATCH p = SHORTEST 1 (d)--+(w)
-MATCH q = SHORTEST 1 (d)--+(c)
-RETURN [stop IN nodes(p) | stop.name] AS r1,
-       [stop IN nodes(q) | stop.name] AS r2
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="2*m"]
-|===
-| r1 | r2
-
-| ["Droitwich Spa", "Bromsgrove", "Worcestershire Parkway"]
-| ["Droitwich Spa", "Bromsgrove", "Cheltenham Spa"]
-
-2+d|Rows: 1
-|===
-
-
-== Planning shortest paths queries
+== Planning shortest path queries
 
 This section describes the operators used when planning shortest path queries.
 For readers not familiar with Cypher execution plans and operators, it is recommended to first read the section xref:planning-and-tuning/execution-plans.adoc[].
@@ -572,8 +510,7 @@ There are two operators used to plan `SHORTEST` queries:
 
 * xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-stateful-shortest-path-into[`StatefulShortestPath(Into)`] - uses a bidirectional breadth-first search (BFS) algorithm, where two simultaneous BFS invocations are performed, one from the left boundary node and one from the right boundary node.
 
-`StatefulShortestPath(Into)` is used by the planner when both boundary nodes in the shortest path have been matched in a `MATCH` clause previous to that containing the `SHORTEST` keyword.
-It is also used when both boundary nodes match at most one node each.
+`StatefulShortestPath(Into)` is used by the planner when both boundary nodes in the shortest path are estimated to match at most one node each.
 Otherwise, `StatefulShortestPath(All)` is used.
 
 For example, the left boundary node in the below query matches 9 nodes, and the right boundary node matches 3 nodes.
