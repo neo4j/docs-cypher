@@ -12,10 +12,21 @@ By default, inner transactions group together batches of 1000 rows.
 Cancelling the outer transaction will cancel the inner ones as well.
 
 [NOTE]
-====
-`CALL { ... } IN TRANSACTIONS` is only allowed in xref::introduction/cypher-neo4j.adoc#cypher-neo4j-transactions[implicit transactions].
-====
+`CALL { ... } IN TRANSACTIONS` is only allowed in xref::introduction/cypher-neo4j.adoc#cypher-neo4j-transactions[implicit transactions]. +
+If you are using link:https://neo4j.com/docs/browser-manual/current/[Neo4j Browser], you must prepend any queries using `CALL { ... } IN TRANSACTIONS` with `:auto`.
 
+
+== Syntax
+
+[source, syntax]
+----
+CALL {
+    subQuery
+} IN [[concurrency] CONCURRENT] TRANSACTIONS
+[OF batchSize ROW[S]]
+[REPORT STATUS AS statusVar]
+[ON ERROR {CONTINUE | BREAK | FAIL}];
+----
 
 == Loading CSV data
 
@@ -590,6 +601,190 @@ RETURN n.num, s.errorMessage;
 ----
 REPORT STATUS can only be used when specifying ON ERROR CONTINUE or ON ERROR BREAK
 ----
+
+[role=label--new-5.21]
+[[concurrent-transactions]]
+== Concurrent transactions
+
+By default, `CALL { ... } IN TRANSACTIONS` is single-threaded; one CPU core is used to sequentially execute batches.
+
+However, `CALL` subqueries can also execute batches in parallel by appending `IN [n] CONCURRENT TRANSACTIONS`, where `n` is a concurrency value used to set the maximum number of transactions that can be executed in parallel.
+This allows `CALL` subqueries to utilize multiple CPU cores simultaneously, which can significantly reduce the time required to execute a large, outer transaction.
+
+[NOTE]
+The concurrency value is optional.
+If not specified, a default value based on the amount of available CPU cores will be chosen.
+If a negative number is specified, the concurrency will be the number of available CPU cores reduced by the absolute value of that number.
+
+.Load a CSV file in concurrent transactions
+====
+
+`CALL { ... } IN CONCURRENT TRANSACTIONS` is particularly suitable for importing data without dependencies.
+This example creates `Person` nodes from a unique `tmdbId` value assigned to each person row in the CSV file (444 in total) in 3 concurrent transactions.
+
+[source, cypher]
+----
+LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/persons.csv' AS row
+CALL {
+  WITH row
+  CREATE (p:Person {tmdbId: row.person_tmdbId})
+  SET p.name = row.name, p.born = row.born
+} IN 3 CONCURRENT TRANSACTIONS OF 10 ROWS
+RETURN count(*) AS personNodes
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="m"]
+|===
+| personNodes
+| 444
+1+d| Rows: 1
+|===
+
+====
+
+[[non-determinism]]
+=== Concurrency and non-deterministic results
+
+`CALL { ... } IN TRANSACTIONS` uses _ordered_ semantics by default, where batches are committed in a sequential row-by-row order.
+For example, in `CALL { <I> } IN TRANSACTIONS`, any writes done in the execution of `<I~1~>` must be observed by `<I~2~>`, and so on.
+
+In contrast, `CALL { ... } IN CONCURRENT TRANSACTIONS` uses _concurrent_ semantics, where both the number of rows committed by a particular batch and the order of committed batches is undefined.
+That is,  in `CALL { <I> } IN CONCURRENT TRANSACTIONS`, writes committed in the execution of `<I~1~>` may or may not be observed by `<I~2~>`, and so on.
+
+The results of `CALL` subqueries executed in concurrent transactions may, therefore, not be deterministic.
+To guarantee deterministic results, ensure that the results of committed batches are not dependent on each other.
+
+[NOTE]
+Using `CALL { ... } IN CONCURRENT TRANSACTIONS` can impact xref:subqueries/subqueries-in-transactions.adoc#error-behavior[error behavior.]
+Specifically, when using `ON ERROR BREAK` or `ON ERROR FAIL` and one transaction fails, then any concurrent transactions _may_ not be interrupted and rolled back (though subsequent ones would).
+This is because no timing guarantees can be given for concurrent transactions.
+That is, an ongoing transaction may or may not commit successfully in the time window when the error is being handled.
+Use the xref:subqueries/subqueries-in-transactions.adoc#status-report[status report] to determine which batches were committed and which failed or did not start.
+
+
+[[deadlocks]]
+=== Deadlocks
+
+When a write transaction occurs, Neo4j takes locks to preserve data consistency while updating.
+For example, when creating or deleting a relationship, a write lock is taken on both the specific relationship and its connected nodes.
+
+A deadlock happens when two transactions are blocked by each other because they are attempting to concurrently modify a node or a relationship that is locked by the other transaction (for more information about locks and deadlocks in Neo4j, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/database-internals/concurrent-data-access/#_locks[Operations Manual -> Concurrent data access].
+
+A deadlock may occur when using `CALL { ... } IN CONCURRENT TRANSACTIONS` if the transactions for two or more batches try to take the same locks in an order that results in a circular dependency between them.
+If so, the impacted transactions are always rolled back, and an error is thrown unless the query is appended with `ON ERROR CONTINUE` or `ON ERROR BREAK`.
+
+.Dealing with deadlocks
+====
+
+The following query tries to create `Movie` and `Year` nodes connected by a `RELEASED_IN` relationship.
+Note that there are only three different years in the CSV file, meaning hat only three `Year` nodes should be created.
+
+.Query with concurrent transaction causing a deadlock
+[source, cypher, role=test-fail]
+----
+LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/movies.csv' AS row
+CALL {
+    WITH row
+    MERGE (m:Movie {movieId: row.movieId})
+    MERGE (y:Year {year: row.year})
+    MERGE (m)-[r:RELEASED_IN]->(y)
+} IN 2 CONCURRENT TRANSACTIONS OF 10 ROWS
+----
+
+The deadlock occurs because the two transactions are simultaneously trying to lock and merge the same `Year`.
+
+.Error message
+[source]
+----
+ForsetiClient[transactionId=64, clientId=12] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=63, clientId=9]} on NODE_RELATIONSHIP_GROUP_DELETE(98) because holders of that lock are waiting for ForsetiClient[transactionId=64, clientId=12].
+ Wait list:ExclusiveLock[
+Client[63] waits for [ForsetiClient[transactionId=64, clientId=12]]]
+----
+
+The following query uses `ON ERROR CONTINUE` to bypass any deadlocks and continue with the execution of subsequent inner transactions.
+It returns the `transactionID`, `commitStatus` and `errorMessage` of the failed transactions.
+
+.Query using `ON ERROR CONTINUE` to ignore deadlocks and complete outer transaction
+[source, cypher]
+----
+LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/movies.csv' AS row
+CALL {
+   WITH row
+   MERGE (m:Movie {movieId: row.movieId})
+   MERGE (y:Year {year: row.year})
+   MERGE (m)-[r:RELEASED_IN]->(y)
+} IN 2 CONCURRENT TRANSACTIONS OF 10 ROWS ON ERROR CONTINUE REPORT STATUS as status
+WITH status
+WHERE status.errorMessage IS NOT NULL
+RETURN status.transactionId AS transaction, status.committed AS commitStatus, status.errorMessage AS errorMessage
+----
+
+.Result
+[source, "queryresult"]
+----
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| transaction             | commitStatus   | errorMessage                                                                                                                                                                                                                                                                                                                                                       |
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "neo4j-transaction-169" | FALSE            | "ForsetiClient[transactionId=169, clientId=11] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=168, clientId=9]} on NODE_RELATIONSHIP_GROUP_DELETE(46) because holders of that lock are waiting for ForsetiClient[transactionId=169, clientId=11].                                                                                                   |
+|                         |                  \  Wait list:ExclusiveLock[                                                                                                                                                                                                                                                                                                                                          |
+|                         |                  \ Client[168] waits for [ForsetiClient[transactionId=169, clientId=11]]]"                                                                                                                                                                                                                                                                                            |
+| "neo4j-transaction-169" | FALSE            | "ForsetiClient[transactionId=169, clientId=11] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=168, clientId=9]} on NODE_RELATIONSHIP_GROUP_DELETE(46) because holders of that lock are waiting for ForsetiClient[transactionId=169, clientId=11].                                                                                                   |
+|                         |                  \  Wait list:ExclusiveLock[                                                                                                                                                                                                                                                                                                                                          |
+|                         |                  \ Client[168] waits for [ForsetiClient[transactionId=169, clientId=11]]]"                                                                                                                                                                                                                                                                                            |
+| "neo4j-transaction-169" | FALSE            | "ForsetiClient[transactionId=169, clientId=11] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=168, clientId=9]} on NODE_RELATIONSHIP_GROUP_DELETE(46) because holders of that lock are waiting for ForsetiClient[transactionId=169, clientId=11].                                                                                                   |
+|                         |                  \  Wait list:ExclusiveLock[                                                                                                                                                                                                                                                                                                                                          |
+|                         |                  \ Client[168] waits for [ForsetiClient[transactionId=169, clientId=11]]]"                                                                                                                                                                                                                                                                                            |
+| "neo4j-transaction-169" | FALSE            | "ForsetiClient[transactionId=169, clientId=11] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=168, clientId=9]} on NODE_RELATIONSHIP_GROUP_DELETE(46) because holders of that lock are waiting for ForsetiClient[transactionId=169, clientId=11].                                                                                                   |
+|                         |                  \  Wait list:ExclusiveLock[                                                                                                                                                                                                                                                                                                                                          |
+|                         |                  \ Client[168] waits for [ForsetiClient[transactionId=169, clientId=11]]]"                                                                                                                                                                                                                                                                                            |
+| "neo4j-transaction-169" | FALSE            | "ForsetiClient[transactionId=169, clientId=11] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=168, clientId=9]} on NODE_RELATIONSHIP_GROUP_DELETE(46) because holders of that lock are waiting for ForsetiClient[transactionId=169, clientId=11].                                                                                                   |
+|                         |                  \  Wait list:ExclusiveLock[                                                                                                                                                                                                                                                                                                                                          |
+|                         |                  \ Client[168] waits for [ForsetiClient[transactionId=169, clientId=11]]]"                                                                                                                                                                                                                                                                                            |
+| "neo4j-transaction-169" | FALSE            | "ForsetiClient[transactionId=169, clientId=11] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=168, clientId=9]} on NODE_RELATIONSHIP_GROUP_DELETE(46) because holders of that lock are waiting for ForsetiClient[transactionId=169, clientId=11].                                                                                                   |
+|                         |                  \  Wait list:ExclusiveLock[                                                                                                                                                                                                                                                                                                                                          |
+|                         |                  \ Client[168] waits for [ForsetiClient[transactionId=169, clientId=11]]]"                                                                                                                                                                                                                                                                                            |
+| "neo4j-transaction-169" | FALSE            | "ForsetiClient[transactionId=169, clientId=11] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=168, clientId=9]} on NODE_RELATIONSHIP_GROUP_DELETE(46) because holders of that lock are waiting for ForsetiClient[transactionId=169, clientId=11].                                                                                                   |
+|                         |                  \  Wait list:ExclusiveLock[                                                                                                                                                                                                                                                                                                                                          |
+|                         |                  \ Client[168] waits for [ForsetiClient[transactionId=169, clientId=11]]]"                                                                                                                                                                                                                                                                                            |
+| "neo4j-transaction-169" | FALSE            | "ForsetiClient[transactionId=169, clientId=11] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=168, clientId=9]} on NODE_RELATIONSHIP_GROUP_DELETE(46) because holders of that lock are waiting for ForsetiClient[transactionId=169, clientId=11].                                                                                                   |
+|                         |                  \  Wait list:ExclusiveLock[                                                                                                                                                                                                                                                                                                                                          |
+|                         |                  \ Client[168] waits for [ForsetiClient[transactionId=169, clientId=11]]]"                                                                                                                                                                                                                                                                                            |
+| "neo4j-transaction-169" | FALSE            | "ForsetiClient[transactionId=169, clientId=11] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=168, clientId=9]} on NODE_RELATIONSHIP_GROUP_DELETE(46) because holders of that lock are waiting for ForsetiClient[transactionId=169, clientId=11].                                                                                                   |
+|                         |                  \  Wait list:ExclusiveLock[                                                                                                                                                                                                                                                                                                                                          |
+|                         |                  \ Client[168] waits for [ForsetiClient[transactionId=169, clientId=11]]]"                                                                                                                                                                                                                                                                                            |
+| "neo4j-transaction-169" | FALSE            | "ForsetiClient[transactionId=169, clientId=11] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=168, clientId=9]} on NODE_RELATIONSHIP_GROUP_DELETE(46) because holders of that lock are waiting for ForsetiClient[transactionId=169, clientId=11].                                                                                                   |
+|                         |                  \  Wait list:ExclusiveLock[                                                                                                                                                                                                                                                                                                                                          |
+|                         |                  \ Client[168] waits for [ForsetiClient[transactionId=169, clientId=11]]]"                                                                                                                                                                                                                                                                                            |
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
+
+.Click to see an example of failed transactions being retried using Cypher
+[%collapsible]
+=====
+While failed transactions may be more efficiently retried using a link:{neo4j-docs-base-uri}/create-applications[driver], below is an example how failed transactions can be retried within the same Cypher query:
+
+.Query retrying failed transactions
+[source, cypher]
+----
+LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/movies.csv' AS row
+CALL {
+    WITH row
+    MERGE (m:Movie {movieId: row.movieId})
+    MERGE (y:Year {year: row.year})
+    MERGE (m)-[r:RELEASED_IN]->(y)
+} IN 2 CONCURRENT TRANSACTIONS OF 10 ROWS ON ERROR CONTINUE REPORT STATUS as status
+WITH *
+WHERE status.committed = false
+CALL {
+    WITH row
+    MERGE (m:Movie {movieId: row.movieId})
+    MERGE (y:Year {year: row.year})
+    MERGE (m)-[r:RELEASED_IN]->(y)
+} IN 2 CONCURRENT TRANSACTIONS OF 10 ROWS ON ERROR FAIL
+----
+=====
+====
 
 [[restrictions]]
 == Restrictions
