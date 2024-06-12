@@ -1,0 +1,595 @@
+:description: Information about finding the `SHORTEST` path patterns.
+:page-role: new-5.21
+= Shortest paths
+
+The Cypher keyword `SHORTEST` is used to find variations of the shortest paths between nodes.
+This includes the ability to look for the shortest, second-shortest (and so on) paths, all available shortest paths, and groups of paths containing the same pattern length.
+The `ANY` keyword, which can be used to test the reachability of nodes from a given node(s), is also explained, as is how to apply filters in queries using `SHORTEST`.
+
+[NOTE]
+`SHORTEST` functionally replaces and extends the `shortestPath()` and `allShortestPaths()` functions.
+Both functions can still be used, but they are not xref:appendix/gql-conformance/index.adoc[GQL conformant].
+For more information, see xref:patterns/reference.adoc#shortest-functions[Syntax and semantics -> The `shortestPath()` and `allShortestPaths()` functions].
+
+[[cypher-gds-shortest]]
+== Note on Cypher and GDS shortest paths
+
+Both Cypher and Neo4j´s link:https://neo4j.com/docs/graph-data-science/current/[Graph Data Science (GDS) library] can be used to find variations of the shortest paths between nodes.
+
+Use Cypher if:
+
+* You need to specify complex graph navigation via xref:patterns/variable-length-patterns.adoc#quantified-path-patterns[quantified path patterns].
+* Creating a link:https://neo4j.com/docs/graph-data-science/current/management-ops/graph-creation/graph-project/[graph projection] takes too long.
+*  GDS is not available in your instance, or the size of the GDS projection is too large for your instance.
+
+Use GDS if:
+
+* You need to compute a weighted shortest path.
+* You need a specific algorithm like https://neo4j.com/docs/graph-data-science/current/algorithms/astar/[A*] or https://neo4j.com/docs/graph-data-science/current/algorithms/yens/[Yen’s].
+* You need to transform the graph with a projection before finding shortest path.
+* You need to use shortest paths in conjunction with other GDS algorithms in the pipeline.
+
+To read more about the shortest path algorithms included in the GDS library, see https://neo4j.com/docs/graph-data-science/current/algorithms/pathfinding[GDS Graph algorithms -> Path finding].
+
+[[shortest]]
+== `SHORTEST k`
+
+This section uses the following graph:
+
+image::patterns_shortest_graph.svg[width="600", role="middle"]
+
+To recreate it, run the following query against an empty Neo4j database:
+
+[source,cypher, role=test-setup]
+----
+CREATE (asc:Station {name:"Ashchurch"}),
+  (bmv:Station {name:"Bromsgrove"}),
+  (cnm:Station {name:"Cheltenham Spa"}),
+  (dtw:Station {name:"Droitwich Spa"}),
+  (hby:Station {name:"Hartlebury"}),
+  (psh:Station {name:"Pershore"}),
+  (wop:Station {name:"Worcestershire Parkway"}),
+  (wof:Station {name:"Worcester Foregate Street"}),
+  (wos:Station {name:"Worcester Shrub Hill"})
+CREATE (asc)-[:LINK {distance: 7.25}]->(cnm),
+  (asc)-[:LINK {distance: 11.29}]->(wop),
+  (asc)-[:LINK {distance: 14.75}]->(wos),
+  (bmv)-[:LINK {distance: 31.14}]->(cnm),
+  (bmv)-[:LINK {distance: 6.16}]->(dtw),
+  (bmv)-[:LINK {distance: 12.6}]->(wop),
+  (dtw)-[:LINK {distance: 5.64}]->(hby),
+  (dtw)-[:LINK {distance: 6.03}]->(wof),
+  (dtw)-[:LINK {distance: 5.76}]->(wos),
+  (psh)-[:LINK {distance: 4.16}]->(wop),
+  (wop)-[:LINK {distance: 3.71}]->(wos),
+  (wof)-[:LINK {distance: 0.65}]->(wos)
+----
+
+The paths matched by a xref:patterns/fixed-length-patterns.adoc#path-patterns[path pattern] can be restricted to only the shortest (by number of hops) by including the keyword `SHORTEST k`, where `k` is the number of paths to match.
+For example, the following example uses `SHORTEST 1` to return the length of the shortest path between `Worcester Shrub Hill` and `Bromsgrove`:
+
+.Query
+[source, cypher]
+----
+MATCH p = SHORTEST 1 (wos:Station)-[:LINK]-+(bmv:Station)
+WHERE wos.name = "Worcester Shrub Hill" AND bmv.name = "Bromsgrove"
+RETURN length(p) AS result
+----
+
+[TIP]
+Note that this and the following examples in this section use a quantified relationship `-[:LINK]-+`, which is composed of a relationship pattern `-[:LINK]-` and a postfix quantifier `+`. The relationship pattern is only concerned with following relationships with type `LINK`, and will otherwise traverse any node along the way. There is no arrowhead `<` or `>` on the relationship pattern, allowing the pattern to match relationships going in either direction. This represents the fact that trains can go in both directions along the `LINK` relationships between Stations. The `+` quantifier means that one or more relationships should be matched. For more information, see xref:patterns/reference.adoc#quantified-relationships[Syntax and semantics - quantified relationships].
+
+.Result
+[role="queryresult",options="header,footer",cols="m"]
+|===
+| result
+
+| 2
+
+1+d|Rows: 1
+
+|===
+
+Although the query returned a single result, there are in fact two paths that are tied for shortest:
+
+image::patterns_shortest_tie.svg[width="500",role="middle"]
+
+Because `1` was specified in `SHORTEST`, only one of the paths is returned.
+Which one is returned is non-deterministic.
+
+If instead `SHORTEST 2` is specified, all shortest paths in this example would be returned, and the result would be deterministic:
+
+.Query
+[source, cypher]
+----
+MATCH p = SHORTEST 2 (wos:Station)-[:LINK]-+(bmv:Station)
+WHERE wos.name = "Worcester Shrub Hill" AND bmv.name = "Bromsgrove"
+RETURN [n in nodes(p) | n.name] AS stops
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="m"]
+|===
+| stops
+
+| ["Worcester Shrub Hill", "Droitwich Spa", "Bromsgrove"]
+| ["Worcester Shrub Hill", "Worcestershire Parkway", "Bromsgrove"]
+
+1+d|Rows: 2
+
+|===
+
+Increasing the number of paths will return the next shortest paths.
+Three paths are tied for the second shortest:
+
+image::patterns_second_shortest_paths.svg[width="500",role="middle"]
+
+The following query returns all three of the second shortest paths, along with the two shortest paths:
+
+.Query
+[source, cypher]
+----
+MATCH p = SHORTEST 5 (wos:Station)-[:LINK]-+(bmv:Station)
+WHERE wos.name = "Worcester Shrub Hill" AND bmv.name = "Bromsgrove"
+RETURN [n in nodes(p) | n.name] AS stops
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="m"]
+|===
+
+| stops
+
+| ["Worcester Shrub Hill", "Droitwich Spa", "Bromsgrove"]
+| ["Worcester Shrub Hill", "Worcestershire Parkway", "Bromsgrove"]
+| ["Worcester Shrub Hill", "Worcester Foregate Street", "Droitwich Spa", "Bromsgrove"]
+| ["Worcester Shrub Hill", "Ashchurch", "Worcestershire Parkway", "Bromsgrove"]
+| ["Worcester Shrub Hill", "Ashchurch", "Cheltenham Spa", "Bromsgrove"]
+
+1+d|Rows: 5
+|===
+
+If there had been only four possible paths between the two Stations, then only those four would have been returned.
+
+[[all-shortest]]
+== `ALL SHORTEST`
+
+To return all paths that are tied for shortest length, use the keywords `ALL SHORTEST`:
+
+.Query
+[source,cypher]
+----
+MATCH p = ALL SHORTEST (wos:Station)-[:LINK]-+(bmv:Station)
+WHERE wos.name = "Worcester Shrub Hill" AND bmv.name = "Bromsgrove"
+RETURN [n in nodes(p) | n.name] AS stops
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="m"]
+|===
+| stops
+
+| ["Worcester Shrub Hill", "Droitwich Spa", "Bromsgrove"]
+| ["Worcester Shrub Hill", "Worcestershire Parkway", "Bromsgrove"]
+
+1+d|Rows: 2
+
+|===
+
+
+[[shortest-groups]]
+== `SHORTEST k GROUPS`
+
+To return all paths that are tied for first, second, and so on up to the kth shortest length, use `SHORTEST k GROUPS`.
+For example, the following returns the first and second shortest length paths between  `Worcester Shrub Hill` and `Bromsgrove`:
+
+.Query
+[source,cypher]
+----
+MATCH p = SHORTEST 2 GROUPS (wos:Station)-[:LINK]-+(bmv:Station)
+WHERE wos.name = "Worcester Shrub Hill" AND bmv.name = "Bromsgrove"
+RETURN [n in nodes(p) | n.name] AS stops, length(p) AS pathLength
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2m,m"]
+|===
+| stops | pathLength
+| ["Worcester Shrub Hill", "Droitwich Spa", "Bromsgrove"] | 2
+| ["Worcester Shrub Hill", "Worcestershire Parkway", "Bromsgrove"] | 2
+| ["Worcester Shrub Hill", "Worcester Foregate Street", "Droitwich Spa", "Bromsgrove"] | 3
+| ["Worcester Shrub Hill", "Ashchurch", "Worcestershire Parkway", "Bromsgrove"] | 3
+| ["Worcester Shrub Hill", "Ashchurch", "Cheltenham Spa", "Bromsgrove"] | 3
+2+d|Rows: 5
+|===
+
+The first group includes the two shortest paths with `pathLength = 2` (as seen in the first two rows of the results), and the second group includes the three second shortest paths with `pathLength = 3` (as seen in the last three rows of the results).
+
+If more groups are specified than exist in the graph, only those paths that exist are returned.
+For example, if the paths equal to one of the eight shortest paths are specified for `Worcester Shrub Hill` to `Bromsgrove`, only seven groups are returned:
+
+.Query
+[source,cypher]
+----
+MATCH p = SHORTEST 8 GROUPS (wos:Station)-[:LINK]-+(bmv:Station)
+WHERE wos.name = "Worcester Shrub Hill" AND bmv.name = "Bromsgrove"
+RETURN length(p) AS pathLength, count(*) AS numPaths
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*m"]
+|===
+| pathLength | numPaths
+
+| 2 | 2
+| 3 | 3
+| 4 | 1
+| 5 | 4
+| 6 | 8
+| 7 | 10
+| 8 | 6
+
+2+d|Rows: 7
+|===
+
+[[any]]
+== `ANY`
+
+The `ANY` keyword can be used to test the reachability of nodes from a given node(s).
+It returns the same as `SHORTEST 1`, but by using the `ANY` keyword the intent of the query is clearer.
+For example, the following query shows that there exists a route from `Pershore` to `Bromsgrove` where the distance between each pair of stations is less than 10 miles:
+
+.Query
+[source,cypher]
+----
+MATCH path = ANY
+  (:Station {name: 'Pershore'})-[l:LINK WHERE l.distance < 10]-+(b:Station {name: 'Bromsgrove'})
+RETURN [r IN relationships(path) | r.distance] AS distances
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="m"]
+|===
+
+| distances
+
+| [4.16, 3.71, 5.76, 6.16]
+
+1+d|Rows: 1
+|===
+
+[[partitions]]
+== Partitions
+
+When there are multiple start or end nodes matching a path pattern, the matches are partitioned into distinct pairs of start and end nodes prior to selecting the shortest paths; a partition is one distinct pair of start node and end node.
+The selection of shortest paths is then done from all paths that join the start and end node of a given partition.
+The results are then formed from the union of all the shortest paths found for each partition.
+
+For example, if the start nodes of matches are bound to either `Droitwich Spa` or `Hartlebury`, and the end nodes are bound to either `Ashchurch` or `Cheltenham Spa`, there will be four distinct pairs of start and end nodes, and therefore four partitions:
+
+[options="header",cols="a,a"]
+|===
+| *Start node* | *End node*
+
+| `Droitwich Spa` | `Ashchurch`
+| `Droitwich Spa` | `Cheltenham Spa`
+| `Hartlebury` | `Ashchurch`
+| `Hartlebury` | `Cheltenham Spa`
+
+|===
+
+The following query illustrates how these partitions define the sets of results within which the shortest paths are selected.
+It uses a pair of xref:clauses/unwind.adoc[`UNWIND`] clauses to generate a Cartesian product of the names of the `Stations` (all possible pairs of start node and end node), followed by the `MATCH` clause to find the shortest two groups of paths for each pair of distinct start and end `Stations`:
+
+.Query
+[source,cypher]
+----
+UNWIND ["Droitwich Spa", "Hartlebury"] AS a
+UNWIND ["Ashchurch", "Cheltenham Spa"] AS b
+MATCH SHORTEST 2 GROUPS (o:Station {name: a})-[l]-+(d:Station {name: b})
+RETURN o.name AS start, d.name AS end,
+    size(l) AS pathLength, count(*) AS numPaths
+ORDER BY start, end, pathLength
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="4*m"]
+|===
+
+| start | end | pathLength | numPaths
+
+| "Droitwich Spa" | "Ashchurch" | 2 | 1
+| "Droitwich Spa" | "Ashchurch" | 3 | 4
+| "Droitwich Spa" | "Cheltenham Spa" | 2 | 1
+| "Droitwich Spa" | "Cheltenham Spa" | 3 | 1
+| "Hartlebury" | "Ashchurch" | 3 | 1
+| "Hartlebury" | "Ashchurch" | 4 | 4
+| "Hartlebury" | "Cheltenham Spa" | 3 | 1
+| "Hartlebury" | "Cheltenham Spa" | 4 | 1
+
+4+d|Rows: 8
+|===
+
+Each partition appears twice: once for the group of shortest paths and once for the group of second shortest paths.
+For example, for the partition of `Droitwich Spa` as the `start` and `Ashchurch` as the `end`, the shortest path group (paths with length `2`) has one path, and the second shortest path group (paths with length `3`) has four paths.
+
+[[filters]]
+== Pre-filters and post-filters
+
+The position of a filter in a shortest path query will affect whether it is applied before or after selecting the shortest paths.
+To see the difference, first consider a query that returns the shortest path from `Hartlebury` to `Cheltenham Spa`:
+
+.Query
+[source,cypher]
+----
+MATCH SHORTEST 1
+  (:Station {name: 'Hartlebury'}) 
+  (()--(n))+ 
+  (:Station {name: 'Cheltenham Spa'})
+RETURN [stop in n[..-1] | stop.name] AS stops
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="m"]
+|===
+| stops
+
+| ["Droitwich Spa", "Bromsgrove"]
+
+1+d|Rows: 1
+|===
+
+Note that `n[..-1]` is a slicing operation that returns all elements of `n` except the last.
+If instead, the query uses a `WHERE` clause at the `MATCH` level to filter out routes that go via Bromsgrove, the filtering is applied after the shortest paths are selected.
+This results in the only solution being removed, and no results being returned:
+
+.Query
+[source,cypher]
+----
+MATCH SHORTEST 1 
+  (:Station {name: 'Hartlebury'}) 
+  (()--(n:Station))+ 
+  (:Station {name: 'Cheltenham Spa'})
+WHERE none(stop IN n[..-1] WHERE stop.name = 'Bromsgrove')
+RETURN [stop in n[..-1] | stop.name] AS stops
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="m"]
+|===
+| stops
+
+1+d|Rows: 0
+|===
+
+There are two ways to turn a post-filter without solutions into a pre-filter that returns solutions.
+One is to inline the predicate into the path pattern:
+
+.Query
+[source,cypher]
+----
+MATCH SHORTEST 1
+  (:Station {name: 'Hartlebury'}) 
+  (()--(n:Station WHERE n.name <> 'Bromsgrove'))+
+  (:Station {name: 'Cheltenham Spa'})
+RETURN [stop in n[..-1] | stop.name] AS stops
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="m"]
+|===
+| stops
+
+| ["Droitwich Spa", "Worcester Shrub Hill", "Ashchurch"]
+
+1+d|Rows: 1
+|===
+
+The shortest journey that avoids `Bromsgrove` is now returned.
+
+An alternative is to wrap the path pattern and filter in parentheses (leaving the `SHORTEST` keyword on the outside):
+
+.Query
+[source,cypher]
+----
+MATCH SHORTEST 1
+  ( (:Station {name: 'Hartlebury'}) 
+    (()--(n:Station))+ 
+    (:Station {name: 'Cheltenham Spa'})
+     WHERE none(stop IN n[..-1] WHERE stop.name = 'Bromsgrove') )
+RETURN [stop in n[..-1] | stop.name] AS stops
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="m"]
+|===
+| stops
+
+| ["Droitwich Spa", "Worcester Shrub Hill", "Ashchurch"]
+
+1+d|Rows: 1
+|===
+
+[[pre-filter-path-variable]]
+== Pre-filter with a path variable
+
+The previous section showed how to apply a filter before the shortest path selection by the use of parentheses.
+Placing a path variable declaration before the shortest path keywords, however, places it outside the scope of the parentheses.
+To reference a path variable in a pre-filter, it has to be declared inside the parentheses.
+
+To illustrate, consider this example that returns all shortest paths from `Hartlebury` to each of the other `Stations`:
+
+.Query
+[source,cypher]
+----
+MATCH p = SHORTEST 1 (:Station {name: 'Hartlebury'})--+(b:Station)
+RETURN b.name AS destination, length(p) AS pathLength
+ORDER BY pathLength, destination
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*m"]
+|===
+| destination | pathLength
+
+| "Droitwich Spa" | 1
+| "Bromsgrove" | 2
+| "Worcester Foregate Street" | 2
+| "Worcester Shrub Hill" | 2
+| "Ashchurch" | 3
+| "Cheltenham Spa" | 3
+| "Worcestershire Parkway" | 3
+| "Pershore" | 4
+
+2+d|Rows: 8
+
+|===
+
+If the query is altered to only include routes that have an even number of stops, adding a `WHERE` clause at the `MATCH` level will not work, because it would be a post-filter.
+It would return the results of the previous query with all routes with an odd number of stops removed:
+
+.Query
+[source,cypher]
+----
+MATCH p = SHORTEST 1 (:Station {name: 'Hartlebury'})--+(b:Station)
+WHERE length(p) % 2 = 0
+RETURN b.name AS destination, length(p) AS pathLength
+ORDER BY pathLength, destination
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*m"]
+|===
+| destination | pathLength
+
+| "Bromsgrove" | 2
+| "Worcester Foregate Street" | 2
+| "Worcester Shrub Hill" | 2
+| "Pershore" | 4
+
+2+d|Rows: 4
+|===
+
+To move the predicate to a pre-filter, the path variable should be referenced from within the parentheses, and the shortest routes with an even number of stops will be returned for all the destinations:
+
+.Query
+[source,cypher]
+----
+MATCH SHORTEST 1
+  (p = (:Station {name: 'Hartlebury'})--+(b:Station) 
+    WHERE length(p) % 2 = 0 )
+RETURN b.name AS destination, length(p) AS pathLength
+ORDER BY pathLength, destination
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*m"]
+|===
+| destination | pathLength
+
+| "Bromsgrove" | 2
+| "Worcester Foregate Street" | 2
+| "Worcester Shrub Hill" | 2
+| "Ashchurch" | 4
+| "Cheltenham Spa" | 4
+| "Droitwich Spa" | 4
+| "Pershore" | 4
+| "Worcestershire Parkway" | 4
+
+2+d|Rows: 8
+|===
+
+== Planning shortest path queries
+
+This section describes the operators used when planning shortest path queries.
+For readers not familiar with Cypher execution plans and operators, it is recommended to first read the section xref:planning-and-tuning/execution-plans.adoc[].
+
+There are two operators used to plan `SHORTEST` queries:
+
+* xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-stateful-shortest-path-all[`StatefulShortestPath(All)`] - uses a unidirectional breadth-first search algorithm to find shortest paths from a previously matched start node to an end node that has not yet been matched.
+
+* xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-stateful-shortest-path-into[`StatefulShortestPath(Into)`] - uses a bidirectional breadth-first search (BFS) algorithm, where two simultaneous BFS invocations are performed, one from the left boundary node and one from the right boundary node.
+
+`StatefulShortestPath(Into)` is used by the planner when both boundary nodes in the shortest path are estimated to match at most one node each.
+Otherwise, `StatefulShortestPath(All)` is used.
+
+For example, the planner estimates that the left boundary node in the below query will match one node, and the right boundary node will match five nodes,
+and chooses to expand from the left boundary node. Using `StatefulShortestPath(Into)` would require five bidirectional breadth-first search (BFS) invocations,
+whereas `StatefulShortestPath(All)` would require only one unidirectional BFS invocation.
+As a result, the query will use `StatefulShortestPath(All)`.
+
+.Query planned with `StatefulShortestPath(All)`
+[source,cypher]
+----
+PROFILE
+MATCH
+  p = SHORTEST 1 (a:Station {name: "Worcestershire Parkway"})(()-[]-()-[]-()){1,}(b:Station)
+RETURN p
+----
+
+.Result
+[role="queryplan", subs="attributes+"]
+----
++----------------------------+----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                   | Id | Details                                                                          | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++----------------------------+----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults            |  0 | p                                                                                |              5 |    9 |     122 |              0 |                    0/0 |    10.967 |                     |
+| |                          +----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+                     |
+| +Projection                |  1 | (a) ((anon_12)-[anon_14]-(anon_13)-[anon_11]-())* (b) AS p                       |              5 |    9 |       0 |                |                    0/0 |     0.063 |                     |
+| |                          +----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+                     |
+| +StatefulShortestPath(All) |  2 | SHORTEST 1 (a) ((`anon_5`)-[`anon_6`]-(`anon_7`)-[`anon_8`]-(`anon_9`)){1, } (b) |              5 |    9 |      80 |          18927 |                    0/0 |     1.071 | In Pipeline 1       |
+| |                          |    |         expanding from: a                                                        |                |      |         |                |                        |           |                     |
+| |                          |    |     inlined predicates: b:Station                                                |                |      |         |                |                        |           |                     |
+| |                          +----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Filter                    |  3 | a.name = $autostring_0                                                           |              1 |    1 |      18 |                |                        |           |                     |
+| |                          +----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeByLabelScan           |  4 | a:Station                                                                        |             10 |    9 |      10 |            376 |                    3/0 |     0.811 | Fused in Pipeline 0 |
++----------------------------+----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+----
+
+However, the heuristic to favor `StatefulShortestPath(All)` can lead to worse query performance.
+To have the planner choose the `StatefulShortestPath(Into)` instead, rewrite the query using a xref:subqueries/call-subquery.adoc[`CALL` subquery], which will execute once for each incoming row.
+
+For example, in the below query, using a `CALL` subquery ensures that the planner binds `a` and `b` to exactly one `Station` node respectively for each executed row, and this forces it to use `StatefulShortestPath(Into)` for each invocation of the `CALL` subquery, since a precondition of using this operator is that both boundary nodes match exactly one node each.
+
+.Query rewritten to use `StatefulShortestPath(Into)`
+[source,cypher]
+----
+PROFILE
+MATCH
+  (a:Station {name: "Worcestershire Parkway"}),
+  (b:Station)
+CALL {
+  WITH a, b
+  MATCH
+    p = SHORTEST 1 (a)(()-[]-()-[]-()){1,}(b)
+  RETURN p
+}
+RETURN p
+----
+
+.Result
+[role="queryplan", subs="attributes+"]
+----
++-----------------------------+----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                    | Id | Details                                                                          | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-----------------------------+----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults             |  0 | p                                                                                |              5 |    9 |     122 |              0 |                    0/0 |     0.561 |                     |
+| |                           +----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+                     |
+| +Projection                 |  1 | (a) ((anon_12)-[anon_14]-(anon_13)-[anon_11]-())* (b) AS p                       |              5 |    9 |       0 |                |                    0/0 |     0.060 |                     |
+| |                           +----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+                     |
+| +StatefulShortestPath(Into) |  2 | SHORTEST 1 (a) ((`anon_5`)-[`anon_6`]-(`anon_7`)-[`anon_8`]-(`anon_9`)){1, } (b) |              5 |    9 |     176 |          17873 |                    0/0 |     2.273 | In Pipeline 3       |
+| |                           +----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +CartesianProduct           |  3 |                                                                                  |              5 |    9 |       0 |           2056 |                    0/0 |     0.048 | In Pipeline 2       |
+| |\                          +----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +NodeByLabelScan          |  4 | b:Station                                                                        |             10 |    9 |      10 |            392 |                    1/0 |     0.023 | In Pipeline 1       |
+| |                           +----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Filter                     |  5 | a.name = $autostring_0                                                           |              1 |    1 |      18 |                |                        |           |                     |
+| |                           +----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeByLabelScan            |  6 | a:Station                                                                        |             10 |    9 |      10 |            376 |                    3/0 |     0.089 | Fused in Pipeline 0 |
++-----------------------------+----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+----
+
+[TIP]
+Sometimes the planner cannot make reliable estimations about how many nodes a pattern node will match.
+Consider using a xref:constraints/index.adoc#unique-node-property[uniqueness constraint] where applicable to help the planner get more reliable estimates.

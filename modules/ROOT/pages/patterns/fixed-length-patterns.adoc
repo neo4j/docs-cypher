@@ -1,0 +1,223 @@
+:description: Information about node, relationship, and path patterns.
+= Fixed length patterns
+
+The most basic form of graph pattern matching in Cypher involves the matching of fixed length patterns.
+This includes node patterns, relationship patterns, and path patterns.
+
+[[node-patterns]]
+== Node patterns
+
+Every graph pattern contains at least one node pattern.
+The simplest graph pattern is a single, empty node pattern:
+
+[source, role=noheader]
+----
+MATCH ()
+----
+
+The empty node pattern matches every node in a property graph.
+In order to obtain a reference to the nodes matched, a variable needs to be declared in the node pattern:
+
+[source, role=noheader]
+----
+MATCH (n)
+----
+
+With this reference, node properties can be accessed:
+
+[source, role=noheader]
+----
+MATCH (n)
+RETURN n.name
+----
+
+Adding a label expression to the node pattern means only nodes with labels that match will be returned.
+The following matches nodes that have the `Stop` label:
+
+[source, role=noheader]
+----
+MATCH (n:Stop)
+----
+
+The following more complex label expression matches all nodes that are either a `TrainStation` and a `BusStation` or `StationGroup`:
+
+[source, role=noheader]
+----
+MATCH (n:(TrainStation&BusStation)|StationGroup)
+----
+
+A map of property names and values can be used to match on node properties based on equality with the specified values.
+The following matches nodes that have their `mode` property equal to `Rail`:
+
+[source, role=noheader]
+----
+MATCH (n { mode: 'Rail' })
+----
+
+More general predicates can be expressed with a `WHERE` clause.
+The following matches nodes whose name property starts with `Preston`:
+
+[source, role=noheader]
+----
+MATCH (n:Station WHERE n.name STARTS WITH 'Preston')
+----
+
+See the xref:patterns/reference.adoc#node-patterns[node patterns] reference section for more details.
+
+[[relationship-patterns]]
+== Relationship patterns
+
+The simplest possible relationship pattern is a pair of dashes:
+
+[source, role=noheader]
+----
+--
+----
+
+This pattern matches a relationship with any direction and does not filter on any relationship type or property.
+Unlike a node pattern, a relationship pattern cannot be used in a `MATCH` clause without node patterns at both ends.
+See xref:patterns/fixed-length-patterns.adoc#path-patterns[path patterns] for more details.
+
+In order to obtain a reference to the relationships matched by the pattern, a relationship variable needs to be declared in the pattern by adding the variable name in square brackets in between the dashes:
+
+[source, role=noheader]
+----
+-[r]-
+----
+
+To match a specific direction, add `<` or `>` to the left or right hand side respectively:
+
+[source, role=noheader]
+----
+-[r]->
+----
+
+To match on a relationship type, add the type name after a colon:
+
+[source, role=noheader]
+----
+-[:CALLS_AT]->
+----
+
+Similar to node patterns, a map of property names and values can be added to filter on properties of the relationship based on equality with the specified values:
+
+[source, role=noheader]
+----
+-[{ distance: 0.24, duration: 'PT4M' }]->
+----
+
+A `WHERE` clause can be used for more general predicates:
+
+[source, role=noheader]
+----
+-[r WHERE time() + duration(r.duration) < time('22:00') ]->
+----
+
+See the xref:patterns/reference.adoc#relationship-patterns[relationship patterns] reference section for more details.
+
+[[path-patterns]]
+== Path patterns
+
+Any valid path starts and ends with a node, with relationships between each node (if there is more than one node).
+Fixed length path patterns have the same restrictions, and for all valid path patterns the following are true:
+
+* They have at least one node pattern.
+* They begin and end with a node pattern.
+* They alternate between nodes and relationships.
+
+These are all valid path patterns:
+
+[source, role=noheader]
+----
+()
+----
+[source, role=noheader]
+----
+(s)--(e)
+----
+[source, role=noheader]
+----
+(:Station)--()<--(m WHERE m.departs > time('12:00'))-->()-[:NEXT]->(n)
+----
+
+These are invalid path patterns:
+
+[source, role=noheader]
+----
+-->
+----
+[source, role=noheader]
+----
+()-->
+----
+[source, role=noheader]
+----
+()-->-->()
+----
+
+[[path-pattern-matching]]
+== Path pattern matching
+
+This section contains an example of matching a path pattern to paths in a property graph.
+
+It uses the following graph:
+
+image::path_pattern_example_graph.svg[width="600",role="middle"]
+
+To recreate the graph, run the following query against an empty Neo4j database:
+
+[source,cypher, role=test-setup]
+----
+CREATE (pmr:Station {name: 'Peckham Rye'}),
+  (dmk:Station {name: 'Denmark Hill'}),
+  (vic:Station {name: 'London Victoria'}),
+  (clp:Station {name: 'Clapham High Street'}),
+  (eph:Station {name: 'Elephant & Castle'}),
+  (vic)<-[:CALLS_AT]-(s1:Stop {departs: time('11:55')}),
+  (dmk)<-[:CALLS_AT]-(s2:Stop {departs: time('11:44')})-[:NEXT]->(s1),
+  (pmr)<-[:CALLS_AT]-(s3:Stop {departs: time('11:40')})-[:NEXT]->(s2),
+  (clp)<-[:CALLS_AT]-(s4:Stop {departs: time('11:41')}),
+  (dmk)<-[:CALLS_AT]-(s5:Stop {departs: time('11:37')})-[:NEXT]->(s4),
+  (pmr)<-[:CALLS_AT]-(s6:Stop {departs: time('11:33')})-[:NEXT]->(s5),
+  (eph)<-[:CALLS_AT]-(s7:Stop {departs: time('11:54')}),
+  (dmk)<-[:CALLS_AT]-(s8:Stop {departs: time('11:47')})-[:NEXT]->(s7),
+  (pmr)<-[:CALLS_AT]-(s9:Stop {departs: time('11:44')})-[:NEXT]->(s8)
+----
+
+
+The graph contains a number of train `Stations` and `Stops`.
+A `Stop` represents  the arrival and departure of a train that `CALLS_AT` a `Station`.
+Each `Stop` forms part of a sequence of `Stops` connected by relationships with the type `NEXT`, representing the order of calling points made by a train service.
+
+The graph shows three chains of `Stops` that represent different train services.
+Each of these services calls at the `Station` with the name `Denmark Hill`.
+
+To return all `Stops` that call at the `Station` `Denmark Hill`, the following _motif_ is used (the term motif is used to describe the pattern looked for in the graph):
+
+image::path_pattern_motif.svg[width="600",role="middle"]
+
+In this case, three paths in the graph match the structure of the motif (plus the predicate anchoring to the `Station` `Denmark Hill`):
+
+image::path_pattern_solutions.svg[width="700",role="middle"]
+
+In order to return the name of each `Stop` that calls at a `Station`, declare a variable in the `Stop` node pattern.
+The results will then have a row containing the departs value of each `Stop` for each match shown above:
+
+.Query
+[source, cypher]
+----
+MATCH (s:Stop)-[:CALLS_AT]->(:Station {name: 'Denmark Hill'})
+RETURN s.departs AS departureTime
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| departureTime
+
+| "11:44:00Z"
+| "11:47:00Z"
+| "11:37:00Z"
+
+1+d|Rows: 3
+|===
