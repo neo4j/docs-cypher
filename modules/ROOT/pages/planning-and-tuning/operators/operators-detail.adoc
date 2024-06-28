@@ -1266,6 +1266,90 @@ Total database accesses: 13
 
 ======
 
+[role=label--new-5.21]
+[[query-plan-subtraction-node-by-labels-scan]]
+== Subtraction Node By Labels Scan
+// SubtractionNodeByLabelsScan
+// New in 5.21
+
+The `SubtractionNodeByLabelsScan` operator fetches all nodes that have all of the first set of provided labels and none of the second provided set of labels from the node label index.
+In the example below, `SubtractionNodeByLabelsScan` retrieves all nodes that have the `Location` label but do not have the `Country` label.
+======
+
+.Query
+[source,cypher]
+----
+PROFILE
+MATCH (locationNotCountry:Location&!Country)
+RETURN locationNotCountry
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++------------------------------+----+--------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                     | Id | Details                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++------------------------------+----+--------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults              |  0 | locationNotCountry                   |              7 |   10 |       0 |              0 |                        |           |                     |
+| |                            +----+--------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +SubtractionNodeByLabelsScan |  1 | locationNotCountry:Location&!Country |              7 |   10 |      13 |            248 |                    2/0 |     3.081 | Fused in Pipeline 0 |
++------------------------------+----+--------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 13, total allocated memory: 312
+----
+
+======
+
+[role=label--new-5.21]
+[[query-plan-partitioned-subtraction-node-by-labels-scan]]
+== Partitioned Subtraction Node By Labels Scan
+// PartitionedSubtractionNodeByLabelsScan
+// New in 5.21
+
+The `PartitionedSubtractionNodeByLabelsScan` is a variant of the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-subtraction-node-by-labels-scan[`SubtractionNodeByLabelsScan`] operator used by the xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-parallel-runtime[parallel runtime].
+It allows the index to be partitioned into different segments where each segment can be scanned independently in parallel.
+======
+
+.Query
+[source,cypher]
+----
+CYPHER runtime=parallel
+PROFILE
+MATCH (locationNotCountry:Location&!Country)
+RETURN locationNotCountry
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PARALLEL
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++-----------------------------------------+----+--------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| Operator                                | Id | Details                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline      |
++-----------------------------------------+----+--------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| +ProduceResults                         |  0 | locationNotCountry                   |              7 |   10 |       0 |            136 |                    0/0 |     0.614 | In Pipeline 1 |
+| |                                       +----+--------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| +PartitionedSubtractionNodeByLabelsScan |  1 | locationNotCountry:Location&!Country |              7 |   10 |      13 |            120 |                    2/0 |     5.173 | In Pipeline 0 |
++-----------------------------------------+----+--------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+
+Total database accesses: 13, total allocated memory: 262144
+----
+
+======
 
 [[query-plan-directed-all-relationships-scan]]
 == Directed All Relationships Scan 
@@ -3813,12 +3897,12 @@ Total database accesses: 30, total allocated memory: 480
 ======
 
 
-[[query-plan-breadth-first-varlength-expand-pruning-bfs]]
+[[query-plan-breadth-first-varlength-expand-pruning-bfs-all]]
 == Breadth First VarLength Expand Pruning
 // VarLengthExpand(Pruning,BFS)
 // New in 5.0
 
-Given a start node, the `VarLengthExpand(Pruning,BFS)` operator traverses variable-length and quantified relationships much like the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-varlength-expand-all[`VarLengthExpand(All)`] operator.
+Given a start node, the `VarLengthExpand(Pruning,BFS,All)` operator traverses variable-length and quantified relationships much like the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-varlength-expand-all[`VarLengthExpand(All)`] operator.
 However, as an optimization, it instead performs a breadth-first search (BFS) and while expanding, some paths are not explored if they are guaranteed to produce an end node that has already been found (by means of a previous path traversal).
 This is only used in cases where the individual paths are not of interest.
 
@@ -3848,21 +3932,21 @@ Runtime version {neo4j-version-minor}
 
 Batch size 128
 
-+-------------------------------+----+-----------------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
-| Operator                      | Id | Details                     | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Ordered by | Pipeline            |
-+-------------------------------+----+-----------------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
-| +ProduceResults               |  0 | p, q                        |             12 |    0 |       0 |                |                    0/0 |     0.019 |            |                     |
-| |                             +----+-----------------------------+----------------+------+---------+----------------+------------------------+-----------+            |                     |
-| +OrderedDistinct              |  1 | p, q                        |             12 |    0 |       0 |             40 |                    0/0 |     0.558 |            | In Pipeline 0       |
-| |                             +----+-----------------------------+----------------+------+---------+----------------+------------------------+-----------+            +---------------------+
-| +Filter                       |  2 | q:Person                    |             13 |    0 |       0 |                |                        |           |            |                     |
-| |                             +----+-----------------------------+----------------+------+---------+----------------+                        |           |            |                     |
-| +VarLengthExpand(Pruning,BFS) |  3 | (p)-[:FRIENDS_WITH*..4]-(q) |             13 |    0 |       0 |              0 |                        |           |            |                     |
-| |                             +----+-----------------------------+----------------+------+---------+----------------+                        |           |            |                     |
-| +NodeByLabelScan              |  4 | p:Person                    |             10 |    0 |       1 |            120 |                    1/0 |     0.155 | p ASC      | Fused in Pipeline 0 |
-+-------------------------------+----+-----------------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
++-----------------------------------+----+------------------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
+| Operator                          | Id | Details                      | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Ordered by | Pipeline            |
++-----------------------------------+----+------------------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
+| +ProduceResults                   |  0 | p, q                         |             12 |    0 |       0 |              0 |                        |           |            |                     |
+| |                                 +----+------------------------------+----------------+------+---------+----------------+                        |           |            |                     |
+| +OrderedDistinct                  |  1 | p, q                         |             12 |    0 |       0 |             40 |                        |           |            |                     |
+| |                                 +----+------------------------------+----------------+------+---------+----------------+                        |           |            |                     |
+| +Filter                           |  2 | q:Person                     |             13 |    0 |       0 |                |                        |           |            |                     |
+| |                                 +----+------------------------------+----------------+------+---------+----------------+                        |           |            |                     |
+| +VarLengthExpand(Pruning,BFS,All) |  3 | (p)-[:FRIENDS_WITH*..4]-(q)  |             13 |    0 |      38 |            952 |                        |           |            |                     |
+| |                                 +----+------------------------------+----------------+------+---------+----------------+                        |           |            |                     |
+| +NodeByLabelScan                  |  4 | p:Person                     |             10 |   10 |      11 |            248 |                    3/0 |     4.662 | p ASC      | Fused in Pipeline 0 |
++-----------------------------------+----+------------------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
 
-Total database accesses: 1, total allocated memory: 200
+Total database accesses: 49, total allocated memory: 1200
 ----
 
 [role=label--new-5.9]
@@ -3870,7 +3954,7 @@ Total database accesses: 1, total allocated memory: 200
 == Repeat (Trail)
 // Repeat(Trail)
 
-Given a start node, the `Repeat(Trail)` operator will traverse xref::patterns/concepts.adoc#quantified-path-patterns[quantified path patterns] that cannot be solved with the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-varlength-expand-all[`VarLengthExpand(All)`] operator.
+Given a start node, the `Repeat(Trail)` operator will traverse xref::patterns/variable-length-patterns.adoc#quantified-path-patterns[quantified path patterns] that cannot be solved with the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-varlength-expand-all[`VarLengthExpand(All)`] operator.
 Similar to an xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`] operator, it takes a single row from the left-hand side and applies the operators on the right-hand side.
 In contrast to `Apply`, however, it repeatedly applies these operators in accordance with the quantifiers on the quantified path pattern.
 In the following example, the operator will repeat twice and produce rows for both repetitions.
@@ -5846,8 +5930,8 @@ Total database accesses: 0, total allocated memory: 184
 == Shortest path
 // ShortestPath
 
-The `ShortestPath` operator finds one or all shortest paths between two previously matches node variables.
-
+The `ShortestPath` operator finds one or all shortest paths between two previously matched node variables.
+This operator is used for the xref:patterns/reference.adoc#shortest-functions[`shortestPath()` and `allShortestPaths`] functions.
 
 .ShortestPath
 ======
@@ -5888,6 +5972,126 @@ Batch size 128
 Total database accesses: 5, total allocated memory: 1488
 ----
 
+======
+
+[role=label--new-5.21]
+[[query-plan-stateful-shortest-path-into]]
+== StatefulShortestPath(Into)
+// StatefulShortestPath(Into)
+
+////
+[source, cypher, role=test-setup]
+----
+DROP INDEX range_person_name IF EXISTS;
+CREATE CONSTRAINT person_name_unique IF NOT EXISTS FOR (p:Person) REQUIRE (p.name) IS UNIQUE;
+----
+////
+
+The `StatefulShortestPath(Into)` operator finds shortest paths between a start node and a single target node.
+It uses a bidirectional breadth-first search (BFS) algorithm, which performs two BFS invocations at the same time, one from the left boundary node and one from the right boundary node.
+Once a node is found by both BFS invocations, which indicates that it can be reached from both boundary nodes, the algorithm successfully terminates.
+If one of the BFS invocations exhausts its search before intersecting, either because no further nodes can be reached or because the maximum number of hops has been reached, then there is no valid path between the boundary nodes and the algorithm terminates.
+
+.StatefulShortestPath(Into)
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH
+  p = ALL SHORTEST (chris:Person {name: 'Chris'})(()-[]-()-[]-()){1,}(stefan:Person {name: 'Stefan'})
+RETURN p
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++-----------------------------+----+--------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| Operator                    | Id | Details                                                                                          | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline      |
++-----------------------------+----+--------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| +ProduceResults             |  0 | p                                                                                                |              2 |    2 |       0 |              0 |                    0/0 |     0.039 |               |
+| |                           +----+--------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+               |
+| +Projection                 |  1 | (chris) ((anon_12)-[anon_14]-(anon_13)-[anon_11]-())* (stefan) AS p                              |              2 |    2 |       0 |                |                    0/0 |     1.365 |               |
+| |                           +----+--------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+               |
+| +StatefulShortestPath(Into) |  2 | SHORTEST 1 GROUPS (chris) ((`anon_5`)-[`anon_6`]-(`anon_7`)-[`anon_8`]-(`anon_9`)){1, } (stefan) |              2 |    2 |      39 |          22237 |                    1/0 |    37.376 | In Pipeline 1 |
+| |                           +----+--------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| +MultiNodeIndexSeek         |  3 | UNIQUE chris:Person(name) WHERE name = $autostring_0,                                            |              1 |    1 |       4 |            376 |                    1/1 |    10.245 | In Pipeline 0 |
+|                             |    | UNIQUE stefan:Person(name) WHERE name = $autostring_1                                            |                |      |         |                |                        |           |               |
++-----------------------------+----+--------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+
+Total database accesses: 43, total allocated memory: 22557
+
+----
+
+======
+
+[role=label--new-5.21]
+[[query-plan-stateful-shortest-path-all]]
+== StatefulShortestPath(All)
+// StatefulShortestPath(All)
+
+The `StatefulShortestPath(All)` operator finds shortest paths from a single node to multiple target nodes.
+It uses a breadth-first search algorithm.
+
+
+.StatefulShortestPath(All)
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH
+  p = ALL SHORTEST (chris:Person {name:'Chris'})(()-[]-()-[]-()){1,}(location:Location)
+RETURN length(p) AS pathLength, location.name AS locationName
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++----------------------------+----+----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| Operator                   | Id | Details                                                                                            | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline      |
++----------------------------+----+----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| +ProduceResults            |  0 | pathLength, locationName                                                                           |             14 |   20 |       0 |              0 |                    0/0 |     0.074 |               |
+| |                          +----+----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+               |
+| +Projection                |  1 | length((chris) ((anon_12)-[anon_14]-(anon_13)-[anon_11]-())* (location)) AS pathLength,            |             14 |   20 |      40 |                |                    1/0 |     6.828 |               |
+| |                          |    | location.name AS locationName                                                                      |                |      |         |                |                        |           |               |
+| |                          +----+----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+               |
+| +StatefulShortestPath(All) |  2 | SHORTEST 1 GROUPS (chris) ((`anon_5`)-[`anon_6`]-(`anon_7`)-[`anon_8`]-(`anon_9`)){1, } (location) |             14 |   20 |     179 |          37663 |                    1/0 |    52.849 | In Pipeline 1 |
+| |                          |    |         expanding from: chris                                                                      |                |      |         |                |                        |           |               |
+| |                          |    |     inlined predicates: location:Location                                                          |                |      |         |                |                        |           |               |
+| |                          +----+----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| +NodeUniqueIndexSeek       |  3 | UNIQUE chris:Person(name) WHERE name = $autostring_0                                               |              1 |    1 |       2 |            376 |                    0/1 |     9.078 | In Pipeline 0 |
++----------------------------+----+----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+
+Total database accesses: 221, total allocated memory: 37983
+
+----
+
+////
+[source, cypher, role=test-setup]
+----
+DROP CONSTRAINT person_name_unique IF EXISTS;
+CREATE RANGE INDEX range_person_name FOR (p:Person) ON (p.name);
+----
+////
 ======
 
 
