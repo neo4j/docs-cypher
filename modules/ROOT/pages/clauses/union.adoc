@@ -12,30 +12,32 @@ Using just `UNION` (or `UNION DISTINCT`) will combine and remove duplicates from
 
 [NOTE]
 ====
-If any of the queries in a UNION contain updates, the order of queries in the UNION is relevant.
+If any of the queries in a `UNION` contain updates, the order of queries in the `UNION` is relevant.
 
-Any clause before the UNION cannot observe writes made by a clause after the UNION.
-Any clause after UNION can observe all writes made by a clause before the UNION.
+Any clause before the `UNION` cannot observe writes made by a clause after the `UNION`.
+Any clause after `UNION` can observe all writes made by a clause before the `UNION`.
 
-For details see xref::clauses/clause-composition.adoc#cypher-clause-composition-union-queries[clause composition in queries with `UNION`] for details.
+See xref::clauses/clause-composition.adoc#cypher-clause-composition-union-queries[clause composition in queries with `UNION`] for details.
 ====
 
-image:graph_union_clause.svg[]
+[[example-graph]]
+== Example graph
 
-////
+The following graph is used for the examples below:
+
+image:graph_union_clause.svg[width="500", role="middle"]
+
+To recreate the graph, run the following query against an empty Neo4j database:
+
 [source, cypher, role=test-setup]
 ----
-CREATE
-  (ah:Actor {name: 'Anthony Hopkins'}),
-  (hm:Actor {name: 'Helen Mirren'}),
-  (hitchcock:Actor {name: 'Hitchcock'}),
-  (hitchcockMovie:Movie {title: 'Hitchcock'}),
-  (ah)-[:KNOWS]->(hm),
-  (ah)-[:ACTS_IN]->(hitchcockMovie),
-  (hm)-[:ACTS_IN]->(hitchcockMovie)
+CREATE (johnny:Actor {name: 'Johnny Depp'}),
+       (sarah:Actor {name: 'Sarah Jessica Parker'}),
+       (ed:Actor&Director {name: 'Ed Wood'}),
+       (edWoodMovie:Movie {title: 'Ed Wood'}),
+       (johnny)-[:ACTED_IN]->(edWoodMovie),
+       (sarah)-[:ACTED_IN]->(edWoodMovie)
 ----
-////
-
 
 [[union-combine-queries-retain-duplicates]]
 == Combine two queries and retain duplicates
@@ -58,10 +60,10 @@ The combined result is returned, including duplicates.
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | name
-| "Anthony Hopkins"
-| "Helen Mirren"
-| "Hitchcock"
-| "Hitchcock"
+| "Johnny Depp"
+| "Sarah Jessica Parker"
+| "Ed Wood"
+| "Ed Wood"
 |Rows: 4
 |===
 
@@ -87,9 +89,9 @@ The combined result is returned, without duplicates.
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | name
-| "Anthony Hopkins"
-| "Helen Mirren"
-| "Hitchcock"
+| "Johnny Depp"
+| "Sarah Jessica Parker"
+| "Ed Wood"
 |Rows: 3
 |===
 
@@ -116,8 +118,39 @@ The combined result is returned, without duplicates.
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | name
-| "Anthony Hopkins"
-| "Helen Mirren"
-| "Hitchcock"
+| "Johnny Depp"
+| "Sarah Jessica Parker"
+| "Ed Wood"
 |Rows: 3
 |===
+
+
+== Post-union processing
+
+The `UNION` clause can be used within a xref:subqueries/call-subquery.adoc[`CALL` subquery] to further process the combined results before a final output is returned.
+For example, the below query counts the occurrences of each combined `name` from the `UNION ALL` within the `CALL` subquery.
+
+.Query
+[source, cypher]
+----
+CALL { MATCH (a:Actor)
+  RETURN a.name AS name
+  UNION ALL
+  MATCH (m:Movie)
+  RETURN m.title AS name
+}
+RETURN name, count(*) AS count
+ORDER BY count
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | count
+| "Ed Wood" | 2
+| "Johnny Depp" | 1
+| "Sarah Jessica Parker" | 1
+2+d|Rows: 3
+|===
+
+For more information, see xref:subqueries/call-subquery.adoc#call-post-union[`CALL` subqueries -> Post-union processing].
