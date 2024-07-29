@@ -92,7 +92,7 @@ Creating indexes requires link:{neo4j-docs-base-uri}/operations-manual/{page-ver
 CREATE VECTOR INDEX moviePlots IF NOT EXISTS // <1>
 FOR (m:Movie)
 ON m.embedding
-OPTIONS {indexConfig: { 
+OPTIONS { indexConfig: {
  `vector.dimensions`: 1536,
  `vector.similarity_function`: 'cosine'
 }} // <2>
@@ -103,8 +103,10 @@ This means that its default behavior is to throw an error if an attempt is made 
 With `IF NOT EXISTS`, no error is thrown and nothing happens should an index with the same name, schema or both already exist.
 It may still throw an error should a constraint with the same name exist.
 As of Neo4j 5.17, an informational notification is returned when nothing happens, showing the existing index which blocks the creation.
-<2> The `OPTIONS` map is mandatory since a vector index cannot be created without setting the vector dimensions and similarity function.
-In this example, the vector dimension is set to `1536` and the vector similarity function is `cosine`, which is generally the preferred similarity function for text embeddings.
+<2> Prior to Neo4j 5.23, the `OPTIONS` map was mandatory since a vector index could not be created without setting the vector dimensions and similarity function.
+Since Neo4j 5.23, the dimensions can be omitted, and the similarity function will default to `'cosine'` if not specified.
+To read more about the available configuration settings, see xref:indexes/semantic-indexes/vector-indexes.adoc#configuration-settings[].
+In this example, the vector dimension is explicitly set to `1536` and the vector similarity function to `'cosine'`, which is generally the preferred similarity function for text embeddings.
 To read more about the available similarity functions, see xref:indexes/semantic-indexes/vector-indexes.adoc#similarity-functions[].
 
 [NOTE]
@@ -117,11 +119,55 @@ You can also create a vector index for relationships with a particular type on a
 ----
 CREATE VECTOR INDEX name IF NOT EXISTS
 FOR ()-[r:REL_TYPE]-() ON (r.embedding)
-OPTIONS {indexConfig: {
+OPTIONS { indexConfig: {
  `vector.dimensions`: $dimension,
  `vector.similarity_function`: $similarityFunction
 }}
 ----
+
+[[configuration-settings]]
+=== Configuration settings
+
+`vector.dimensions` ::
+The dimensionality of the vectors to be indexed, see xref:indexes/semantic-indexes/vector-indexes.adoc#embeddings[].
+Setting this value will ensure only vectors with the configured dimensionality will be indexed, and querying the index with a vector of a different dimensionality will return an error. It is recommended to provide the dimensions.
+Accepted values::: `INTEGER` between `1` and `4096` inclusively.
+Default Value::: `NULL`. Setting was mandatory prior to Neo4j 5.23.
+
+`vector.similarity_function` ::
+The name of the similarity function to use to define how similar two vectors are.
+To read more about the available similarity functions, see xref:indexes/semantic-indexes/vector-indexes.adoc#similarity-functions[]
+
+Accepted values::: `STRING`: `'cosine'`, `'euclidean'`.
+Default Value::: `'cosine'`. Setting was mandatory prior to Neo4j 5.23.
+
+`vector.quantization.enabled` label:new[Introduced in 5.23] ::
+Quantization is a technique to reduce the size of vector representations.
+Enabling quantization can accelerate search performance but can slightly decrease accuracy. On machines with limited memory, this is a recommended to always be enabled.
+Vector indexes created prior to Neo4j 5.23 have this setting effectively set as `false`.
+
+Accepted values::: `BOOLEAN`: `true`, `false`.
+Default value::: `true`
+
+==== Advanced configuration settings
+
+`vector.hnsw.m` label:new[Introduced in 5.23] ::
+The `M` parameter controls the maximum number of connections each node has in the HNSW graph.
+Increasing this value may lead to greater accuracy at the expense of increased index population and update times, especially for vectors with high dimensionality.
+Vector indexes created prior to Neo4j 5.23 have this setting effectively set as `16`.
+
+Accepted values::: `INTEGER` between `1` and `512` inclusively.
+Default value::: `16`
+
+`vector.hnsw.ef_construction` label:new[Introduced in 5.23] ::
+The number of nearest neighbors tracked during the insertion of vectors into the HNSW graph.
+Increasing this value increases the quality of the index, and may lead to greater accuracy (with diminishing returns) at the expense of increased index population and update times.
+Vector indexes created prior to Neo4j 5.23 have this setting effectively set as `100`.
+
+Accepted values::: `INTEGER` between `1` and `3200` inclusively.
+Default value::: `100`
+
+For differences between `vector.dimensions` and `vector.similarity_function` between vector index providers, see xref:indexes/semantic-indexes/vector-indexes.adoc#vector-index-providers[].
 
 [[query-vector-index]]
 == Query vector indexes
@@ -449,8 +495,6 @@ The requested _k_ nearest neighbors may not be the exact _k_ nearest, but close 
 * Only one vector index can be over a schema.
 For example, you cannot have one xref:indexes/semantic-indexes/vector-indexes.adoc#similarity-functions[Euclidean] and one xref:indexes/semantic-indexes/vector-indexes.adoc#similarity-functions[cosine] vector index on the same label-property key pair.
 
-* No provided settings or options for tuning the index.
-
 * Changes made within the same transaction are not visible to the index.
 ====
 
@@ -462,6 +506,9 @@ The following table lists the known issues and, if fixed, the version in which t
 [%header,cols="5a,d"]
 |===
 | Known issues | Fixed in
+
+| No provided settings or options for tuning the index.
+| Neo4j 5.23
 
 | Procedure signatures from `SHOW PROCEDURES` will render the vector arguments with a type of `ANY` rather than the semantically correct type of `LIST<INTEGER \| FLOAT>`.
 [NOTE]
