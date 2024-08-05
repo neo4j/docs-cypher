@@ -87,7 +87,7 @@ In this example, each iteration of the `CALL` subquery adds 1 to the `age` of `P
 [source, cypher]
 ----
 UNWIND [1, 2, 3] AS x
-CALL (x) {
+CALL () {
     MATCH (p:Player {name: 'Player A'})
     SET p.age = p.age + 1
     RETURN p.age AS newAge
@@ -129,13 +129,13 @@ CALL (t) {
   MATCH (p:Player)-[:PLAYS_FOR]->(t)
   RETURN collect(p) as players
 }
-RETURN t AS teams, players
+RETURN t AS team, players
 ----
 
 .Result
 [source, role="queryresult",options="header,footer",cols="m,2m"]
 |===
-| teams
+| team
 | players
 
 | (:Team {name: "Team A"})
@@ -205,7 +205,7 @@ LIMIT 1
 |===
 
 To import additional variables, include them within the parentheses after `CALL`, separated by commas.
-For example, to import both variables from the `MATCH` clause in the above query, modify the scope clause accordingly: `CALL (p,t)`.
+For example, to import both variables from the `MATCH` clause in the above query, modify the scope clause accordingly: `CALL (p, t)`.
 ====
 
 .Import all variables 
@@ -220,9 +220,11 @@ MATCH (p:Player), (t:Team)
 CALL (*) {
   SET p.lastUpdated = timestamp()
   SET t.lastUpdated = timestamp()
-  RETURN p.name AS playerName, p.lastUpdated AS playerUpdated, t.name AS teamName, t.lastUpdated AS teamUpdated
 }
-RETURN playerName, playerUpdated, teamName, teamUpdated
+RETURN p.name AS playerName,
+       p.lastUpdated AS playerUpdated,
+       t.name AS teamName,
+       t.lastUpdated AS teamUpdated
 LIMIT 1
 ----
 
@@ -246,7 +248,7 @@ LIMIT 1
 
 .Import no variables
 ====
-To import no variables from the outer scope, use `CALL()`.
+To import no variables from the outer scope, use `CALL ()`.
 
 .Import no variables from the outer scope
 [source, cypher]
@@ -318,11 +320,11 @@ RETURN t AS teams, players
 ----
 MATCH (t:Team)
 CALL (t) {
-  WITH t AS teams
-  MATCH (p:Player)-[:PLAYS_FOR]->(teams)
+  WITH 'New team' AS t
+  MATCH (p:Player)-[:PLAYS_FOR]->(t)
   RETURN collect(p) as players
 }
-RETURN t AS teams, players
+RETURN t AS team, players
 ----
 
 * The subquery cannot return a variable name which already exists in the outer scope.
@@ -360,8 +362,9 @@ RETURN t AS teams, players
 .Click to read more about importing variables using the `WITH` clause
 [%collapsible]
 ====
-The importing `WITH` clause abides by the same xref:subqueries/call-subquery.adoc#variable-scope-rules[rules] as the variable scope clause.
-However, the following also applies
+
+* Just as when using a variable scope clause, a subquery using an importing `WITH` clause cannot return a variable name which already exists in the outer scope.
+To return imported variables they must be renamed.
 
 * The importing `WITH` clause must the first clause of a subquery (or the second clause, if directly following a `USE` clause).
 * It is not possible to follow an importing `WITH` clause with any of the following clauses: `DISTINCT`, `ORDER BY`, `WHERE`, `SKIP`, and `LIMIT`.
@@ -374,9 +377,9 @@ For example, the following query using a `WHERE` clause after an importing `WITH
 ----
 UNWIND [[1,2],[1,2,3,4],[1,2,3,4,5]] AS l
 CALL {
-    WITH l
-    WHERE size(l) > 2
-    RETURN l AS largeLists
+  WITH l
+  WHERE size(l) > 2
+  RETURN l AS largeLists
 }
 RETURN largeLists
 ----
@@ -397,10 +400,10 @@ For example, the following query will not throw an error:
 ----
 UNWIND [[1,2],[1,2,3,4],[1,2,3,4,5]] AS l
 CALL {
- WITH l
- WITH size(l) AS size, l AS l
- WHERE size > 2
- RETURN l AS largeLists
+  WITH l
+	WITH l
+	WHERE size(l) > 2
+  RETURN l AS largeLists
 }
 RETURN largeLists
 ----
@@ -503,7 +506,7 @@ Call subqueries can be used to further process the results of a xref:clauses/uni
 ====
 This example query finds the youngest and the oldest `Player` in the graph.
 
-.Find the oldest and youngest player
+.Find the oldest and youngest players
 [source, cypher]
 ----
 CALL () {
