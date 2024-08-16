@@ -92,7 +92,7 @@ Creating indexes requires link:{neo4j-docs-base-uri}/operations-manual/{page-ver
 CREATE VECTOR INDEX moviePlots IF NOT EXISTS // <1>
 FOR (m:Movie)
 ON m.embedding
-OPTIONS {indexConfig: { 
+OPTIONS { indexConfig: {
  `vector.dimensions`: 1536,
  `vector.similarity_function`: 'cosine'
 }} // <2>
@@ -103,8 +103,10 @@ This means that its default behavior is to throw an error if an attempt is made 
 With `IF NOT EXISTS`, no error is thrown and nothing happens should an index with the same name, schema or both already exist.
 It may still throw an error should a constraint with the same name exist.
 As of Neo4j 5.17, an informational notification is returned when nothing happens, showing the existing index which blocks the creation.
-<2> The `OPTIONS` map is mandatory since a vector index cannot be created without setting the vector dimensions and similarity function.
-In this example, the vector dimension is set to `1536` and the vector similarity function is `cosine`, which is generally the preferred similarity function for text embeddings.
+<2> Prior to Neo4j 5.23, the `OPTIONS` map was mandatory since a vector index could not be created without setting the vector dimensions and similarity function.
+Since Neo4j 5.23, both can be omitted.
+To read more about the available configuration settings, see xref:indexes/semantic-indexes/vector-indexes.adoc#configuration-settings[].
+In this example, the vector dimension is explicitly set to `1536` and the vector similarity function to `'cosine'`, which is generally the preferred similarity function for text embeddings.
 To read more about the available similarity functions, see xref:indexes/semantic-indexes/vector-indexes.adoc#similarity-functions[].
 
 [NOTE]
@@ -117,11 +119,77 @@ You can also create a vector index for relationships with a particular type on a
 ----
 CREATE VECTOR INDEX name IF NOT EXISTS
 FOR ()-[r:REL_TYPE]-() ON (r.embedding)
-OPTIONS {indexConfig: {
+OPTIONS { indexConfig: {
  `vector.dimensions`: $dimension,
  `vector.similarity_function`: $similarityFunction
 }}
 ----
+
+[[configuration-settings]]
+=== Configuration settings
+
+For more information about the values accepted by different index providers, see xref:indexes/semantic-indexes/vector-indexes.adoc#vector-index-providers[].
+
+[[config-vector-dimensions]]
+==== `vector.dimensions`
+The dimensions of the vectors to be indexed.
+For more information, see xref:indexes/semantic-indexes/vector-indexes.adoc#embeddings[].
+This setting can be omitted, and any `LIST<INTEGER | FLOAT>` can be indexed and queried, separated by their dimensions, _though only vectors of the same dimension can be compared._
+Setting this value adds additional checks that ensure only vectors with the configured dimensions are indexed, and querying the index with a vector of a different dimensions returns an error.
+
+[NOTE]
+It is recommended to provide dimensions when creating a vector index.
+
+Accepted values::: `INTEGER` between `1` and `4096` inclusively.
+Default value::: None.
+The setting was mandatory prior to Neo4j 5.23.
+
+[[config-vector-similarity-function]]
+==== `vector.similarity_function`
+
+The name of the similarity function used to assess the similarity of two vectors.
+To read more about the available similarity functions, see xref:indexes/semantic-indexes/vector-indexes.adoc#similarity-functions[].
+
+Accepted values::: `STRING`: `'cosine'`, `'euclidean'`.
+Default value::: `'cosine'`. The setting was mandatory prior to Neo4j 5.23.
+
+[role=label--new-5.23]
+[[config-vector-quantization]]
+==== `vector.quantization.enabled`
+
+Quantization is a technique to reduce the size of vector representations.
+Enabling quantization can accelerate search performance but can slightly decrease accuracy.
+It is recommended to enable quantization on machines with limited memory.
+Vector indexes created prior to Neo4j 5.23 have this setting effectively set to `false`.
+
+Accepted values::: `BOOLEAN`: `true`, `false`.
+Default value::: `true`
+
+[discrete]
+[[config-advanced]]
+=== Advanced configuration settings
+
+[role=label--new-5.23]
+[[config-vector-hsnw.m]]
+==== `vector.hnsw.m`
+
+The `M` parameter controls the maximum number of connections each node has in the HNSW (Hierarchical Navigable Small Worlds) graph.
+Increasing this value may lead to greater accuracy at the expense of increased index population and update times, especially for vectors with high dimensionality.
+Vector indexes created prior to Neo4j 5.23 have this setting effectively set to `16`.
+
+Accepted values::: `INTEGER` between `1` and `512` inclusively.
+Default value::: `16`
+
+[role=label--new-5.23]
+[[config-vector-hsnw.ef_construction]]
+==== `vector.hnsw.ef_construction`
+
+The number of nearest neighbors tracked during the insertion of vectors into the HNSW graph.
+Increasing this value increases the quality of the index, and may lead to greater accuracy (with diminishing returns) at the expense of increased index population and update times.
+Vector indexes created prior to Neo4j 5.23 have this setting effectively set to `100`.
+
+Accepted values::: `INTEGER` between `1` and `3200` inclusively.
+Default value::: `100`
 
 [[query-vector-index]]
 == Query vector indexes
@@ -159,8 +227,8 @@ RETURN movie.title AS title, movie.plot AS plot, score
 | "Godfather, The"           | "The aging patriarch of an organized crime dynasty transfers control of his clandestine empire to his reluctant son."                                                                                                    | 1.0                |
 | "Godfather: Part III, The" | "In the midst of trying to legitimize his business dealings in New York and Italy in 1979, aging Mafia don Michael Corleone seeks to avow for his sins while taking a young protégé under his wing."                     | 0.9648237228393555 |
 | "Godfather: Part II, The"  | "The early life and career of Vito Corleone in 1920s New York is portrayed while his son, Michael, expands and tightens his grip on his crime syndicate stretching from Lake Tahoe, Nevada to pre-revolution 1958 Cuba." | 0.9547788500785828 |
+| "Goodfellas"               | "Henry Hill and his friends work their way up through the mob hierarchy."                                                                                                                                                | 0.9300689697265625 |
 | "Scarface"                 | "An ambitious and near insanely violent gangster climbs the ladder of success in the mob, but his weaknesses prove to be his downfall."                                                                                  | 0.9367183446884155 |
-| "Jane Austen's Mafia!"     | "Takeoff on the Godfather with the son of a mafia king taking over for his dying father"                                                                                                                                 | 0.9366795420646667 |
 +----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 
@@ -238,11 +306,11 @@ SHOW VECTOR INDEXES YIELD *
 .Result
 [source, role=queryresult]
 ----
-+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| id | name         | state    | populationPercent | type     | entityType | labelsOrTypes | properties        | indexProvider | owningConstraint | lastRead                 | readCount | trackedSince             | options                                                                                                         | failureMessage | createStatement                                                                                                                                                                                  |
-+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| 2  | "moviePlots" | "ONLINE" | 100.0             | "VECTOR" | "NODE"     | ["Movie"]     | ["embedding"]     | "vector-2.0"  | NULL             | 2024-05-07T09:19:09.225Z | 47        | 2024-05-07T08:26:19.072Z | {indexConfig: {`vector.dimensions`: 1536, `vector.similarity_function`: "COSINE"}, indexProvider: "vector-2.0"} | ""             | "CREATE VECTOR INDEX `moviePlots` FOR (n:`Movie`) ON (n.`embedding`) OPTIONS {indexConfig: {`vector.dimensions`: 1536,`vector.similarity_function`: 'COSINE'}, indexProvider: 'vector-2.0'}"     |
-+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| id | name        | state    | populationPercent | type     | entityType | labelsOrTypes | properties        | indexProvider | owningConstraint| lastRead                  | readCount | trackedSince              | options                                                                                                                                                                                                                                                   | failureMessage | createStatement                                                                                                                                                                                                                                                                              |
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2  | "moviePlots"| "ONLINE" | 100.0             | "VECTOR" | "NODE"     | ["Movie"]     | ["embedding"]     | "vector-2.0"  | NULL            | 2024-05-07T09:19:09.225Z  | 47        | 2024-05-07T08:26:19.072Z  | {indexConfig: {indexConfig: {`vector.dimensions`: 1536, `vector.hnsw.m`: 16, `vector.quantization.enabled`: TRUE, `vector.similarity_function`: "COSINE", `vector.hnsw.ef_construction`: 100}, indexProvider: "vector-2.0"}, indexProvider: "vector-2.0"} | ""             | "CREATE VECTOR INDEX `moviePlots` FOR (n:`Movie`) ON (n.`embedding`) OPTIONS {indexConfig: {`vector.dimensions`: 1536,`vector.hnsw.ef_construction`: 100,`vector.hnsw.m`: 16,`vector.quantization.enabled`: true,`vector.similarity_function`: 'COSINE'}, indexProvider: 'vector-2.0'}"      |
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 
 To return only specific details, specify the desired column name(s) after the `YIELD` clause.
@@ -367,7 +435,7 @@ Cosine similarity is used when the _angle_ between the vectors is what determine
 
 A valid vector for a cosine vector index is when:
 
-* All vector components can be represented finitely in IEEE 754 double precision.
+* All vector components can be represented finitely in IEEE 754 double precision.footnote:[link:https://ieeexplore.ieee.org/document/8766229[IEEE Standard for Floating-Point Arithmetic]]
 * Its {l2-norm} is non-zero and can be represented finitely in IEEE 754 double precision.
 * The ratio of each vector component with its {l2-norm} can be represented finitely in IEEE 754 single precision.
 
@@ -386,7 +454,7 @@ In the above equation the trigonometric cosine is given by the scalar product of
 ====
 Euclidean similarity is useful when the _distance_ between the vectors is what determines how similar two vectors are.
 
-A valid vector for a Euclidean vector index is when all vector components can be represented finitely in IEEE 754 single precision.footnote:[link:https://ieeexplore.ieee.org/document/8766229[IEEE Standard for Floating-Point Arithmetic]]
+A valid vector for a Euclidean vector index is when all vector components can be represented finitely in IEEE 754 single precision.
 
 Euclidean interprets the vectors in Cartesian coordinates.
 The measure is related to the Euclidean distance, i.e., how far two points are from one another.
@@ -449,8 +517,6 @@ The requested _k_ nearest neighbors may not be the exact _k_ nearest, but close 
 * Only one vector index can be over a schema.
 For example, you cannot have one xref:indexes/semantic-indexes/vector-indexes.adoc#similarity-functions[Euclidean] and one xref:indexes/semantic-indexes/vector-indexes.adoc#similarity-functions[cosine] vector index on the same label-property key pair.
 
-* No provided settings or options for tuning the index.
-
 * Changes made within the same transaction are not visible to the index.
 ====
 
@@ -463,6 +529,15 @@ The following table lists the known issues and, if fixed, the version in which t
 |===
 | Known issues | Fixed in
 
+| The creation of a vector index using the legacy procedure link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_index_vector_createnodeindex[`db.index.vector.createNodeIndex`] may fail with an error in Neo4j 5.18 and later if the database was last written to with a version prior to Neo4j 5.11, and the legacy procedure is the first write operation used on the newer version.
+In Neo4j 5.20, the error was clarified.
+[TIP]
+--
+Using the `CREATE VECTOR INDEX` command instead avoids this issue.
+If the use of the procedure is unavoidable, performing any other write operation to the database on the newer binary before using the procedure will avoid the issue
+--
+|
+
 | Procedure signatures from `SHOW PROCEDURES` will render the vector arguments with a type of `ANY` rather than the semantically correct type of `LIST<INTEGER \| FLOAT>`.
 [NOTE]
 --
@@ -470,11 +545,13 @@ The types are still enforced as `LIST<INTEGER \| FLOAT>`.
 --
 |
 
+| No provided settings or options for tuning the index.
+| Neo4j 5.23
+
 | Only node vector indexes are supported.
 | Neo4j 5.18
 
 | Vector indexes cannot be assigned autogenerated names.
-
 | Neo4j 5.15
 
 | There is no Cypher syntax for creating a vector index.
