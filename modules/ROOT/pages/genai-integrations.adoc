@@ -1,10 +1,11 @@
 :description: Information about Neo4j's GenAI integrations.
-:page-role: enterprise-edition new-5.17
+:page-role: new-5.17
 :test-setup-dump: https://github.com/neo4j-graph-examples/recommendations/raw/main/data/recommendations-50.dump
 include::https://raw.githubusercontent.com/neo4j-graphacademy/courses/main/asciidoc/courses/llm-fundamentals/ad.adoc[]
 
 [[genai-integrations]]
 = GenAI integrations
+
 
 Neo4j's xref:indexes/semantic-indexes/vector-indexes.adoc[] and xref:functions/vector.adoc[] allow you to calculate the similarity between node and relationship properties in a graph.
 A prerequisite for using these features is that vector embeddings have been set as properties of these entities.
@@ -20,9 +21,12 @@ For a hands-on guide on how to use the GenAI plugin, see link:https://neo4j.com/
 
 The GenAI plugin is enabled by default in Neo4j Aura.
 
-For self-managed instances, the plugin is only available on Enterprise Edition and needs to be installed.
+The plugin needs to be installed on self-managed instances.
 This is done by moving the `neo4j-genai.jar` file from `/products` to `/plugins` in the Neo4j home directory, or, if you are using Docker, by starting the Docker container with the extra parameter `--env NEO4J_PLUGINS='["genai"]'`.
 For more information, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/configuration/plugins/[Operations Manual -> Configure plugins].
+
+[NOTE]
+Prior to Neo4j 5.23, the GenAI plugin was only available on Neo4j Enterprise Edition.
 
 [[example-graph]]
 == Example graph
@@ -180,9 +184,8 @@ WITH collect(m) AS moviesList // <1>
      count(*) AS total,
      100 AS batchSize // <2>
 UNWIND range(0, total, batchSize) AS batchStart // <3>
-CALL { // <4>
-    WITH moviesList, batchStart, batchSize
-    WITH moviesList, batchStart, [movie IN moviesList[batchStart .. batchStart + batchSize] | movie.title || ': ' || movie.plot] AS resources // <5>
+CALL (moviesList, batchStart, batchSize) { // <4>
+    WITH [movie IN moviesList[batchStart .. batchStart + batchSize] | movie.title || ': ' || movie.plot] AS resources // <5>
     CALL genai.vector.encodeBatch(batch, 'OpenAI', { token: $token }) YIELD index, vector
     CALL db.create.setNodeVectorProperty(moviesList[batchStart + index], 'embedding', vector) // <6>
 } IN TRANSACTIONS OF 1 ROW <7>
@@ -194,6 +197,8 @@ Because vector embeddings can be very large, a larger batch size may require sig
 Too large a batch size may also exceed the provider's threshold.
 <3> Process `Movie` nodes in increments of `batchSize`.
 <4> A xref:subqueries/subqueries-in-transactions.adoc[`CALL` subquery] executes a separate transaction for each batch.
+Note that this `CALL` subquery uses a xref:subqueries/call-subquery.adoc#variable-scope-clause[variable scope clause] (introduced in Neo4j 5.23) to import variables.
+If you are using an older version of Neo4j, use an  xref:subqueries/call-subquery.adoc#importing-with[importing `WITH` clause] instead.
 <5> `resources` is a list of strings, each being the concatenation of `title` and `plot` of one movie.
 <6> The procedure sets `vector` as value for the property named `embedding` for the node at position `batchStart + index` in the `moviesList`.
 <7> Set to `1` the amount of batches to be processed at once.
