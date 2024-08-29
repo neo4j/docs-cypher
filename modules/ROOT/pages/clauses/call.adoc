@@ -11,13 +11,11 @@ For more information about the `CALL` clause in this context, refer to xref::sub
 For information about how to list procedures, see xref:clauses/listing-procedures.adoc[].
 
 [NOTE]
-====
 Neo4j comes with a number of built-in procedures.
 For a list of these, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures[Operations Manual -> Procedures].
-
 Users can also develop custom procedures and deploy to the database.
 See link:{neo4j-docs-base-uri}/java-reference/{page-version}/extending-neo4j/procedures#extending-neo4j-procedures[Java Reference -> User-defined procedures] for details.
-====
+
 
 == Example graph
 
@@ -41,7 +39,7 @@ CREATE (:User {name: 'Andy', born: 1991}),
 .`CALL` a procedure without arguments
 ====
 
-This example calls the built-in procedure link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_labels[`db.labels`], which lists all labels used in the database.
+This example calls the built-in procedure link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_labels[`db.labels()`], which lists all labels used in the database.
 
 .Query
 [source, cypher]
@@ -71,7 +69,7 @@ Omission of parentheses is available only in a so-called standalone procedure ca
 ====
 
 
-This example calls the procedure link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_dbms_checkconfigvalue[`dbms.checkConfigValue`] using literal arguments.
+This example calls the procedure link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_dbms_checkconfigvalue[`dbms.checkConfigValue()`], which checks the validity of a configuration setting value, using literal arguments.
 
 .Query
 [source, cypher]
@@ -80,7 +78,7 @@ CALL dbms.checkConfigValue('server.bolt.enabled', 'true')
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols=""2*<m"]
+[role="queryresult",options="header,footer",cols="2*<m"]
 |===
 | "valid" | "message"
 | true | "requires restart"
@@ -93,7 +91,7 @@ CALL dbms.checkConfigValue('server.bolt.enabled', 'true')
 .`CALL` a procedure using parameters
 ====
 
-This calls the example procedure `dbms.checkConfigValue` using parameters as arguments.
+This calls the example procedure `dbms.checkConfigValue()` using parameters as arguments.
 Each procedure argument is taken to be the value of a corresponding statement parameter with the same name (or null if no such parameter has been given).
 
 .Parameters
@@ -112,7 +110,7 @@ CALL dbms.checkConfigValue($setting, $value)
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols=""2*<m"]
+[role="queryresult",options="header,footer",cols="2*<m"]
 |===
 | "valid" | "message"
 | true | "requires restart"
@@ -130,7 +128,7 @@ See xref::syntax/parameters.adoc[] for more about querying with parameters.
 .`CALL` a procedure using both literal and parameter arguments
 ====
 
-This calls the example procedure `dbms.checkConfigValue` using both literal and parameter arguments.
+This calls the example procedure `dbms.checkConfigValue()` using both literal and parameter arguments.
 
 .Parameters
 [source, parameters]
@@ -147,7 +145,7 @@ CALL dbms.checkConfigValue($setting, 'true')
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols=""2*<m"]
+[role="queryresult",options="header,footer",cols="2*<m"]
 |===
 | "valid" | "message"
 | true | "requires restart"
@@ -175,7 +173,7 @@ CALL db.labels() YIELD *
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols=""1*<m"]
+[role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | label
 
@@ -187,13 +185,23 @@ CALL db.labels() YIELD *
 
 If the procedure has deprecated return columns, those columns are also returned.
 
+Note that `YIELD *` is only valid in standalone procedure calls.
+For example, the following is not valid:
+
+.Not allowed
+[source, cypher, role=test-fail]
+----
+CALL db.labels() YIELD *
+RETURN count(*) AS results
+----
+
 ====
 
-.`YIELD` specific argument values and filter on them
+.`YIELD` specific procedure results and filter on them
 ====
 
-`YIELD` can be used to filter for specific argument values.
-This requires knowing the names of arguments within a procedure's signature, which can either be found in the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/[Operations Manual -> Procedures] or returned by a `SHOW PROCEDURES` query.
+`YIELD` can be used to filter for specific results.
+This requires knowing the names of the arguments within a procedure's signature, which can either be found in the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/[Operations Manual -> Procedures] or returned by a `SHOW PROCEDURES` query.
 
 .Find the argument names of `db.propertyKeys`
 [source, cypher]
@@ -204,7 +212,7 @@ RETURN signature
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols=""1m"]
+[role="queryresult",options="header,footer",cols="1m"]
 |===
 | signature
 
@@ -213,7 +221,9 @@ RETURN signature
 1+d|Rows: 1
 |===
 
-It is then possible to use these argument names for further query filtering:
+It is then possible to use these argument names for further query filtering.
+Note that if the procedure call is part of a larger query, its output must be named explicitly.
+In the below example, `propertyKey` is aliased as `prop` and then used later in the query to xref:functions/aggregating.adoc#functions-count[count] the occurrence of each property in the graph.
 
 .Filter on specific argument returned by `YIELD`
 [source, cypher]
@@ -225,7 +235,7 @@ RETURN prop, count(n) AS numNodes
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols=""2*<m"]
+[role="queryresult",options="header,footer",cols="2*<m"]
 |===
 | prop | numNodes
 
@@ -238,40 +248,13 @@ RETURN prop, count(n) AS numNodes
 
 ====
 
-.Filtering procedures using `WHERE`
-====
-
-This query uses a xref:clauses/where.adoc[`WHERE`] to further filter the returned procedure values.
-
-.Query
-[source, cypher]
-----
-CALL db.labels() YIELD label
-WHERE label CONTAINS 'User'
-RETURN count(label) AS numLabels
-----
-
-.Result
-[role="queryresult",options="header,footer",cols=""1*<m"]
-|===
-| numLabels
-
-| 1
-
-1+d|Rows: 1
-|===
-
-====
-
-
-
-
 
 === Note on VOID procedures
 
 Neo4j supports the notion of `VOID` procedures.
-A `VOID` procedure is a procedure that does not declare any result fields and returns no result records and that has explicitly been declared as `VOID`.
-`VOID` procedure only produces side-effects and does not allow for the use of `YIELD`
+A `VOID` procedure is a procedure that does not declare any result fields and returns no result records.
+`VOID` procedure only produces side-effects and does not allow for the use of `YIELD`.
+Calling a `VOID` procedure in the middle of a larger query will simply pass on each input record (i.e., it acts like xref:clauses/with.adoc[`WITH *`] in terms of the record stream).
 
 [role=label--new-5.24]
 [[optional-call]]
@@ -296,15 +279,15 @@ WHERE label IN labels(n)
 WITH label, collect(elementId(n)) AS nodeIds
 RETURN label, nodeIds,
 CASE 
-      WHEN label IS NULL THEN "These nodes have no labels" 
-      ELSE "Nodes with this label exist" 
-      END AS status
+  WHEN label IS NULL THEN "These nodes have no labels" 
+  ELSE "Nodes with this label exist" 
+END AS status
 ----
 
-Note that the result does not include the graph in the graph without a label.
+Note that the result does not include the node in the graph without a label.
 
 .Result
-[role="queryresult",options="header,footer",cols=""3*<m"]
+[role="queryresult",options="header,footer",cols="3*<m"]
 |===
 | label | nodeIds | status
 
@@ -331,15 +314,15 @@ WHERE label IN labels(n)
 WITH label, collect(elementId(n)) AS nodeIds
 RETURN label, nodeIds,
 CASE 
-      WHEN label IS NULL THEN "These nodes have no labels" 
-      ELSE "Nodes with this label exist" 
-      END AS status
+  WHEN label IS NULL THEN "These nodes have no labels" 
+  ELSE "Nodes with this label exist" 
+END AS status
 ----
 
 Now the result includes the node without any labels.
 
 .Result
-[role="queryresult",options="header,footer",cols=""3*<m"]
+[role="queryresult",options="header,footer",cols="3*<m"]
 |===
 | label | nodeIds | status
 
