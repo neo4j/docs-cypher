@@ -1,19 +1,17 @@
 = CALL subqueries
-:description: This page describes how to use the CALL subquery with Cypher.
+:description: This page describes how to use Cypher's `CALL` subquery.
 
-The `CALL` clause can be used to invoke a subquery.
-Unlike other subqueries in Cypher, it can be used to perform changes to the database (e.g. xref:clauses/create.adoc[] new nodes), and it requires an importing xref:clauses/with.adoc[] clause.
+The `CALL` clause can be used to invoke subqueries that execute operations within a defined scope, thereby optimizing data handling and query efficiency. 
+Unlike other subqueries in Cypher, `CALL` subqueries can be used to perform changes to the database (e.g. xref:clauses/create.adoc[] new nodes).
 
 [NOTE]
-====
 The `CALL` clause is also used for calling procedures.
-For descriptions of the `CALL` clause in this context, refer to xref::clauses/call.adoc[`CALL` procedure].
-====
+For descriptions of the `CALL` clause in this context, refer to the xref::clauses/call.adoc[`CALL` procedure].
 
 [[call-example-graph]]
 == Example graph
 
-The following graph is used for the examples below:
+A graph with the following schema is used for the examples below:
 
 image::call_subquery_graph.svg[]
 
@@ -21,33 +19,45 @@ To recreate the graph, run the following query in an empty Neo4j database:
 
 [source, cypher, role=test-setup]
 ----
-CREATE
- (a:Person:Child {name: 'Alice', age: 20}),
- (b:Person {name: 'Bob', age: 27}),
- (c:Person:Parent {name: 'Charlie', age: 65}),
- (d:Person {name: 'Dora', age: 30})
- CREATE (a)-[:FRIEND_OF]->(b)
- CREATE (a)-[:CHILD_OF]->(c)
- CREATE (a)-[:OWES {dollars: 20}]->(c)
- CREATE (a)-[:OWES {dollars: 25}]->(b)
- CREATE (b)-[:OWES {dollars: 35}]->(d)
- CREATE (d)-[:OWES {dollars: 15}]->(b)
- CREATE (d)-[:OWES {dollars: 30}]->(b)
-CREATE (:Counter {count: 0})
+CREATE (teamA:Team {name: 'Team A'}),
+       (teamB:Team {name: 'Team B'}),
+       (teamC:Team {name: 'Team C'}),
+       (playerA:Player {name: 'Player A', age: 21}),
+       (playerB:Player {name: 'Player B', age: 23}),
+       (playerC:Player {name: 'Player C', age: 19}),
+       (playerD:Player {name: 'Player D', age: 30}),
+       (playerE:Player {name: 'Player E', age: 25}),
+       (playerF:Player {name: 'Player F', age: 35}),
+       (playerA)-[:PLAYS_FOR]->(teamA),
+       (playerB)-[:PLAYS_FOR]->(teamA),
+       (playerC)-[:PLAYS_FOR]->(teamA),
+       (playerD)-[:PLAYS_FOR]->(teamB),
+       (playerE)-[:PLAYS_FOR]->(teamC),
+       (playerF)-[:PLAYS_FOR]->(teamC),
+       (playerA)-[:FRIEND_OF]->(playerB),
+       (playerA)-[:FRIEND_OF]->(playerC),
+       (playerB)-[:FRIEND_OF]->(playerF),
+       (playerC)-[:FRIEND_OF]->(playerD),
+       (teamA)-[:OWES {dollars: 1500}]->(teamB),
+       (teamA)-[:OWES {dollars: 3000}]->(teamB),
+       (teamB)-[:OWES {dollars: 1700}]->(teamC),
+       (teamC)-[:OWES {dollars: 5000}]->(teamB)
 ----
 
-[[call-semantics]]
-== Semantics
+== Semantics and performance
 
 A `CALL` subquery is executed once for each incoming row.
+The variables returned in a subquery are available to the outer scope of the enclosing query.
 
-In the below example, the `CALL` subquery executes three times, one for each row that the `UNWIND` clause outputs.
+.Basic example
+====
+In this example, the `CALL` subquery executes three times, one for each row that the xref:clauses/unwind.adoc[`UNWIND`] clause outputs.
 
 .Query
 [source, cypher]
 ----
 UNWIND [0, 1, 2] AS x
-CALL {
+CALL () {
   RETURN 'hello' AS innerReturn
 }
 RETURN innerReturn
@@ -57,84 +67,360 @@ RETURN innerReturn
 [role="queryresult",options="header,footer",cols="m"]
 |===
 | innerReturn
+
 | 'hello'
 | 'hello'
 | 'hello'
-d|Rows:3
+
+d|Rows: 3
 |===
+====
 
 Each execution of a `CALL` subquery can observe changes from previous executions.
+This allows for the accumulation of results and the progressive transformation of data within a single Cypher query.
 
-.Query
+.Incremental updates 
+====
+In this example, each iteration of the `CALL` subquery adds 1 to the `age` of `Player A` and the returned `newAge` reflects the `age` after each increment.
+
+.Incrementally update the age property of a Player
 [source, cypher]
 ----
-UNWIND [0, 1, 2] AS x
-CALL {
-  MATCH (n:Counter)
-    SET n.count = n.count + 1
-  RETURN n.count AS innerCount
+UNWIND [1, 2, 3] AS x
+CALL () {
+    MATCH (p:Player {name: 'Player A'})
+    SET p.age = p.age + 1
+    RETURN p.age AS newAge
 }
-WITH innerCount
-MATCH (n:Counter)
-RETURN
-  innerCount,
-  n.count AS totalCount
+WITH x, newAge
+MATCH (p:Player {name: 'Player A'})
+RETURN x AS iteration, newAge, p.age AS totalAge
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols=""2*<m"]
+[role="queryresult",options="header,footer",cols=""3*<m"]
 |===
 
-| innerCount | totalCount
+| iteration | newAge | totalAge
 
-| 1 | 3
+| 1 | 22 | 24
 
-| 2 | 3
+| 2 | 23 | 24
 
-| 3 | 3
+| 3 | 24 | 24
 
-2+d|Rows:3
+3+d|Rows: 3
 |===
-
-
-[[call-importing-variables]]
-== Importing variables into subqueries
-
-Variables are imported into a subquery using an importing `WITH` clause.
-
-[NOTE]
-====
-References to a variable in the outer scope that were not imported will introduce a new variable.
 ====
 
-As the subquery is evaluated for each incoming input row, the imported variables get bound to the corresponding values from the input row in each evaluation.
+The scoping effect of a `CALL` subquery means that the work performed during each execution of each row can be cleaned up as soon its execution ends, before proceeding to the next row.
+This allows for efficient resource management and reduces memory overhead by ensuring that temporary data structures created during the subquery execution do not persist beyond their usefulness.
+As a result, `CALL` subqueries can help maintain optimal performance and scalability, especially in complex or large-scale queries.
 
-.Query
+.Performance
+====
+In this example, a `CALL` subquery is used to xref:functions/aggregating.adoc#functions-collect[`collect`] a `LIST` containing all players who play for a particular team.
+
+.Collect a list of all players playing for a particular team
 [source, cypher]
 ----
-UNWIND [0, 1, 2] AS x
-CALL {
-  WITH x
-  RETURN x * 10 AS y
+MATCH (t:Team)
+CALL (t) {
+  MATCH (p:Player)-[:PLAYS_FOR]->(t)
+  RETURN collect(p) as players
 }
-RETURN x, y
+RETURN t AS team, players
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols="2*<m"]
+[source, role="queryresult",options="header,footer",cols="m,2m"]
 |===
-| x | y
-| 0 | 0
-| 1 | 10
-| 2 | 20
+| team
+| players
+
+| (:Team {name: "Team A"})
+| [(:Player {name: "Player C", age: 19}), (:Player {name: "Player B", age: 23}), (:Player {name: "Player A", age: 24})]
+
+| (:Team {name: "Team B"})
+| [(:Player {name: "Player D", age: 30})]
+
+| (:Team {name: "Team C"})
+| [(:Player {name: "Player F", age: 35}), (:Player {name: "Player E", age: 25})]
+
 2+d|Rows: 3
 |===
 
-An importing `WITH` clause must:
+The `CALL` subquery ensures that each `Team` is processed separately (one row per `Team` node), rather than having to hold every `Team` and `Player` node in heap memory simultaneously before collecting them into lists.
+Using a `CALL` subquery can therefore reduce the amount of heap memory required for an operation.
+====
 
-* Consist only of simple references to outside variables - e.g. `WITH x, y, z`. Aliasing or expressions are not supported in importing `WITH` clauses - e.g. `WITH a AS b` or `WITH a+1 AS b`.
-* Be the first clause of a subquery (or the second clause, if directly following a `USE` clause).
+[[import-variables]]
+== Importing variables
 
+Variables from the outer scope must be explicitly imported into the inner scope of the `CALL` subquery, either by using a xref:subqueries/call-subquery.adoc#variable-scope-clause[variable scope clause] or an xref:subqueries/call-subquery.adoc#importing-with[importing `WITH` clause] (deprecated).
+As the subquery is evaluated for each incoming input row, the imported variables are assigned the corresponding values from that row.
+
+[role=label--new-5.23]
+[[variable-scope-clause]]
+=== The variable scope clause
+
+Variables can be imported into a `CALL` subquery using a scope clause: `CALL (<variable>)`.
+Using the scope clause disables the deprecated xref:subqueries/call-subquery.adoc#importing-with[importing `WITH`] clause.
+
+A scope clause can be used to import all, specific, or none of the variables from the outer scope.
+
+.Import specific variables from the outer scope
+====
+
+This example only imports the `p` variable from the outer scope and uses it to create a new, randomly generated, `rating` property for each `Player` node.
+It then returns the `Player` node with the highest `rating`.
+
+.Import one variable from the outer scope
+[source, cypher, role=test-result-skip]
+----
+MATCH (p:Player), (t:Team)
+CALL (p) {
+  WITH rand() AS random
+  SET p.rating = random
+  RETURN p.name AS playerName, p.rating AS rating
+}
+RETURN playerName, rating, t AS team
+ORDER BY rating
+LIMIT 1
+----
+
+.Result
+[source, role="queryresult",options="header,footer",cols="3*m"]
+|===
+| playerName
+| rating
+| team
+
+| "Player C"
+| 0.9307432039870395
+| "Team A"
+
+3+d|Rows: 1
+
+|===
+
+To import additional variables, include them within the parentheses after `CALL`, separated by commas.
+For example, to import both variables from the `MATCH` clause in the above query, modify the scope clause accordingly: `CALL (p, t)`.
+====
+
+.Import all variables 
+====
+To import all variables from the outer scope, use `CALL (*)`.
+This example imports both the `p` and `t` variables and sets a new `lastUpdated` property on both.
+
+.Import all variables from the outer scope
+[source, cypher, role=test-result-skip]
+----
+MATCH (p:Player), (t:Team)
+CALL (*) {
+  SET p.lastUpdated = timestamp()
+  SET t.lastUpdated = timestamp()
+}
+RETURN p.name AS playerName,
+       p.lastUpdated AS playerUpdated,
+       t.name AS teamName,
+       t.lastUpdated AS teamUpdated
+LIMIT 1
+----
+
+.Result
+[source, role="queryresult",options="header,footer",cols="4*m"]
+|===
+
+| playerName
+| playerUpdated
+| teamName
+| teamUpdated
+
+| "Player A"
+| 1719304206653
+| "Team A"
+| 1719304206653
+
+4+d|Rows: 1
+|===
+====
+
+.Import no variables
+====
+To import no variables from the outer scope, use `CALL ()`.
+
+.Import no variables from the outer scope
+[source, cypher]
+----
+MATCH (t:Team)
+CALL () {
+  MATCH (p:Player)
+  RETURN count(p) AS totalPlayers
+}
+RETURN count(t) AS totalTeams, totalPlayers
+----
+
+.Result
+[source, role="queryresult",options="header,footer",cols="2*m"]
+|===
+
+| totalTeams
+| totalPlayers
+
+| 3
+| 6
+
+2+d|Rows: 1
+|===
+
+====
+
+[NOTE]
+=====
+As of Neo4j 5.23, it is deprecated to use `CALL` subqueries without a variable scope clause.
+
+.Deprecated
+[source, cypher]
+----
+MATCH (t:Team)
+CALL {
+  MATCH (p:Player)
+  RETURN count(p) AS totalPlayers
+}
+RETURN count(t) AS totalTeams, totalPlayers
+----
+=====
+
+[[variable-scope-rules]]
+==== Rules
+
+* The scope clause’s variables can be globally referenced in the subquery.
+A subsequent `WITH` within the subquery cannot delist an imported variable.
+The deprecated xref:subqueries/call-subquery.adoc#importing-with[importing `WITH` clause] behaves differently because imported variables can only be referenced from the first line and can be delisted by subsequent clauses.
+
+* Variables cannot be aliased in the scope clause.
+Only simple variable references are allowed.
+
+.Not allowed
+[source,cypher,role=test-fail]
+----
+MATCH (t:Team)
+CALL (t AS teams) {
+  MATCH (p:Player)-[:PLAYS_FOR]->(teams)
+  RETURN collect(p) as players
+}
+RETURN t AS teams, players
+----
+
+* The scope clause’s variables cannot be re-declared in the subquery.
+
+.Not allowed
+[source,cypher,role=test-fail]
+----
+MATCH (t:Team)
+CALL (t) {
+  WITH 'New team' AS t
+  MATCH (p:Player)-[:PLAYS_FOR]->(t)
+  RETURN collect(p) as players
+}
+RETURN t AS team, players
+----
+
+* The subquery cannot return a variable name which already exists in the outer scope.
+To return imported variables they must be renamed.
+
+.Not allowed
+[source,cypher,role=test-fail]
+----
+MATCH (t:Team)
+CALL (t) {
+  RETURN t
+}
+RETURN t
+----
+
+[role=label--deprecated]
+[[importing-with]]
+=== Importing `WITH` clause
+
+Variables can also be imported into a `CALL` subquery using an importing `WITH` clause.
+Note that this syntax is not xref:appendix/gql-conformance/index.adoc[GQL conformant].
+
+.Variables imported by `WITH` clause
+[source, cypher]
+----
+MATCH (t:Team)
+CALL { 
+  WITH t
+  MATCH (p:Player)-[:PLAYS_FOR]->(t)
+  RETURN collect(p) as players
+}
+RETURN t AS teams, players
+----
+
+.Click to read more about importing variables using the `WITH` clause
+[%collapsible]
+====
+
+* Just as when using a variable scope clause, a subquery using an importing `WITH` clause cannot return a variable name which already exists in the outer scope.
+To return imported variables they must be renamed.
+
+* The importing `WITH` clause must the first clause of a subquery (or the second clause, if directly following a `USE` clause).
+* It is not possible to follow an importing `WITH` clause with any of the following clauses: `DISTINCT`, `ORDER BY`, `WHERE`, `SKIP`, and `LIMIT`.
+
+Attempting any of the above, will throw an error.
+For example, the following query using a `WHERE` clause after an importing `WITH` clause will throw an error:
+
+.Not Allowed
+[source, cypher, role=test-fail]
+----
+UNWIND [[1,2],[1,2,3,4],[1,2,3,4,5]] AS l
+CALL {
+  WITH l
+  WHERE size(l) > 2
+  RETURN l AS largeLists
+}
+RETURN largeLists
+----
+
+.Error message
+[source, error]
+----
+Importing WITH should consist only of simple references to outside variables.
+WHERE is not allowed.
+----
+
+A solution to this restriction, necessary for any filtering or ordering of an importing `WITH` clause, is to declare a second `WITH` clause after the importing `WITH` clause.
+This second `WITH` clause will act as a regular `WITH` clause.
+For example, the following query will not throw an error:
+
+.Allowed
+[source, cypher]
+----
+UNWIND [[1,2],[1,2,3,4],[1,2,3,4,5]] AS l
+CALL {
+  WITH l
+	WITH l
+	WHERE size(l) > 2
+  RETURN l AS largeLists
+}
+RETURN largeLists
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+
+| largeLists
+
+| [1, 2, 3, 4]
+| [1, 2, 3, 4, 5]
+1+d|Rows: 2
+
+|===
+
+====
 
 [[call-execution-order]]
 == Execution order of CALL subqueries
@@ -142,26 +428,29 @@ An importing `WITH` clause must:
 The order in which subqueries are executed is not defined.
 If a query result depends on the order of execution of subqueries, an `ORDER BY` clause should precede the `CALL` clause.
 
-This query creates a linked list of all `Person` nodes in order of ascending age.
+.Ordering results before `CALL` subquery
+====
+This example creates a linked list of all `Player` nodes in order of ascending `age`.
 
 The `CALL` clause is relying on the incoming row ordering to ensure that a correctly ordered linked list is created, thus the incoming rows must be ordered with a preceding `ORDER BY` clause.
 
-.Query
+.Order results before a `CALL` subquery
 [source, cypher]
 ----
-MATCH (person:Person)
-WITH person ORDER BY person.age ASC LIMIT 1
-  SET person:ListHead
+MATCH (player:Player)
+WITH player 
+ORDER BY player.age ASC LIMIT 1
+  SET player:ListHead
 WITH *
-MATCH (nextPerson: Person&!ListHead)
-WITH nextPerson ORDER BY nextPerson.age
-CALL {
-  WITH nextPerson
+MATCH (nextPlayer: Player&!ListHead)
+WITH nextPlayer
+ORDER BY nextPlayer.age
+CALL (nextPlayer) {
   MATCH (current:ListHead)
     REMOVE current:ListHead
-    SET nextPerson:ListHead
-    CREATE(current)-[:IS_YOUNGER_THAN]->(nextPerson)
-  RETURN current AS from, nextPerson AS to
+    SET nextPlayer:ListHead
+    CREATE(current)-[:IS_YOUNGER_THAN]->(nextPlayer)
+  RETURN current AS from, nextPlayer AS to
 }
 RETURN
   from.name AS name,
@@ -171,81 +460,108 @@ RETURN
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols="4*<m"]
+[role="queryresult",options="header,footer",cols="4*m"]
 |===
-| +name+ | +age+ | +closestOlderName+ | +closestOlderAge+
+| name
+| age
+| closestOlderName
+| closestOlderAge
 
-| "Alice" | 20 | "Bob" | 27
-| "Bob" | 27 | "Dora" | 30
-| "Dora" | 30 | "Charlie" | 65
+| "Player C"
+| 19
+| "Player B"
+| 23
 
-4+d|Rows: 3
+| "Player B"
+| 23
+| "Player A"
+| 24
+
+| "Player A"
+| 24
+| "Player E"
+| 25
+
+| "Player E"
+| 25
+| "Player D"
+| 30
+
+| "Player D"
+| 30
+| "Player F"
+| 35
+
+4+d|Rows: 5
 |===
+
+====
 
 [[call-post-union]]
 == Post-union processing
 
 Call subqueries can be used to further process the results of a xref:clauses/union.adoc[] query.
-This example query finds the youngest and the oldest person in the database and orders them by name.
 
-.Query
+.Using `UNION` within a `CALL` subquery
+====
+This example query finds the youngest and the oldest `Player` in the graph.
+
+.Find the oldest and youngest players
 [source, cypher]
 ----
-CALL {
-  MATCH (p:Person)
+CALL () {
+  MATCH (p:Player)
   RETURN p
   ORDER BY p.age ASC
   LIMIT 1
 UNION
-  MATCH (p:Person)
+  MATCH (p:Player)
   RETURN p
   ORDER BY p.age DESC
   LIMIT 1
 }
-RETURN p.name, p.age
-ORDER BY p.name
+RETURN p.name AS name, p.age AS age
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| p.name | p.age
-| "Alice" | 20
-| "Charlie" | 65
+| name | age
+| "Player C" | 19
+| "Player F" | 35
 2+d|Rows: 2
 |===
 
 If different parts of a result should be matched differently, with some aggregation over the whole result, subqueries need to be used.
-The example below query uses a `CALL` subquery in combination with `UNION ALL` to determine how much each `Person` node in the graph owes or is owed.
+The example below query uses a `CALL` subquery in combination with `UNION ALL` to determine how much each `Team` in the graph owes or is owed.
 
-.Query
+.Find how much every team is owed
 [source, cypher]
 ----
-MATCH (p:Person)
-CALL {
-    WITH p
-    OPTIONAL MATCH (p)-[o:OWES]->(other:Person)
-    RETURN o.dollars * -1 AS moneyOwed
-UNION ALL
-    WITH p
-    OPTIONAL MATCH (other:Person)-[o:OWES]->(p)
-    RETURN o.dollars AS moneyOwed
+MATCH (t:Team)
+CALL (t) {
+  OPTIONAL MATCH (t)-[o:OWES]->(other:Team)
+  RETURN o.dollars * -1 AS moneyOwed
+  UNION ALL
+  OPTIONAL MATCH (other)-[o:OWES]->(t)
+  RETURN o.dollars AS moneyOwed
 }
-RETURN p.name, sum(moneyOwed) AS amountOwing
+RETURN t.name AS team, sum(moneyOwed) AS amountOwed
+ORDER BY amountOwed DESC
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| p.name | amountOwing
-| "Alice" | -45
-| "Bob" | 35
-| "Charlie" | 20
-| "Dora" | -10
+| team | amountOwed
+| "Team B" | 7800
+| "Team C" | -3300
+| "Team A" | -4500
 
-2+d|Rows: 4
+2+d|Rows: 3
 |===
 
+====
 
 [[call-aggregation]]
 == Aggregations
@@ -253,58 +569,85 @@ RETURN p.name, sum(moneyOwed) AS amountOwing
 Returning subqueries change the number of results of the query.
 The result of the `CALL` subquery is the combined result of evaluating the subquery for each input row.
 
-The following example finds the name of each person and the names of their friends:
+.`CALL` subquery changing returned rows of outer query
+====
+The following example finds the name of each `Player` and the names of their friends.
+No rows are returned for the `Player` nodes without any `FRIEND_OF` relationships, the number of results of the subquery thus changed the number of results of the enclosing query.
 
-.Query
+.Find the friends of players
 [source, cypher]
 ----
-MATCH (p:Person)
-CALL {
-  WITH p
-  MATCH (p)-[:FRIEND_OF]-(c:Person)
-  RETURN c.name AS friend
+MATCH (p:Player)
+CALL (p) {
+  MATCH (p)-[:FRIEND_OF]->(p2:Player)
+  RETURN p2.name AS friend
 }
-RETURN p.name, friend
+RETURN p.name AS player, friend
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| p.name | friend
-| "Alice" | "Bob"
-| "Bob" | "Alice"
-2+d|Rows: 2
+| player
+| friend
+
+| "Player A"
+| "Player B"
+
+| "Player A"
+| "Player C"
+
+| "Player B" 
+| "Player F"
+
+| "Player C" 
+| "Player D"
+
+2+d|Rows: 4
 |===
 
-The number of results of the subquery changed the number of results of the enclosing query.
-Instead of 4 rows, there are now 2 rows which were found for Alice and Bob respectively.
-No rows are returned for Charlie and Dora since they have no friends in our example graph.
+====
+
+.`CALL` subqueries and isolated aggregations
+====
 
 Subqueries can also perform isolated aggregations.
-The below example uses the xref:functions/aggregating.adoc#functions-sum[sum()] function to count how much money is owed between the `Person` nodes in the graph.
+The below example uses the xref:functions/aggregating.adoc#functions-sum[sum()] function to count how much money is owed between the `Team` nodes in the graph.
+Note that the `owedAmount` for `Team A` is the aggregated results of two `OWES` relationships to `Team B`.
 
-.Query
+.Find how much each team owes
 [source, cypher]
 ----
-MATCH (p:Person)
-CALL {
-  WITH p
-  MATCH (p)-[o:OWES]->(c)
-  RETURN sum(o.dollars) AS owedAmount, c.name AS owedName
+MATCH (t:Team)
+CALL (t) {
+  MATCH (t)-[o:OWES]->(t2:Team)
+  RETURN sum(o.dollars) AS owedAmount, t2.name AS owedTeam
 }
-RETURN p.name, owedAmount, owedName
+RETURN t.name AS owingTeam, owedAmount, owedTeam
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="3*<m"]
 |===
-| p.name | owedAmount | owedName
-| "Alice" | 25 | "Bob"
-| "Alice" | 20 | "Charlie"
-| "Bob" | 35 | "Dora"
-| "Dora" | 45 | "Bob"
+| owingTeam
+| owedAmount
+| owedTeam
+
+| "Team A"
+| 4500
+| "Team B"
+
+| "Team B"
+| 1700
+| "Team C"
+
+| "Team C"
+| 5000
+| "Team B"
+
 3+d|Rows: 4
 |===
+====
 
 [[call-returning-unit]]
 == Note on returning subqueries and unit subqueries
@@ -327,16 +670,15 @@ They do not explicitly return anything, and this means that the number of rows p
 Unit subqueries are used for their ability to alter the graph with updating clauses.
 They do not impact the amount of rows returned by the enclosing query.
 
-This example query creates five clones of each existing `Person` node in the graph.
+This example query creates 3 clones of each existing `Player` node in the graph.
 As the subquery is a unit subquery, it does not change the number of rows of the enclosing query.
 
-.Query
+.Create cloned nodes
 [source, cypher]
 ----
-MATCH (p:Person)
-CALL {
-  WITH p
-  UNWIND range (1, 5) AS i
+MATCH (p:Player)
+CALL (p) {
+  UNWIND range (1, 3) AS i
   CREATE (:Person {name: p.name})
 }
 RETURN count(*)
@@ -346,24 +688,27 @@ RETURN count(*)
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | count(*)
-| 4
+| 6
 1+d|Rows: 1 +
-Nodes created: 20 +
-Properties set: 20 +
-Labels added: 20
+Nodes created: 18 +
+Properties set: 18 +
+Labels added: 18
 |===
 
+
 [[call-rules]]
-== Rules
+== Summary
 
-The following is true for `CALL` subqueries:
+* `CALL` subqueries optimize data handling and query efficiency, and can perform changes to the database.
 
-* A `CALL` subquery can only refer to variables from the enclosing query if they are explicitly imported.
+* `CALL` subqueries enable progressive data transformation and can accumulate results across multiple row executions.
 
-* A `CALL` subquery cannot return variables with the same names as variables in the enclosing query.
+* `CALL` subqueries can only refer to variables from the enclosing query if they are explicitly imported by either a variable scope clause or an importing `WITH` clause (deprecated).
 
 * All variables that are returned from a `CALL` subquery are afterwards available in the enclosing query.
 
-* A `CALL` subquery can be used to perform changes to the database.
+* Returning subqueries (with `RETURN` clause) influence the number of output rows, while unit subqueries (without `RETURN` clause) perform graph updates without changing the number of rows.
 
-* A `CALL` subquery requires an importing `WITH` clause.
+* An `ORDER BY` clause can be used before `CALL` subqueries to ensure a specific order.
+
+* `CALL` subqueries can be used in combination with `UNION` to process and aggregate different parts of a query result.
