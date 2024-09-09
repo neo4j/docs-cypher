@@ -3,7 +3,10 @@
 [[query-order]]
 = ORDER BY
 
-`ORDER BY` is a sub-clause following `RETURN` or `WITH`, and it specifies how the output of a clause should be sorted.
+`ORDER BY` specifies how the output of a clause should be sorted.
+It be used as a sub-clause following `RETURN` or `WITH`.
+As of Neo4j 5.24, it can also be used as a standalone clause, either on its own or in combination with `SKIP`/`OFFSET` or `LIMIT`.
+
 `ORDER BY` relies on comparisons to sort the output, see xref::syntax/operators.adoc#cypher-ordering[Ordering and comparison of values].
 You can sort on many different values, e.g. node/relationship properties, the node/relationship ids, or on most expressions.
 
@@ -12,28 +15,24 @@ You can sort on many different values, e.g. node/relationship properties, the no
 Unless `ORDER BY` is used, Neo4j does not guarantee the row order of a query result.
 ====
 
+[[example-graph]]
+== Example graph
 
 The following graph is used for the examples below:
 
-image:graph_order_by_clause.svg[]
+image::graph_order_by_clause.svg[width="600", role="middle"]
 
-////
+To recreate it, run the following query against an empty Neo4j database:
+
 [source, cypher, role=test-setup]
 ----
 CREATE
-  (a {name: 'A', age: 34, length: 170}),
-  (b {name: 'B', age: 36}),
-  (c {name: 'C', age: 32, length: 185}),
-  (a)-[:KNOWS]->(b),
-  (b)-[:KNOWS]->(c)
+  (andy: Person {name: 'Andy', age: 34, length: 170}),
+  (bernard: Person {name: 'Bernard', age: 36}),
+  (charlotte: Person {name: 'Charlotte', age: 32, length: 185}),
+  (andy)-[:KNOWS]->(bernard),
+  (bernard)-[:KNOWS]->(charlotte)
 ----
-////
-
-[NOTE]
-====
-Strings that contain special characters can have inconsistent or non-deterministic ordering in Neo4j.
-For details, see xref::values-and-types/property-structural-constructed.adoc#property-types-sip-note[Sorting of special characters].
-====
 
 [[order-nodes-by-property]]
 == Order nodes by property
@@ -41,7 +40,7 @@ For details, see xref::values-and-types/property-structural-constructed.adoc#pro
 `ORDER BY` is used to sort the output.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 MATCH (n)
 RETURN n.name, n.age
@@ -54,9 +53,9 @@ The nodes are returned, sorted by their name.
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
 | n.name | n.age
-| "A" | 34
-| "B" | 36
-| "C" | 32
+| "Andy" | 34
+| "Bernard" | 36
+| "Charlotte" | 32
 2+d|Rows: 3
 |===
 
@@ -68,7 +67,7 @@ You can order by multiple properties by stating each variable in the `ORDER BY` 
 Cypher will sort the result by the first variable listed, and for equals values, go to the next property in the `ORDER BY` clause, and so on.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 MATCH (n)
 RETURN n.name, n.age
@@ -81,9 +80,9 @@ This returns the nodes, sorted first by their age, and then by their name.
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
 | n.name | n.age
-| "C" | 32
-| "A" | 34
-| "B" | 36
+| "Charlotte" | 32
+| "Andy" | 34
+| "Bernard" | 36
 2+d|Rows: 3
 |===
 
@@ -94,7 +93,7 @@ This returns the nodes, sorted first by their age, and then by their name.
 `ORDER BY` is used to sort the output.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 MATCH (n)
 RETURN n.name, n.age
@@ -107,19 +106,16 @@ The nodes are returned, sorted by their internal ID.
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
 | n.name | n.age
-| "A" | 34
-| "B" | 36
-| "C" | 32
+| "Andy" | 34
+| "Bernard" | 36
+| "Charlotte" | 32
 2+d|Rows: 3
 |===
 
 [NOTE]
-====
-Keep in mind that Neo4j reuses its internal IDs when nodes and relationships are deleted.
-This means that applications using, and relying on, internal Neo4j IDs, are brittle or at risk of making mistakes.
-It is therefore recommended to use application-generated IDs instead.
-====
-
+Neo4j reuses its internal IDs when nodes and relationships are deleted.
+Applications relying on internal Neo4j IDs are, as a result, brittle and can be inaccurate.
+It is recommended to use application-generated IDs instead.
 
 [[order-nodes-by-expression]]
 == Order nodes by expression
@@ -127,7 +123,7 @@ It is therefore recommended to use application-generated IDs instead.
 `ORDER BY` is used to sort the output.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 MATCH (n)
 RETURN n.name, n.age, n.length
@@ -140,9 +136,9 @@ The nodes are returned, sorted by their properties.
 [role="queryresult",options="header,footer",cols="3*<m"]
 |===
 | n.name | n.age | n.length
-| "B" | 36 | <null>
-| "A" | 34 | 170
-| "C" | 32 | 185
+| "Bernard" | 36 | <null>
+| "Andy" | 34 | 170
+| "Charlotte" | 32 | 185
 3+d|Rows: 3
 |===
 
@@ -153,7 +149,7 @@ The nodes are returned, sorted by their properties.
 By adding `DESC[ENDING]` after the variable to sort on, the sort will be done in reverse order.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 MATCH (n)
 RETURN n.name, n.age
@@ -166,9 +162,9 @@ The example returns the nodes, sorted by their name in reverse order.
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
 | n.name | n.age
-| "C" | 32
-| "B" | 36
-| "A" | 34
+| "Charlotte" | 32
+| "Bernard" | 36
+| "Andy" | 34
 2+d|Rows: 3
 |===
 
@@ -179,7 +175,7 @@ The example returns the nodes, sorted by their name in reverse order.
 When sorting the result set, `null` will always come at the end of the result set for ascending sorting, and first when doing descending sort.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 MATCH (n)
 RETURN n.length, n.name, n.age
@@ -192,9 +188,9 @@ The nodes are returned sorted by the length property, with a node without that p
 [role="queryresult",options="header,footer",cols="3*<m"]
 |===
 | n.length | n.name | n.age
-| 170 | "A" | 34
-| 185 | "C" | 32
-| <null> | "B" | 36
+| 170 | "Andy" | 34
+| 185 | "Charlotte" | 32
+| <null> | "Bernard" | 36
 3+d|Rows: 3
 |===
 
@@ -209,7 +205,7 @@ For example, this can be used to control the order of items in the list produced
 The `MERGE` and `SET` clauses also have ordering dependencies which can be controlled this way.
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 MATCH (n)
 WITH n ORDER BY n.age
@@ -222,7 +218,7 @@ The list of names built from the `collect` aggregating function contains the nam
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | names
-| ["C","A","B"]
+| ["Charlotte","Andy","Bernard"]
 1+d|Rows: 1
 |===
 
@@ -241,3 +237,46 @@ This rule is to make sure that `ORDER BY` does not change the results, only the 
 The performance of Cypher queries using `ORDER BY` on node properties can be influenced by the existence and use of an index for finding the nodes.
 If the index can provide the nodes in the order requested in the query, Cypher can avoid the use of an expensive `Sort` operation.
 Read more about this capability in xref::indexes/search-performance-indexes/using-indexes.adoc#range-index-backed-order-by[Range index-backed ORDER BY].
+
+[role=label--new-5.24]
+[[order-standalone-clause]]
+== Using `ORDER BY` as a standalone clause
+
+`ORDER BY` can be used as a standalone clause, or in conjunction with `SKIP`/`OFFSET` or `LIMIT`.
+
+
+.Standalone use of `ORDER BY`
+[source, cypher]
+----
+MATCH (n)
+ORDER BY n.name
+RETURN collect(n.name) AS names
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| names
+| ["Andy", "Bernard", "Charlotte"]
+|Rows: 1
+|===
+
+The following query orders all nodes by `name` descending, skips the first row and limits the results to one row.
+
+.`ORDER BY` used in conjunction with `SKIP` and `LIMIT`
+[source, cypher]
+----
+MATCH (n)
+ORDER BY n.name DESC
+SKIP 1
+LIMIT 1
+RETURN n.name AS name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| name
+| "Bernard"
+|Rows: 1
+|===
