@@ -16,21 +16,24 @@ For a list of these, see link:{neo4j-docs-base-uri}/operations-manual/{page-vers
 Users can also develop custom procedures and deploy to the database.
 See link:{neo4j-docs-base-uri}/java-reference/{page-version}/extending-neo4j/procedures#extending-neo4j-procedures[Java Reference -> User-defined procedures] for details.
 
-
+[[example-graph]]
 == Example graph
 
 The following graph is used for the examples below:
 
-image::call_procedure.svg[width="600",role="middle"]
+image::call_procedure.svg[width="400",role="middle"]
 
 To recreate it, run the following query against an empty Neo4j database:
 
 [source, cypher, role=test-setup]
 ----
-CREATE (:User {name: 'Andy', born: 1991}),
-       (:User {name: 'Beatrice', born: 1985}),
-       (:Administrator {name: 'Charlotte', born: 1990}),
-       ( {name: 'David', born: 1994, nationality: 'Swedish'})
+CREATE (andy:Developer {name: 'Andy', born: 1991}),
+       (beatrice:Developer {name: 'Beatrice', born: 1985}),
+       (charlotte:Administrator {name: 'Charlotte', born: 1990}),
+       (david:Administrator {name: 'David', born: 1994, nationality: 'Swedish'}),
+       (andy)-[:KNOWS]->(beatrice),
+       (beatrice)-[:KNOWS]->(charlotte),
+       (andy)-[:KNOWS]->(david)
 ----
 
 [[call-procedure-examples]]
@@ -52,7 +55,7 @@ CALL db.labels()
 |===
 | label
 
-| "User"
+| "Developer"
 | "Administrator"
 
 1+d|Rows: 2
@@ -178,7 +181,7 @@ CALL db.labels() YIELD *
 | label
 
 | "Administrator"
-| "User"
+| "Developer"
 
 1+d|Rows: 2
 |===
@@ -266,40 +269,31 @@ Similar to xref:clauses/optional-match.adoc[`OPTIONAL MATCH`] any empty rows pro
 .Difference between using `CALL` and `OPTIONAL CALL`
 ====
 
-This query retrieves all node labels in the database, then for each label, it collects the xref:functions/scalar.adoc#elementid[elementId] of nodes that have that label.
-xref:queries/case.adoc[`CASE`] is then used to determine the status message, indicating whether nodes with a specific label exist or if the label is `null`.
+This query uses the link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.neighbors/apoc.neighbors.tohop[`apoc.neighbors.tohop()`] procedure (part of Neo4j's link:{neo4j-docs-base-uri}/apoc/{page-version}/[APOC Core library]), which returns all nodes connected by the given relationship type within the specified distance (1 hop, in this case) and direction.
 
 .Regular procedure `CALL`
 [source, cypher]
 ----
-CALL db.labels() YIELD label
-WITH label
 MATCH (n)
-WHERE label IN labels(n)
-WITH label, collect(elementId(n)) AS nodeIds
-RETURN label, nodeIds,
-CASE 
-  WHEN label IS NULL THEN "These nodes have no labels" 
-  ELSE "Nodes with this label exist" 
-END AS status
+CALL apoc.neighbors.tohop(n, "KNOWS>", 1)
+YIELD node
+RETURN n.name AS name, collect(node.name) AS connections
 ----
 
-Note that the result does not include the node in the graph without a label.
+Note that the result does not include the nodes in the graph without any outgoing `KNOWS` relationships connected to them.
 
 .Result
-[role="queryresult",options="header,footer",cols="3*<m"]
+[role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| label | nodeIds | status
+| name | connections
 
-| "User"
-| ["4:6d0cd2f7-bfd4-44ea-9247-d1d5d6a6571e:0", "4:6d0cd2f7-bfd4-44ea-9247-d1d5d6a6571e:9"]
-| "Nodes with this label exist" 
+| "Andy"
+| ["Beatrice, "David"]
 
-| "Administrator"
-| ["4:6d0cd2f7-bfd4-44ea-9247-d1d5d6a6571e:1"]
-| "Nodes with this label exist"
+| "Beatrice"
+| ["Charlotte"]
 
-3+d|Rows: 2
+2+d|Rows: 2
 |===
 
 The same query is used below, but `CALL` is replaced with `OPTIONAL CALL`.
@@ -307,38 +301,32 @@ The same query is used below, but `CALL` is replaced with `OPTIONAL CALL`.
 .Optional procedure `CALL`
 [source, cypher]
 ----
-OPTIONAL CALL db.labels() YIELD label
-WITH label
 MATCH (n)
-WHERE label IN labels(n)
-WITH label, collect(elementId(n)) AS nodeIds
-RETURN label, nodeIds,
-CASE 
-  WHEN label IS NULL THEN "These nodes have no labels" 
-  ELSE "Nodes with this label exist" 
-END AS status
+OPTIONAL CALL apoc.neighbors.tohop(n, "KNOWS>", 1)
+YIELD node
+RETURN n.name AS name, collect(node.name) AS connections
 ----
 
-Now the result includes the node without any labels.
+The result now includes the two nodes without any outgoing `KNOWS` relationships connected to them.
 
 .Result
-[role="queryresult",options="header,footer",cols="3*<m"]
+[role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| label | nodeIds | status
+| name | connections
 
-| null
-| ["4:6d0cd2f7-bfd4-44ea-9247-d1d5d6a6571e:10"]
-| "These nodes have no labels" 
+| "Andy"
+| ["Beatrice, "David"]
 
-| "User"
-| ["4:6d0cd2f7-bfd4-44ea-9247-d1d5d6a6571e:0", "4:6d0cd2f7-bfd4-44ea-9247-d1d5d6a6571e:9"]
-| "Nodes with this label exist" 
+| "Beatrice"
+| ["Charlotte"]
 
-| "Administrator"
-| ["4:6d0cd2f7-bfd4-44ea-9247-d1d5d6a6571e:1"]
-| "Nodes with this label exist"
+| "Charlotte"
+| []
 
-3+d|Rows: 3
+| "David"
+| []
+
+2+d|Rows: 4
 |===
 
 ====
