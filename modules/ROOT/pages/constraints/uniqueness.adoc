@@ -1,0 +1,681 @@
+:description: Information about Neo4j's uniqueness constraints.
+include::https://raw.githubusercontent.com/neo4j-graphacademy/courses/main/asciidoc/courses/cypher-indexes-constraints/ad.adoc[]
+= Uniqueness constraints
+
+Uniqueness constraints ensure that property values are unique for all nodes with a specific label or all relationships with a specific type.
+For property uniqueness constraints on multiple properties, the combination of the property values is unique.
+Property uniqueness constraints do not require all nodes relationships to have a unique value for the properties listed (nodes without all properties on which the constraint exists are not subject to this rule).
+
+[[node-uniqueness-constraints]]
+== Node property uniqueness constraints
+
+A node property uniqueness constraint ensures that certain nodes have a set of specified properties whose combined value is unique when all properties exist on the node.
+
+[[create-a-node-uniqueness-constraint]]
+=== Create a node property uniqueness constraint
+
+When creating a property uniqueness constraint, it is recommended to provide a constraint name.
+
+
+.+CREATE CONSTRAINT+
+======
+
+.Query
+[source, cypher]
+----
+CREATE CONSTRAINT book_isbn
+FOR (book:Book) REQUIRE book.isbn IS UNIQUE
+----
+
+.Result
+[queryresult]
+----
+Added 1 constraint.
+----
+
+[NOTE]
+====
+The detailed statistics view currently says `Unique constraints added: 1`.
+It will be updated to say `Node property uniqueness constraints added: 1` in Neo4j 6.0.
+====
+
+======
+
+[role=label--new-5.16]
+[[create-a-node-uniqueness-constraint-by-param]]
+=== Create a node property uniqueness constraint using a parameter
+
+The constraint name can also be given as a parameter.
+
+.+CREATE CONSTRAINT+
+======
+
+.Parameters
+[source, parameters]
+----
+{
+  "name": "node_uniqueness_param"
+}
+----
+
+.Query
+[source, cypher]
+----
+CREATE CONSTRAINT $name
+FOR (book:Book) REQUIRE book.prop1 IS UNIQUE
+----
+
+.Result
+[queryresult]
+----
+Added 1 constraint.
+----
+
+[NOTE]
+====
+The detailed statistics view currently says `Unique constraints added: 1`.
+It will be updated to say `Node property uniqueness constraints added: 1` in Neo4j 6.0.
+====
+
+======
+
+
+[[create-a-node-uniqueness-constraint-if-not-exist]]
+=== Handling existing constraints when creating a constraint
+
+Creating an already existing constraint will fail.
+To avoid such an error, `IF NOT EXISTS` can be added to the `CREATE` command.
+This will ensure that no error is thrown and that no constraint is created if any other constraint with the given name, or another node property uniqueness constraint on the same schema, already exists.
+As of Neo4j 5.17, an informational notification is instead returned showing the existing constraint which blocks the creation.
+
+.+CREATE CONSTRAINT+
+======
+
+.Query
+[source, cypher]
+----
+CREATE CONSTRAINT book_isbn2 IF NOT EXISTS
+FOR (book:Book) REQUIRE book.isbn2 IS UNIQUE
+----
+
+Assuming no constraint with the given name or other node property uniqueness constraint on the same schema already exists, the query will return:
+
+.Result
+[queryresult]
+----
+Added 1 constraint.
+----
+
+[NOTE]
+====
+The detailed statistics view currently says `Unique constraints added: 1`.
+It will be updated to say `Node property uniqueness constraints added: 1` in Neo4j 6.0.
+====
+
+======
+
+
+[[create-a-node-uniqueness-constraint-with-index-provider]]
+=== Specifying an index provider when creating a constraint
+
+To create a property uniqueness constraint with a specific index provider for the backing index, the `OPTIONS` clause is used.
+
+The index type of the backing index is set with the `indexProvider` option.
+
+The only valid value for the index provider is:
+
+* `range-1.0` label:default[]
+
+// Only one valid value exists for the index provider in Neo4j 5.0
+
+
+.+CREATE CONSTRAINT+
+======
+
+.Query
+[source, cypher]
+----
+CREATE CONSTRAINT constraint_with_options
+FOR (book:Book) REQUIRE (book.prop1, book.prop2) IS UNIQUE
+OPTIONS {
+  indexProvider: 'range-1.0'
+}
+----
+
+.Result
+[queryresult]
+----
+Added 1 constraint.
+----
+
+[NOTE]
+====
+The detailed statistics view currently says `Unique constraints added: 1`.
+It will be updated to say `Node property uniqueness constraints added: 1` in Neo4j 6.0.
+====
+
+======
+
+There is no valid index configuration values for the constraint-backing range indexes.
+
+[[node-uniqueness-constraint-fail-cases]]
+=== Fail cases
+
+* xref:constraints/uniqueness.adoc#create-an-already-existing-node-uniqueness-constraint[]
+* xref:constraints/uniqueness.adoc#create-a-node-uniqueness-constraint-on-same-schema-as-existing-index[]
+* xref:constraints/uniqueness.adoc#create-a-node-that-complies-with-a-uniqueness-constraint[]
+* xref:constraints/uniqueness.adoc#fail-to-create-a-uniqueness-constraint-due-to-conflicting-nodes[]
+
+
+[[create-an-already-existing-node-uniqueness-constraint]]
+==== Creating an already existing constraint will fail
+
+
+.+CREATE CONSTRAINT+
+======
+
+Create a property uniqueness constraint on the property `published` on nodes with the `Book` label, when that constraint already exists:
+
+////
+[source, cypher, role=test-setup]
+----
+CREATE CONSTRAINT preExisting_book_published FOR (book:Book) REQUIRE book.published IS UNIQUE
+----
+////
+
+.Query
+[source, cypher, role=test-fail]
+----
+CREATE CONSTRAINT book_published FOR (book:Book) REQUIRE book.published IS UNIQUE
+----
+
+In this case, the constraint cannot be created because it already exists.
+
+.Error message
+[source, error]
+----
+Constraint already exists:
+Constraint( id=4, name='preExisting_book_published', type='UNIQUENESS', schema=(:Book {published}), ownedIndex=3 )
+----
+
+[NOTE]
+====
+The constraint type will be updated to say `NODE PROPERTY UNIQUENESS` in Neo4j 6.0.
+====
+
+======
+
+
+[[create-a-node-uniqueness-constraint-on-same-schema-as-existing-index]]
+==== Creating a constraint on the same schema as an existing index will fail
+
+
+.+CREATE CONSTRAINT+
+======
+
+Create a property uniqueness constraint on the property `wordCount` on nodes with the `Book` label, when an index already exists on that label and property combination:
+
+////
+[source, cypher, role=test-setup]
+----
+CREATE INDEX preExisting_book_word_count FOR (book:Book) ON (book.wordCount)
+----
+////
+
+.Query
+[source, cypher, role=test-fail]
+----
+CREATE CONSTRAINT book_word_count FOR (book:Book) REQUIRE book.wordCount IS UNIQUE
+----
+
+In this case, the constraint cannot be created because there already exists an index covering that schema.
+
+.Error message
+[source, error]
+----
+There already exists an index (:Book {wordCount}).
+A constraint cannot be created until the index has been dropped.
+----
+
+======
+
+
+[[create-a-node-that-complies-with-a-uniqueness-constraint]]
+==== Creating a node that complies with an existing constraint
+
+
+.+CREATE NODE+
+======
+
+Create a `Book` node with an `isbn` that is not already in the graph:
+
+.Query
+[source, cypher]
+----
+CREATE (book:Book {isbn: '1449356265', title: 'Graph Databases'})
+----
+
+.Result
+[queryresult]
+----
+Added 1 label, created 1 node, set 2 properties
+----
+
+======
+
+
+[[create-a-node-that-violates-a-uniqueness-constraint]]
+==== Creating a node that violates an existing constraint will fail
+
+
+.+CREATE NODE+
+======
+
+Create a `Book` node with an `isbn` that is already used in the graph:
+
+.Query
+[source, cypher, role=test-fail]
+----
+CREATE (book:Book {isbn: '1449356265', title: 'Graph Databases'})
+----
+
+In this case, the node is not created because the `isbn` property is in conflict with an existing constraint.
+
+.Error message
+[source, error]
+----
+Node(0) already exists with label `Book` and property `isbn` = '1449356265'
+----
+
+======
+
+
+[[fail-to-create-a-uniqueness-constraint-due-to-conflicting-nodes]]
+==== Creating a constraint when there exist conflicting nodes will fail
+
+
+.+CREATE CONSTRAINT+
+======
+
+Create a property uniqueness constraint on the property `title` on nodes with the `Book` label, when there are two nodes with the same `title`:
+
+////
+[source, cypher, role=test-setup]
+----
+CREATE (book:Book {isbn: '9780393972832', title: 'Moby Dick'});
+CREATE (book:Book {isbn: '9780763630188', title: 'Moby Dick'})
+----
+////
+
+.Query
+[source, cypher, role=test-fail]
+----
+CREATE CONSTRAINT book_title FOR (book:Book) REQUIRE book.title IS UNIQUE
+----
+
+In this case, the constraint cannot be created because it is in conflict with the existing graph.
+Either use xref:indexes/search-performance-indexes/managing-indexes.adoc[] instead, or remove/correct the offending nodes and then re-apply the constraint.
+
+.Error message
+[source, error]
+----
+Unable to create Constraint( name='book_title', type='UNIQUENESS', schema=(:Book {title}) ):
+Both Node(0) and Node(1) have the label `Book` and property `title` = 'Moby Dick'
+----
+
+[NOTE]
+====
+The constraint type will be updated to say `NODE PROPERTY UNIQUENESS` in Neo4j 6.0.
+====
+
+======
+
+The constraint creation fails on the first offending nodes that are found.
+This does not guarantee that there are no other offending nodes in the graph.
+Therefore, all the data should be checked and cleaned up before re-attempting the constraint creation.
+
+This is an example `MATCH` query to find all offending nodes with the non-unique property values for the constraint above:
+
+.Query
+[source, cypher]
+----
+MATCH (book1:Book), (book2:Book)
+WHERE book1.title = book2.title AND NOT book1 = book2
+RETURN book1, book2
+----
+
+[role=label--new-5.7]
+[[relationship-uniqueness-constraints]]
+== Relationship property uniqueness constraints
+
+A relationship property uniqueness constraint ensures that certain relationships have a set of specified properties whose combined value is unique when all properties exist on the relationship.
+
+[[create-a-relationship-uniqueness-constraints]]
+=== Create a relationship property uniqueness constraint
+
+When creating a property uniqueness constraint, it is recommended to provide a constraint name.
+
+
+.+CREATE CONSTRAINT+
+======
+
+.Query
+[source, cypher]
+----
+CREATE CONSTRAINT sequels
+FOR ()-[sequel:SEQUEL_OF]-() REQUIRE (sequel.order, sequel.seriesTitle) IS UNIQUE
+----
+
+.Result
+[queryresult]
+----
+Added 1 constraint.
+----
+
+[NOTE]
+====
+The detailed statistics view currently says `Relationship uniqueness constraints added: 1`.
+It will be updated to say `Relationship property uniqueness constraints added: 1` in Neo4j 6.0.
+====
+
+======
+
+
+[role=label--new-5.16]
+[[create-a-relationship-uniqueness-constraints-by-param]]
+=== Create a relationship property uniqueness constraint using a parameter
+
+The constraint name can also be given as a parameter.
+
+.+CREATE CONSTRAINT+
+======
+
+.Parameters
+[source, parameters]
+----
+{
+  "name": "rel_uniqueness_param"
+}
+----
+
+.Query
+[source, cypher]
+----
+CREATE CONSTRAINT $name
+FOR ()-[sequel:SEQUEL_OF]-() REQUIRE (sequel.prop1) IS UNIQUE
+----
+
+.Result
+[queryresult]
+----
+Added 1 constraint.
+----
+
+[NOTE]
+====
+The detailed statistics view currently says `Relationship uniqueness constraints added: 1`.
+It will be updated to say `Relationship property uniqueness constraints added: 1` in Neo4j 6.0.
+====
+
+======
+
+
+[[create-a-relationship-uniqueness-constraints-if-not-exist]]
+=== Handling existing constraints when creating a constraint
+
+Creating an already existing constraint will fail.
+To avoid such an error, `IF NOT EXISTS` can be added to the `CREATE` command.
+This will ensure that no error is thrown and that no constraint is created if any other constraint with the given name, or another relationship property uniqueness constraint on the same schema, already exists.
+As of Neo4j 5.17, an informational notification is instead returned showing the existing constraint which blocks the creation.
+
+.+CREATE CONSTRAINT+
+======
+
+.Query
+[source, cypher]
+----
+CREATE CONSTRAINT sequels IF NOT EXISTS
+FOR ()-[sequel:SEQUEL_OF]-() REQUIRE (sequel.order) IS UNIQUE
+----
+
+Assuming a constraint with the name `sequels` already exists:
+
+.Result
+[queryresult]
+----
+(no changes, no records)
+----
+
+.Notification
+[source]
+----
+`CREATE CONSTRAINT sequels IF NOT EXISTS FOR ()-[e:SEQUEL_OF]-() REQUIRE (e.order) IS UNIQUE` has no effect.
+`CONSTRAINT sequels FOR ()-[e:SEQUEL_OF]-() REQUIRE (e.order, e.seriesTitle) IS UNIQUE` already exists.
+----
+
+[NOTE]
+====
+The detailed statistics view currently says `Relationship uniqueness constraints added: 1`.
+It will be updated to say `Relationship property uniqueness constraints added: 1` in Neo4j 6.0.
+====
+
+======
+
+
+[[create-a-relationship-uniqueness-constraints-with-index-provider]]
+=== Specifying an index provider when creating a constraint
+
+To create a property uniqueness constraint with a specific index provider for the backing index, the `OPTIONS` clause is used.
+
+The index type of the backing index is set with the `indexProvider` option.
+
+The only valid value for the index provider is:
+
+* `range-1.0` label:default[]
+
+// Only one valid value exists for the index provider in Neo4j 5.0
+
+
+.+CREATE CONSTRAINT+
+======
+
+.Query
+[source, cypher]
+----
+CREATE CONSTRAINT rel_constraint_with_options
+FOR ()-[sequel:SEQUEL_OF]-() REQUIRE (sequel.order, sequel.seriesTitle, sequel.number) IS UNIQUE
+OPTIONS {
+  indexProvider: 'range-1.0'
+}
+----
+
+.Result
+[queryresult]
+----
+Added 1 constraint.
+----
+
+[NOTE]
+====
+The detailed statistics view currently says `Relationship uniqueness constraints added: 1`.
+It will be updated to say `Relationship property uniqueness constraints added: 1` in Neo4j 6.0.
+====
+
+======
+
+There are no valid index configuration values for the constraint-backing range indexes.
+
+[[relationship-uniqueness-constraint-fail-cases]]
+=== Fail cases
+
+* xref:constraints/uniqueness.adoc#create-an-already-existing-relationship-uniqueness-constraint[]
+* xref:constraints/uniqueness.adoc#create-a-relationship-uniqueness-constraint-on-same-schema-as-existing-index[]
+* xref:constraints/uniqueness.adoc#create-a-relationship-that-complies-with-a-uniqueness-constraint[]
+* xref:constraints/uniqueness.adoc#create-a-relationship-that-violates-a-uniqueness-constraint[]
+* xref:constraints/uniqueness.adoc#fail-to-create-a-uniqueness-constraint-due-to-conflicting-relationships[]
+
+[[create-an-already-existing-relationship-uniqueness-constraint]]
+==== Creating an already existing constraint will fail
+
+
+.+CREATE CONSTRAINT+
+======
+
+Create a property uniqueness constraint on the properties `order` and `seriesTitle` on relationships with the `SEQUEL_OF` relationship type, when that constraint already exists:
+
+.Query
+[source, cypher, role=test-fail]
+----
+CREATE CONSTRAINT sequel_order_seriestitle FOR ()-[sequel:SEQUEL_OF]-() REQUIRE (sequel.order, sequel.seriesTitle) IS UNIQUE
+----
+
+In this case, the constraint cannot be created because it already exists.
+
+.Error message
+[source, error]
+----
+Constraint already exists:
+Constraint( id=13, name='sequels', type='RELATIONSHIP UNIQUENESS', schema=()-[:SEQUEL_OF {order, seriesTitle}]-(), ownedIndex=12 )
+----
+
+[NOTE]
+====
+The constraint type will be updated to say `RELATIONSHIP PROPERTY UNIQUENESS` in Neo4j 6.0.
+====
+
+======
+
+
+[[create-a-relationship-uniqueness-constraint-on-same-schema-as-existing-index]]
+==== Creating a constraint on the same schema as an existing index will fail
+
+
+.+CREATE CONSTRAINT+
+======
+
+Create a property uniqueness constraint on the property `order` on relationships with the `SEQUEL_OF` relationship type, when an index already exists on that relationship type and property combination:
+
+////
+[source, cypher, role=test-setup]
+----
+CREATE INDEX sequel_order FOR ()-[sequel:SEQUEL_OF]-() ON (sequel.order)
+----
+////
+
+.Query
+[source, cypher, role=test-fail]
+----
+CREATE CONSTRAINT sequel_series_title FOR ()-[sequel:SEQUEL_OF]-() REQUIRE (sequel.order) IS UNIQUE
+----
+
+In this case, the constraint cannot be created because there already exists an index covering that schema.
+
+.Error message
+[source, error]
+----
+There already exists an index ()-[:SEQUEL_OF {order}]-().
+A constraint cannot be created until the index has been dropped.
+----
+
+======
+
+
+[[create-a-relationship-that-complies-with-a-uniqueness-constraint]]
+==== Creating a relationship that complies with an existing constraint
+
+
+.+CREATE RELATIONSHIP+
+======
+
+Create a `SEQUEL_OF` relationship with values for properties `order` and `seriesTitle` that are not already in the graph:
+
+.Query
+[source, cypher]
+----
+CREATE (:Book {title: 'Spirit Walker'})-[:SEQUEL_OF {order: 1, seriesTitle: 'Chronicles of Ancient Darkness'}]->(:Book {title: 'Wolf Brother'})
+----
+
+.Result
+[queryresult]
+----
+Added 2 labels, created 2 nodes, set 4 properties, created 1 relationship.
+----
+
+======
+
+
+[[create-a-relationship-that-violates-a-uniqueness-constraint]]
+==== Creating a relationship that violates an existing constraint will fail
+
+
+.+CREATE RELATIONSHIP+
+======
+
+Create a `SEQUEL_OF` relationship with values for properties `order` and `seriesTitle` that are already used in the graph:
+
+.Query
+[source, cypher, role=test-fail]
+----
+MATCH (wolfBrother:Book {title: 'Wolf Brother'}), (spiritWalker:Book {title: 'Spirit Walker'})
+CREATE (spiritWalker)-[:SEQUEL_OF {order: 1, seriesTitle: 'Chronicles of Ancient Darkness'}]->(wolfBrother)
+----
+
+In this case, the relationship is not created because the combination of the `order` and `seriesTitle` properties are in conflict with an existing constraint.
+
+.Error message
+[source, error]
+----
+Relationship(0) already exists with type `SEQUEL_OF` and properties `order` = 1, `seriesTitle` = 'Chronicles of Ancient Darkness'
+----
+
+======
+
+
+[[fail-to-create-a-uniqueness-constraint-due-to-conflicting-relationships]]
+==== Creating a constraint when there exist conflicting relationships will fail
+
+
+.+CREATE CONSTRAINT+
+======
+
+Create a property uniqueness constraint on the property `seriesTitle` on relationships with the `SEQUEL_OF` relationship type, when two relationships with the same `seriesTitle` already exist:
+
+////
+[source, cypher, role=test-setup]
+----
+MATCH (spiritWalker:Book {title: 'Spirit Walker'})
+CREATE (:Book {title: 'Soul Eater'})-[:SEQUEL_OF {order: 2, seriesTitle: 'Chronicles of Ancient Darkness'}]->(spiritWalker)
+----
+////
+
+.Query
+[source, cypher, role=test-fail]
+----
+CREATE CONSTRAINT series_title FOR ()-[sequel:SEQUEL_OF]-() REQUIRE (sequel.seriesTitle) IS UNIQUE
+----
+
+In this case, the constraint cannot be created because it is in conflict with the existing graph.
+Either use xref:indexes/search-performance-indexes/managing-indexes.adoc[] instead, or remove/correct the offending relationships and then re-apply the constraint.
+
+.Error message
+[source, error]
+----
+Unable to create Constraint( name='series_title', type='RELATIONSHIP UNIQUENESS', schema=()-[:SEQUEL_OF {seriesTitle}]-() ):
+Both Relationship(0) and Relationship(1) have the type `SEQUEL_OF` and property `seriesTitle` = 'Chronicles of Ancient Darkness'
+----
+
+======
+
+The constraint creation fails on the first offending relationships that are found.
+This does not guarantee that there are no other offending relationships in the graph.
+Therefore, all the data should be checked and cleaned up before re-attempting the constraint creation.
+
+This is an example `MATCH` query to find all offending relationships for the constraint above:
+
+.Query
+[source, cypher]
+----
+MATCH ()-[knows1:KNOWS]->(), ()-[knows2:KNOWS]->()
+WHERE knows1.level = knows2.level AND NOT knows1 = knows2
+RETURN knows1, knows2
+----
