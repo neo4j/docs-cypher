@@ -7,15 +7,16 @@ Type constraints ensure that a property have the required property type for all 
 Queries that try to add or modify this property to nodes of the specified label or to relationships of the specified types, but with a different property type, will fail.
 Type constraints do not require all nodes or relationships to have the property (nodes and relationships without the property on which the constraint exists are not subject to this rule).
 
+[[create-type-constraints]]
+== Create type constraints
+
+Type constraints are created with the `CREATE CONSTRAINT` command.
+When creating a key constraint, it is recommended to provide a constraint name.
+
 [NOTE]
 Creating a constraint requires the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/database-administration/#access-control-database-administration-constraints[`CREATE CONSTRAINT` privilege].
 
-[[node-type-constraints]]
-== Node property type constraints
-
-A node property type constraint ensures that certain nodes have a property of the required property type when the property exists on the node.
-
-The allowed property types for the constraints are:
+The allowed property types for type constraints are:
 
 * `BOOLEAN`
 * `STRING`
@@ -43,14 +44,10 @@ The allowed property types for the constraints are:
 
 For a complete reference describing all types available in Cypher, see the section on xref::values-and-types/property-structural-constructed.adoc#types-synonyms[types and their synonyms].
 
-[[create-a-node-property-type-constraint]]
-=== Create a node property type constraint
-
-When creating a node property type constraint, it is recommended to provide a constraint name.
-
-
-.+CREATE CONSTRAINT+
+.Create node property type constraint
 ======
+
+A node property existence constraint ensures that certain nodes have a specified property.
 
 .Query
 [source, cypher]
@@ -64,16 +61,36 @@ FOR (movie:Movie) REQUIRE movie.title IS :: STRING
 ----
 Added 1 constraint.
 ----
+======
+
+.Create relationship property type constraint
+======
+
+A relationship property existence constraint ensures that certain relationships have a certain property.
+
+.Query
+[source, cypher]
+----
+CREATE CONSTRAINT part_of
+FOR ()-[part:PART_OF]-() REQUIRE part.order IS :: INTEGER
+----
+
+.Result
+[queryresult]
+----
+Added 1 constraint.
+----
 
 ======
 
+
+[[create-type-constraints-with-parameters]]
 [role=label--new-5.16]
-[[create-a-node-property-type-constraint-by-param]]
-=== Create a node property type constraint using a parameter
+=== Create type constraints using a parameters
 
 The constraint name can also be given as a parameter.
 
-.+CREATE CONSTRAINT+
+.Create node type property constraint using a parameter
 ======
 
 .Parameters
@@ -100,14 +117,41 @@ Added 1 constraint.
 ======
 
 
+.Create a relationship property constraint using a parameter
+======
+
+.Parameters
+[source, parameters]
+----
+{
+  "name": "rel_prop_type_param"
+}
+----
+
+.Query
+[source, cypher]
+----
+CREATE CONSTRAINT $name
+FOR ()-[part:PART_OF]-() REQUIRE part.prop1 IS :: FLOAT
+----
+
+.Result
+[queryresult]
+----
+Added 1 constraint.
+----
+
+======
+
+
 [role=label--new-5.11]
-[[create-a-node-property-type-constraint-union]]
-=== Create a node property type constraint with a union type
+[[create-property-type-constraint-union]]
+=== Create type constraints with a union type
 
-A closed dynamic union allows a node property to maintain some type flexibility whilst preventing unexpected values from being stored.
+A closed dynamic union allows a node or relationship property to maintain some type flexibility whilst preventing unexpected values from being stored.
 
 
-.+CREATE CONSTRAINT+
+.Create node property type constraint with a union type
 ======
 
 .Query
@@ -125,8 +169,27 @@ Added 1 constraint.
 
 ======
 
+.Create a relationship property type constraint with a union type
+======
 
-[[create-a-node-property-type-constraint-if-not-exist]]
+.Query
+[source, cypher]
+----
+CREATE CONSTRAINT part_of_tags
+FOR ()-[part:PART_OF]-() REQUIRE part.tags IS :: STRING | LIST<STRING NOT NULL>
+----
+
+.Result
+[queryresult]
+----
+Added 1 constraint.
+----
+
+======
+
+
+
+[[create-property-type-constraint-if-not-exist]]
 === Handling existing constraints when creating a constraint
 
 Creating an already existing constraint will fail.
@@ -134,7 +197,7 @@ To avoid such an error, `IF NOT EXISTS` can be added to the `CREATE` command.
 This will ensure that no error is thrown and that no constraint is created if any other constraint with the given name, or another node property type constraint on the same schema and property type, already exists.
 As of Neo4j 5.17, an informational notification is instead returned showing the existing constraint which blocks the creation.
 
-.+CREATE CONSTRAINT+
+.Create a node property type constraint when a constraint with the same name exists
 ======
 
 .Query
@@ -161,375 +224,8 @@ Assuming a node property type constraint on the label `Movie` which restricts th
 
 ======
 
-[[node-property-constraint-fail-cases]]
-=== Fail cases
 
-* xref:constraints/type.adoc#create-an-already-existing-node-property-type-constraint[]
-* xref:constraints/type.adoc#create-a-different-than-existing-node-property-type-constraint[]
-* xref:constraints/type.adoc#create-node-property-type-constraints-on-invalid-types[]
-* xref:constraints/type.adoc#create-a-node-that-complies-with-a-property-type-constraint[]
-* xref:constraints/type.adoc#create-a-node-that-violates-a-property-type-constraint[]
-* xref:constraints/type.adoc#fail-to-create-a-property-type-constraint-due-to-existing-node[]
-
-
-
-[[create-an-already-existing-node-property-type-constraint]]
-==== Creating an already existing constraint will fail
-
-
-.+CREATE CONSTRAINT+
-======
-
-Create a node property type constraint restricting the property `title` to `STRING` values on nodes with the `Movie` label, when that constraint already exists:
-
-.Query
-[source, cypher, role=test-fail]
-----
-CREATE CONSTRAINT movies
-FOR (movie:Movie) REQUIRE movie.title IS TYPED STRING
-----
-
-In this case, the constraint cannot be created because it already exists.
-
-.Error message
-[source, error]
-----
-Constraint already exists: Constraint( id=22, name='movie_title', type='NODE PROPERTY TYPE', schema=(:Movie {title}), propertyType=STRING )
-----
-
-======
-
-
-[[create-a-different-than-existing-node-property-type-constraint]]
-==== Creating a constraint when there is an existing constraint with a different property type will fail
-
-
-.+CREATE CONSTRAINT+
-======
-
-Create a node property type constraint restricting the property `seriesOrder` to float values on nodes with the `Movie` label, when a node property type constraint restricting the property `seriesOrder` to integer values already exists:
-
-////
-[source, cypher, role=test-setup]
-----
-CREATE CONSTRAINT seriesOrder
-FOR (movie:Movie) REQUIRE movie.seriesOrder IS :: INTEGER
-----
-////
-
-.Query
-[source, cypher, role=test-fail]
-----
-CREATE CONSTRAINT order
-FOR (movie:Movie) REQUIRE movie.seriesOrder IS :: FLOAT
-----
-
-In this case, the constraint cannot be created because there exists a conflicting constraint.
-
-.Error message
-[source, error]
-----
-Constraint already exists: Constraint( id=23, name='seriesOrder', type='NODE PROPERTY TYPE', schema=(:Movie {seriesOrder}), propertyType=INTEGER )
-----
-
-======
-
-
-[[create-node-property-type-constraints-on-invalid-types]]
-==== Creating constraints on invalid types will fail
-
-
-.+CREATE CONSTRAINT+
-======
-
-Create a node property type constraint restricting the property `imdbScore` to map values on nodes with the `Movie` label:
-
-.Query
-[source, cypher, role=test-fail]
-----
-CREATE CONSTRAINT score
-FOR (movie:Movie) REQUIRE movie.imdbScore IS :: MAP
-----
-
-In this case, the constraint cannot be created because values of type `MAP` cannot be stored in properties and therefore are not permitted in property type constraints.
-
-.Error message
-[source, error]
-----
-Failed to create node property type constraint: Invalid property type `MAP`.
-----
-
-======
-
-.+CREATE CONSTRAINT+
-======
-
-Create a node property type constraint restricting the property `imdbScore` to list of nullable float values on nodes with the `Movie` label:
-
-.Query
-[source, cypher, role=test-fail]
-----
-CREATE CONSTRAINT score
-FOR (movie:Movie) REQUIRE movie.imdbScore IS :: LIST<FLOAT>
-----
-
-In this case, the constraint cannot be created because the inner type of list types cannot be nullable.
-The correct type to use for the constraint is `LIST<FLOAT NOT NULL>` because `null` values cannot be stored as part of a list.
-
-.Error message
-[source, error]
-----
-Failed to create node property type constraint: Invalid property type `LIST<FLOAT>`. Lists cannot have nullable inner types.
-----
-
-======
-
-.+CREATE CONSTRAINT+
-======
-
-Create a node property type constraint restricting the property `imdbScore` to list of lists of float values on nodes with the `Movie` label:
-
-.Query
-[source, cypher, role=test-fail]
-----
-CREATE CONSTRAINT score
-FOR (movie:Movie) REQUIRE movie.imdbScore IS :: LIST<LIST<FLOAT NOT NULL>>
-----
-
-In this case, the constraint cannot be created because the inner type of list types cannot be other lists.
-
-.Error message
-[source, error]
-----
-Failed to create node property type constraint: Invalid property type `LIST<LIST<FLOAT NOT NULL>>`. Lists cannot have lists as an inner type.
-----
-
-======
-
-
-[[create-a-node-that-complies-with-a-property-type-constraint]]
-==== Creating a node that complies with an existing constraint
-
-
-.+CREATE NODE+
-======
-
-Create an `Movie` node with a `STRING` `title` property:
-
-.Query
-[source, cypher]
-----
-CREATE (movie:Movie {title:'Iron Man'})
-----
-
-.Result
-[queryresult]
-----
-Added 1 label, created 1 node, set 1 properties
-----
-
-======
-
-
-[[create-a-node-that-violates-a-property-type-constraint]]
-==== Creating a node that violates an existing constraint will fail
-
-
-.+CREATE NODE+
-======
-
-Create a `Movie` node with an integer `title` property, given a property type constraint on the label `Movie` restricting the `title` property to `STRING` values:
-
-.Query
-[source, cypher, role=test-fail]
-----
-CREATE (movie:Movie {title: 123})
-----
-
-In this case, the node is not created because the `title` property is in conflict with an existing constraint.
-
-.Error message
-[source, error]
-----
-Node(0) with label `Movie` has property `title` of wrong type `Long`. Allowed types: STRING
-----
-
-======
-
-
-[[fail-to-create-a-property-type-constraint-due-to-existing-node]]
-==== Creating a constraint when there exist conflicting nodes will fail
-
-
-.+CREATE CONSTRAINT+
-======
-
-Create a constraint restricting the property `franchise` to `STRING` values on nodes with the `Movie` label, when there already exists a node with a `BOOLEAN` `franchise` property:
-
-////
-[source, cypher, role=test-setup]
-----
-CREATE (movie:Movie {title:'Captain America: The First Avenger', franchise: true})
-----
-////
-
-.Query
-[source, cypher, role=test-fail]
-----
-CREATE CONSTRAINT movie_franchise FOR (movie:Movie) REQUIRE movie.franchise IS :: STRING
-----
-
-In this case, the constraint cannot be created because it is in conflict with the existing graph.
-Remove or correct the offending nodes and then re-apply the constraint.
-
-.Error message
-[source, error]
-----
-Unable to create Constraint( name='movie_franchise', type='NODE PROPERTY TYPE', schema=(:Movie {franchise}), propertyType=STRING ):
-Node(0) with label `Movie` has property `franchise` of wrong type `Boolean`. Allowed types: STRING
-----
-
-======
-
-The constraint creation fails on the first offending node that is found.
-This does not guarantee that there are no other offending nodes in the graph.
-Therefore, all the data should be checked and cleaned up before re-attempting the constraint creation.
-
-This is an example `MATCH` query to find all offending nodes with the wrong property type for the constraint above:
-
-.Query
-[source, cypher]
-----
-MATCH (movie:Movie)
-WHERE movie.franchise IS NOT :: STRING
-RETURN movie
-----
-
-
-[[relationship-type-constraints]]
-== Relationship property type constraints
-
-A relationship property type constraint ensures that certain relationships have a property of the required property type when the property exists on the relationship.
-
-The allowed property types for the constraints is:
-
-* `BOOLEAN`
-* `STRING`
-* `INTEGER`
-* `FLOAT`
-* `DATE`
-* `LOCAL TIME`
-* `ZONED TIME`
-* `LOCAL DATETIME`
-* `ZONED DATETIME`
-* `DURATION`
-* `POINT`
-* `LIST<BOOLEAN NOT NULL>` label:new[Introduced in 5.10]
-* `LIST<STRING NOT NULL>` label:new[Introduced in 5.10]
-* `LIST<INTEGER NOT NULL>` label:new[Introduced in 5.10]
-* `LIST<FLOAT NOT NULL>` label:new[Introduced in 5.10]
-* `LIST<DATE NOT NULL>` label:new[Introduced in 5.10]
-* `LIST<LOCAL TIME NOT NULL>` label:new[Introduced in 5.10]
-* `LIST<ZONED TIME NOT NULL>` label:new[Introduced in 5.10]
-* `LIST<LOCAL DATETIME NOT NULL>` label:new[Introduced in 5.10]
-* `LIST<ZONED DATETIME NOT NULL>` label:new[Introduced in 5.10]
-* `LIST<DURATION NOT NULL>` label:new[Introduced in 5.10]
-* `LIST<POINT NOT NULL>` label:new[Introduced in 5.10]
-* Any closed dynamic union of the above types, e.g. `INTEGER | FLOAT | STRING`. label:new[Introduced in 5.11]
-
-For a complete reference describing all types available in Cypher, see the section on xref::values-and-types/property-structural-constructed.adoc#types-synonyms[types and their synonyms].
-
-
-[[create-a-relationship-property-type-constraint]]
-=== Create a relationship property type constraint
-
-When creating a relationship property type constraint, it is recommended to provide a constraint name.
-
-
-.+CREATE CONSTRAINT+
-======
-
-.Query
-[source, cypher]
-----
-CREATE CONSTRAINT part_of
-FOR ()-[part:PART_OF]-() REQUIRE part.order IS :: INTEGER
-----
-
-.Result
-[queryresult]
-----
-Added 1 constraint.
-----
-
-======
-
-[role=label--new-5.16]
-[[constraints-create-a-relationship-property-type-constraint-by-param]]
-=== Create a relationship property type constraint using a parameter
-
-The constraint name can also be given as a parameter.
-
-.+CREATE CONSTRAINT+
-======
-
-.Parameters
-[source, parameters]
-----
-{
-  "name": "rel_prop_type_param"
-}
-----
-
-.Query
-[source, cypher]
-----
-CREATE CONSTRAINT $name
-FOR ()-[part:PART_OF]-() REQUIRE part.prop1 IS :: FLOAT
-----
-
-.Result
-[queryresult]
-----
-Added 1 constraint.
-----
-
-======
-
-[role=label--new-5.11]
-[[create-a-relationship-property-type-constraint-union]]
-=== Create a relationship property type constraint with a union type
-
-A closed dynamic union allows a relationship property to maintain some type flexibility whilst preventing unexpected values from being stored.
-
-
-.+CREATE CONSTRAINT+
-======
-
-.Query
-[source, cypher]
-----
-CREATE CONSTRAINT part_of_tags
-FOR ()-[part:PART_OF]-() REQUIRE part.tags IS :: STRING | LIST<STRING NOT NULL>
-----
-
-.Result
-[queryresult]
-----
-Added 1 constraint.
-----
-
-======
-
-[[constraints-create-a-relationship-property-type-constraint-if-not-exist]]
-=== Handling existing constraints when creating a constraint
-
-Creating an already existing constraint will fail.
-To avoid such an error, `IF NOT EXISTS` can be added to the `CREATE` command.
-This will ensure that no error is thrown and that no constraint is created if any other constraint with the given name, or another relationship property type constraint on the same schema and property type, already exists.
-As of Neo4j 5.17, an informational notification is instead returned showing the existing constraint which blocks the creation.
-
-.+CREATE CONSTRAINT+
+.Create a relationship property type constraint when a constraint with the same name exists
 ======
 
 .Query
@@ -556,146 +252,28 @@ Assuming that such a constraint already exists:
 
 ======
 
-[[relationship-property-constraint-fail-cases]]
-=== Fail cases
 
-* xref:constraints/type.adoc#create-an-already-existing-relationship-property-type-constraint[]
-* xref:constraints/type.adoc#create-a-different-than-existing-relationship-property-type-constraint[]
-* xref:constraints/type.adoc#create-relationship-property-type-constraints-on-invalid-types[]
-* xref:constraints/type.adoc#create-a-relationship-that-complies-with-a-property-type-constraint[]
-* xref:constraints/type.adoc#create-a-relationship-that-violates-a-property-type-constraint[]
-* xref:constraints/type.adoc#fail-to-create-a-property-type-constraint-due-to-existing-relationship[]
+[[create-data-that-complies-with-a-property-type-constraint]]
+=== Create data that complies with existing type constraints
 
-[[create-an-already-existing-relationship-property-type-constraint]]
-==== Creating an already existing constraint will fail
-
-
-.+CREATE CONSTRAINT+
+.Create node that complies with existing node property type constraint
 ======
 
-Create a relationship property type constraint restricting the property `order` to integer values on relationships with the `PART_OF` relationship type, when that constraint already exists:
+Create an `Movie` node with a `STRING` `title` property:
 
 .Query
-[source, cypher, role=test-fail]
+[source, cypher]
 ----
-CREATE CONSTRAINT belongs_to
-FOR ()-[part:PART_OF]-() REQUIRE part.order :: INTEGER
+CREATE (movie:Movie {title:'Iron Man'})
 ----
 
-In this case, the constraint cannot be created because it already exists (but with a different name).
-
-.Error message
-[source, error]
+.Result
+[queryresult]
 ----
-Constraint already exists: Constraint( id=24, name='part_of', type='RELATIONSHIP PROPERTY TYPE', schema=()-[:PART_OF {order}]-(), propertyType=INTEGER )
+Added 1 label, created 1 node, set 1 properties
 ----
 
 ======
-
-
-[[create-a-different-than-existing-relationship-property-type-constraint]]
-==== Creating a constraint when there is an existing constraint with a different property type will fail
-
-
-.+CREATE CONSTRAINT+
-======
-
-Create a relationship property type constraint restricting the property `order` to float values on relationships with the `PART_OF` relationship type, when a relationship property type constraint restricting the property `order` to integer values already exists:
-
-.Query
-[source, cypher, role=test-fail]
-----
-CREATE CONSTRAINT order
-FOR ()-[part:PART_OF]-() REQUIRE part.order IS :: FLOAT
-----
-
-In this case, the constraint cannot be created because there exists a conflicting constraint.
-
-.Error message
-[source, error]
-----
-Constraint already exists: Constraint( id=24, name='part_of', type='RELATIONSHIP PROPERTY TYPE', schema=()-[:PART_OF {order}]-(), propertyType=INTEGER )
-----
-
-======
-
-
-[[create-relationship-property-type-constraints-on-invalid-types]]
-==== Creating constraints on invalid types will fail
-
-
-.+CREATE CONSTRAINT+
-======
-
-Create a relationship property type constraint restricting the property `releaseOrder` to integer values excluding `null` on relationships with the `PART_OF` relationship type:
-
-.Query
-[source, cypher, role=test-fail]
-----
-CREATE CONSTRAINT score
-FOR ()-[part:PART_OF]-() REQUIRE part.releaseOrder IS :: INTEGER NOT NULL
-----
-
-In this case, the constraint cannot be created because excluding `null` is not allowed in property type constraints.
-To also ensure that the property exists (is not `null`), add an existence constraint on the property.
-
-.Error message
-[source, error]
-----
-Failed to create relationship property type constraint: Invalid property type `INTEGER NOT NULL`.
-----
-
-======
-
-.+CREATE CONSTRAINT+
-======
-
-Create a relationship property type constraint restricting the property `releaseOrder` to list of nullable integer values on relationships with the `PART_OF` relationship type:
-
-.Query
-[source, cypher, role=test-fail]
-----
-CREATE CONSTRAINT score
-FOR ()-[part:PART_OF]-() REQUIRE part.releaseOrder IS :: LIST<INTEGER>
-----
-
-In this case, the constraint cannot be created because the inner type of list types cannot be nullable.
-The correct type to use for the constraint is `LIST<INTEGER NOT NULL>` because `null` values cannot be stored as part of a list.
-
-.Error message
-[source, error]
-----
-Failed to create relationship property type constraint: Invalid property type `LIST<INTEGER>`. Lists cannot have nullable inner types.
-----
-
-======
-
-.+CREATE CONSTRAINT+
-======
-
-Create a relationship property type constraint restricting the property `releaseOrder` to list of lists of integer values on relationships with the `PART_OF` relationship type:
-
-.Query
-[source, cypher, role=test-fail]
-----
-CREATE CONSTRAINT score
-FOR ()-[part:PART_OF]-() REQUIRE part.releaseOrder IS :: LIST<LIST<INTEGER NOT NULL>>
-----
-
-In this case, the constraint cannot be created because the inner type of list types cannot be other lists.
-
-.Error message
-[source, error]
-----
-Failed to create relationship property type constraint: Invalid property type `LIST<LIST<INTEGER NOT NULL>>`. Lists cannot have lists as an inner type.
-----
-
-======
-
-
-[[create-a-relationship-that-complies-with-a-property-type-constraint]]
-==== Creating a relationship that complies with an existing constraint
-
 
 .+CREATE RELATIONSHIP+
 ======
@@ -725,9 +303,285 @@ Set 1 property, created 1 relationship
 ======
 
 
-[[create-a-relationship-that-violates-a-property-type-constraint]]
-==== Creating a relationship that violates an existing constraint will fail
+[[type-constraint-fail-cases]]
+== Fail cases
 
+* xref:constraints/type.adoc#create-an-already-existing-property-type-constraint[]
+* xref:constraints/type.adoc#create-a-different-than-existing-node-property-type-constraint[]
+* xref:constraints/type.adoc#create-node-property-type-constraints-on-invalid-types[]
+* xref:constraints/type.adoc#create-a-node-that-violates-a-property-type-constraint[]
+* xref:constraints/type.adoc#fail-to-create-a-property-type-constraint-due-to-existing-node[]
+
+[discrete]
+[[create-an-already-existing-type-constraint]]
+=== Creating an already existing constraint will fail
+
+.Create an already existing node property type constraint
+======
+
+Create a node property type constraint restricting the property `title` to `STRING` values on nodes with the `Movie` label, when that constraint already exists:
+
+.Query
+[source, cypher, role=test-fail]
+----
+CREATE CONSTRAINT movies
+FOR (movie:Movie) REQUIRE movie.title IS TYPED STRING
+----
+
+In this case, the constraint cannot be created because it already exists.
+
+.Error message
+[source, error]
+----
+Constraint already exists: Constraint( id=22, name='movie_title', type='NODE PROPERTY TYPE', schema=(:Movie {title}), propertyType=STRING )
+----
+
+======
+
+
+.Create an already existing relationship property type constraint
+======
+
+Create a relationship property type constraint restricting the property `order` to integer values on relationships with the `PART_OF` relationship type, when that constraint already exists:
+
+.Query
+[source, cypher, role=test-fail]
+----
+CREATE CONSTRAINT belongs_to
+FOR ()-[part:PART_OF]-() REQUIRE part.order :: INTEGER
+----
+
+In this case, the constraint cannot be created because it already exists (but with a different name).
+
+.Error message
+[source, error]
+----
+Constraint already exists: Constraint( id=24, name='part_of', type='RELATIONSHIP PROPERTY TYPE', schema=()-[:PART_OF {order}]-(), propertyType=INTEGER )
+----
+
+======
+
+[discrete]
+[[create-a-different-than-existing-property-type-constraint]]
+=== Creating a constraint when there is an existing constraint with a different property type will fail
+
+.Create a node property type constraint when an existing constraint with a different property type exists
+======
+
+Create a node property type constraint restricting the property `seriesOrder` to float values on nodes with the `Movie` label, when a node property type constraint restricting the property `seriesOrder` to integer values already exists:
+
+////
+[source, cypher, role=test-setup]
+----
+CREATE CONSTRAINT seriesOrder
+FOR (movie:Movie) REQUIRE movie.seriesOrder IS :: INTEGER
+----
+////
+
+.Query
+[source, cypher, role=test-fail]
+----
+CREATE CONSTRAINT order
+FOR (movie:Movie) REQUIRE movie.seriesOrder IS :: FLOAT
+----
+
+In this case, the constraint cannot be created because there exists a conflicting constraint.
+
+.Error message
+[source, error]
+----
+Constraint already exists: Constraint( id=23, name='seriesOrder', type='NODE PROPERTY TYPE', schema=(:Movie {seriesOrder}), propertyType=INTEGER )
+----
+
+======
+
+.Create a relationship property type constraint when an existing constraint with a different property type exists
+======
+
+Create a relationship property type constraint restricting the property `order` to float values on relationships with the `PART_OF` relationship type, when a relationship property type constraint restricting the property `order` to integer values already exists:
+
+.Query
+[source, cypher, role=test-fail]
+----
+CREATE CONSTRAINT order
+FOR ()-[part:PART_OF]-() REQUIRE part.order IS :: FLOAT
+----
+
+In this case, the constraint cannot be created because there exists a conflicting constraint.
+
+.Error message
+[source, error]
+----
+Constraint already exists: Constraint( id=24, name='part_of', type='RELATIONSHIP PROPERTY TYPE', schema=()-[:PART_OF {order}]-(), propertyType=INTEGER )
+----
+
+======
+
+[discrete]
+[[create-property-type-constraints-on-invalid-types]]
+=== Creating constraints on invalid types will fail
+
+.Create node property type constraint on invalid type
+======
+
+Create a node property type constraint restricting the property `imdbScore` to map values on nodes with the `Movie` label:
+
+.Query
+[source, cypher, role=test-fail]
+----
+CREATE CONSTRAINT score
+FOR (movie:Movie) REQUIRE movie.imdbScore IS :: MAP
+----
+
+In this case, the constraint cannot be created because values of type `MAP` cannot be stored in properties and therefore are not permitted in property type constraints.
+
+.Error message
+[source, error]
+----
+Failed to create node property type constraint: Invalid property type `MAP`.
+----
+
+======
+
+.Create node property type constraint on lists containing nullable inner types
+======
+
+Create a node property type constraint restricting the property `imdbScore` to list of nullable float values on nodes with the `Movie` label:
+
+.Query
+[source, cypher, role=test-fail]
+----
+CREATE CONSTRAINT score
+FOR (movie:Movie) REQUIRE movie.imdbScore IS :: LIST<FLOAT>
+----
+
+In this case, the constraint cannot be created because the inner type of list types cannot be nullable.
+The correct type to use for the constraint is `LIST<FLOAT NOT NULL>` because `null` values cannot be stored as part of a list.
+
+.Error message
+[source, error]
+----
+Failed to create node property type constraint: Invalid property type `LIST<FLOAT>`. Lists cannot have nullable inner types.
+----
+
+======
+
+.Create node property type constraint on lists containing inner lists
+======
+
+Create a node property type constraint restricting the property `imdbScore` to list of lists of float values on nodes with the `Movie` label:
+
+.Query
+[source, cypher, role=test-fail]
+----
+CREATE CONSTRAINT score
+FOR (movie:Movie) REQUIRE movie.imdbScore IS :: LIST<LIST<FLOAT NOT NULL>>
+----
+
+In this case, the constraint cannot be created because the inner type of list types cannot be other lists.
+
+.Error message
+[source, error]
+----
+Failed to create node property type constraint: Invalid property type `LIST<LIST<FLOAT NOT NULL>>`. Lists cannot have lists as an inner type.
+----
+
+======
+
+
+.Create node property type constraint on invalid type
+======
+
+Create a relationship property type constraint restricting the property `releaseOrder` to integer values excluding `null` on relationships with the `PART_OF` relationship type:
+
+.Query
+[source, cypher, role=test-fail]
+----
+CREATE CONSTRAINT score
+FOR ()-[part:PART_OF]-() REQUIRE part.releaseOrder IS :: INTEGER NOT NULL
+----
+
+In this case, the constraint cannot be created because excluding `null` is not allowed in property type constraints.
+To also ensure that the property exists (is not `null`), add an existence constraint on the property.
+
+.Error message
+[source, error]
+----
+Failed to create relationship property type constraint: Invalid property type `INTEGER NOT NULL`.
+----
+
+======
+
+.Create relationship property type constraint on lists containing nullable inner types
+======
+
+Create a relationship property type constraint restricting the property `releaseOrder` to list of nullable integer values on relationships with the `PART_OF` relationship type:
+
+.Query
+[source, cypher, role=test-fail]
+----
+CREATE CONSTRAINT score
+FOR ()-[part:PART_OF]-() REQUIRE part.releaseOrder IS :: LIST<INTEGER>
+----
+
+In this case, the constraint cannot be created because the inner type of list types cannot be nullable.
+The correct type to use for the constraint is `LIST<INTEGER NOT NULL>` because `null` values cannot be stored as part of a list.
+
+.Error message
+[source, error]
+----
+Failed to create relationship property type constraint: Invalid property type `LIST<INTEGER>`. Lists cannot have nullable inner types.
+----
+
+======
+
+.Create relationship property type constraint on lists containing inner lists
+======
+
+Create a relationship property type constraint restricting the property `releaseOrder` to list of lists of integer values on relationships with the `PART_OF` relationship type:
+
+.Query
+[source, cypher, role=test-fail]
+----
+CREATE CONSTRAINT score
+FOR ()-[part:PART_OF]-() REQUIRE part.releaseOrder IS :: LIST<LIST<INTEGER NOT NULL>>
+----
+
+In this case, the constraint cannot be created because the inner type of list types cannot be other lists.
+
+.Error message
+[source, error]
+----
+Failed to create relationship property type constraint: Invalid property type `LIST<LIST<INTEGER NOT NULL>>`. Lists cannot have lists as an inner type.
+----
+
+======
+
+[discrete]
+[[create-a-node-that-violates-a-property-type-constraint]]
+=== Creating data that violates an existing constraint will fail
+
+
+.Create node that violates an existing node property type constraint
+======
+
+Create a `Movie` node with an integer `title` property, given a property type constraint on the label `Movie` restricting the `title` property to `STRING` values:
+
+.Query
+[source, cypher, role=test-fail]
+----
+CREATE (movie:Movie {title: 123})
+----
+
+In this case, the node is not created because the `title` property is in conflict with an existing constraint.
+
+.Error message
+[source, error]
+----
+Node(0) with label `Movie` has property `title` of wrong type `Long`. Allowed types: STRING
+----
+
+======
 
 .+CREATE RELATIONSHIP+
 ======
@@ -751,12 +605,57 @@ Relationship(0) with type `PART_OF` has property `order` of wrong type `String`.
 
 ======
 
+[discrete]
+[[fail-to-create-a-property-type-constraint-due-to-existing-data]]
+=== Creating a constraint when there exist conflicting data will fail
 
-[[fail-to-create-a-property-type-constraint-due-to-existing-relationship]]
-==== Creating a constraint when there exist conflicting relationships will fail
+
+.Create a node type constraint that conflicts with existing nodes
+======
+
+Create a constraint restricting the property `franchise` to `STRING` values on nodes with the `Movie` label, when there already exists a node with a `BOOLEAN` `franchise` property:
+
+////
+[source, cypher, role=test-setup]
+----
+CREATE (movie:Movie {title:'Captain America: The First Avenger', franchise: true})
+----
+////
+
+.Query
+[source, cypher, role=test-fail]
+----
+CREATE CONSTRAINT movie_franchise FOR (movie:Movie) REQUIRE movie.franchise IS :: STRING
+----
+
+In this case, the constraint cannot be created because it is in conflict with the existing graph.
+Remove or correct the offending nodes and then re-apply the constraint.
+
+.Error message
+[source, error]
+----
+Unable to create Constraint( name='movie_franchise', type='NODE PROPERTY TYPE', schema=(:Movie {franchise}), propertyType=STRING ):
+Node(0) with label `Movie` has property `franchise` of wrong type `Boolean`. Allowed types: STRING
+----
+
+The constraint creation fails on the first offending node that is found.
+This does not guarantee that there are no other offending nodes in the graph.
+Therefore, all the data should be checked and cleaned up before re-attempting the constraint creation.
+
+This is an example `MATCH` query to find all offending nodes with the wrong property type for the constraint above:
+
+.Query
+[source, cypher]
+----
+MATCH (movie:Movie)
+WHERE movie.franchise IS NOT :: STRING
+RETURN movie
+----
+
+======
 
 
-.+CREATE CONSTRAINT+
+.Create a relationship type constraint that conflicts with existing relationships
 ======
 
 Create a constraint restricting the property `releaseOrder` to integer values on relationships with the `PART_OF` relationship type, when there already exists a relationship with a `STRING` `releaseOrder` property:
@@ -786,7 +685,6 @@ Unable to create Constraint( name='release_order', type='RELATIONSHIP PROPERTY T
 Relationship(0) with type `PART_OF` has property `releaseOrder` of wrong type `String`. Allowed types: INTEGER
 ----
 
-======
 
 The constraint creation fails on the first offending relationship that is found.
 This does not guarantee that there are no other offending relationships in the graph.
@@ -801,3 +699,5 @@ MATCH ()-[part:PART_OF]-()
 WHERE part.releaseOrder IS NOT :: INTEGER
 RETURN part
 ----
+======
+
