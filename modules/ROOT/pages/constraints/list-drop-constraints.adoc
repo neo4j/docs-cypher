@@ -1,19 +1,221 @@
 include::https://raw.githubusercontent.com/neo4j-graphacademy/courses/main/asciidoc/courses/cypher-indexes-constraints/ad.adoc[]
 = List and drop constraints
 
-This page describes how to drop and list the constraints in a Neo4j database.
+This page describes how to show and drop the constraints in a Neo4j database.
+
+The following constraints appear in the examples below:
+
+[source, cypher, role=test-setup]
+----
+CREATE CONSTRAINT book_isbn
+FOR (book:Book) REQUIRE book.isbn IS UNIQUE;
+CREATE CONSTRAINT book_author
+FOR (author:Author) REQUIRE (author.firstname, author.surname) IS NODE KEY;
+CREATE CONSTRAINT author_location
+FOR ()-[wrote:WROTE]-() REQUIRE wrote.location IS :: STRING;
+CREATE CONSTRAINT author_name
+FOR (author:Author) REQUIRE author.name IS NOT NULL;
+----
+
+
+[[list-constraint]]
+== SHOW CONSTRAINTS
+
+To list all constraints with the default output columns, use `SHOW CONSTRAINTS`.
+If all columns are required, use `SHOW CONSTRAINTS YIELD *`.
+
+One of the output columns from `SHOW CONSTRAINTS` is the name of the constraint.
+This can be used to drop the constraint with the xref::constraints/syntax.adoc#constraints-syntax-drop[`DROP CONSTRAINT` command].
+
+[NOTE]
+Listing constraints requires the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/database-administration/#access-control-database-administration-constraints[`SHOW CONSTRAINTS` privilege].
+
+.List all constraints with default output columns
+======
+
+.Query
+[source, cypher, test-exclude-cols=id]
+----
+SHOW CONSTRAINTS
+----
+
+[queryresult]
+----
++--------------------------------------------------------------------------------------------------------------------------------------------------+
+| id | name              | type                         | entityType     | labelsOrTypes | properties               | ownedIndex    | propertyType |
++--------------------------------------------------------------------------------------------------------------------------------------------------+
+| 6  | "author_location" | "RELATIONSHIP_PROPERTY_TYPE" | "RELATIONSHIP" | ["WROTE"]     | ["location"]             | NULL          | "STRING"     |
+| 7  | "author_name"     | "NODE_PROPERTY_EXISTENCE"    | "NODE"         | ["Author"]    | ["name"]                 | NULL          | NULL         |
+| 5  | "book_author"     | "NODE_KEY"                   | "NODE"         | ["Author"]    | ["firstname", "surname"] | "book_author" | NULL         |
+| 3  | "book_isbn"       | "UNIQUENESS"                 | "NODE"         | ["Book"]      | ["isbn"]                 | "book_isbn"   | NULL         |
++--------------------------------------------------------------------------------------------------------------------------------------------------+
+----
+
+[NOTE]
+====
+The `type` column returns `UNIQUENESS` for the node property uniqueness constraint and `RELATIONSHIP_UNIQUENESS` for the relationship property uniqueness constraint.
+This will be updated in Neo4j 6.0.
+Node property uniqueness constraints will be updated to `NODE_PROPERTY_UNIQUENESS` and relationship property uniqueness constraints to `RELATIONSHIP_PROPERTY_UNIQUENESS`.
+====
+
+======
+
+
+.List all constraints with full details
+======
+
+To return the full details of the constraints on a database, use `SHOW CONSTRAINTS YIELD *`
+
+.Query
+[source, cypher, test-exclude-cols=id]
+----
+SHOW CONSTRAINTS YIELD *
+----
+
+[queryresult]
+----
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| id | name              | type                         | entityType     | labelsOrTypes | properties               | ownedIndex    | propertyType | options                                       | createStatement                                                                                     |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 6  | "author_location" | "RELATIONSHIP_PROPERTY_TYPE" | "RELATIONSHIP" | ["WROTE"]     | ["location"]             | NULL          | "STRING"     | NULL                                          | "CREATE CONSTRAINT `author_location` FOR ()-[r:`WROTE`]-() REQUIRE (r.`location`) IS :: STRING"     |
+| 7  | "author_name"     | "NODE_PROPERTY_EXISTENCE"    | "NODE"         | ["Author"]    | ["name"]                 | NULL          | NULL         | NULL                                          | "CREATE CONSTRAINT `author_name` FOR (n:`Author`) REQUIRE (n.`name`) IS NOT NULL"                   |
+| 5  | "book_author"     | "NODE_KEY"                   | "NODE"         | ["Author"]    | ["firstname", "surname"] | "book_author" | NULL         | {indexConfig: {}, indexProvider: "range-1.0"} | "CREATE CONSTRAINT `book_author` FOR (n:`Author`) REQUIRE (n.`firstname`, n.`surname`) IS NODE KEY" |
+| 3  | "book_isbn"       | "UNIQUENESS"                 | "NODE"         | ["Book"]      | ["isbn"]                 | "book_isbn"   | NULL         | {indexConfig: {}, indexProvider: "range-1.0"} | "CREATE CONSTRAINT `book_isbn` FOR (n:`Book`) REQUIRE (n.`isbn`) IS UNIQUE"                         |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
+
+======
+
+
+[[listing-constraints-with-filtering]]
+=== Listing constraints with filtering
+
+.Returning specific columns for all constraints
+======
+
+It is possible to return only specific columns of the available constraints using the YIELD clause:
+
+
+.Query
+[source, cypher, test-exclude-cols=id]
+----
+SHOW CONSTRAINTS
+YIELD name, type, createStatement
+----
+
+[queryresult]
+----
++--------------------------------------------------------------------------------------------------------------------------------------------------------+
+| name              | type                         | createStatement                                                                                     |
++--------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "author_location" | "RELATIONSHIP_PROPERTY_TYPE" | "CREATE CONSTRAINT `author_location` FOR ()-[r:`WROTE`]-() REQUIRE (r.`location`) IS :: STRING"     |
+| "author_name"     | "NODE_PROPERTY_EXISTENCE"    | "CREATE CONSTRAINT `author_name` FOR (n:`Author`) REQUIRE (n.`name`) IS NOT NULL"                   |
+| "book_author"     | "NODE_KEY"                   | "CREATE CONSTRAINT `book_author` FOR (n:`Author`) REQUIRE (n.`firstname`, n.`surname`) IS NODE KEY" |
+| "book_isbn"       | "UNIQUENESS"                 | "CREATE CONSTRAINT `book_isbn` FOR (n:`Book`) REQUIRE (n.`isbn`) IS UNIQUE"                         |
++--------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
+
+======
+
+.Filtering constraints using constraint type keywords
+======
+
+Another way of filtering the output from `SHOW CONSTRAINTS` by constraint type is the use of constraint type keywords,
+listed in the xref::constraints/syntax.adoc#constraints-syntax-list-type-filter[syntax for listing constraints type filter table].
+For example, to show only property uniqueness constraints, use `SHOW UNIQUENESS CONSTRAINTS`.
+Another more flexible way of filtering the output is to use the `WHERE` clause.
+An example is to only show constraints on relationships.
+
+.Query
+[source, cypher, test-exclude-cols=id]
+----
+SHOW EXISTENCE CONSTRAINTS
+WHERE entityType = 'RELATIONSHIP'
+----
+
+This will only return the default output columns.
+To get all columns, use `SHOW INDEXES YIELD * WHERE ...`.
+
+[queryresult]
+----
++----------------------------------------------------------------------------------------------------------------------+
+| id | name          | type                      | entityType | labelsOrTypes | properties | ownedIndex | propertyType |
++----------------------------------------------------------------------------------------------------------------------+
+| 7  | "author_name" | "NODE_PROPERTY_EXISTENCE" | "NODE"     | ["Author"]    | ["name"]   | NULL       | NULL         |
++----------------------------------------------------------------------------------------------------------------------+
+----
+
+======
+
+
+
+=== Result columns for listing constraints
+
+.Listing constraints output
+[options="header", width="100%", cols="4m,6a,2m"]
+|===
+| Column | Description | Type
+
+| id
+| The id of the constraint. label:default-output[]
+| INTEGER
+
+| name
+| Name of the constraint (explicitly set by the user or automatically assigned). label:default-output[]
+| STRING
+
+| type
+| The ConstraintType of this constraint (`UNIQUENESS` (node uniqueness), `RELATIONSHIP_UNIQUENESS`, `NODE_PROPERTY_EXISTENCE`, `RELATIONSHIP_PROPERTY_EXISTENCE`, `NODE_PROPERTY_TYPE`, `RELATIONSHIP_PROPERTY_TYPE`, `NODE_KEY`, or `RELATIONSHIP_KEY`). label:default-output[]
+| STRING
+
+| entityType
+| Type of entities this constraint represents (nodes or relationship). label:default-output[]
+| STRING
+
+| labelsOrTypes
+| The labels or relationship types of this constraint. label:default-output[]
+| LIST<STRING>
+
+| properties
+| The properties of this constraint. label:default-output[]
+| LIST<STRING>
+
+| ownedIndex
+| The name of the index associated with the constraint or `null`, in case no index is associated with it. label:default-output[]
+| STRING
+
+| propertyType
+| The property type the property is restricted to for property type constraints, or `null` for the other constraints.
+label:default-output[] label:new[Introduced in 5.9]
+| STRING
+
+| options
+| The options passed to `CREATE` command, for the index associated to the constraint, or `null` if no index is associated with the constraint.
+| MAP
+
+| createStatement
+| Statement used to create the constraint.
+| STRING
+
+|===
+
+
+
 
 [[drop-constraint]]
-== Drop a constraint by name
+== DROP CONSTRAINT
+
+Constraints are dropped using the `DROP CONSTRAINT` command.
+
+[NOTE]
+Dropping a constraint requires the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/database-administration/#access-control-database-administration-constraints[`DROP CONSTRAINT` privilege].
+
+[[drop-constraint-by-name]]
+=== Drop a constraint using a name
 
 A constraint can be dropped using the name with the `DROP CONSTRAINT constraint_name` command.
 It is the same command for all constraint types.
 The name of the constraint can be found using the xref::constraints/syntax.adoc#constraints-syntax-list[`SHOW CONSTRAINTS` command], given in the output column `name`.
-
-[[drop-a-constraint]]
-=== Drop a constraint
-
-A constraint can be dropped using the name with the `DROP CONSTRAINT` command.
 
 
 .+DROP CONSTRAINT+
@@ -47,7 +249,7 @@ The constraint name can also be given as a parameter.
 [source, parameters]
 ----
 {
-  "name": "node_uniqueness_param"
+  "name": "book_author"
 }
 ----
 
@@ -94,112 +296,4 @@ DROP CONSTRAINT missing_constraint_name IF EXISTS
 
 ======
 
-
-[[list-constraint]]
-== Listing constraints
-
-[[listing-all-constraints]]
-=== Listing all constraints
-
-To list all constraints with the default output columns, the `SHOW CONSTRAINTS` command can be used.
-If all columns are required, use `SHOW CONSTRAINTS YIELD *`.
-
-[NOTE]
-====
-One of the output columns from `SHOW CONSTRAINTS` is the name of the constraint.
-This can be used to drop the constraint with the xref::constraints/syntax.adoc#constraints-syntax-drop[`DROP CONSTRAINT` command].
-====
-
-
-.+SHOW CONSTRAINTS+
-======
-
-.Query
-[source, cypher, test-exclude-cols=id]
-----
-SHOW CONSTRAINTS
-----
-
-[queryresult]
-----
-+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| id | name                           | type                              | entityType     | labelsOrTypes | properties                         | ownedIndex                     | propertyType                     |
-+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| 36 | "actor_fullname"               | "NODE_KEY"                        | "NODE"         | ["Actor"]     | ["firstname", "surname"]           | "actor_fullname"               | null                             |
-| 21 | "author_name"                  | "NODE_PROPERTY_EXISTENCE"         | "NODE"         | ["Author"]    | ["name"]                           | null                           | null                             |
-| 24 | "author_pseudonym"             | "UNIQUENESS"                      | "NODE"         | ["Author"]    | ["pseudonym"]                      | "author_pseudonym"             | null                             |
-| 8  | "book_isbn2"                   | "UNIQUENESS"                      | "NODE"         | ["Book"]      | ["isbn2"]                          | "book_isbn2"                   | null                             |
-| 10 | "constraint_with_options"      | "UNIQUENESS"                      | "NODE"         | ["Book"]      | ["prop1", "prop2"]                 | "constraint_with_options"      | null                             |
-| 40 | "constraint_with_provider"     | "NODE_KEY"                        | "NODE"         | ["Actor"]     | ["surname"]                        | "constraint_with_provider"     | null                             |
-| 45 | "knows_since_how"              | "RELATIONSHIP_KEY"                | "RELATIONSHIP" | ["KNOWS"]     | ["since", "how"]                   | "knows_since_how"              | null                             |
-| 30 | "movie_tagline"                | "NODE_PROPERTY_TYPE"              | "NODE"         | ["Movie"]     | ["tagline"]                        | null                           | "STRING | LIST<STRING NOT NULL>" |
-| 28 | "movie_title"                  | "NODE_PROPERTY_TYPE"              | "NODE"         | ["Movie"]     | ["title"]                          | null                           | "STRING"                         |
-| 22 | "node_exist_param"             | "NODE_PROPERTY_EXISTENCE"         | "NODE"         | ["Author"]    | ["surname"]                        | null                           | null                             |
-| 38 | "node_key_param"               | "NODE_KEY"                        | "NODE"         | ["Actor"]     | ["firstname"]                      | "node_key_param"               | null                             |
-| 29 | "node_prop_type_param"         | "NODE_PROPERTY_TYPE"              | "NODE"         | ["Movie"]     | ["prop1"]                          | null                           | "INTEGER"                        |
-| 32 | "part_of"                      | "RELATIONSHIP_PROPERTY_TYPE"      | "RELATIONSHIP" | ["PART_OF"]   | ["order"]                          | null                           | "INTEGER"                        |
-| 34 | "part_of_tags"                 | "RELATIONSHIP_PROPERTY_TYPE"      | "RELATIONSHIP" | ["PART_OF"]   | ["tags"]                           | null                           | "STRING | LIST<STRING NOT NULL>" |
-| 42 | "preExisting_actor_name_age"   | "UNIQUENESS"                      | "NODE"         | ["Actor"]     | ["firstname", "age"]               | "preExisting_actor_name_age"   | null                             |
-| 12 | "preExisting_book_published"   | "UNIQUENESS"                      | "NODE"         | ["Book"]      | ["published"]                      | "preExisting_book_published"   | null                             |
-| 51 | "preExisting_how"              | "RELATIONSHIP_UNIQUENESS"         | "RELATIONSHIP" | ["KNOWS"]     | ["how"]                            | "preExisting_how"              | null                             |
-| 19 | "rel_constraint_with_options"  | "RELATIONSHIP_UNIQUENESS"         | "RELATIONSHIP" | ["SEQUEL_OF"] | ["order", "seriesTitle", "number"] | "rel_constraint_with_options"  | null                             |
-| 49 | "rel_constraint_with_provider" | "RELATIONSHIP_KEY"                | "RELATIONSHIP" | ["KNOWS"]     | ["since"]                          | "rel_constraint_with_provider" | null                             |
-| 26 | "rel_exist_param"              | "RELATIONSHIP_PROPERTY_EXISTENCE" | "RELATIONSHIP" | ["WROTE"]     | ["published"]                      | null                           | null                             |
-| 47 | "rel_key_param"                | "RELATIONSHIP_KEY"                | "RELATIONSHIP" | ["KNOWS"]     | ["friend"]                         | "rel_key_param"                | null                             |
-| 33 | "rel_prop_type_param"          | "RELATIONSHIP_PROPERTY_TYPE"      | "RELATIONSHIP" | ["PART_OF"]   | ["prop1"]                          | null                           | "FLOAT"                          |
-| 17 | "rel_uniqueness_param"         | "RELATIONSHIP_UNIQUENESS"         | "RELATIONSHIP" | ["SEQUEL_OF"] | ["prop1"]                          | "rel_uniqueness_param"         | null                             |
-| 15 | "sequels"                      | "RELATIONSHIP_UNIQUENESS"         | "RELATIONSHIP" | ["SEQUEL_OF"] | ["order", "seriesTitle"]           | "sequels"                      | null                             |
-| 31 | "seriesOrder"                  | "NODE_PROPERTY_TYPE"              | "NODE"         | ["Movie"]     | ["seriesOrder"]                    | null                           | "INTEGER"                        |
-| 27 | "wrote_locations"              | "RELATIONSHIP_PROPERTY_EXISTENCE" | "RELATIONSHIP" | ["WROTE"]     | ["location"]                       | null                           | null                             |
-| 25 | "wrote_year"                   | "RELATIONSHIP_PROPERTY_EXISTENCE" | "RELATIONSHIP" | ["WROTE"]     | ["year"]                           | null                           | null                             |
-+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-27 rows
-----
-
-[NOTE]
-====
-The `type` column returns `UNIQUENESS` for the node property uniqueness constraint and `RELATIONSHIP_UNIQUENESS` for the relationship property uniqueness constraint.
-This will be updated in Neo4j 6.0.
-Node property uniqueness constraints will be updated to `NODE_PROPERTY_UNIQUENESS` and relationship property uniqueness constraints to `RELATIONSHIP_PROPERTY_UNIQUENESS`.
-====
-
-======
-
-
-[[listing-constraints-with-filtering]]
-=== Listing constraints with filtering
-
-One way of filtering the output from `SHOW CONSTRAINTS` by constraint type is the use of constraint type keywords,
-listed in the xref::constraints/syntax.adoc#constraints-syntax-list-type-filter[syntax for listing constraints type filter table].
-For example, to show only property uniqueness constraints, use `SHOW UNIQUENESS CONSTRAINTS`.
-Another more flexible way of filtering the output is to use the `WHERE` clause.
-An example is to only show constraints on relationships.
-
-
-.+SHOW CONSTRAINTS+
-======
-
-.Query
-[source, cypher, test-exclude-cols=id]
-----
-SHOW EXISTENCE CONSTRAINTS
-WHERE entityType = 'RELATIONSHIP'
-----
-
-This will only return the default output columns.
-To get all columns, use `+SHOW INDEXES YIELD * WHERE ...+`.
-
-[queryresult]
-----
-+-----------------------------------------------------------------------------------------------------------------------------------------+
-| id | name              | type                              | entityType     | labelsOrTypes | properties    | ownedIndex | propertyType |
-+-----------------------------------------------------------------------------------------------------------------------------------------+
-| 26 | "rel_exist_param" | "RELATIONSHIP_PROPERTY_EXISTENCE" | "RELATIONSHIP" | ["WROTE"]     | ["published"] | null       | null         |
-| 27 | "wrote_locations" | "RELATIONSHIP_PROPERTY_EXISTENCE" | "RELATIONSHIP" | ["WROTE"]     | ["location"]  | null       | null         |
-| 25 | "wrote_year"      | "RELATIONSHIP_PROPERTY_EXISTENCE" | "RELATIONSHIP" | ["WROTE"]     | ["year"]      | null       | null         |
-+-----------------------------------------------------------------------------------------------------------------------------------------+
-3 rows
-----
-
-======
 
