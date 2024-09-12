@@ -7,23 +7,20 @@ Property existence constraints ensure that a property exists either for all node
 Queries that try to create new nodes of the specified label, or relationships of the specified type, without the constrained property will fail.
 The same is true for queries that try to remove the mandatory property.
 
+
+[[create-existence-constraints]]
+== Create existence constraints
+
+Existence constraints are created with the `CREATE CONSTRAINT` command.
+When creating an existence constraint, it is recommended to provide a constraint name.
+
 [NOTE]
 Creating a constraint requires the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/database-administration/#access-control-database-administration-constraints[`CREATE CONSTRAINT` privilege].
 
-
-[[node-property-existence-constraints]]
-== Node property existence constraints
+.Create a node property existence constraint
+======
 
 A node property existence constraint ensures that certain nodes have a specified property.
-
-[[create-a-node-property-existence-constraint]]
-=== Create a node property existence constraint
-
-When creating a node property existence constraint, it is recommended to provide a constraint name.
-
-
-.+CREATE CONSTRAINT+
-======
 
 .Query
 [source, cypher]
@@ -38,22 +35,43 @@ FOR (author:Author) REQUIRE author.name IS NOT NULL
 Added 1 constraint.
 ----
 
-[NOTE]
-====
-The detailed statistics view for property existence constraints, `Property existence constraints added:  1`, will be split between nodes and relationships in Neo4j 6.0.
-For the node property existence constraints, they will say `Node property existence constraints added: 1`.
-====
-
 ======
 
 
+.Create a relationship property existence constraint
+======
+
+A relationship property existence constraint ensures that certain relationships have a certain property.
+
+.Query
+[source, cypher]
+----
+CREATE CONSTRAINT wrote_year
+FOR ()-[wrote:WROTE]-() REQUIRE wrote.year IS NOT NULL
+----
+
+.Result
+[queryresult]
+----
+Added 1 constraint.
+----
+
+======
+
+[NOTE]
+====
+The detailed statistics view for property existence constraints, `Property existence constraints added:  1`, will be split between nodes and relationships in Neo4j 6.0.
+For node property existence constraints, they will say `Node property existence constraints added: 1`, and for relationship property existence constraints, they will say `Relationship property existence constraints added: 1`.
+====
+
+
 [role=label--new-5.16]
-[[create-a-node-property-existence-constraint-by-param]]
-=== Create a node property existence constraint using a parameter
+[[create-property-existence-constraint-with-parameters]]
+=== Create property existence constraints using a parameter
 
 The constraint name can also be given as a parameter.
 
-.+CREATE CONSTRAINT+
+.Create a node property existence constraint using a parameter
 ======
 
 .Parameters
@@ -77,16 +95,38 @@ FOR (author:Author) REQUIRE author.surname IS NOT NULL
 Added 1 constraint.
 ----
 
-[NOTE]
-====
-The detailed statistics view for property existence constraints, `Property existence constraints added:  1`, will be split between nodes and relationships in Neo4j 6.0.
-For the node property existence constraints, they will say `Node property existence constraints added: 1`.
-====
+======
+
+
+.Create a relationship property existence constraint using a parameter
+======
+
+.Parameters
+[source, parameters]
+----
+{
+  "name": "rel_exist_param"
+}
+----
+
+.Query
+[source, cypher]
+----
+CREATE CONSTRAINT $name
+FOR ()-[wrote:WROTE]-() REQUIRE wrote.published IS NOT NULL
+----
+
+.Result
+[queryresult]
+----
+Added 1 constraint.
+----
 
 ======
 
 
-[[create-a-node-property-existence-constraint-if-not-exist]]
+
+[[create-property-existence-constraint-if-not-exist]]
 === Handling existing constraints when creating a constraint
 
 Creating an already existing constraint will fail.
@@ -94,7 +134,7 @@ To avoid such an error, `IF NOT EXISTS` can be added to the `CREATE` command.
 This will ensure that no error is thrown and that no constraint is created if any other constraint with the given name, or another node property existence constraint on the same schema, already exists.
 As of Neo4j 5.17, an informational notification is instead returned showing the existing constraint which blocks the creation.
 
-.+CREATE CONSTRAINT+
+.Create a node property existence constraint when a constraint with the same name exists
 ======
 
 ////
@@ -129,244 +169,7 @@ Assuming a constraint with the name `author_pseudonym` already exists:
 
 ======
 
-[[node-existence-constraints-fail-cases]]
-=== Fail cases
-
-xref:constraints/existence.adoc#create-an-already-existing-node-property-existence-constraint[]
-xref:constraints/existence.adoc#create-a-node-that-complies-with-a-property-existence-constraint[]
-xref:constraints/existence.adoc#create-a-node-that-violates-a-property-existence-constraint[]
-xref:constraints/existence.adoc#removing-an-existence-constrained-node-property[]
-xref:fail-to-create-a-property-existence-constraint-due-to-existing-node[]
-
-[[create-an-already-existing-node-property-existence-constraint]]
-==== Creating an already existing constraint will fail
-
-
-.+CREATE CONSTRAINT+
-======
-
-Create a node property existence constraint on the property `name` on nodes with the `Author` label, when that constraint already exists:
-
-.Query
-[source, cypher, role=test-fail]
-----
-CREATE CONSTRAINT author_name
-FOR (author:Author) REQUIRE author.name IS NOT NULL
-----
-
-In this case, the constraint cannot be created because it already exists.
-
-.Error message
-[source, error]
-----
-An equivalent constraint already exists, 'Constraint( id=10, name='author_name', type='NODE PROPERTY EXISTENCE', schema=(:Author {name}) )'.
-----
-
-======
-
-
-[[create-a-node-that-complies-with-a-property-existence-constraint]]
-==== Creating a node that complies with an existing constraint
-
-
-.+CREATE NODE+
-======
-
-Create an `Author` node with a `name` property:
-
-.Query
-[source, cypher]
-----
-CREATE (author:Author {name:'Virginia Woolf', surname: 'Woolf'})
-----
-
-.Result
-[queryresult]
-----
-Added 1 label, created 1 node, set 2 properties
-----
-
-======
-
-
-[[create-a-node-that-violates-a-property-existence-constraint]]
-==== Creating a node that violates an existing constraint will fail
-
-
-.+CREATE NODE+
-======
-
-Create an `Author` node without a `name` property, given a property existence constraint on `:Author(name)`:
-
-.Query
-[source, cypher, role=test-fail]
-----
-CREATE (author:Author {surname: 'Austen'})
-----
-
-In this case, the node is not created because it is missing the `name` property which is in conflict with an existing constraint.
-
-.Error message
-[source, error]
-----
-Node(0) with label `Author` must have the property `name`
-----
-
-======
-
-
-[[removing-an-existence-constrained-node-property]]
-==== Removing an existence constrained node property will fail
-
-
-.+REMOVE PROPERTY+
-======
-
-Remove the `name` property from an existing node `Author`, given a property existence constraint on `:Author(name)`:
-
-.Query
-[source, cypher, role=test-fail]
-----
-MATCH (author:Author {name: 'Virginia Woolf'})
-REMOVE author.name
-----
-
-In this case, the property is not removed because it is in conflict with an existing constraint.
-
-.Error message
-[source, error]
-----
-Node(0) with label `Author` must have the property `name`
-----
-
-======
-
-
-[[fail-to-create-a-property-existence-constraint-due-to-existing-node]]
-==== Creating a constraint when there exist conflicting nodes will fail
-
-
-.+CREATE CONSTRAINT+
-======
-
-Create a constraint on the property `nationality` on nodes with the `Author` label, when there already exists a node without a `nationality` property:
-
-.Query
-[source, cypher, role=test-fail]
-----
-CREATE CONSTRAINT author_nationality FOR (author:Author) REQUIRE author.nationality IS NOT NULL
-----
-
-In this case, the constraint cannot be created because it is in conflict with the existing graph.
-Remove or correct the offending nodes and then re-apply the constraint.
-
-.Error message
-[source, error]
-----
-Unable to create Constraint( type='NODE PROPERTY EXISTENCE', schema=(:Author {nationality}) ):
-Node(0) with label `Author` must have the property `nationality`
-----
-
-======
-
-The constraint creation fails on the first offending node that is found.
-This does not guarantee that there are no other offending nodes in the graph.
-Therefore, all the data should be checked and cleaned up before re-attempting the constraint creation.
-
-This is an example `MATCH` query to find all offending nodes missing the property for the constraint above:
-
-.Query
-[source, cypher]
-----
-MATCH (author:Author)
-WHERE author.nationality IS NULL
-RETURN author
-----
-
-
-[[elationship-property-existence]]
-== Relationship property existence constraints
-
-A relationship property existence constraint ensures that certain relationships have a certain property.
-
-[[create-a-relationship-property-existence-constraint]]
-=== Create a relationship property existence constraint
-
-When creating a relationship property existence constraint, it is recommended to provide a constraint name.
-
-
-.+CREATE CONSTRAINT+
-======
-
-.Query
-[source, cypher]
-----
-CREATE CONSTRAINT wrote_year
-FOR ()-[wrote:WROTE]-() REQUIRE wrote.year IS NOT NULL
-----
-
-.Result
-[queryresult]
-----
-Added 1 constraint.
-----
-
-[NOTE]
-====
-The detailed statistics view for property existence constraints, `Property existence constraints added:  1`, will be split between nodes and relationships in Neo4j 6.0.
-For the relationship property existence constraints, they will say `Relationship property existence constraints added: 1`.
-====
-
-======
-
-[role=label--new-5.16]
-[[create-a-relationship-property-existence-constraint-by-param]]
-=== Create a relationship property existence constraint using a parameter
-
-The constraint name can also be given as a parameter.
-
-.+CREATE CONSTRAINT+
-======
-
-.Parameters
-[source, parameters]
-----
-{
-  "name": "rel_exist_param"
-}
-----
-
-.Query
-[source, cypher]
-----
-CREATE CONSTRAINT $name
-FOR ()-[wrote:WROTE]-() REQUIRE wrote.published IS NOT NULL
-----
-
-.Result
-[queryresult]
-----
-Added 1 constraint.
-----
-
-[NOTE]
-====
-The detailed statistics view for property existence constraints, `Property existence constraints added:  1`, will be split between nodes and relationships in Neo4j 6.0.
-For the relationship property existence constraints, they will say `Relationship property existence constraints added: 1`.
-====
-
-======
-
-
-[[create-a-relationship-property-existence-constraint-if-not-exist]]
-=== Handling existing constraints when creating a constraint
-
-Creating an already existing constraint will fail.
-To avoid such an error, `IF NOT EXISTS` can be added to the `CREATE` command.
-This will ensure that no error is thrown and that no constraint is created if any other constraint with the given name, or another relationship property existence constraint on the same schema, already exists.
-As of Neo4j 5.17, an informational notification is instead returned showing the existing constraint which blocks the creation.
-
-.+CREATE CONSTRAINT+
+.Create a relationship property existence constraint when a constraint with the same name exists
 ======
 
 .Query
@@ -393,20 +196,86 @@ Assuming that such a constraint already exists:
 
 ======
 
-[[relationship-existence-constraints-fail-cases]]
-=== Fail cases
 
-* xref:constraints/existence.adoc#create-an-already-existing-relationship-property-existence-constraint[]
-* xref:constraints/existence.adoc#create-a-relationship-that-complies-with-a-property-existence-constraint[]
-* xref:constraints/existence.adoc#create-a-relationship-that-violates-a-property-existence-constraint[]
-* xref:constraints/existence.adoc#removing-an-existence-constrained-relationship-property[]
-* xref:constraints/existence.adoc#fail-to-create-a-property-existence-constraint-due-to-existing-relationship[]
+[[create-data-that-complies-with-a-property-existence-constraint]]
+=== Create data that complies with existing existence constraints
 
-[[create-an-already-existing-relationship-property-existence-constraint]]
-==== Creating an already existing constraint will fail
+.Create a node that complies with an existing node property existence constraint
+======
+
+Create an `Author` node with a `name` property:
+
+.Query
+[source, cypher]
+----
+CREATE (author:Author {name:'Virginia Woolf', surname: 'Woolf'})
+----
+
+.Result
+[queryresult]
+----
+Added 1 label, created 1 node, set 2 properties
+----
+
+======
 
 
-.+CREATE CONSTRAINT+
+.Create a relationship that complies with an existing relationship property existence constraint
+======
+
+Create a `WROTE` relationship with a `year` and `location` property, given property existence constraints on `:WROTE(year)` and `:WROTE(location)`:
+
+.Query
+[source, cypher]
+----
+CREATE (author:Author {name: 'Emily Brontë', surname: 'Brontë'})-[wrote:WROTE {year: 1847, location: 'Haworth, United Kingdom', published: true}]->(book:Book {title:'Wuthering Heights', isbn: 9789186579296})
+----
+
+.Result
+[queryresult]
+----
+Added 2 labels, created 2 nodes, set 7 properties, created 1 relationship
+----
+
+======
+
+
+[[existence-constraints-fail-cases]]
+== Fail cases
+
+* xref:constraints/existence.adoc#create-an-already-existing-property-existence-constraint[]
+* xref:constraints/existence.adoc#create-data-that-violates-a-property-existence-constraint[]
+* xref:constraints/existence.adoc#removing-an-existence-constrained-property[]
+* xref:constraints/existence.adoc#fail-to-create-a-property-existence-constraint-due-to-existing-data[]
+
+[discrete]
+[[create-an-already-existing-property-existence-constraint]]
+=== Creating already existing existence constraints will fail
+
+.Create an already existing node property existence constraint
+======
+
+Create a node property existence constraint on the property `name` on nodes with the `Author` label, when that constraint already exists:
+
+.Query
+[source, cypher, role=test-fail]
+----
+CREATE CONSTRAINT author_name
+FOR (author:Author) REQUIRE author.name IS NOT NULL
+----
+
+In this case, the constraint cannot be created because it already exists.
+
+.Error message
+[source, error]
+----
+An equivalent constraint already exists, 'Constraint( id=10, name='author_name', type='NODE PROPERTY EXISTENCE', schema=(:Author {name}) )'.
+----
+
+======
+
+
+.Create an already existing relationship property existence constraint
 ======
 
 Create a named relationship property existence constraint on the property `locations` on relationships with the `WROTE` relationship type, when a constraint with the given name already exists:
@@ -435,36 +304,32 @@ There already exists a constraint called 'wrote_locations'.
 
 ======
 
+[discrete]
+[[create-data-that-violates-a-property-existence-constraint]]
+=== Creating data that violates existing constraints will fail
 
-[[create-a-relationship-that-complies-with-a-property-existence-constraint]]
-==== Creating a relationship that complies with an existing constraint
-
-
-.+CREATE RELATIONSHIP+
+.Create a node that violates an existing node property existence constraint
 ======
 
-Create a `WROTE` relationship with a `year` and `location` property, given property existence constraints on `:WROTE(year)` and `:WROTE(location)`:
+Create an `Author` node without a `name` property, given a property existence constraint on `:Author(name)`:
 
 .Query
-[source, cypher]
+[source, cypher, role=test-fail]
 ----
-CREATE (author:Author {name: 'Emily Brontë', surname: 'Brontë'})-[wrote:WROTE {year: 1847, location: 'Haworth, United Kingdom', published: true}]->(book:Book {title:'Wuthering Heights', isbn: 9789186579296})
+CREATE (author:Author {surname: 'Austen'})
 ----
 
-.Result
-[queryresult]
+In this case, the node is not created because it is missing the `name` property which is in conflict with an existing constraint.
+
+.Error message
+[source, error]
 ----
-Added 2 labels, created 2 nodes, set 7 properties, created 1 relationship
+Node(0) with label `Author` must have the property `name`
 ----
 
 ======
 
-
-[[create-a-relationship-that-violates-a-property-existence-constraint]]
-==== Creating a relationship that violates an existing constraint will fail
-
-
-.+CREATE RELATIONSHIP+
+.Create a relationship that violates an existing relationship property existence constraint
 ======
 
 Create a `WROTE` relationship without a `location` property, given a property existence constraint `:WROTE(location)`:
@@ -485,12 +350,34 @@ Relationship(0) with type `WROTE` must have the property `location`
 
 ======
 
+[discrete]
+[[removing-an-existence-constrained-property]]
+=== Removing existence-constrained properties will fail
 
-[[removing-an-existence-constrained-relationship-property]]
-==== Removing an existence constrained relationship property will fail
+.Remove a node property existence-constrained property
+======
+
+Remove the `name` property from an existing node `Author`, given a property existence constraint on `:Author(name)`:
+
+.Query
+[source, cypher, role=test-fail]
+----
+MATCH (author:Author {name: 'Virginia Woolf'})
+REMOVE author.name
+----
+
+In this case, the property is not removed because it is in conflict with an existing constraint.
+
+.Error message
+[source, error]
+----
+Node(0) with label `Author` must have the property `name`
+----
+
+======
 
 
-.+REMOVE PROPERTY+
+.Remove a relationship property existence-constrained property
 ======
 
 Remove the `location` property from an existing relationship of relationship type `WROTE`, given a property existence constraint `:WROTE(location)`:
@@ -511,12 +398,48 @@ Relationship(0) with type `WROTE` must have the property `location`
 
 ======
 
+[discrete]
+[[fail-to-create-a-property-existence-constraint-due-to-existing-data]]
+=== Creating constraints when there exist conflicting data will fail
 
-[[fail-to-create-a-property-existence-constraint-due-to-existing-relationship]]
-==== Creating a constraint when there exist conflicting relationships will fail
+.Create a node property existence constraint when conflicting nodes exist
+======
 
+Create a constraint on the property `nationality` on nodes with the `Author` label, when there already exists a node without a `nationality` property:
 
-.+CREATE CONSTRAINT+
+.Query
+[source, cypher, role=test-fail]
+----
+CREATE CONSTRAINT author_nationality FOR (author:Author) REQUIRE author.nationality IS NOT NULL
+----
+
+In this case, the constraint cannot be created because it is in conflict with the existing graph.
+Remove or correct the offending nodes and then re-apply the constraint.
+
+.Error message
+[source, error]
+----
+Unable to create Constraint( type='NODE PROPERTY EXISTENCE', schema=(:Author {nationality}) ):
+Node(0) with label `Author` must have the property `nationality`
+----
+
+The constraint creation fails on the first offending node that is found.
+This does not guarantee that there are no other offending nodes in the graph.
+Therefore, all the data should be checked and cleaned up before re-attempting the constraint creation.
+
+This is an example `MATCH` query to find all offending nodes missing the property for the constraint above:
+
+.Query
+[source, cypher]
+----
+MATCH (author:Author)
+WHERE author.nationality IS NULL
+RETURN author
+----
+
+======
+
+.Create a relationship property existence constraint when conflicting relationships exist
 ======
 
 Create a constraint on the property `language` on relationships with the `WROTE` relationship type, when there already exists a relationship without a property named `language`:
@@ -537,8 +460,6 @@ Unable to create Constraint( type='RELATIONSHIP PROPERTY EXISTENCE', schema=()-[
 Relationship(0) with type `WROTE` must have the property `language`
 ----
 
-======
-
 The constraint creation fails on the first offending relationship that is found.
 This does not guarantee that there are no other offending relationships in the graph.
 Therefore, all the data should be checked and cleaned up before re-attempting the constraint creation.
@@ -552,3 +473,6 @@ MATCH ()-[wrote:WROTE]-()
 WHERE wrote.language IS NULL
 RETURN wrote
 ----
+
+======
+
