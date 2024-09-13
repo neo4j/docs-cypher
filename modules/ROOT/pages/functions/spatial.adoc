@@ -1,71 +1,277 @@
 :description: Spatial functions are used to specify 2D or 3D points in a Coordinate Reference System (CRS) and to calculate the geodesic distance between two points.
+:table-caption!:
 
 [[query-functions-spatial]]
 = Spatial functions
 
 Spatial functions are used to specify 2D or 3D `POINT` values in a Coordinate Reference System (CRS) and to calculate the geodesic distance between two `POINT` values.
 
+[[example-graph]]
+== Example graph
+
 The following graph is used for some of the examples below.
 
-image:graph_spatial_functions.svg[]
+image::graph_spatial_functions.svg[role="middle", width="500"]
 
-To recreate the graph, run the following query in an empty Neo4j database:
+To recreate the graph, run the following query against an empty Neo4j database:
 
 [source, cypher, role=test-setup]
 ----
 CREATE
-  (copenhagen:TrainStation {longitude: 12.564590, latitude: 55.672874, city: 'Copenhagen'}),
-  (malmo:Office {longitude: 12.994341, latitude: 55.611784, city: 'Malmo'}),
+  (copenhagen:TrainStation {latitude: 55.672874, longitude: 12.564590, city: 'Copenhagen'}),
+  (malmo:Office {latitude: 55.611784, longitude: 12.994341, city: 'Malmö'}),
   (copenhagen)-[:TRAVEL_ROUTE]->(malmo)
 ----
+
+[[functions-point]]
+== point()
+
+
+.Details
+|===
+| *Syntax* 3+| `point(input)`
+| *Description* 3+| Returns a 2D or 3D point object, given two or respectively three coordinate values in the Cartesian coordinate system or WGS 84 geographic coordinate system.
+.2+| *Arguments* | *Name* | *Type* | *Description*
+| `input` | `MAP` | Cartesian 2D: `{ +
+x :: FLOAT, +
+y :: FLOAT, +
+crs = "cartesian" :: STRING, +
+srid = 7203 :: INTEGER +
+}`
+
+Cartesian 3D: `{ +
+x :: FLOAT, +
+y :: FLOAT, +
+z :: FLOAT, +
+crs  = "cartesian-3D" :: STRING, +
+srid = 9157 :: INTEGER +
+}`
+
+WGS 84 2D: `{ +
+longitude \| x :: FLOAT +
+latitude \| y :: FLOAT +
+crs = "WGS-84-2D" :: STRING +
+srid = 4326 :: INTEGER +
+}`
+
+WGS 84 3D: `{ +
+longitude \| x :: FLOAT, +
+latitude \| y :: FLOAT, +
+height \| z :: FLOAT, +
+crs = "WGS-84-3D" :: STRING, +
+srid = 4979 :: INTEGER +
+}`
+| *Returns* 3+| `POINT`
+|===
+
+.Considerations
+|===
+
+| If any argument provided to `point()` is `null`, `null` will be returned.
+| If the coordinates are specified using `latitude` and `longitude`, the `crs` or `srid` fields are optional and inferred to be `'WGS-84'` (`srid:4326`) for 2D points or `'WGS-84-3D'` (`srid:4979`) for 3D points.
+| If the coordinates are specified using `x` and `y`, then either the `crs` or `srid` field is required if a geographic CRS is desired.
+| If the `height/z` key and value is not provided, a 2D `POINT` will be returned in either the _WGS 84_ or _Cartesian_ CRS, depending on the coordinate system used.
+| The `crs` or `srid` fields are optional and default to the _Cartesian_ CRS (which means `srid:7203`) for 2D points or the _3D Cartesian_ CRS (which means `srid:9157`) for 3D points.
+
+|===
+
+
+.+point()+ - WGS 84 2D
+======
+
+.Query
+[source, cypher]
+----
+RETURN point({longitude: 56.7, latitude: 12.78}) AS point
+----
+
+A 2D `POINT` with a `longitude` of `56.7` and a `latitude` of `12.78` in the _WGS 84_ CRS is returned.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+
+| point
+| point({srid:4326, x:56.7, y:12.78})
+1+d|Rows: 1
+
+|===
+
+======
+
+
+.+point()+ - WGS 84 2D
+======
+
+.Query
+[source, cypher]
+----
+RETURN point({x: 2.3, y: 4.5, crs: 'WGS-84'}) AS point
+----
+
+`x` and `y` coordinates may be used in the _WGS 84_ CRS instead of `longitude` and `latitude`, respectively, providing `crs` is set to `'WGS-84'`, or `srid` is set to `4326`.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+
+| point
+| point({srid:4326, x:2.3, y:4.5})
+1+d|Rows: 1
+
+|===
+
+======
+
+
+.+point()+ - WGS 84 2D
+======
+
+.Query
+[source, cypher]
+----
+MATCH (p:Office)
+RETURN point({longitude: p.longitude, latitude: p.latitude}) AS officePoint
+----
+
+A 2D `POINT` representing the coordinates of the city of Malmo in the _WGS 84_ CRS is returned.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+
+| officePoint
+| point({srid:4326, x:12.994341, y:55.611784})
+1+d|Rows: 1
+
+|===
+
+======
+
+
+.+point()+ - WGS 84 3D
+======
+
+.Query
+[source, cypher]
+----
+RETURN point({longitude: 56.7, latitude: 12.78, height: 8}) AS point
+----
+
+A 3D `POINT` with a `longitude` of `56.7`, a `latitude` of `12.78` and a height of `8` meters in the _WGS 84_ CRS is returned.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+
+| point
+| point({srid:4979, x:56.7, y:12.78, z:8.0})
+1+d|Rows: 1
+
+|===
+
+======
+
+
+.+point()+ - Cartesian 2D
+======
+
+.Query
+[source, cypher]
+----
+RETURN point({x: 2.3, y: 4.5}) AS point
+----
+
+A 2D `POINT` with an `x` coordinate of `2.3` and a `y` coordinate of `4.5` in the _Cartesian_ CRS is returned.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+
+| point
+| point({srid:7203, x:2.3, y:4.5})
+1+d|Rows: 1
+
+|===
+
+======
+
+
+.+point()+ - Cartesian 3D
+======
+
+.Query
+[source, cypher]
+----
+RETURN point({x: 2.3, y: 4.5, z: 2}) AS point
+----
+
+A 3D `POINT` with an `x` coordinate of `2.3`, a `y` coordinate of `4.5` and a `z` coordinate of `2` in the _Cartesian_ CRS is returned.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+
+| point
+| point({srid:9157, x:2.3, y:4.5, z:2.0})
+1+d|Rows: 1
+
+|===
+
+======
+
+.+point()+ - null
+======
+
+.Query
+[source, cypher]
+----
+RETURN point(null) AS p
+----
+
+If `null` is provided as the argument, `null` is returned.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+
+| p
+| <null>
+1+d|Rows: 1
+
+|===
+
+======
+
 
 [[functions-distance]]
 == point.distance()
 
-`point.distance()` returns a `FLOAT` representing the geodesic distance between two points in the same Coordinate Reference System (CRS).
+.Details
+|===
+| *Syntax* 3+| `point.distance(from, to)`
+| *Description* 3+| Returns a `FLOAT` representing the geodesic distance between any two points in the same CRS.
+.3+| *Arguments* | *Name* | *Type* | *Description*
+| `from` | `POINT` | A start point.
+| `to` | `POINT` | An end point in the same CRS as the start point.
+| *Returns* 3+| `FLOAT`
+|===
 
 * If the `POINT` values are in the _Cartesian_ CRS (2D or 3D), then the units of the returned distance will be the same as the units of the points, calculated using Pythagoras' theorem.
-* If the `POINT` values are in the _WGS-84_ CRS (2D), then the units of the returned distance will be meters, based on the haversine formula over a spherical earth approximation.
+* If the `POINT` values are in the _WGS-84_ CRS (2D), then the units of the returned distance will be meters, based on the haversine formula over a spherical Earth approximation.
 * If the `POINT` values are in the _WGS-84_ CRS (3D), then the units of the returned distance will be meters.
  ** The distance is calculated in two steps.
-  *** First, a haversine formula over a spherical earth is used, at the average height of the two points.
+  *** First, a haversine formula over a spherical Earth is used, at the average height of the two points.
   *** To account for the difference in height, Pythagoras' theorem is used, combining the previously calculated spherical distance with the height difference.
  ** This formula works well for points close to the earth's surface; for instance, it is well-suited for calculating the distance of an airplane flight.
 It is less suitable for greater heights, however, such as when calculating the distance between two satellites.
 
-[source, syntax]
-----
-point.distance(point1, point2)
-----
-
-*Returns:*
-
-|===
-
-| `FLOAT`
-
-|===
-
-*Arguments:*
-
-[options="header"]
-|===
-| Name | Description
-
-| `point1`
-| A `POINT` in either a geographic or cartesian coordinate system.
-
-| `point2`
-| A `POINT` in the same CRS as `point1`.
-
-|===
-
-*Considerations:*
+.Considerations
 |===
 
 | `point.distance(null, null)` return `null`.
-| `point.distance(null, point2)` return `null`.
-| `point.distance(point1, null)` return `null`.
+| `point.distance(null, to)` return `null`.
+| `point.distance(from, null)` return `null`.
 | Attempting to use points with different Coordinate Reference Systems (such as WGS 84 2D and WGS 84 3D) will return `null`.
 
 |===
@@ -89,8 +295,8 @@ The distance between two 2D points in the _Cartesian_ CRS is returned.
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 
-| +dist+
-| +1.5+
+| dist
+| 1.5
 1+d|Rows: 1
 
 |===
@@ -116,8 +322,8 @@ The distance between two 3D points in the _WGS 84_ CRS is returned.
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 
-| +dist+
-| +1269.9148706779097+
+| dist
+| 1269.9148706779097
 1+d|Rows: 1
 
 |===
@@ -144,8 +350,8 @@ The distance between the train station in Copenhagen and the Neo4j office in Mal
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 
-| +travelDistance+
-| +27842.0+
+| travelDistance
+| 27842.0
 1+d|Rows: 1
 
 |===
@@ -168,8 +374,8 @@ If `null` is provided as one or both of the arguments, `null` is returned.
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 
-| +d+
-| +<null>+
+| d
+| null
 1+d|Rows: 1
 
 |===
@@ -180,49 +386,21 @@ If `null` is provided as one or both of the arguments, `null` is returned.
 [[functions-withinBBox]]
 == point.withinBBox()
 
-`point.withinBBox()` takes the following arguments:
-
-* The `POINT` to check.
-* The lower-left (south-west) `POINT` of a bounding box.
-* The upper-right (or north-east) `POINT` of a bounding box.
-
-The return value will be true if the provided point is contained in the bounding box (boundary included), otherwise the return value will be false.
-
-[source, syntax]
-----
-point.withinBBox(point, lowerLeft, upperRight)
-----
-
-*Returns:*
-
+.Details
+|===
+| *Syntax* 3+| `point.withinBBox(point, lowerLeft, upperRight)`
+| *Description* 3+| Returns true if the provided point is within the bounding box defined by the two provided points.
+.4+| *Arguments* | *Name* | *Type* | *Description*
+| `point` | `POINT` | A point to be confirmed in the bounding box.
+| `lowerLeft` | `POINT` | The lower left side point of the bounding box.
+| `upperRight` | `POINT` | The upper right side point of the bounding box.
+| *Returns* 3+| `BOOLEAN`
 |===
 
-| `BOOLEAN`
-
+.Considerations
 |===
 
-*Arguments:*
-
-[options="header"]
-|===
-| Name | Description
-
-| `point`
-| A `POINT` in either a geographic or cartesian coordinate system.
-
-| `lowerLeft`
-| A `POINT` in the same CRS as 'point'.
-
-| `upperRight`
-| A `POINT` in the same CRS as 'point'.
-
-|===
-
-*Considerations:*
-
-|===
-
-| `point.withinBBox(p1, p2, p3)` will return `null` if any of the arguments evaluate to `null`.
+| `point.withinBBox(point, lowerLeft, upperRight)` will return `null` if any of the arguments evaluate to `null`.
 | Attempting to use `POINT` values with different Coordinate Reference Systems (such as WGS 84 2D and WGS 84 3D) will return `null`.
 | `point.withinBBox` will handle crossing the 180th meridian in geographic coordinates.
 | Switching the longitude of the `lowerLeft` and `upperRight` in geographic coordinates will switch the direction of the resulting bounding box.
@@ -249,8 +427,8 @@ Checking if a point in _Cartesian_ CRS is contained in the bounding box.
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 
-| +result+
-| +true+
+| result
+| true
 1+d|Rows: 1
 
 |===
@@ -278,8 +456,8 @@ Finds all train stations contained in a bounding box around Copenhagen.
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 
-| +count(t)+
-| +1+
+| count(t)
+| 1
 1+d|Rows: 1
 
 |===
@@ -305,8 +483,8 @@ A bounding box that crosses the 180th meridian.
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 
-| +result+
-| +true+
+| result
+| true
 1+d|Rows: 1
 
 |===
@@ -334,391 +512,8 @@ If `null` is provided as any of the arguments, `null` is returned.
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 
-| +in+
-| +<null>+
-1+d|Rows: 1
-
-|===
-
-======
-
-
-[[functions-point-wgs84-2d]]
-== point() - WGS 84 2D
-
-`point({longitude | x, latitude | y [, crs][, srid]})` returns a 2D `POINT` in the _WGS 84_ CRS corresponding to the given coordinate values.
-
-[source, syntax]
-----
-point({longitude | x, latitude | y [, crs][, srid]})
-----
-
-*Returns:*
-
-|===
-
-| A 2D `POINT` in _WGS 84_.
-
-|===
-
-*Arguments:*
-
-[options="header"]
-|===
-| Name | Description
-
-| `A single map consisting of the following:`
-|
-
-| `longitude/x`
-| A numeric expression that represents the longitude/x value in decimal degrees.
-
-| `latitude/y`
-| A numeric expression that represents the latitude/y value in decimal degrees.
-
-| `crs`
-| The optional `STRING` `'WGS-84'`.
-
-| `srid`
-| The optional `INTEGER` `4326`.
-
-|===
-
-*Considerations:*
-
-|===
-
-| If any argument provided to `point()` is `null`, `null` will be returned.
-| If the coordinates are specified using `latitude` and `longitude`, the `crs` or `srid` fields are optional and inferred to be `'WGS-84'` (`srid:4326`).
-| If the coordinates are specified using `x` and `y`, then either the `crs` or `srid` field is required if a geographic CRS is desired.
-
-|===
-
-
-.+point()+
-======
-
-.Query
-[source, cypher]
-----
-RETURN point({longitude: 56.7, latitude: 12.78}) AS point
-----
-
-A 2D `POINT` with a `longitude` of `56.7` and a `latitude` of `12.78` in the _WGS 84_ CRS is returned.
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-
-| +point+
-| +point({srid:4326, x:56.7, y:12.78})+
-1+d|Rows: 1
-
-|===
-
-======
-
-
-.+point()+
-======
-
-.Query
-[source, cypher]
-----
-RETURN point({x: 2.3, y: 4.5, crs: 'WGS-84'}) AS point
-----
-
-`x` and `y` coordinates may be used in the _WGS 84_ CRS instead of `longitude` and `latitude`, respectively, providing `crs` is set to `'WGS-84'`, or `srid` is set to `4326`.
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-
-| +point+
-| +point({srid:4326, x:2.3, y:4.5})+
-1+d|Rows: 1
-
-|===
-
-======
-
-
-.+point()+
-======
-
-.Query
-[source, cypher]
-----
-MATCH (p:Office)
-RETURN point({longitude: p.longitude, latitude: p.latitude}) AS officePoint
-----
-
-A 2D `POINT` representing the coordinates of the city of Malmo in the _WGS 84_ CRS is returned.
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-
-| +officePoint+
-| +point({srid:4326, x:12.994341, y:55.611784})+
-1+d|Rows: 1
-
-|===
-
-======
-
-
-.+point()+
-======
-
-.Query
-[source, cypher]
-----
-RETURN point(null) AS p
-----
-
-If `null` is provided as the argument, `null` is returned.
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-
-| +p+
-| +<null>+
-1+d|Rows: 1
-
-|===
-
-======
-
-
-[[functions-point-wgs84-3d]]
-== point() - WGS 84 3D
-
-`point({longitude | x, latitude | y, height | z, [, crs][, srid]})` returns a 3D `POINT` in the _WGS 84_ CRS corresponding to the given coordinate values.
-
-[source, syntax]
-----
-point({longitude | x, latitude | y, height | z, [, crs][, srid]})
-----
-
-*Returns:*
-
-|===
-
-| A 3D `POINT` in _WGS 84_.
-
-|===
-
-*Arguments:*
-
-[options="header"]
-|===
-| Name | Description
-
-| `A single map consisting of the following:`
-|
-
-| `longitude/x`
-| A numeric expression that represents the longitude/x value in decimal degrees.
-
-| `latitude/y`
-| A numeric expression that represents the latitude/y value in decimal degrees.
-
-| `height/z`
-| A numeric expression that represents the height/z value in meters.
-
-| `crs`
-| The optional `STRING` `'WGS-84-3D'`.
-
-| `srid`
-| The optional `INTEGER` `4979`.
-
-|===
-
-*Considerations:*
-
-|===
-
-| If any argument provided to `point()` is `null`, `null` will be returned.
-| If the `height/z` key and value is not provided, a 2D `POINT` in the _WGS 84_ CRS will be returned.
-| If the coordinates are specified using `latitude` and `longitude`, the `crs` or `srid` fields are optional and inferred to be `'WGS-84-3D'` (`srid:4979`).
-| If the coordinates are specified using `x` and `y`, then either the `crs` or `srid` field is required if a geographic CRS is desired.
-
-|===
-
-
-.+point()+
-======
-
-.Query
-[source, cypher]
-----
-RETURN point({longitude: 56.7, latitude: 12.78, height: 8}) AS point
-----
-
-A 3D `POINT` with a `longitude` of `56.7`, a `latitude` of `12.78` and a height of `8` meters in the _WGS 84_ CRS is returned.
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-
-| +point+
-| +point({srid:4979, x:56.7, y:12.78, z:8.0})+
-1+d|Rows: 1
-
-|===
-
-======
-
-
-[[functions-point-cartesian-2d]]
-== point() - Cartesian 2D
-
-`point({x, y [, crs][, srid]})` returns a 2D `POINT` in the _Cartesian_ CRS corresponding to the given coordinate values.
-
-[source, syntax]
-----
-point({x, y [, crs][, srid]})
-----
-
-*Returns:*
-
-|===
-
-| A 2D `POINT` in _Cartesian_.
-
-|===
-
-*Arguments:*
-
-[options="header"]
-|===
-| Name | Description
-
-| `A single map consisting of the following:`
-|
-
-| `x`
-| A numeric expression.
-
-| `y`
-| A numeric expression.
-
-| `crs`
-| The optional `STRING` `'cartesian'`.
-
-| `srid`
-| The optional `INTEGER` `7203`.
-
-|===
-
-*Considerations:*
-
-|===
-
-| If any argument provided to `point()` is `null`, `null` will be returned.
-| The `crs` or `srid` fields are optional and default to the _Cartesian_ CRS (which means `srid:7203`).
-
-|===
-
-
-.+point()+
-======
-
-.Query
-[source, cypher]
-----
-RETURN point({x: 2.3, y: 4.5}) AS point
-----
-
-A 2D `POINT` with an `x` coordinate of `2.3` and a `y` coordinate of `4.5` in the _Cartesian_ CRS is returned.
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-
-| +point+
-| +point({srid:7203, x:2.3, y:4.5})+
-1+d|Rows: 1
-
-|===
-
-======
-
-
-[[functions-point-cartesian-3d]]
-== point() - Cartesian 3D
-
-`point({x, y, z, [, crs][, srid]})` returns a 3D `POINT` in the _Cartesian_ CRS corresponding to the given coordinate values.
-
-[source, syntax]
-----
-point({x, y, z, [, crs][, srid]})
-----
-
-*Returns:*
-
-|===
-
-| A 3D `POINT` in _Cartesian_.
-
-|===
-
-*Arguments:*
-
-[options="header"]
-|===
-| Name | Description
-
-| `A single map consisting of the following:`
-|
-
-| `x`
-| A numeric expression.
-
-| `y`
-| A numeric expression.
-
-| `z`
-| A numeric expression.
-
-| `crs`
-| The optional `STRING` `'cartesian-3D'`.
-
-| `srid`
-| The optional `INTEGER` `9157`.
-
-|===
-
-*Considerations:*
-
-|===
-
-| If any argument provided to `point()` is `null`, `null` will be returned.
-| If the `z` key and value is not provided, a 2D `POINT` in the _Cartesian_ CRS will be returned.
-| The `crs` or `srid` fields are optional and default to the _3D Cartesian_ CRS (which means `srid:9157`).
-
-|===
-
-
-.+point()+
-======
-
-.Query
-[source, cypher]
-----
-RETURN point({x: 2.3, y: 4.5, z: 2}) AS point
-----
-
-A 3D `POINT` with an `x` coordinate of `2.3`, a `y` coordinate of `4.5` and a `z` coordinate of `2` in the _Cartesian_ CRS is returned.
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-
-| +point+
-| +point({srid:9157, x:2.3, y:4.5, z:2.0})+
+| in
+| null
 1+d|Rows: 1
 
 |===

@@ -13,11 +13,14 @@ Setting labels on a node is an idempotent operation -- nothing will occur if an 
 The query statistics will state whether any updates actually took place.
 ====
 
-The examples use this graph as a starting point:
+== Example graph
 
-image:graph_set_clause.svg[]
+The following graph is used for the examples below:
 
-////
+image::graph_set_clause.svg[[width="500", role="middle"]
+
+To recreate it, run the following query against an empty Neo4j database:
+
 [source, cypher, role=test-setup]
 ----
 CREATE
@@ -29,8 +32,6 @@ CREATE
   (b)-[:KNOWS]->(a),
   (d)-[:KNOWS]->(c)
 ----
-////
-
 
 [[set-set-a-property]]
 == Set a property
@@ -157,6 +158,47 @@ The `age` property has been converted to the `STRING` `'36'`.
 | "Andy" | "36"
 2+d|Rows: 1 +
 Properties set: 1
+|===
+
+
+[role=label--new-5.24]
+[[set-dynamically-a-property]]
+== Dynamically setting or updating a property
+
+`SET` can be used to set or update a property on a node or relationship even when the property key name is not statically known.
+
+[source, syntax]
+----
+SET n[key] = expression
+----
+
+The dynamically calculated key must evaluate to a `STRING` value.
+This query creates a copy of every property on the nodes:
+
+.Query
+[source, cypher]
+----
+MATCH (n)
+FOREACH (k IN keys(n) | SET n[k + "Copy"] = n[k]) // <1>
+RETURN n.name, keys(n);
+----
+
+
+<1> The xref:clauses/foreach.adoc[`FOREACH`] clause iterates over each property key `k` obtained from the xref::functions/list.adoc#functions-keys[`keys()`] function.
+For each key, it sets a new property on the nodes with a key name of `k` + "Copy" and copies the value from the original property.
+
+The nodes now have copies of all their properties.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| n.name   | keys(n)
+| "Andy"   | ["name", "nameCopy", "age", "ageCopy", "hungry", "hungryCopy"]
+| "Stefan" | ["name", "nameCopy"]
+| "Peter"  | ["name", "nameCopy", "age", "ageCopy"]
+| "George" | ["name", "nameCopy"]
+2+d|Rows: 4 +
+Properties set: 6
 |===
 
 
@@ -498,6 +540,69 @@ The newly-labeled node is returned by the query.
 Labels added: 1
 |===
 
+[role=label--new-5.24]
+[[set-set-a-dynamic-label-on-a-node]]
+== Dynamically setting a label
+
+`SET` can be used to set a label on a node even when the label is not statically known.
+
+[source, syntax]
+----
+MATCH (n)
+SET n:$(expr)
+----
+
+.Query
+[source, cypher]
+----
+MATCH (n:Swedish)
+SET n:$(n.name)
+RETURN n.name, labels(n) AS labels
+----
+
+The newly-labeled node is returned by the query.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| n.name | labels
+| "Andy" | ["Swedish", "Andy"]
+2+d|Rows: 1 +
+Labels added: 1
+|===
+
+[role=label--new-5.24]
+[[set-set-a-label-using-a-parameter]]
+== Set a label using a parameter
+
+Use a parameter to set the value of a label:
+
+.Parameters
+[source, parameters]
+----
+{
+  "label": "Danish"
+}
+----
+
+.Query
+[source, cypher]
+----
+MATCH (n {name: 'Stefan'})
+SET n:$($label)
+RETURN labels(n) AS labels
+----
+
+A `Danish` label has been added to the `'Stefan'` node.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| labels 
+| ['German', 'Danish']
+1+d|Rows: 1 +
+Labels added: 1
+|===
 
 [[set-set-multiple-labels-on-a-node]]
 == Set multiple labels on a node
@@ -520,5 +625,67 @@ The newly-labeled node is returned by the query.
 | n.name | labels
 | "George" | ["Swedish","Bossman"]
 2+d|Rows: 1 +
+Labels added: 2
+|===
+
+[role=label--new-5.24]
+[[set-set-multiple-dynamic-labels-on-a-node]]
+== Set multiple labels dynamically on a node
+
+It is possible to set multiple labels dynamically using a `LIST<STRING>` and/or by chaining them separately with a `:`:
+
+.Query
+[source, cypher]
+----
+WITH COLLECT { UNWIND range(0,3) AS id RETURN "Label" + id } as labels // <1>
+MATCH (n {name: 'George'})
+SET n:$(labels)
+RETURN n.name, labels(n) AS labels
+----
+
+<1> A xref:subqueries/collect.adoc[`COLLECT`] subquery aggregates the results of `UNWIND range(0,3) AS id RETURN "Label" + id`, which generates a `LIST<STRING>` strings ("Label0", "Label1", "Label2", "Label3"), and assigns it to the variable `labels`.
+
+The newly-labeled node is returned by the query.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| n.name | labels
+| "George" | ["Swedish","Bossman", "Label0", "Label1", "Label2", "Label3"]
+2+d|Rows: 1 +
+Labels added: 4
+|===
+
+
+[role=label--new-5.24]
+[[set-set-multiple-labels-using-a-parameter]]
+== Set multiple labels using parameters
+
+Use a parameter to set multiple labels:
+
+.Parameters
+[source, parameters]
+----
+{
+  "labels": ["Swedish", "German"]
+}
+----
+
+.Query
+[source, cypher]
+----
+MATCH (n {name: 'Peter'})
+SET n:$($labels)
+RETURN labels(n) AS labels
+----
+
+A `Swedish` and a `German` label has been added to the `'Peter'` node.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| labels
+| ['Swedish', 'German']
+1+d|Rows: 1 +
 Labels added: 2
 |===
