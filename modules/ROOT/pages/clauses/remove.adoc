@@ -16,21 +16,23 @@ Removing labels from a node is an idempotent operation: if you try to remove a l
 The query statistics will tell you if something needed to be done or not.
 ====
 
-The examples use the following database:
+== Example graph
 
-image:graph_remove_clause.svg[]
+The following graph is used for the examples below:
 
-////
+image::graph_remove_clause.svg[width="600", role="middle"]
+
+To recreate it, run the following query against an empty Neo4j database:
+
 [source, cypher, role=test-setup]
 ----
 CREATE
-  (a:Swedish {name: 'Andy', age: 36}),
-  (t:Swedish {name: 'Timothy', age: 25}),
+  (a:Swedish {name: 'Andy', age: 36, propTestValue1: 42}),
+  (t:Swedish {name: 'Timothy', age: 25, propTestValue2: 42}),
   (p:German:Swedish {name: 'Peter', age: 34}),
   (a)-[:KNOWS]->(t),
   (a)-[:KNOWS]->(p)
 ----
-////
 
 
 [[remove-remove-a-property]]
@@ -66,6 +68,45 @@ Properties set: 1
 `REMOVE` cannot be used to remove all existing properties from a node or relationship.
 Instead, using xref::clauses/set.adoc#set-remove-properties-using-empty-map[`SET` with `=` and an empty map as the right operand] will clear all properties from the node or relationship.
 
+[role=label--new-5.24]
+[[remove-remove-a-property-dynamically]]
+== Dynamically removing a property
+
+`REMOVE` can be used to remove a property on a node or relationship even when the property key name is not statically known.
+
+[source, syntax]
+----
+REMOVE n[key]
+----
+
+The dynamically calculated key must evaluate to a `STRING` value.
+This query creates a copy of every property on the nodes:
+
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n) 
+WITH n, [k IN keys(n) WHERE k CONTAINS "Test" | k] as propertyKeys // <1>
+FOREACH (i IN propertyKeys | REMOVE n[i]) // <2>
+RETURN n.name, keys(n);
+----
+
+<1> The xref:functions/list.adoc#functions-keys[keys()] function retrieves all property keys of the matched nodes, and a xref:values-and-types/lists.adoc#cypher-list-comprehension[list comprehension] filters these keys to include only those that contain the substring "Test", assigning the resulting list to the variable `propertyKeys`.
+<2> The xref:clauses/foreach.adoc[`FOREACH`] clause iterates over each key in the `propertyKeys` list and removes the corresponding property using the `REMOVE` clause.
+
+All properties with the word "Test" in them are removed:
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| n.name    | keys(n)
+| "Andy"    | ["name", "age"]
+| "Timothy" | ["name", "age"]
+| "Peter"   | ["name", "age"]
+2+d|Rows: 3 +
+Properties set: 2
+|===
 
 [[remove-remove-a-label-from-a-node]]
 == Remove a label from a node
@@ -89,6 +130,39 @@ RETURN n.name, labels(n)
 Labels removed: 1
 |===
 
+[role=label--new-5.24]
+[[remove-remove-a-label-dynamically-from-a-node]]
+== Dynamically removing a label
+
+`REMOVE` can be used to remove a label on a node even when the label is not statically known.
+
+
+[source, syntax]
+----
+MATCH (n)
+REMOVE n:$(expr)
+----
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n {name: 'Peter'})
+UNWIND labels(n) AS label // <1>
+REMOVE n:$(label)
+RETURN n.name, labels(n)
+----
+
+<1> xref:clauses/unwind.adoc[`UNWIND`] is used here to transform the list of labels from the xref:functions/list.adoc#functions-labels[`labels()]` function into separate rows, allowing subsequent operations to be performed on each label individually.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| n.name | labels(n)
+| "Peter" | []
+2+d|Rows: 1 +
+Labels removed: 2
+|===
+
 
 [[remove-remove-multiple-labels]]
 == Remove multiple labels from a node
@@ -100,6 +174,29 @@ To remove multiple labels, you use `REMOVE`.
 ----
 MATCH (n {name: 'Peter'})
 REMOVE n:German:Swedish
+RETURN n.name, labels(n)
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| n.name | labels(n)
+| "Peter" | []
+2+d|Rows: 1 +
+Labels removed: 2
+|===
+
+[role=label--new-5.24]
+[[remove-remove-multiple-labels-dynamically]]
+== Remove multiple labels dynamically from a node
+
+It is possible to remove multiple labels dynamically using a `LIST<STRING>` and/or by chaining them separately with a `:`:
+
+.Query
+[source, cypher, indent=0]
+----
+MATCH (n {name: 'Peter'})
+REMOVE n:$(labels(n))
 RETURN n.name, labels(n)
 ----
 
