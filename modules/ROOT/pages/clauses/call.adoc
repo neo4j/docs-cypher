@@ -1,68 +1,48 @@
 :description: The `CALL` clause is used to call a procedure deployed in the database.
-
 [[query-call]]
 = CALL procedure
 
 The `CALL` clause is used to call a procedure deployed in the database.
 
-[[query-call-introduction]]
-== Introduction
-
-Procedures are called using the `CALL` clause.
-
-[TIP]
-====
+[NOTE]
 The `CALL` clause is also used to evaluate a subquery.
-For descriptions of the `CALL` clause in this context, refer to xref::subqueries/call-subquery.adoc[`CALL {}` (subquery)].
-====
+For more information about the `CALL` clause in this context, refer to xref::subqueries/call-subquery.adoc[].
 
-Each procedure call needs to specify all required procedure arguments.
-This may be done either explicitly, by using a comma-separated list wrapped in parentheses after the procedure name, or implicitly by using available query parameters as procedure call arguments.
-The latter form is available only in a so-called standalone procedure call, when the whole query consists of a single `CALL` clause.
-
-Most procedures return a stream of records with a fixed set of result fields, similar to how running a Cypher query returns a stream of records.
-The `YIELD` sub-clause is used to explicitly select which of the available result fields are returned as newly-bound variables from the procedure call to the user or for further processing by the remaining query.
-Thus, in order to be able to use `YIELD` for explicit columns, the names (and types) of the output parameters need be known in advance.
-Each yielded result field may optionally be renamed using aliasing (i.e., `resultFieldName AS newName`).
-All new variables bound by a procedure call are added to the set of variables already bound in the current scope.
-It is an error if a procedure call tries to rebind a previously bound variable (i.e., a procedure call cannot shadow a variable that was previously bound in the current scope).
-In a standalone procedure call, `+YIELD *+` can be used to select all columns. In this case, the name of the output parameters does not need to be known in advance.
-
-For more information on how to determine the input parameters for the `CALL` procedure and the output parameters for the `YIELD` procedure, see xref::clauses/call.adoc#call-view-the-signature-for-a-procedure[View the signature for a procedure].
-
-Inside a larger query, the records returned from a procedure call with an explicit `YIELD` may be further filtered using a `WHERE` sub-clause followed by a predicate (similar to `+WITH ... WHERE ...+`).
-
-If the called procedure declares at least one result field, `YIELD` may generally not be omitted.
-However `YIELD` may always be omitted in a standalone procedure call.
-In this case, all result fields are yielded as newly-bound variables from the procedure call to the user.
-
-Neo4j supports the notion of `VOID` procedures.
-A `VOID` procedure is a procedure that does not declare any result fields and returns no result records and that has explicitly been declared as `VOID`.
-Calling a `VOID` procedure may only have a side effect and thus does neither allow nor require the use of `YIELD`.
-Calling a `VOID` procedure in the middle of a larger query will simply pass on each input record (i.e., it acts like `+WITH *+` in terms of the record stream).
+For information about how to list procedures, see xref:clauses/listing-procedures.adoc[].
 
 [NOTE]
-====
 Neo4j comes with a number of built-in procedures.
 For a list of these, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures[Operations Manual -> Procedures].
-
 Users can also develop custom procedures and deploy to the database.
 See link:{neo4j-docs-base-uri}/java-reference/{page-version}/extending-neo4j/procedures#extending-neo4j-procedures[Java Reference -> User-defined procedures] for details.
-====
 
+[[example-graph]]
+== Example graph
 
-[[call-call-a-procedure-using-call]]
-== Call a procedure using `CALL`
+The following graph is used for the examples below:
 
-This calls the built-in procedure `db.labels`, which lists all labels used in the database.
+image::call_procedure.svg[width="400",role="middle"]
 
-////
+To recreate it, run the following query against an empty Neo4j database:
+
 [source, cypher, role=test-setup]
 ----
-CREATE (:User);
-Create (:Administrator)
+CREATE (andy:Developer {name: 'Andy', born: 1991}),
+       (beatrice:Developer {name: 'Beatrice', born: 1985}),
+       (charlotte:Administrator {name: 'Charlotte', born: 1990}),
+       (david:Administrator {name: 'David', born: 1994, nationality: 'Swedish'}),
+       (andy)-[:KNOWS]->(beatrice),
+       (beatrice)-[:KNOWS]->(charlotte),
+       (andy)-[:KNOWS]->(david)
 ----
-////
+
+[[call-procedure-examples]]
+== Examples
+
+.`CALL` a procedure without arguments
+====
+
+This example calls the built-in procedure link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_db_labels[`db.labels()`], which lists all labels used in the database.
 
 .Query
 [source, cypher]
@@ -73,98 +53,26 @@ CALL db.labels()
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
-| +label+
-| +"User"+
-| +"Administrator"+
+| label
+
+| "Developer"
+| "Administrator"
+
 1+d|Rows: 2
 |===
 
-Cypher allows the omission of parentheses on procedures of arity-0 (no arguments).
+====
 
 [NOTE]
+It is best practice to use parentheses when calling procedures, although Cypher allows for their omission when calling procedures of arity-0 (no arguments).
+Omission of parentheses is available only in a so-called standalone procedure call, when the whole query consists of a single `CALL` clause.
+
+
+.`CALL` a procedure without arguments
 ====
-Best practice is to use parentheses for procedures.
-====
-
-.Query
-[source, cypher]
-----
-CALL db.labels
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| +label+
-| +"User"+
-| +"Administrator"+
-1+d|Rows: 2
-|===
 
 
-[[call-view-the-signature-for-a-procedure]]
-== View the signature for a procedure
-
-The `SHOW PROCEDURES` command can return the `name`, `signature`, and `description` for all procedures.
-
-The default outputs for `SHOW PROCEDURES` are `name`, `description`, `mode`, and `worksOnSystem`.
-To get the signature, make sure to use the `YIELD` clause.
-
-
-.+SHOW PROCEDURES+
-======
-
-The following query return the signature for a particular procedure:
-
-.Query
-[source, cypher]
-----
-SHOW PROCEDURES YIELD name, signature
-WHERE name = 'dbms.listConfig'
-RETURN signature
-----
-
-////
-The result shows that:
-
- * The `dbms.listConfig` has one input parameter: `searchString`.
- * The `dbms.listConfig` has three output parameters: `name`, `description`, and `value`.
-////
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| +signature+
-| +"dbms.listConfig(searchString =  :: STRING) :: (name :: STRING, description :: STRING, value :: STRING, dynamic :: BOOLEAN, defaultValue :: STRING, startupValue :: STRING, explicitlySet :: BOOLEAN, validValues :: STRING)"+
-1+d|Rows: 1
-|===
-
-======
-
-
-[[call-call-a-procedure-using-a-quoted-namespace-and-name]]
-== Call a procedure using a quoted namespace and name
-
-This calls the built-in procedure `db.labels`, which lists all labels used in the database.
-
-.Query
-[source, cypher]
-----
-CALL db.labels()
-----
-
-.Query
-[source, cypher]
-----
-CALL db.labels
-----
-
-
-[[call-call-a-procedure-with-literal-arguments]]
-== Call a procedure with literal arguments
-
-This calls the example procedure `dbms.checkConfigValue` using literal arguments.
-The arguments are written out directly in the statement text.
+This example calls the procedure link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/#procedure_dbms_checkconfigvalue[`dbms.checkConfigValue()`], which checks the validity of a configuration setting value, using literal arguments.
 
 .Query
 [source, cypher]
@@ -173,24 +81,21 @@ CALL dbms.checkConfigValue('server.bolt.enabled', 'true')
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols=""2*<m"]
+[role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| +"valid"+ | +"message"+
-| +true+ | +"requires restart"+
+| "valid" | "message"
+| true | "requires restart"
+
+1+d|Rows: 2
 |===
 
+====
 
-[[call-call-a-procedure-with-parameter-arguments]]
-== Call a procedure with parameter arguments
+.`CALL` a procedure using parameters
+====
 
-This calls the example procedure `dbms.checkConfigValue` using parameters as arguments.
+This calls the example procedure `dbms.checkConfigValue()` using parameters as arguments.
 Each procedure argument is taken to be the value of a corresponding statement parameter with the same name (or null if no such parameter has been given).
-
-[NOTE]
-====
-Examples that use parameter arguments shows the given parameters in JSON format; the exact manner in which they are to be submitted depends upon the driver being used.
-See xref::syntax/parameters.adoc[], for more about querying with parameters.
-====
 
 .Parameters
 [source, parameters]
@@ -208,50 +113,25 @@ CALL dbms.checkConfigValue($setting, $value)
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols=""2*<m"]
+[role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| +"valid"+ | +"message"+
-| +true+ | +"requires restart"+
+| "valid" | "message"
+| true | "requires restart"
+
+1+d|Rows: 2
 |===
-
-
-Cypher allows the omission of parentheses for procedures with arity-n (n arguments), Cypher implicitly passes the parameter arguments.
 
 [NOTE]
+Examples that use parameter arguments shows the given parameters in JSON format; the exact manner in which they are to be submitted depends upon the driver being used.
+See xref::syntax/parameters.adoc[] for more about querying with parameters.
+
 ====
-Best practice is to use parentheses for procedures.
-Omission of parentheses is available only in a so-called standalone procedure call, when the whole query consists of a single `CALL` clause.
+
+
+.`CALL` a procedure using both literal and parameter arguments
 ====
 
-
-.Parameters
-[source, parameters]
-----
-{
-  "setting": "server.bolt.enabled",
-  "value": "true"
-}
-----
-
-.Query
-[source, cypher]
-----
-CALL dbms.checkConfigValue
-----
-
-.Result
-[role="queryresult",options="header,footer",cols=""2*<m"]
-|===
-| +"valid"+ | +"message"+
-| +true+ | +"requires restart"+
-|===
-
-
-
-[[call-call-a-procedure-with-mixed-literal-and-parameter-arguments]]
-== Call a procedure with mixed literal and parameter arguments
-
-This calls the example procedure `dbms.checkConfigValue` using both literal and parameter arguments.
+This calls the example procedure `dbms.checkConfigValue()` using both literal and parameter arguments.
 
 .Parameters
 [source, parameters]
@@ -268,38 +148,26 @@ CALL dbms.checkConfigValue($setting, 'true')
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols=""2*<m"]
+[role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| +"valid"+ | +"message"+
-| +true+ | +"requires restart"+
-|===
+| "valid" | "message"
+| true | "requires restart"
 
-
-[[call-call-a-procedure-with-literal-and-default-arguments]]
-== Call a procedure with literal and default arguments
-
-This calls the example procedure `dbms.checkConfigValue` using literal arguments.
-That is, arguments that are written out directly in the statement text, and a trailing default argument that is provided by the procedure itself.
-
-.Query
-[source, cypher]
-----
-CALL dbms.checkConfigValue('server.bolt.enabled', 'true')
-----
-
-.Result
-[role="queryresult",options="header,footer",cols=""2*<m"]
-|===
-| +"valid"+ | +"message"+
-| +true+ | +"requires restart"+
+1+d|Rows: 2
 |===
 
+====
 
 
-[[call-call-a-procedure-call-yield-star]]
-== Call a procedure using `+CALL YIELD *+`
+[[call-procedure-yield]]
+== Using `YIELD`
 
-This calls the built-in procedure `db.labels` to count all labels used in the database.
+The `YIELD` keyword is used to specify which columns of procedure metadata to return, allowing for the selection and filtering of the displayed information.
+
+.`YIELD *`
+====
+
+Using `YIELD *` will return all available return columns for a procedure.
 
 .Query
 [source, cypher]
@@ -307,46 +175,60 @@ This calls the built-in procedure `db.labels` to count all labels used in the da
 CALL db.labels() YIELD *
 ----
 
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| label
+
+| "Administrator"
+| "Developer"
+
+1+d|Rows: 2
+|===
+
 If the procedure has deprecated return columns, those columns are also returned.
 
+Note that `YIELD *` is only valid in standalone procedure calls.
+For example, the following is not valid:
 
-[[call-call-a-procedure-within-a-complex-query-using-call-yield]]
-== Call a procedure within a complex query using `CALL YIELD`
+.Not allowed
+[source, cypher, role=test-fail]
+----
+CALL db.labels() YIELD *
+RETURN count(*) AS results
+----
 
-This calls the built-in procedure `db.labels` to count all labels used in the database.
+====
 
-.Query
+.`YIELD` specific procedure results and filter on them
+====
+
+`YIELD` can be used to filter for specific results.
+This requires knowing the names of the arguments within a procedure's signature, which can either be found in the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/reference/procedures/[Operations Manual -> Procedures] or returned by a `SHOW PROCEDURES` query.
+
+.Find the argument names of `db.propertyKeys`
 [source, cypher]
 ----
-CALL db.labels() YIELD label
-RETURN count(label) AS numLabels
+SHOW PROCEDURES YIELD name, signature
+WHERE name = 'db.propertyKeys'
+RETURN signature
 ----
 
-Since the procedure call is part of a larger query, all outputs must be named explicitly.
+.Result
+[role="queryresult",options="header,footer",cols="1m"]
+|===
+| signature
 
+| "db.propertyKeys() :: (propertyKey :: STRING)"
 
-[[call-call-a-procedure-and-filter-its-results]]
-== Call a procedure and filter its results
+1+d|Rows: 1
+|===
 
-This calls the built-in procedure `db.labels` to count all in-use labels in the database that contain the string 'User'`.
+It is then possible to use these argument names for further query filtering.
+Note that if the procedure call is part of a larger query, its output must be named explicitly.
+In the below example, `propertyKey` is aliased as `prop` and then used later in the query to xref:functions/aggregating.adoc#functions-count[count] the occurrence of each property in the graph.
 
-.Query
-[source, cypher]
-----
-CALL db.labels() YIELD label
-WHERE label CONTAINS 'User'
-RETURN count(label) AS numLabels
-----
-
-Since the procedure call is part of a larger query, all outputs must be named explicitly.
-
-
-[[call-call-a-procedure-within-a-complex-query-and-rename-its-outputs]]
-== Call a procedure within a complex query and rename its outputs
-
-This calls the built-in procedure `db.propertyKeys` as part of counting the number of nodes per property key that is currently used in the database.
-
-.Query
+.Filter on specific argument returned by `YIELD`
 [source, cypher]
 ----
 CALL db.propertyKeys() YIELD propertyKey AS prop
@@ -355,5 +237,98 @@ WHERE n[prop] IS NOT NULL
 RETURN prop, count(n) AS numNodes
 ----
 
-Since the procedure call is part of a larger query, all outputs must be named explicitly.
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| prop | numNodes
+
+| "name" | 4
+| "born" | 4
+| "nationality" | 1
+
+2+d|Rows: 3
+|===
+
+====
+
+
+=== Note on VOID procedures
+
+Neo4j supports the notion of `VOID` procedures.
+A `VOID` procedure is a procedure that does not declare any result fields and returns no result records.
+`VOID` procedure only produces side-effects and does not allow for the use of `YIELD`.
+Calling a `VOID` procedure in the middle of a larger query will simply pass on each input record (i.e., it acts like xref:clauses/with.adoc[`WITH *`] in terms of the record stream).
+
+[role=label--new-5.24]
+[[optional-call]]
+== Optional procedure calls
+
+`OPTIONAL CALL` allows for an optional procedure call.
+Similar to xref:clauses/optional-match.adoc[`OPTIONAL MATCH`] any empty rows produced by the `OPTIONAL CALL` will return `null`.
+
+.Difference between using `CALL` and `OPTIONAL CALL`
+====
+
+This query uses the link:{neo4j-docs-base-uri}/apoc/{page-version}/overview/apoc.neighbors/apoc.neighbors.tohop[`apoc.neighbors.tohop()`] procedure (part of Neo4j's link:{neo4j-docs-base-uri}/apoc/{page-version}/[APOC Core library]), which returns all nodes connected by the given relationship type within the specified distance (1 hop, in this case) and direction.
+
+.Regular procedure `CALL`
+[source, cypher]
+----
+MATCH (n)
+CALL apoc.neighbors.tohop(n, "KNOWS>", 1)
+YIELD node
+RETURN n.name AS name, collect(node.name) AS connections
+----
+
+Note that the result does not include the nodes in the graph without any outgoing `KNOWS` relationships connected to them.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | connections
+
+| "Andy"
+| ["Beatrice", "David"]
+
+| "Beatrice"
+| ["Charlotte"]
+
+2+d|Rows: 2
+|===
+
+The same query is used below, but `CALL` is replaced with `OPTIONAL CALL`.
+
+.Optional procedure `CALL`
+[source, cypher]
+----
+MATCH (n)
+OPTIONAL CALL apoc.neighbors.tohop(n, "KNOWS>", 1)
+YIELD node
+RETURN n.name AS name, collect(node.name) AS connections
+----
+
+The result now includes the two nodes without any outgoing `KNOWS` relationships connected to them.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | connections
+
+| "Andy"
+| ["Beatrice", "David"]
+
+| "Beatrice"
+| ["Charlotte"]
+
+| "Charlotte"
+| []
+
+| "David"
+| []
+
+2+d|Rows: 4
+|===
+
+====
+
 
