@@ -30,14 +30,9 @@ CREATE (teamA:Team {name: 'Team A'}),
        (playerF:Player {name: 'Player F', age: 35}),
        (playerA)-[:PLAYS_FOR]->(teamA),
        (playerB)-[:PLAYS_FOR]->(teamA),
-       (playerC)-[:PLAYS_FOR]->(teamA),
        (playerD)-[:PLAYS_FOR]->(teamB),
        (playerE)-[:PLAYS_FOR]->(teamC),
        (playerF)-[:PLAYS_FOR]->(teamC),
-       (playerA)-[:FRIEND_OF]->(playerB),
-       (playerA)-[:FRIEND_OF]->(playerC),
-       (playerB)-[:FRIEND_OF]->(playerF),
-       (playerC)-[:FRIEND_OF]->(playerD),
        (teamA)-[:OWES {dollars: 1500}]->(teamB),
        (teamA)-[:OWES {dollars: 3000}]->(teamB),
        (teamB)-[:OWES {dollars: 1700}]->(teamC),
@@ -92,7 +87,6 @@ CALL () {
     SET p.age = p.age + 1
     RETURN p.age AS newAge
 }
-WITH x, newAge
 MATCH (p:Player {name: 'Player A'})
 RETURN x AS iteration, newAge, p.age AS totalAge
 ----
@@ -139,7 +133,7 @@ RETURN t AS team, players
 | players
 
 | (:Team {name: "Team A"})
-| [(:Player {name: "Player C", age: 19}), (:Player {name: "Player B", age: 23}), (:Player {name: "Player A", age: 24})]
+| (:Player {name: "Player B", age: 23}), (:Player {name: "Player A", age: 24})]
 
 | (:Team {name: "Team B"})
 | [(:Player {name: "Player D", age: 30})]
@@ -432,60 +426,60 @@ Similar to xref:clauses/optional-match.adoc[`OPTIONAL MATCH`] any empty rows pro
 .Difference between using `CALL` and `OPTIONAL CALL`
 ====
 
-This example, which finds the friends of each `Player` and xref:functions/aggregating.adoc#functions-count[counts] the number of friends per player, highlights the difference between using `CALL` and `OPTIONAL CALL`.
+This example, which finds the team that each `Player` plays for, highlights the difference between using `CALL` and `OPTIONAL CALL`.
 
 .Regular subquery `CALL`
 [source, cypher]
 ----
 MATCH (p:Player)
 CALL (p) {
-    MATCH (p)-[:FRIEND_OF]->(friend:Player)
-    RETURN friend
+    MATCH (p)-[:PLAYS_FOR]->(team:Team)
+    RETURN team
 }
-RETURN p.name AS playerName, count(friend) AS numberOfFriends
-ORDER BY numberOfFriends
+RETURN p.name AS playerName, team.name AS team
 ----
 
-.Optional subquery `CALL`
+.Result
 [role="queryresult",options="header,footer",cols="2*m"]
 |===
-| playerName | numberOfFriends
+| playerName | team
 
-| "Player B" | 1
-| "Player C" | 1
-| "Player A" | 2
+| "Player A" | "Team A"
+| "Player B" | "Team A"
+| "Player D" | "Team B"
+| "Player E" | "Team C"
+| "Player F" | "Team C" 
 
-2+d|Rows: 3
+2+d|Rows: 5
 |===
 
-Note that no results are returned for `Player D`, `Player E`, and `Player F`, since they have no outgoing `FRIEND_OF` relationships connected to them.
+Note that no results are returned for `Player C`, since they are not connected to any `Team` with a `PLAYS_FOR` relationship.
 
 .Query using regular `OPTIONAL CALL`
 [source, cypher]
 ----
 MATCH (p:Player)
 OPTIONAL CALL (p) {
-    MATCH (p)-[:FRIEND_OF]->(friend:Player)
-    RETURN friend
+    MATCH (p)-[:PLAYS_FOR]->(team:Team)
+    RETURN team
 }
-RETURN p.name AS playerName, count(friend) AS numberOfFriends
-ORDER BY numberOfFriends
+RETURN p.name AS playerName, team.name AS team
 ----
 
-Now, all `Player` nodes, regardless of whether they have any friends or not, are returned. 
-(Those without any outgoing `FRIEND_OF` relationships are returned with the result `0` because `count()` ignores `null` values.)
+Now all `Player` nodes, regardless of whether they have any `PLAYS_FOR` relationships connected to a `Team`, are returned.
 
+.Result
 .Result
 [role="queryresult",options="header,footer",cols="2*m"]
 |===
-| playerName | numberOfFriends
+| playerName | team
 
-| "Player D" | 0
-| "Player E" | 0
-| "Player F" | 0
-| "Player B" | 1
-| "Player C" | 1
-| "Player A" | 2
+| "Player A" | "Team A"
+| "Player B" | "Team A"
+| "Player C" | NULL
+| "Player D" | "Team B"
+| "Player E" | "Team C"
+| "Player F" | "Team C" 
 
 2+d|Rows: 6
 |===
@@ -495,8 +489,8 @@ Now, all `Player` nodes, regardless of whether they have any friends or not, are
 [[call-execution-order]]
 == Execution order of CALL subqueries
 
-The order in which subqueries are executed is not defined.
-If a query result depends on the order of execution of subqueries, an `ORDER BY` clause should precede the `CALL` clause.
+The order in which rows from the outer scope are passed into subqueries is not defined.
+If the results of the subquery depend on the order of these rows, use an `ORDER BY` clause before the `CALL` clause to guarantee a specific processing order for the rows.
 
 .Ordering results before `CALL` subquery
 ====
@@ -590,13 +584,13 @@ UNION
   ORDER BY p.age DESC
   LIMIT 1
 }
-RETURN p.name AS name, p.age AS age
+RETURN p.name AS playerName, p.age AS age
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| name | age
+| playerName | age
 | "Player C" | 19
 | "Player F" | 35
 2+d|Rows: 2
@@ -641,39 +635,33 @@ The result of the `CALL` subquery is the combined result of evaluating the subqu
 
 .`CALL` subquery changing returned rows of outer query
 ====
-The following example finds the name of each `Player` and the names of their friends.
-No rows are returned for the `Player` nodes without any `FRIEND_OF` relationships, the number of results of the subquery thus changed the number of results of the enclosing query.
+The following example finds the name of each `Player` and the team they play for.
+No rows are returned for `Player C`, since they are not connected to a `Team` with a `PLAYS_FOR` relationship.
+The number of results of the subquery thus changed the number of results of the enclosing query.
 
 .Find the friends of players
 [source, cypher]
 ----
 MATCH (p:Player)
 CALL (p) {
-  MATCH (p)-[:FRIEND_OF]->(p2:Player)
-  RETURN p2.name AS friend
+  MATCH (p)-[:PLAYS_FOR]->(team:Team)
+  RETURN team.name AS team
 }
-RETURN p.name AS player, friend
+RETURN p.name AS playerName, team
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols="2*<m"]
+[role="queryresult",options="header,footer",cols="2*m"]
 |===
-| player
-| friend
+| playerName | team
 
-| "Player A"
-| "Player B"
+| "Player A" | "Team A"
+| "Player B" | "Team A"
+| "Player D" | "Team B"
+| "Player E" | "Team C"
+| "Player F" | "Team C" 
 
-| "Player A"
-| "Player C"
-
-| "Player B" 
-| "Player F"
-
-| "Player C" 
-| "Player D"
-
-2+d|Rows: 4
+2+d|Rows: 5
 |===
 
 ====
@@ -771,7 +759,7 @@ Labels added: 18
 
 * `CALL` subqueries optimize data handling and query efficiency, and can perform changes to the database.
 
-* `CALL` subqueries enable progressive data transformation and can accumulate results across multiple row executions.
+* `CALL` subqueries allow for row-by-row data transformation and enable the accumulation of results across multiple rows, facilitating complex operations that depend on intermediate or aggregated data.
 
 * `CALL` subqueries can only refer to variables from the enclosing query if they are explicitly imported by either a variable scope clause or an importing `WITH` clause (deprecated).
 
