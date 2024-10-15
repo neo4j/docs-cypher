@@ -199,7 +199,7 @@ The same is true for queries that try to remove the mandatory property.
 
 Property existence constraints on single properties are created with the following commands:
 
-* Node property existence constraint: `CREATE CONSTRAINT constraint_name FOR (n:Label) REQUIRE (n.property) IS NOT NULL`.
+* Node property existence constraint: `CREATE CONSTRAINT constraint_name FOR (n:Label) REQUIRE n.property IS NOT NULL`.
 * Relationship property existence constraint: `CREATE CONSTRAINT constraint_name FOR ()-[r:REL_TYPE]-() REQUIRE r.property IS NOT NULL`.
 
 For the full command syntax to create an existence constraint, see xref:constraints/syntax.adoc#create-property-existence-constraints[Syntax -> Create property existence constraints].
@@ -305,7 +305,7 @@ Property type constraints are created with the following commands:
 * Node property type constraints: `CREATE CONSTRAINT constraint_name FOR (n:Label) REQUIRE n.property IS :: <TYPE>`.
 * Relationship property type constraints: `CREATE CONSTRAINT constraint_name FOR ()-[r:REL_TYPE]-() REQUIRE r.property IS :: <TYPE>`.
 
-`TYPE` refers to a specific Cypher data type, such as `STRING` or `INTEGER`.
+`<TYPE>` refers to a specific Cypher data type, such as `STRING` or `INTEGER`.
 For the types that properties can be constrained by, see xref:constraints/managing-constraints.adoc#type-constraints-allowed-properties[], and for information about different data types in Cypher, see xref:values-and-types/index.adoc[].
 For the full command syntax to create a property type constraint, see xref:constraints/syntax.adoc#create-property-type-constraints[Syntax -> Create property type constraints].
 
@@ -466,7 +466,7 @@ Added 1 label, added 1 node, created 1 relationship, set 2 properties
 === Create key constraints
 
 Key constraints ensure that all properties exist and that the combined property values are unique for all nodes with a specific label or all relationships with a specific type.
-For composite property uniqueness constraints on multiple properties, it is the combination of property values that must be unique.
+For composite key constraints on multiple properties, it is the combination of property values that must be unique.
 Queries that try to create new nodes of the specified label, or relationships of the specified type, without the constrained property will fail.
 The same is true for queries that try to remove the mandatory property or add duplicated property values.
 
@@ -479,8 +479,8 @@ The same is true for queries that try to remove the mandatory property or add du
 
 Single property key constraints are created with the following commands:
 
-* Node property key constraints: `CREATE CONSTRAINT constraint_name FOR (n:Label) REQUIRE n.property IS NODE KEY`.
-* Relationship property key constraints: `CREATE CONSTRAINT constraint_name FOR ()-[r:REL_TYPE]-() REQUIRE r.property IS RELATIONSHIP KEY`. label:new[Introduced in 5.7]
+* Node key constraints: `CREATE CONSTRAINT constraint_name FOR (n:Label) REQUIRE n.property IS NODE KEY`.
+* Relationship key constraints: `CREATE CONSTRAINT constraint_name FOR ()-[r:REL_TYPE]-() REQUIRE r.property IS RELATIONSHIP KEY`. label:new[Introduced in 5.7]
 
 For the full command syntax to create a key constraint, see xref:constraints/syntax.adoc#create-key-constraints[Syntax -> Create key constraints].
 
@@ -816,11 +816,13 @@ Creating an already existing constraint will fail.
 This includes the following scenarios:
 
 * Creating a constraint identical to an already existing constraint.
-* Creating a constraint with a different name but on the same schema as an already existing constraint.
-* Creating a constraint with the same name but on a different schema as an already existing constraint.
+* Creating a constraint with a different name but on the same constraint type and schema as an already existing constraint.
+For property type constraints the property type also needs to be the same.
+* Creating a constraint with the same name as an already existing constraint, regardless of what that constraint is.
 
 To avoid such an error, `IF NOT EXISTS` can be added to the `CREATE` command.
 This will ensure that no error is thrown and that no constraint is created if any other constraint with the given name, or another constraint on the same constraint type and schema, or both, already exists.
+For property type constraints the property type also needs to be the same.
 As of Neo4j 5.17, an informational notification is instead returned showing the existing constraint which blocks the creation.
 
 .Create a constraint identical to a constraint already in the database
@@ -1090,7 +1092,8 @@ Node(9) with label `Movie` required the property `title` to be of type `STRING`,
 [[create-an-already-existing-constraint]]
 ==== Creating an already existing constraint will fail
 
-Creating a constraint on the same label or relationship type and properties that are already constrained will fail.
+Creating a constraint on the same node label or relationship type and properties that are already constrained by a constraint of the same type will fail.
+Property uniqueness and key constraints are also not allowed on the same schema.
 
 .Create a constraint identical to a constraint already in the database
 ======
@@ -1172,6 +1175,23 @@ Conflicting constraint already exists: Constraint( id=21, name='part_of', type='
 
 ======
 
+.Creating a node key constraint on the same schema as an existing property uniqueness constraint
+======
+
+.Create a node key constraint on the properties `title` and `publicationYear` on nodes with the `Book` label, when a property uniqueness constraint already exists on the same label and property combination
+[source, cypher, role=test-fail]
+----
+CREATE CONSTRAINT book_titles FOR (book:Book) REQUIRE (book.title, book.publicationYear) IS NODE KEY
+----
+
+.Error message
+[source, error]
+----
+Constraint already exists: Constraint( id=7, name='book_title_year', type='UNIQUENESS', schema=(:Book {title, publicationYear}), ownedIndex=6 )
+----
+
+======
+
 
 [[fail-to-create-constraint-due-to-existing-data]]
 ==== Creating constraints when there exists conflicting data will fail
@@ -1217,7 +1237,7 @@ CREATE (:Book {isbn: '9780393972832', title: 'Moby Dick'}),
 ----
 
 
-.Create a constraint requiring `Book` nodes to have unique combinations of `title` properties, when there already exists two nodes with the same `title`
+.Create a constraint requiring `Book` nodes to have unique `title` properties, when there already exists two nodes with the same `title`
 [source, cypher, role=test-fail]
 ----
 CREATE CONSTRAINT book_title FOR (book:Book) REQUIRE book.title IS UNIQUE
@@ -1424,27 +1444,6 @@ CREATE CONSTRAINT word_count FOR (book:Book) REQUIRE book.wordCount IS UNIQUE
 ----
 There already exists an index (:Book {wordCount}).
 A constraint cannot be created until the index has been dropped.
-----
-
-======
-
-
-[[key-and-uniqueness-constraint-on-the-same-schema]]
-==== Creating key and property uniqueness constraints on the same schema is not allowed
-
-.Creating a node key constraint on the same schema as an existing property uniqueness constraint
-======
-
-.Create a node key constraint on the properties `title` and `publicationYear` on nodes with the `Book` label, when a property uniqueness constraint already exists on the same label and property combination
-[source, cypher, role=test-fail]
-----
-CREATE CONSTRAINT book_titles FOR (book:Book) REQUIRE (book.title, book.publicationYear) IS NODE KEY
-----
-
-.Error message
-[source, error]
-----
-Constraint already exists: Constraint( id=7, name='book_title_year', type='UNIQUENESS', schema=(:Book {title, publicationYear}), ownedIndex=6 )
 ----
 
 ======
