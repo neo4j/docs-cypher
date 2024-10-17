@@ -297,6 +297,7 @@ Nodes or relationships without the constrained property are not subject to this 
 * xref:constraints/managing-constraints.adoc#create-single-property-type-constraint[]
 * xref:constraints/managing-constraints.adoc#create-property-type-constraint-union-type[]
 * xref:constraints/managing-constraints.adoc#type-constraints-allowed-properties[]
+* xref:constraints/managing-constraints.adoc#fail-to-create-property-type-constraint-invalid-type[]
 * xref:constraints/managing-constraints.adoc#create-property-type-constraint-compliant-data[]
 
 [[create-single-property-type-constraint]]
@@ -422,6 +423,25 @@ The allowed property types for property type constraints are:
 
 For a complete reference describing all types available in Cypher, see the section on xref::values-and-types/property-structural-constructed.adoc#types-synonyms[types and their synonyms].
 
+[[fail-to-create-property-type-constraint-invalid-type]]
+==== Creating property type constraints on invalid types will fail
+
+.Create a node property type constraint with an invalid type
+======
+
+.Create a constraint requiring `imdbScore` properties on `Movie` nodes to be of type `MAP`
+[source, cypher, role=test-fail]
+----
+CREATE CONSTRAINT score FOR (movie:Movie) REQUIRE movie.imdbScore IS :: MAP
+----
+
+.Error message
+[source, error]
+----
+Failed to create node property type constraint: Invalid property type `MAP`.
+----
+
+======
 
 [[create-property-type-constraint-compliant-data]]
 ==== Create data that complies with existing property type constraints
@@ -670,12 +690,219 @@ Added 1 constraint.
 
 ======
 
-[[multiple-constraints-on-same-property-combinations]]
-=== Multiple constraints on the same property combinations
+[[multiple-constraints]]
+=== Multiple constraints
+Creating an already existing constraint will fail.
+This includes the following scenarios:
 
-Some constraint types are allowed on the same label/relationship type and property combination.
-For example, it is possible to have a uniqueness and an existence constraint on the same label/relationship type and property combination, though this would be the equivalent of having a node or relationship key constraint.
-A more useful example would be to combine a property type and an existence constraint to ensure that the property exists and has the given type.
+* Creating a constraint identical to an already existing constraint.
+* Creating a constraint with a different name but on the same constraint type and same label/relationship type and property combination as an already existing constraint.
+For property type constraints the property type also needs to be the same.
+* Creating a constraint with the same name as an already existing constraint, regardless of what that constraint is.
+
+Additionally, some constraints cannot coexist and attempting to create them together will therefore fail as well.
+This includes:
+
+* Property type constraints on the same label/relationship type and property but with different property types.
+* Property uniqueness and key constraints on the same label/relationship type and property combination.
+
+However, some constraint types are allowed on the same label/relationship type and property combination.
+For example, it is possible to have a property uniqueness and a property existence constraint on the same label/relationship type and property combination, though this would be the equivalent of having a node or relationship key constraint.
+A more useful example would be to combine a property type and a property existence constraint to ensure that the property exists and has the given type.
+
+* xref:constraints/managing-constraints.adoc#create-a-constraint-if-not-exist[]
+* xref:constraints/managing-constraints.adoc#create-an-already-existing-constraint[]
+
+[[create-a-constraint-if-not-exist]]
+==== Handling existing constraints when creating a constraint
+
+To avoid failing on existing constraints, `IF NOT EXISTS` can be added to the `CREATE` command.
+This will ensure that no error is thrown and that no constraint is created if any other constraint with the given name, or another constraint on the same constraint type and schema, or both, already exists.
+For property type constraints the property type also needs to be the same.
+As of Neo4j 5.17, an informational notification is instead returned showing the existing constraint which blocks the creation.
+
+.Create a constraint identical to an existing constraint
+======
+
+.Create a constraint requiring all `SEQUEL_OF` relationships to have unique `order` properties
+[source, cypher]
+----
+CREATE CONSTRAINT sequels IF NOT EXISTS
+FOR ()-[sequel:SEQUEL_OF]-() REQUIRE sequel.order IS UNIQUE
+----
+
+Because the same constraint already exists, nothing will happen:
+
+.Result
+[source, queryresult]
+----
+(no changes, no records)
+----
+
+.Notification
+[source]
+----
+`CREATE CONSTRAINT sequels IF NOT EXISTS FOR ()-[e:SEQUEL_OF]-() REQUIRE (e.order) IS UNIQUE` has no effect.
+`CONSTRAINT sequels FOR ()-[e:SEQUEL_OF]-() REQUIRE (e.order) IS UNIQUE` already exists.
+----
+
+======
+
+.Create a relationship property uniqueness constraint when the same constraint with a different name already exists
+======
+
+.Create a constraint requiring all `SEQUEL_OF` relationships to have unique `order` properties
+[source, cypher]
+----
+CREATE CONSTRAINT new_sequels IF NOT EXISTS
+FOR ()-[sequel:SEQUEL_OF]-() REQUIRE sequel.order IS UNIQUE
+----
+
+Because a constraint with a different name (`sequels`) on the same schema exists, nothing will happen:
+
+.Result
+[source, queryresult]
+----
+(no changes, no records)
+----
+
+.Notification
+[source]
+----
+`CREATE CONSTRAINT new_sequels IF NOT EXISTS FOR ()-[e:SEQUEL_OF]-() REQUIRE (e.order) IS UNIQUE` has no effect.
+`CONSTRAINT sequels FOR ()-[e:SEQUEL_OF]-() REQUIRE (e.order) IS UNIQUE` already exists.
+----
+
+======
+
+.Create a relationship property uniqueness constraint with the same name as an existing constraint of a different type
+======
+
+.Create a constraint requiring all `AUTHORED` relationships to have unique `name` properties
+[source, cypher]
+----
+CREATE CONSTRAINT author_name IF NOT EXISTS
+FOR ()-[a:AUTHORED]-() REQUIRE a.name IS UNIQUE
+----
+
+Because a node property existence constraint named `author_name` already exists, nothing will happen:
+
+.Result
+[source, queryresult]
+----
+(no changes, no records)
+----
+
+.Notification
+[source]
+----
+`CREATE CONSTRAINT author_name IF NOT EXISTS FOR ()-[e:AUTHORED]-() REQUIRE (e.name) IS UNIQUE` has no effect.
+`CONSTRAINT author_name FOR (e:Author) REQUIRE (e.name) IS NOT NULL` already exists.
+----
+
+======
+
+[[create-an-already-existing-constraint]]
+==== Creating an already existing constraint will fail
+
+Creating a constraint with the same name or on the same node label or relationship type and properties that are already constrained by a constraint of the same type will fail.
+Property uniqueness and key constraints are also not allowed on the same schema.
+
+.Create a constraint identical to an existing constraint
+======
+
+.Create a constraint requiring all `SEQUEL_OF` relationships to have unique `order` properties, given an identical constraint already exists
+[source, cypher, role=test-fail]
+----
+CREATE CONSTRAINT sequels
+FOR ()-[sequel:SEQUEL_OF]-() REQUIRE sequel.order IS UNIQUE
+----
+
+.Error message
+[source, error]
+----
+An equivalent constraint already exists, 'Constraint( id=5, name='sequels', type='RELATIONSHIP UNIQUENESS', schema=()-[:SEQUEL_OF {order}]-(), ownedIndex=4 )'.
+----
+
+[NOTE]
+The constraint type will be updated to say `RELATIONSHIP PROPERTY UNIQUENESS` in a future version of Neo4j.
+
+======
+
+.Create a constraint with a different name but on the same schema as an existing constraint
+======
+
+.Create a constraint requiring all `Book` nodes to have unique `isbn` properties, given that a constraint on that schema already exists
+[source, cypher, role=test-fail]
+----
+CREATE CONSTRAINT new_book_isbn
+FOR (book:Book) REQUIRE book.isbn IS UNIQUE
+----
+
+.Error message
+[source, error]
+----
+Constraint already exists: Constraint( id=3, name='book_isbn', type='UNIQUENESS', schema=(:Book {isbn}), ownedIndex=2 )
+----
+
+[NOTE]
+The constraint type will be updated to say `NODE PROPERTY UNIQUENESS` in a future version of Neo4j.
+
+======
+
+.Creating a constraint with the same name but on a different schema as an existing constraint
+======
+
+.Create a constraint requiring all `AUTHORED` relationships to have unique `name` properties, given that a constraint on a different schema with the same name already exists
+[source, cypher, role=test-fail]
+----
+CREATE CONSTRAINT author_name
+FOR ()-[a:AUTHORED]-() REQUIRE a.name IS UNIQUE
+----
+
+.Error message
+[source, error]
+----
+There already exists a constraint called 'author_name'.
+----
+
+======
+
+.Creating a property type constraint on a property when a property type constraint constraining the property to a different type already exist
+======
+
+.Create a constraint requiring `order` properties on `PART_OF` relationships to be of type `FLOAT`, given a constraint requiring the same properties to be of type `INTEGER` already exists
+[source, cypher, role=test-fail]
+----
+CREATE CONSTRAINT new_part_of
+FOR ()-[part:PART_OF]-() REQUIRE part.order IS :: FLOAT
+----
+
+
+.Error message
+[source, error]
+----
+Conflicting constraint already exists: Constraint( id=21, name='part_of', type='RELATIONSHIP PROPERTY TYPE', schema=()-[:PART_OF {order}]-(), propertyType=INTEGER )
+----
+
+======
+
+.Creating a node key constraint on the same schema as an existing property uniqueness constraint
+======
+
+.Create a node key constraint on the properties `title` and `publicationYear` on nodes with the `Book` label, when a property uniqueness constraint already exists on the same label and property combination
+[source, cypher, role=test-fail]
+----
+CREATE CONSTRAINT book_titles FOR (book:Book) REQUIRE (book.title, book.publicationYear) IS NODE KEY
+----
+
+.Error message
+[source, error]
+----
+Constraint already exists: Constraint( id=7, name='book_title_year', type='UNIQUENESS', schema=(:Book {title, publicationYear}), ownedIndex=6 )
+----
+
+======
 
 [[constraints-and-indexes]]
 === Constraints and indexes
@@ -874,111 +1101,13 @@ A constraint cannot be created until the index has been dropped.
 ======
 
 
-[[create-a-constraint-if-not-exist]]
-=== Handling existing constraints when creating a constraint
-
-Creating an already existing constraint will fail.
-This includes the following scenarios:
-
-* Creating a constraint identical to an already existing constraint.
-* Creating a constraint with a different name but on the same constraint type and schema as an already existing constraint.
-For property type constraints the property type also needs to be the same.
-* Creating a constraint with the same name as an already existing constraint, regardless of what that constraint is.
-
-To avoid such an error, `IF NOT EXISTS` can be added to the `CREATE` command.
-This will ensure that no error is thrown and that no constraint is created if any other constraint with the given name, or another constraint on the same constraint type and schema, or both, already exists.
-For property type constraints the property type also needs to be the same.
-As of Neo4j 5.17, an informational notification is instead returned showing the existing constraint which blocks the creation.
-
-.Create a constraint identical to an existing constraint
-======
-
-.Create a constraint requiring all `SEQUEL_OF` relationships to have unique `order` properties
-[source, cypher]
-----
-CREATE CONSTRAINT sequels IF NOT EXISTS
-FOR ()-[sequel:SEQUEL_OF]-() REQUIRE sequel.order IS UNIQUE
-----
-
-Because the same constraint already exists, nothing will happen:
-
-.Result
-[source, queryresult]
-----
-(no changes, no records)
-----
-
-.Notification
-[source]
-----
-`CREATE CONSTRAINT sequels IF NOT EXISTS FOR ()-[e:SEQUEL_OF]-() REQUIRE (e.order) IS UNIQUE` has no effect.
-`CONSTRAINT sequels FOR ()-[e:SEQUEL_OF]-() REQUIRE (e.order) IS UNIQUE` already exists.
-----
-
-======
-
-
-.Create a relationship property uniqueness constraint when the same constraint with a different name already exists
-======
-
-.Create a constraint requiring all `SEQUEL_OF` relationships to have unique `order` properties
-[source, cypher]
-----
-CREATE CONSTRAINT new_sequels IF NOT EXISTS
-FOR ()-[sequel:SEQUEL_OF]-() REQUIRE sequel.order IS UNIQUE
-----
-
-Because a constraint with a different name (`sequels`) on the same schema exists, nothing will happen:
-
-.Result
-[source, queryresult]
-----
-(no changes, no records)
-----
-
-.Notification
-[source]
-----
-`CREATE CONSTRAINT new_sequels IF NOT EXISTS FOR ()-[e:SEQUEL_OF]-() REQUIRE (e.order) IS UNIQUE` has no effect.
-`CONSTRAINT sequels FOR ()-[e:SEQUEL_OF]-() REQUIRE (e.order) IS UNIQUE` already exists.
-----
-
-======
-
-.Create a relationship property uniqueness constraint with the same name as an existing constraint of a different type
-======
-
-.Create a constraint requiring all `AUTHORED` relationships to have unique `name` properties
-[source, cypher]
-----
-CREATE CONSTRAINT author_name IF NOT EXISTS
-FOR ()-[a:AUTHORED]-() REQUIRE a.name IS UNIQUE
-----
-
-Because a node property existence constraint named `author_name` already exists, nothing will happen:
-
-.Result
-[source, queryresult]
-----
-(no changes, no records)
-----
-
-.Notification
-[source]
-----
-`CREATE CONSTRAINT author_name IF NOT EXISTS FOR ()-[e:AUTHORED]-() REQUIRE (e.name) IS UNIQUE` has no effect.
-`CONSTRAINT author_name FOR (e:Author) REQUIRE (e.name) IS NOT NULL` already exists.
-----
-
-======
-
 [[constraints-and-data-violation-scenarios]]
 === Constraints and data violation scenarios
 
 * xref:constraints/managing-constraints.adoc#create-data-that-violates-a-constraint[]
 * xref:constraints/managing-constraints.adoc#removing-an-existing-constrained-property-will-fail[]
 * xref:constraints/managing-constraints.adoc#modifying-property-constrained-property-will-fail[]
-
+* xref:constraints/managing-constraints.adoc#fail-to-create-constraint-due-to-existing-data[]
 
 [[create-data-that-violates-a-constraint]]
 ==== Creating data that violates existing constraints will fail
@@ -1142,117 +1271,6 @@ SET m.title = 13
 [source, error]
 ----
 Node(9) with label `Movie` required the property `title` to be of type `STRING`, but was of type `INTEGER`.
-----
-
-======
-
-
-[[constraint-creation-failures]]
-=== Constraint creation failures
-
-* xref:constraints/managing-constraints.adoc#create-an-already-existing-constraint[]
-* xref:constraints/managing-constraints.adoc#fail-to-create-constraint-due-to-existing-data[]
-* xref:constraints/managing-constraints.adoc#fail-to-create-property-type-constraint-invalid-type[]
-
-[[create-an-already-existing-constraint]]
-==== Creating an already existing constraint will fail
-
-Creating a constraint on the same node label or relationship type and properties that are already constrained by a constraint of the same type will fail.
-Property uniqueness and key constraints are also not allowed on the same schema.
-
-.Create a constraint identical to an existing constraint
-======
-
-.Create a constraint requiring all `SEQUEL_OF` relationships to have unique `order` properties, given an identical constraint already exists
-[source, cypher, role=test-fail]
-----
-CREATE CONSTRAINT sequels
-FOR ()-[sequel:SEQUEL_OF]-() REQUIRE sequel.order IS UNIQUE
-----
-
-.Error message
-[source, error]
-----
-An equivalent constraint already exists, 'Constraint( id=5, name='sequels', type='RELATIONSHIP UNIQUENESS', schema=()-[:SEQUEL_OF {order}]-(), ownedIndex=4 )'.
-----
-
-[NOTE]
-The constraint type will be updated to say `RELATIONSHIP PROPERTY UNIQUENESS` in a future version of Neo4j.
-
-======
-
-.Create a constraint with a different name but on the same schema as an existing constraint
-======
-
-.Create a constraint requiring all `Book` nodes to have unique `isbn` properties, given that a constraint on that schema already exists
-[source, cypher, role=test-fail]
-----
-CREATE CONSTRAINT new_book_isbn
-FOR (book:Book) REQUIRE book.isbn IS UNIQUE
-----
-
-.Error message
-[source, error]
-----
-Constraint already exists: Constraint( id=3, name='book_isbn', type='UNIQUENESS', schema=(:Book {isbn}), ownedIndex=2 )
-----
-
-[NOTE]
-The constraint type will be updated to say `NODE PROPERTY UNIQUENESS` in a future version of Neo4j.
-
-======
-
-
-.Creating a constraint with the same name but on a different schema as an existing constraint
-======
-
-.Create a constraint requiring all `AUTHORED` relationships to have unique `name` properties, given that a constraint on a different schema with the same name already exists
-[source, cypher, role=test-fail]
-----
-CREATE CONSTRAINT author_name
-FOR ()-[a:AUTHORED]-() REQUIRE a.name IS UNIQUE
-----
-
-.Error message
-[source, error]
-----
-There already exists a constraint called 'author_name'.
-----
-
-======
-
-.Creating a property type constraint on a property when a property type constraint constraining the property to a different type already exist
-======
-
-.Create a constraint requiring `order` properties on `PART_OF` relationships to be of type `FLOAT`, given a constraint requiring the same properties to be of type `INTEGER` already exists
-[source, cypher, role=test-fail]
-----
-CREATE CONSTRAINT new_part_of
-FOR ()-[part:PART_OF]-() REQUIRE part.order IS :: FLOAT
-----
-
-
-.Error message
-[source, error]
-----
-Conflicting constraint already exists: Constraint( id=21, name='part_of', type='RELATIONSHIP PROPERTY TYPE', schema=()-[:PART_OF {order}]-(), propertyType=INTEGER )
-----
-
-======
-
-.Creating a node key constraint on the same schema as an existing property uniqueness constraint
-======
-
-.Create a node key constraint on the properties `title` and `publicationYear` on nodes with the `Book` label, when a property uniqueness constraint already exists on the same label and property combination
-[source, cypher, role=test-fail]
-----
-CREATE CONSTRAINT book_titles FOR (book:Book) REQUIRE (book.title, book.publicationYear) IS NODE KEY
-----
-
-.Error message
-[source, error]
-----
-Constraint already exists: Constraint( id=7, name='book_title_year', type='UNIQUENESS', schema=(:Book {title, publicationYear}), ownedIndex=6 )
 ----
 
 ======
@@ -1457,27 +1475,6 @@ RETURN r AS relationship, 'non-existing' AS reason
 ----
 
 |===
-
-[[fail-to-create-property-type-constraint-invalid-type]]
-==== Creating property type constraints on invalid types will fail
-
-.Create a node property type constraint with an invalid type
-======
-
-.Create a constraint requiring `imdbScore` properties on `Movie` nodes to be of type `MAP`
-[source, cypher, role=test-fail]
-----
-CREATE CONSTRAINT score FOR (movie:Movie) REQUIRE movie.imdbScore IS :: MAP
-----
-
-.Error message
-[source, error]
-----
-Failed to create node property type constraint: Invalid property type `MAP`.
-----
-
-======
-
 
 [[list-constraints]]
 == SHOW CONSTRAINTS
