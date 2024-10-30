@@ -490,3 +490,145 @@ The above query uses the xref:functions/aggregating.adoc#functions-collect[`coll
 
 For more information about how Cypher queries work, see xref:clauses/clause-composition.adoc[].
 
+[role=label--new-5.26]
+[[dynamic-match]]
+== Dynamically MATCH nodes and relationships
+
+Nodes and relationships can be matched dynamically by using variables or parameters for the node labels and relationship types in the graph pattern.
+
+.Syntax for matching node labels dynamically
+[source, syntax]
+----
+MATCH (n:$(<expr>))
+MATCH (n:$any(<expr>))
+MATCH (n:$all(<expr>))
+----
+
+.Syntax for matching relationship types dynamically
+[source, syntax]
+----
+MATCH ()-[r:$(<expr>))]->()
+MATCH ()-[r:$any(<expr>)]->()
+MATCH ()-[r:$all(<expr>))]->()
+----
+
+The expression must evaluate to a `STRING NOT NULL | LIST<STRING NOT NULL> NOT NULL` value, or a type mismatch error is raised.
+
+[NOTE]
+Using dynamic node labels and relationship types can prevent Cypher injection (a type of security vulnerability where an attacker injects malicious code into Cypher queries, potentially allowing unauthorized access or manipulation of a database).
+For more information, see link:https://neo4j.com/developer/kb/protecting-against-cypher-injection/[Neo4j Knowledge Base -> Protecting against Cypher injection].
+
+.Match labels dynamically using the `all()` function
+[source, cypher]
+----
+WITH "Movie" AS label
+MATCH (movie:$all(label))
+RETURN movie AS movieNodes
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| movieNodes
+
+| (:Movie {title: "Wall Street"})
+| (:Movie {title: "The American President"}) 
+
+1+d|Rows: 2
+|===
+
+[NOTE]
+The xref:functions/predicate.adoc#functions-all[`all()`] function matches nodes that have all the specified labels.
+
+If passing a `LIST<STRING>` to an `all()` function evaluating a relationship pattern using dynamic relationship types, the list cannot contain more than one element.
+This is because a relationship can only have exactly one type.
+
+.Attempting to match relationship patterns using more than one relationship type will not return any results
+[source, cypher]
+----
+MATCH ()-[r:$all(["ACTED_IN", "DIRECTED"])]->() 
+RETURN r
+----
+
+.Warning
+[source, warning]
+----
+Warning: The query contains a relationship type expression that cannot be satisfied.
+----
+
+.Match nodes dynamically using the `any()` function
+[source, cypher]
+----
+MATCH (n:$any(["Movie", "Person"]))-[:ACTED_IN|DIRECTED]->(m:Movie)
+RETURN labels(n) AS labels, n.name AS person, collect(m.title) AS movies
+----
+
+[NOTE]
+The xref:functions/predicate.adoc#functions-any[`any()`] function matches nodes that have any of the specified labels.
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| labels | person | movies
+| ["Person"] | Charlie Sheen | ["Wall Street"]
+| ["Person"] | Martin Sheen | ["Wall Street", "The American President"]
+| ["Person"] | Michael Douglas | ["Wall Street", "The American President"]
+| ["Person"] | Oliver Stone | ["Wall Street"]
+| ["Person"] | Rob Reiner | ["The American President"]
+
+3+d|Rows: 5
+|===
+
+
+.Parameter
+[source, parameters]
+----
+{
+  "label": "Movie"
+}
+----
+
+.Match nodes dynamically using a parameter
+[source, cypher]
+----
+MATCH (movie:$($label))
+RETURN movie.title AS movieTitle
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| movieTitle
+
+| "Wall Street"
+| "The American President"
+
+1+d|Rows: 2
+|===
+
+
+.Match relationships dynamically using a variable
+[source, cypher]
+----
+CALL db.relationshipTypes()
+YIELD relationshipType
+MATCH ()-[r:$(relationshipType)]-()
+RETURN relationshipType, count(r) AS relationshipCount
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| relationshipType | relationshipCount
+
+| "ACTED_IN" | 5
+| "DIRECTED" | 2
+
+2+d|Rows: 2
+|===
+
+For more information, see:
+
+* xref:clauses/set.adoc#dynamic-set-property[Dynamically setting or updating a property] and xref:clauses/set.adoc#dynamic-set-node-label[Dynamically setting a node label]
+* xref:clauses/remove.adoc#dynamic-remove-property[Dynamically removing a property] and xref:clauses/remove.adoc#dynamic-remove-node-label[Dynamically removing a node label]
+* xref:clauses/create.adoc#dynamic-create[Dynamically creating nodes and relationships]
