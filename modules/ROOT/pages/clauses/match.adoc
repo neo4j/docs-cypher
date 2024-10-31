@@ -1,79 +1,55 @@
 :description: The `MATCH` clause is used to search for the pattern described in it.
 include::https://raw.githubusercontent.com/neo4j-graphacademy/courses/main/asciidoc/ads/data-analysis.adoc[]
 
-[[query-match]]
 = MATCH
 
-[[match-introduction]]
-== Introduction
-
-The `MATCH` clause allows you to specify the patterns Neo4j will search for in the database.
-This is the primary way of getting data into the current set of bindings.
-For more information about how `MATCH` is used to find patterns (including xref:patterns/variable-length-patterns.adoc#quantified-path-patterns[quantified path patterns], xref:patterns/variable-length-patterns.adoc#quantified-relationships[quantified relationships], and xref:patterns/shortest-paths.adoc[shortest paths]), see the section on xref::patterns/index.adoc[Patterns].
-
-`MATCH` is often coupled to a `WHERE` part which adds restrictions, or predicates, to the `MATCH` patterns, making them more specific.
-The predicates are part of the pattern description, and should not be considered a filter applied only after the matching is done.
-_This means that `WHERE` should always be put together with the `MATCH` clause it belongs to._
-
-`MATCH` can occur at the beginning of the query or later, possibly after a `WITH`.
-If it is the first clause, nothing will have been bound yet, and Neo4j will design a search to find the results matching the clause and any associated predicates specified in any `WHERE` part.
-This could involve a scan of the database, a search for nodes having a certain label, or a search of an index to find starting points for the pattern matching.
-Nodes and relationships found by this search are available as _bound pattern elements,_ and can be used for pattern matching of paths.
-They can also be used in any further `MATCH` clauses, where Neo4j will use the known elements, and from there find further unknown elements.
-
-Cypher is declarative, and so usually the query itself does not specify the algorithm to use to perform the search.
-Neo4j will automatically work out the best approach to finding start nodes and matching patterns.
-Predicates in `WHERE` parts can be evaluated before pattern matching, during pattern matching, or after finding matches.
-However, there are cases where you can influence the decisions taken by the query compiler.
-Read more about indexes in xref:indexes/search-performance-indexes/managing-indexes.adoc[], and more about specifying hints to force Neo4j to solve a query in a specific way in xref::indexes/search-performance-indexes/index-hints.adoc[Planner hints and the USING keyword].
-
+The `MATCH` clause enables you to define specific patterns that the database will search for within its graph structure.
+The `MATCH` clause can specify the nodes, relationships, and properties in a pattern, allowing for queries that traverse the graph to retrieve relevant data.
 
 [[match-example-graph]]
 == Example graph
 
 The following graph is used for the examples below:
 
-image::graph_match_clause.svg[width="600",role="middle"]
+image::graph_match_clause.svg[width="500",role="middle"]
 
 To recreate the graph, run the following query against an empty Neo4j database:
 
 [source, cypher, role=test-setup]
 ----
-CREATE
-  (charlie:Person {name: 'Charlie Sheen'}),
-  (martin:Person {name: 'Martin Sheen'}),
-  (michael:Person {name: 'Michael Douglas'}),
-  (oliver:Person {name: 'Oliver Stone'}),
-  (rob:Person {name: 'Rob Reiner'}),
-  (wallStreet:Movie {title: 'Wall Street'}),
-  (charlie)-[:ACTED_IN {role: 'Bud Fox'}]->(wallStreet),
-  (martin)-[:ACTED_IN {role: 'Carl Fox'}]->(wallStreet),
-  (michael)-[:ACTED_IN {role: 'Gordon Gekko'}]->(wallStreet),
-  (oliver)-[:DIRECTED]->(wallStreet),
-  (thePresident:Movie {title: 'The American President'}),
-  (martin)-[:ACTED_IN {role: 'A.J. MacInerney'}]->(thePresident),
-  (michael)-[:ACTED_IN {role: 'President Andrew Shepherd'}]->(thePresident),
-  (rob)-[:DIRECTED]->(thePresident),
-  (martin)-[:FATHER_OF]->(charlie)
+CREATE (charlie:Person {name: 'Charlie Sheen'}),
+       (martin:Person {name: 'Martin Sheen'}),
+       (michael:Person {name: 'Michael Douglas'}),
+       (oliver:Person {name: 'Oliver Stone'}),
+       (rob:Person {name: 'Rob Reiner'}),
+       (wallStreet:Movie {title: 'Wall Street'}),
+       (charlie)-[:ACTED_IN {role: 'Bud Fox'}]->(wallStreet),
+       (martin)-[:ACTED_IN {role: 'Carl Fox'}]->(wallStreet),
+       (michael)-[:ACTED_IN {role: 'Gordon Gekko'}]->(wallStreet),
+       (oliver)-[:DIRECTED]->(wallStreet),
+       (thePresident:Movie {title: 'The American President'}),
+       (martin)-[:ACTED_IN {role: 'A.J. MacInerney'}]->(thePresident),
+       (michael)-[:ACTED_IN {role: 'President Andrew Shepherd'}]->(thePresident),
+       (rob)-[:DIRECTED]->(thePresident)
 ----
 
+[[find-nodes]]
+== Find nodes
 
-[[basic-node-finding]]
-== Basic node finding
+The `MATCH` clause allows you to specify node patterns of varying complexity to retrieve from a graph.
+For more information about finding node patterns, see xref:patterns/fixed-length-patterns#node-patterns[Patterns -> Node patterns].
 
-[[get-all-nodes]]
-=== Get all nodes
+[[find-all-nodes]]
+=== Find all nodes
 
 By specifying a pattern with a single node and no labels, all nodes in the graph will be returned.
 
-.Query
-[source, cypher, indent=0]
+.Find all nodes in a graph
+[source, cypher]
 ----
 MATCH (n)
 RETURN n
 ----
-
-Returns all the nodes in the database.
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
@@ -86,23 +62,19 @@ Returns all the nodes in the database.
 | (:Person {"name":"Rob Reiner"})
 | (:Movie {"title":"Wall Street"})
 | (:Movie {"title":"The American President"})
-|Rows: 7
+1+d| Rows: 7
 |===
 
 
-[[get-all-nodes-with-label]]
-=== Get all nodes with a label
+[[find-nodes-with-label]]
+=== Find nodes with a specific label
 
-Find all nodes with a specific label:
-
-.Query
-[source, cypher, indent=0]
+.Find all nodes with the `Movie` label
+[source, cypher]
 ----
 MATCH (movie:Movie)
 RETURN movie.title
 ----
-
-Returns all the nodes with the `Movie` label in the database.
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
@@ -110,62 +82,14 @@ Returns all the nodes with the `Movie` label in the database.
 | movie.title
 | "Wall Street"
 | "The American President"
-|Rows: 2
+1+d| Rows: 2
 |===
 
 
-[[related-nodes]]
-=== Related nodes
+[[match-node-label-expressions]]
+=== MATCH using node label expressions
 
-The symbol `--` means _related to,_ without regard to type or direction of the relationship.
-
-.Query
-[source, cypher, indent=0]
-----
-MATCH (director {name: 'Oliver Stone'})--(movie)
-RETURN movie.title
-----
-
-Returns all the movies directed by `Oliver Stone`.
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| movie.title
-| "Wall Street"
-|Rows: 1
-|===
-
-
-[[match-with-labels]]
-=== Match with labels
-
-To constrain a pattern with labels on nodes, add the labels to the nodes in the pattern.
-
-.Query
-[source, cypher, indent=0]
-----
-MATCH (:Person {name: 'Oliver Stone'})--(movie:Movie)
-RETURN movie.title
-----
-
-Returns any nodes with the `Movie` label connected to `Oliver Stone`.
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| movie.title
-| "Wall Street"
-|Rows: 1
-|===
-
-
-[[label-expression-match-or-expression]]
-=== Match with a label expression for the node labels
-
-A match with an `OR` expression for the node label returns the nodes that contains both the specified labels.
-
-.Query
+.Node pattern using the `OR` (`|`) label expression
 [source, cypher]
 ----
 MATCH (n:Movie|Person)
@@ -183,66 +107,110 @@ RETURN n.name AS name, n.title AS title
 | "Rob Reiner" | <null>
 | <null> | "Wall Street"
 | <null> | "The American President"
-2+|Rows: 7
+2+d| Rows: 7
 |===
 
-
-[[relationship-basics]]
-== Relationship basics
-
-[[outgoing-relationships]]
-=== Outgoing relationships
-
-When the direction of a relationship is of interest, it is shown by using `-->` or `<--`.
-For example:
-
-.Query
-[source, cypher, indent=0]
+.Node pattern using negation (`!`) label expression
+[source, cypher]
 ----
-MATCH (:Person {name: 'Oliver Stone'})-->(movie)
-RETURN movie.title
+MATCH (n:!Movie)
+RETURN labels(n) AS label, count(n) AS labelCount
 ----
 
-Returns any nodes connected by an outgoing relationship to the `Person` node with the `name` property set to `Oliver Stone`.
+[NOTE]
+The above query uses the xref:functions/list.adoc#functions-labels[`labels()`] and xref:functions/aggregating.adoc#functions-count[`count()`] functions.
 
 .Result
-[role="queryresult",options="header,footer",cols="1*<m"]
+[role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| movie.title
+| label | labelCount
+| ["Person"] | 5
+2+d| Rows: 1
+|===
+
+For a list of all label expressions supported by Cypher, see xref:patterns/reference.adoc#label-expressions[Patterns -> Label expressions].
+
+[[find-relationships]]
+== Find relationships
+
+The `MATCH` clause allows you to specify relationship patterns of varying complexity to retrieve from a graph.
+Unlike a node pattern, a relationship pattern cannot be used in a `MATCH` clause without node patterns at both ends.
+For more information about relationship patterns, see xref:patterns/fixed-length-patterns#relationship patterns[Patterns -> Relationship patterns].
+
+[NOTE]
+Relationships will only be matched once inside a single pattern.
+Read more about this behavior in the section on xref::patterns/reference.adoc#graph-patterns-rules-relationship-uniqueness[relationship uniqueness].
+
+[[empty-relationship-patterns]]
+=== Empty relationship patterns
+
+By applying `--`, a pattern will be matched for a relationship with any direction and without any filtering on relationship types or properties.
+
+.Find connected nodes using an empty relationship pattern
+[source, cypher]
+----
+MATCH (:Person {name: 'Oliver Stone'})--(n)
+RETURN n AS connectedNodes
+----
+
+.Result
+[source, role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| connectedNodes
+| (:Movie {title: "Wall Street"})
+1+d| Rows: 1
+|===
+
+[[directed-relationship-patterns]]
+=== Directed relationship patterns
+
+The direction of a relationship in a pattern is indicated by arrows: `+-->+` or `+<--+`.
+
+.Find all nodes connected to `Oliver Stone` by an outgoing relationship.
+[source, cypher]
+----
+MATCH (:Person {name: 'Oliver Stone'})-->(movie:Movie)
+RETURN movie.title AS movieTitle
+----
+
+.Result
+[source, role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| movieTitle
 | "Wall Street"
-|Rows: 1
+1+d| Rows: 1
 |===
 
-
-[[directed-rels-and-variable]]
+[[relationship-variables]]
 === Relationship variables
 
 It is possible to introduce a variable to a pattern, either for filtering on relationship properties or to return a relationship.
-For example:
 
-.Query
-[source, cypher, indent=0]
+.Find the types of an aliased relationship
+[source, cypher]
 ----
-MATCH (:Person {name: 'Oliver Stone'})-[r]->(movie)
-RETURN type(r)
+MATCH (:Person {name: 'Oliver Stone'})-[r]->()
+RETURN type(r) AS relType
 ----
 
-Returns the type of each outgoing relationship from `Oliver Stone`.
+[NOTE]
+The above query uses the xref:functions/scalar.adoc#functions-type[`type()` function].
 
 .Result
-[role="queryresult",options="header,footer",cols="1*<m"]
+[source, role="queryresult",options="header,footer",cols="1*<m"]
 |===
-| type(r)
+| relType
 | "DIRECTED"
-|Rows: 1
+1+d| Rows: 1
 |===
 
-=== Match on an undirected relationship
+[[undirected-relationships]]
+=== MATCH on an undirected relationship
 
-When a pattern contains a bound relationship, and that relationship pattern does not specify direction, Cypher will try to match the relationship in both directions.
+When a pattern contains a bound relationship, and that relationship pattern does not specify direction, Cypher will match the relationship in both directions.
 
-.Query
-[source, cypher, indent=0]
+.Relationship pattern without direction
+[source, cypher]
 ----
 MATCH (a)-[:ACTED_IN {role: 'Bud Fox'}]-(b)
 RETURN a, b
@@ -259,154 +227,266 @@ RETURN a, b
 | (:Person {"name":"Charlie Sheen"})
 | (:Movie {"title":"Wall Street"})
 
-2+|Rows: 2
+2+d| Rows: 2
 |===
 
+[[match-on-relationship-type]]
+=== Filter on relationship types
 
-[[match-on-rel-type]]
-=== Match on relationship type
+It is possible to specify the type of a relationship in a relationship pattern by using a colon (`:`) before the relationship type.
 
-When the relationship type to match on is known, it is possible to specify it by using a colon (`:`) before the relationship type.
-
-.Query
-[source, cypher, indent=0]
+.Relationship pattern filtering on the `ACTED_IN` relationship type
+[source, cypher]
 ----
-MATCH (wallstreet:Movie {title: 'Wall Street'})<-[:ACTED_IN]-(actor)
-RETURN actor.name
+MATCH (:Movie {title: 'Wall Street'})<-[:ACTED_IN]-(actor:Person)
+RETURN actor.name AS actor
 ----
-
-Returns all actors who `ACTED_IN` the movie `Wall Street`.
 
 .Result
-[role="queryresult",options="header,footer",cols="1*<m"]
+[source, role="queryresult",options="header,footer",cols="1*<m"]
 |===
-| actor.name
+| actor
 | "Michael Douglas"
 | "Martin Sheen"
 | "Charlie Sheen"
-|Rows: 3
+1+d| Rows: 3
 |===
 
-Read more about xref:patterns/fixed-length-patterns.adoc#relationship-patterns[relationship type expressions].
+[[match-relationship-type-expressions]]
+=== MATCH using relationship type expressions
 
-[[match-on-multiple-rel-types]]
-=== Match on multiple relationship types
+It is possible to match a pattern containing one of several relationship types using the `OR` symbol, `|`.
 
-It is possible to match on multiple relationship types by using the pipe symbol (`|`).
-For example:
-
-.Query
-[source, cypher, indent=0]
+.Relationship pattern including either `ACTED_IN` or `DIRECTED` relationship types
+[source, cypher]
 ----
-MATCH (wallstreet {title: 'Wall Street'})<-[:ACTED_IN|DIRECTED]-(person)
-RETURN person.name
+MATCH (:Movie {title: 'Wall Street'})<-[:ACTED_IN|DIRECTED]-(person:Person)
+RETURN person.name AS person
 ----
-
-Returns nodes with an `ACTED_IN` or `DIRECTED` relationship to the movie `Wall Street`.
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
-| person.name
+| person
 | "Oliver Stone"
 | "Michael Douglas"
 | "Martin Sheen"
 | "Charlie Sheen"
-|Rows: 4
+1+d| Rows: 4
 |===
 
+As relationships can only have exactly one type each, `()-[:A&B]->()` will never match a relationship.
 
-[[match-on-rel-type-use-variable]]
-=== Match on relationship type and use a variable
+For a list of all relationship type expressions supported by Cypher, see xref:patterns/reference.adoc#label-expressions[Patterns -> Label expressions].
 
-Variables and specific relationship types can be included in the same pattern.
-For example:
+[[multiple-relationships]]
+=== Find multiple relationships
 
-.Query
-[source, cypher, indent=0]
+A graph pattern can contain several relationship patterns.
+
+.Graph pattern including several relationship patterns
+[source, cypher]
 ----
-MATCH (wallstreet {title: 'Wall Street'})<-[r:ACTED_IN]-(actor)
-RETURN r.role
+MATCH (:Person {name: 'Charlie Sheen'})-[:ACTED_IN]->(movie:Movie)<-[:DIRECTED]-(director:Person)
+RETURN movie.title AS movieTitle, director.name AS director
 ----
-
-Returns the `ACTED_IN` roles for the movie `Wall Street`.
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| r.role
-| "Gordon Gekko"
-| "Carl Fox"
-| "Bud Fox"
-|Rows: 3
-|===
-
-
-[[relationships-in-depth]]
-== Relationships in depth
-
-[NOTE]
-====
-Relationships will only be matched once inside a single pattern.
-Read more about this in the section on xref::patterns/reference.adoc#graph-patterns-rules-relationship-uniqueness[relationship uniqueness].
-====
-
-[[rel-types-with-uncommon-chars]]
-=== Relationship types with uncommon characters
-
-Databases occasionally contain relationship types including non-alphanumerical characters, or with spaces in them.
-These are created using backticks (```).
-
-For example, the following query creates a relationship which contains a space (`OLD FRIENDS`) between `Martin Sheen` and `Rob Reiner`.
-
-.Query
-[source, cypher, indent=0]
-----
-MATCH
-  (martin:Person {name: 'Martin Sheen'}),
-  (rob:Person {name: 'Rob Reiner'})
-CREATE (rob)-[:`OLD FRIENDS`]->(martin)
-----
-
-This leads to the following graph:
-
-image::graph_match_clause_backtick.svg[width="600", role="middle"]
-
-.Query
-[source, cypher, indent=0]
-----
-MATCH (n {name: 'Rob Reiner'})-[r:`OLD FRIENDS`]->()
-RETURN type(r)
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| type(r)
-| "OLD FRIENDS"
-|Rows: 1
-|===
-
-
-[[multiple-rels]]
-=== Multiple relationships
-
-Relationships can be expressed by using multiple statements in the form of `()--()`, or they can be strung together.
-For example:
-
-.Query
-[source, cypher, indent=0]
-----
-MATCH (charlie {name: 'Charlie Sheen'})-[:ACTED_IN]->(movie)<-[:DIRECTED]-(director)
-RETURN movie.title, director.name
-----
-
-Returns the movie in which `Charlie Sheen` acted and its director.
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| movie.title | director.name
+| movieTitle | director
 | "Wall Street" | "Oliver Stone"
-2+|Rows: 1
+2+d| Rows: 1
 |===
+
+[[where-predicates]]
+== MATCH with WHERE predicates
+
+The `MATCH` clause is often paired with a `WHERE` sub-clause, which adds predicates to refine the patterns, making them more specific.
+These predicates are part of the pattern itself, not just filters applied after matching.
+Thus, always place the `WHERE` clause with its corresponding `MATCH` clause.
+
+.Simple `WHERE` predicate
+[source, cypher]
+----
+MATCH (charlie:Person)-[:ACTED_IN]->(movie:Movie)
+WHERE charlie.name = 'Charlie Sheen'
+RETURN movie.title AS movieTitle
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| movieTitle
+| "Wall Street"
+1+d| Rows: 1
+|===
+
+.More complex `WHERE` predicate
+[source, cypher]
+----
+MATCH (martin:Person)-[:ACTED_IN]->(movie:Movie)
+WHERE martin.name = 'Martin Sheen' AND NOT EXISTS {
+    MATCH (movie)<-[:DIRECTED]-(director:Person {name: 'Oliver Stone'})
+}
+RETURN movie.title AS movieTitle
+----
+
+[NOTE]
+The above query uses an xref:subqueries/existential.adoc[`EXISTS` subquery].
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| movieTitle
+| "The American President"
+1+d| Rows: 1
+|===
+
+For more information, see the xref:clauses/where.adoc[`WHERE`] page.
+
+[[parameters]]
+== MATCH with parameters
+
+The `MATCH` clause can be used with parameters.
+
+.Parameters
+[source, parameters]
+----
+{
+  "movieTitle": "Wall Street",
+  "actorRole": "Fox"
+}
+----
+
+.Find nodes using paramters
+[source, cypher]
+----
+MATCH (:Movie {title: $movieTitle})<-[r:ACTED_IN]-(p:Person)
+WHERE r.role CONTAINS $actorRole
+RETURN p.name AS actor, r.role AS role
+----
+
+[NOTE]
+The above query uses the xref:syntax/operators.adoc#query-operator-comparison-string-specific[`CONTAINS` operator].
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| actor | role
+
+| "Charlie Sheen" | "Bud Fox"
+| "Martin Sheen"  | "Carl Fox"
+
+2+d|Rows: 2
+|===
+
+For more information about how to set parameters, see xref:syntax/parameters.adoc[Syntax -> Parameters].
+
+[[find-paths]]
+== Find paths
+
+The `MATCH` clause can also be used to bind whole paths to variables.
+
+.Find all paths matching a pattern
+[source, cypher]
+----
+MATCH path = ()-[:ACTED_IN]->(movie:Movie)
+RETURN path
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| path
+| (:Person {name: "Charlie Sheen"})-[:ACTED_IN {role: "Bud Fox"}]->(:Movie {title: "Wall Street"}) 
+| (:Person {name: "Martin Sheen"})-[:ACTED_IN {role: "Carl Fox"}]->(:Movie {title: "Wall Street"})
+| (:Person {name: "Martin Sheen"})-[:ACTED_IN {role: "A.J. MacInerney"}]->(:Movie {title: "The American President"})
+| (:Person {name: "Michael Douglas"})-[:ACTED_IN {role: "Gordon Gekko"}]->(:Movie {title: "Wall Street"})
+| (:Person {name: "Michael Douglas"})-[:ACTED_IN {role: "President Andrew Shepherd"}]->(:Movie {title: "The American President"})
+1+d| Rows: 5
+|===
+
+
+.Find paths matching a pattern including a `WHERE` predicate
+[source, cypher]
+----
+MATCH path = (:Person)-[:ACTED_IN]->(movie:Movie)<-[:DIRECTED]-(:Person)
+WHERE movie.title = 'Wall Street'
+RETURN path
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| path
+| (:Person {name: "Charlie Sheen"})-[:ACTED_IN {role: "Bud Fox"}]->(:Movie {title: "Wall Street"})<-[:DIRECTED]-(:Person {name: "Oliver Stone"})
+| (:Person {name: "Martin Sheen"})-[:ACTED_IN {role: "Carl Fox"}]->(:Movie {title: "Wall Street"})<-[:DIRECTED]-(:Person {name: "Oliver Stone"})
+| (:Person {name: "Michael Douglas"})-[:ACTED_IN {role: "Gordon Gekko"}]->(:Movie {title: "Wall Street"})<-[:DIRECTED]-(:Person {name: "Oliver Stone"})
+1+d| Rows: 3
+|===
+
+For more information about how `MATCH` is used to find patterns of varying complexity (including xref:patterns/variable-length-patterns.adoc#quantified-path-patterns[quantified path patterns], xref:patterns/variable-length-patterns.adoc#quantified-relationships[quantified relationships], and the xref:patterns/shortest-paths.adoc[shortest paths] between nodes), see the section on xref::patterns/index.adoc[Patterns].
+
+== Multiple MATCH clauses, the WITH clause, and clause composition
+
+In Cypher, the behavior of a query is defined by its clauses.
+Each clause takes the current graph state and a table of intermediate results, processes them, and passes the updated graph state and results to the next clause.
+The first clause starts with the graph's initial state and an empty table, while the final clause produces the query result.
+
+.Chaining consecutive `MATCH` clauses
+[source, cypher]
+----
+MATCH (:Person {name: 'Martin Sheen'})-[:ACTED_IN]->(movie:Movie) // <1>
+MATCH (director:Person)-[:DIRECTED]->(movie) // <2>
+RETURN director.name AS director, movie.title AS movieTitle
+----
+<1> The result of the first `MATCH` clause is the variable `movie` which holds all the `Movies` that `Martin Sheen` has `ACTED_IN`.
+<2> The second `MATCH` clause uses the `movie` variable to find any `Person` node with a `DIRECTED` relationship to those `Movie` nodes that `Martin Sheen` has `ACTED_IN`.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| director | movieTitle
+
+| "Oliver Stone" | "Wall Street"
+| "Rob Reiner"   | "The American President"
+
+2+d| Rows: 2
+|===
+
+A variable can be implicitly carried over to the following clause by being referenced in another operation.
+A variable can also be explicitly passed to the following clause using the xref:clauses/with.adoc[`WITH`] clause.
+If a variable is neither implicitly nor explicitly carried over to its following clause, it will be discarded and is not available for reference later in the query.
+
+.Using `WITH` and multiple `MATCH` clauses
+[source, cypher]
+----
+MATCH (actors:Person)-[:ACTED_IN]->(movies:Movie) // <1>
+WITH actors, count(movies) AS movieCount // <2>
+ORDER BY movieCount DESC
+LIMIT 1 // <3>
+MATCH (actors)-[:ACTED_IN]->(movies) // <4>
+RETURN actors.name AS actor, movieCount, collect(movies.title) AS movies
+----
+<1> The `Person` and `Movie` nodes matched in this step are stored in variables, which are then passed on to the second row of the query.
+<2> The `movies` variable is implicitly imported by its occurrence in the `count()` function.
+The `WITH` clause explicitly imports the `actors` variable.
+<3> An xref:clauses/order-by.adoc[`ORDER BY`] clause orders the results by `movieCount` in descending order, ensuring that the `Person` with the highest number of movies appears at the top, and xref:clauses/limit.adoc[`LIMIT] 1` ensures that all other `Person` nodes are discarded.
+<4> The second `MATCH` clause finds all `Movie` nodes associated with the `Person` nodes currently bound to the `actors` variable.
+
+[NOTE]
+The above query uses the xref:functions/aggregating.adoc#functions-collect[`collect()` function].
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| actor | movieCount | movies
+
+| "Martin Sheen" | 2 | ["Wall Street", "The American President"]
+3+d| Rows: 1
+
+|===
+
+For more information about how Cypher queries work, see xref:clauses/clause-composition.adoc[].
+
