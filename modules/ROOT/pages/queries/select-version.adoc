@@ -1,0 +1,187 @@
+:description: Information about how to select Cypher version for queries or databases.
+
+= Select Cypher version
+
+Users can specify the version of Cypher in which they want to run their queries, choosing between Cypher 5 and Cypher 25.
+The Cypher version can be set for individual queries or as the default language for a database.
+
+== Cypher 5, Cypher 25, and Neo4j explained
+
+Starting in 2025, the Neo4j server transitioned to a calendar-based versioning system.
+This means Neo4j will no longer use its previous semantic versioning and release pattern (e.g., 5.25, 5.26).
+Instead, releases from 2025 onwards will follow a *YYYY.MM* format, beginning with version 2025.01 released in January 2025, followed by 2025.02 released in February 2025, and so on.
+
+Cypher 25 is introduced alongside Neo4j 2025.01 and is the default language for databases running version 2025.01 later.
+However, users running Neo4j version 2025.01 or later can choose to run their queries using the previous version of Cypher: Cypher 5.
+If so, Neo4j will use Cypher as it existed at the time of the Neo4j 5.26 long-term support release.
+
+For information about updates to Cypher in different Neo4j versions, see xref:deprecations-additions-removals-compatibility.adoc[].
+For information about Cypher 5, see the link:https://neo4j.com/docs/cypher-manual/5/introduction/[Cypher 5 Manual].
+
+== Select the Cypher version for queries
+
+To select the Cypher version of a query, prepend it with `CYPHER <language version>`. 
+
+Selecting `CYPHER 5` ensures that the query will be executed using the language as it existed at the time of the Neo4j 5.26 long-term support release.
+Any changes introduced in Neo4j 2025.01 or later will not affect the query.
+
+Selecting `CYPHER 25` ensures that the query will be executed using the language as it exists in the version of Neo4j that the database is currently running, provided it is on Neo4j 2025.01 or later.
+
+Below are two examples showing the two versions of Cypher behaving differently.
+
+.Differences in setting properties between Cypher 5 and Cypher 25
+======
+The first query uses a `RELATIONSHIP` instead of `MAP` on the right-hand side of a xref:clauses/set.adoc[`SET`] clause.
+This was allowed in Cypher 5, but disallowed in Cypher 25, which requires that the xref:functions/scalar.adoc#functions-properties[`properties()`] function is used to get the map of properties from nodes or relationships before referencing them in a `SET` clause.
+
+.Setting properties on a node from a relationship using Cypher 5
+[source, cypher]
+----
+CYPHER 5
+MATCH (n:Order)-[r:SHIPPED_TO]->(:Address) 
+SET n = r
+----
+
+.Setting properties on a node from a relationship using Cypher 25
+[source, cypher]
+----
+CYPHER 25
+MATCH (n:Order)-[r:SHIPPED_TO]->(m:Address) 
+SET n = properties(r)
+----
+======
+
+.Differences in listing constraints between Cypher 5 and Cypher 25
+======
+In this example, the same statement listing the `name` and `type` of the xref:constraints/index.adoc[constraints] in a database is executed first using Cypher 5 and then with Cypher 25.
+Note that the return values in the `type` column have been updated in the results from the statement run with Cypher 25.
+
+////
+CREATE CONSTRAINT node_uniqueness_constraint
+FOR (n:Label) REQUIRE n.property IS UNIQUE;
+CREATE CONSTRAINT rel_uniqueness_constraint
+FOR ()-[r:REL_TYPE]-() REQUIRE r.property IS UNIQUE;
+////
+
+.Listing the constraint name and type values using Cypher 5
+[source, cypher]
+----
+CYPHER 5
+SHOW CONSTRAINTS YIELD name, type
+----
+
+.Result
+[source, queryresult]
+----
++----------------------------------------------------------+
+| name                         | type                      |
++----------------------------------------------------------+
+| "node_uniqueness_constraint" | "UNIQUENESS"              |
+| "rel_uniqueness_constraint"  | "RELATIONSHIP_UNIQUENESS" |
++----------------------------------------------------------+
+----
+
+.Listing the constraint name and type values using Cypher 25
+[source, cypher]
+----
+CYPHER 5
+SHOW CONSTRAINTS YIELD name, type
+----
+
+.Result
+[source, queryresult]
+----
++-------------------------------------------------------------------+
+| name                         | type                               |
++-------------------------------------------------------------------+
+| "node_uniqueness_constraint" | "NODE_PROPERTY_UNIQUENESS"         |
+| "rel_uniqueness_constraint"  | "RELATIONSHIP_PROPERTY_UNIQUENESS" |
++-------------------------------------------------------------------+
+----
+
+======
+
+If a database has specified a default Cypher version, it is possible to set a different Cypher version for individual queries.
+For example, if a database is created with Cypher 5 as its default language, prepending a query run on that database with `CYPHER 25` ensures the query uses Cypher 25.
+
+=== Combine Cypher version selection with other query options
+
+It is possible to combine Cypher version selection with other xref:planning-and-tuning/query-tuning.adoc[query options].
+The below example selects both the version and the xref:planning-and-tuning/runtimes/concepts.adoc[runtime] of Cypher for the same query:
+
+.Combining Cypher version selection with other query options
+[source, cypher]
+----
+CYPHER 5 runtime=parallel
+MATCH (n:Person)
+RETURN n.name
+----
+
+== Select the default Cypher version when creating a database
+
+Databases created on Neo4j 2025.01 or later will have Cypher 25 as their default language.
+This is true for the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/database-administration/#manage-database-systems[system, standard, and composite] Neo4j databases.
+
+To select a different default Cypher version for a database, add `DEFAULT LANGUAGE <language version>` to the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/database-administration/standard-databases/create-databases/[`CREATE DATABASE`] statement.
+This can be done on any Neo4j database.
+
+[NOTE]
+Selecting a default Cypher version on a database requires the `SET DEFAULT LANGUAGE` privilege.
+
+Selecting `CYPHER 5` as the default database language ensures that every query run on that database uses the language as it existed at the time of the Neo4j 5.26 long-term support release.
+Any changes introduced in Neo4j 2025.01 or later will not affect the query.
+
+.Create a database with Cypher 5 as the default language
+[source, cypher]
+----
+CREATE DATABASE my_database DEFAULT LANGUAGE CYPHER 5
+----
+
+Selecting `CYPHER 25` ensures that the query will be executed using the language as it exists in the version of Neo4j that the database is currently running, provided it is on Neo4j 2025.01 or later.
+
+.Create a database with Cypher 25 as the default language
+[source, cypher]
+----
+CREATE DATABASE my_new_database DEFAULT LANGUAGE CYPHER 25
+----
+
+== Alter the default Cypher version for a database
+
+To alter the default Cypher version on a database, add `SET DEFAULT LANGUAGE <language version>` to the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/database-administration/standard-databases/alter-databases/[`ALTER DATABASE`] command.
+
+[NOTE]
+Selecting a default Cypher version on a database requires the `SET DEFAULT LANGUAGE` privilege.
+
+.Set Cypher 5 as the default language on an existing database
+[source, cypher]
+----
+ALTER DATABASE my_new_database SET DEFAULT LANGUAGE CYPHER 5
+----
+
+.Set Cypher 25 as the default language on an existing database
+[source, cypher]
+----
+ALTER DATABASE my_database SET DEFAULT LANGUAGE CYPHER 25
+----
+
+== Show the Cypher version of databases
+
+The Cypher version of a database can be seen using the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/database-administration/standard-databases/listing-databases/[`SHOW DATABASES`] command as follows:
+
+.Set Cypher 25 as the default language on an existing database
+[source, cypher]
+----
+SHOW DATABASES YIELD name, defaultLanguage
+----
+
+.Result
+[source, queryresult]
+----
++-----------------------------------------+
+| name               | defaultLanguage    |
++-----------------------------------------+
+| "my_database"      | "CYPHER 25"        |
+| "my_new_database"  | "CYPHER 5"         |
+| "system"           | "CYPHER 25"        |
++-----------------------------------------+
+----
