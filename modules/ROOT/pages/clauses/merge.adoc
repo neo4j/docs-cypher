@@ -683,3 +683,60 @@ RETURN person.name, person.bornIn, person.chauffeurName
 | person.name | person.bornIn | person.chauffeurName
 | "Keanu Reeves" | "Beirut" | "Eric Brown"
 |===
+
+[role=label--new-5.26]
+[[dynamic-merge]]
+== MERGE using dynamic node labels and relationship types
+
+Node labels and relationship types can be referenced dynamically in expressions, parameters, and variables when merging nodes and relationships.
+This allows for more flexible queries and mitigates the risk of Cypher injection.
+(For more information about Cypher injection, see link:https://neo4j.com/developer/kb/protecting-against-cypher-injection/[Neo4j Knowledge Base -> Protecting against Cypher injection]).
+
+.Syntax for merging nodes and relationships dynamically
+[source, syntax]
+----
+MERGE (n:$(<expr>))
+MERGE ()-[r:$(<expr>)]->()
+----
+
+The expression must evaluate to a `STRING NOT NULL | LIST<STRING NOT NULL> NOT NULL` value.
+Using a `LIST<STRING>` with more than one item when merging a relationship using dynamic relationship types will fail.
+This is because a relationship can only have exactly one type.
+
+[NOTE]
+Queries using dynamic values may not be as performant as those using static values.
+This is because the xref:planning-and-tuning/execution-plans.adoc[Cypher planner] uses statically available information when planning queries to determine whether to use an xref:indexes/search-performance-indexes/overview.adoc[index] or not, and this is not possible when using dynamic values.
+
+.Parameters
+[source, parameters]
+----
+{
+  "nodeLabels": ["Person", "Director"],
+  "relType": "DIRECTED",
+  "movies": ["Ladybird", "Little Women", "Barbie"]
+}
+----
+
+.Merge nodes and relationships using dynamic node labels and relationship types
+[source, cypher]
+----
+MERGE (greta:$($nodeLabels) {name: 'Greta Gerwig'})
+WITH greta
+UNWIND $movies AS movieTitle
+MERGE (greta)-[rel:$($relType)]->(m:Movie {title: movieTitle})
+RETURN greta.name AS name, labels(greta) AS labels, type(rel) AS relType, collect(m.title) AS movies
+----
+
+.Result
+[role="queryresult",options="footer",cols="3*<m"]
+|===
+| name | labels | relType | movies
+
+| "Greta Gerwig"
+| ["Person", "Director"]
+| "DIRECTED"
+| ["Ladybird", "Little Women", "Barbie"]
+
+4+d|Rows: 1 +
+|===
+
