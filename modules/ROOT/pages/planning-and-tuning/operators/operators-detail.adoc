@@ -2600,60 +2600,14 @@ Total database accesses: 106
 ======
 
 
-
-
-
-
-
-
-
-
-
 [[nested-loops-joins]]
 == Nested loops and joins
 
-
-[[patterns]]
-== Patterns
-
-[[unions]]
-== Unions
-
-[[create-update-data]]
-== Create and update data
-
-
-[[aggregations]]
-== Aggregations
-
-[[rows-results-projections]]
-== Rows, results, and projections
-
-[[sorting-limiting]]
-== Sorting and limiting
-
-[[schema-system-commands]]
-== Schema and system commands
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// --- apply operators ---
+Nested loop operators process data by iterating over the right-hand side (RHS) for each row from the left-hand side (LHS).
+Each row from the LHS triggers the execution of the RHS, effectively creating a loop over the RHS for each LHS element.
 
 [[query-plan-apply]]
-== Apply
-// Apply
+=== Apply
 
 All the different `Apply` operators (listed below) share the same basic functionality: they perform a nested loop by taking a single row from the left-hand side, and using the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-argument[`Argument`] operator on the right-hand side, execute the operator tree on the right-hand side.
 The versions of the `Apply` operators differ in how the results are managed.
@@ -2702,8 +2656,7 @@ Total database accesses: 2, total allocated memory: 2216
 
 
 [[query-plan-semi-apply]]
-== Semi Apply
-// SemiApply
+=== Semi Apply
 
 The `SemiApply` operator tests for the presence of a pattern predicate, and is a variation of the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`] operator.
 If the right-hand side operator yields at least one row, the row from the left-hand side operator is yielded by the `SemiApply` operator.
@@ -2757,7 +2710,7 @@ Total database accesses: 142, total allocated memory: 64
 
 
 [[query-plan-anti-semi-apply]]
-== Anti Semi Apply
+=== Anti Semi Apply
 // AntiSemiApply
 
 The `AntiSemiApply` operator tests for the absence of a pattern, and is a variation of the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`] operator.
@@ -2813,9 +2766,426 @@ Total database accesses: 166, total allocated memory: 976
 
 ======
 
+
+
+[[query-plan-let-semi-apply]]
+=== Let Semi Apply
+
+The `LetSemiApply` operator tests for the presence of a pattern predicate, and is a variation of the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`] operator.
+When a query contains multiple pattern predicates separated with `OR`, `LetSemiApply` will be used to evaluate the first of these.
+It will record the result of evaluating the predicate but will leave any filtering to another operator.
+In the example, `LetSemiApply` will be used to check for the presence of the `FRIENDS_WITH` relationship from each person.
+
+
+.LetSemiApply
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+CYPHER runtime=slotted
+MATCH (other:Person)
+WHERE (other)-[:FRIENDS_WITH]->(:Person) OR (other)-[:WORKS_IN]->(:Location)
+RETURN other.name
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime SLOTTED
+
+Runtime version {neo4j-version-minor}
+
++--------------------+-----------------------------------------+----------------+------+---------+------------------------+
+| Operator           | Details                                 | Estimated Rows | Rows | DB Hits | Page Cache Hits/Misses |
++--------------------+-----------------------------------------+----------------+------+---------+------------------------+
+| +ProduceResults    | `other.name`                            |             13 |   14 |       0 |                    0/0 |
+| |                  +-----------------------------------------+----------------+------+---------+------------------------+
+| +Projection        | other.name AS `other.name`              |             13 |   14 |      14 |                    1/0 |
+| |                  +-----------------------------------------+----------------+------+---------+------------------------+
+| +SelectOrSemiApply | anon_9                                  |             14 |   14 |       0 |                    0/0 |
+| |\                 +-----------------------------------------+----------------+------+---------+------------------------+
+| | +Filter          | anon_7:Location                         |             14 |    0 |       4 |                    0/0 |
+| | |                +-----------------------------------------+----------------+------+---------+------------------------+
+| | +Expand(All)     | (other)-[anon_6:WORKS_IN]->(anon_7)     |             14 |    4 |      15 |                    8/0 |
+| | |                +-----------------------------------------+----------------+------+---------+------------------------+
+| | +Argument        | other                                   |             14 |    4 |       0 |                    0/0 |
+| |                  +-----------------------------------------+----------------+------+---------+------------------------+
+| +LetSemiApply      |                                         |             14 |   14 |       0 |                    0/0 |
+| |\                 +-----------------------------------------+----------------+------+---------+------------------------+
+| | +Filter          | anon_5:Person                           |             12 |    0 |      10 |                    0/0 |
+| | |                +-----------------------------------------+----------------+------+---------+------------------------+
+| | +Expand(All)     | (other)-[anon_4:FRIENDS_WITH]->(anon_5) |             12 |   10 |      51 |                   28/0 |
+| | |                +-----------------------------------------+----------------+------+---------+------------------------+
+| | +Argument        | other                                   |             14 |   14 |       0 |                    0/0 |
+| |                  +-----------------------------------------+----------------+------+---------+------------------------+
+| +NodeByLabelScan   | other:Person                            |             14 |   14 |      35 |                    1/0 |
++--------------------+-----------------------------------------+----------------+------+---------+------------------------+
+
+Total database accesses: 165, total allocated memory: 64
+----
+
+======
+
+
+[[query-plan-let-anti-semi-apply]]
+=== Let Anti Semi Apply
+
+The `LetAntiSemiApply` operator tests for the absence of a pattern, and is a variation of the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`] operator.
+When a query contains multiple negated pattern predicates -- i.e. predicates separated with `OR`, where at least one predicate contains `NOT` -- `LetAntiSemiApply` will be used to evaluate the first of these.
+It will record the result of evaluating the predicate but will leave any filtering to another operator.
+In the example, `LetAntiSemiApply` will be used to check for the absence of the `FRIENDS_WITH` relationship from each person.
+
+
+.LetAntiSemiApply
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+CYPHER runtime=slotted
+MATCH (other:Person)
+WHERE NOT ((other)-[:FRIENDS_WITH]->(:Person)) OR (other)-[:WORKS_IN]->(:Location)
+RETURN other.name
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime SLOTTED
+
+Runtime version {neo4j-version-minor}
++--------------------+-----------------------------------------+----------------+------+---------+------------------------+
+| Operator           | Details                                 | Estimated Rows | Rows | DB Hits | Page Cache Hits/Misses |
++--------------------+-----------------------------------------+----------------+------+---------+------------------------+
+| +ProduceResults    | `other.name`                            |             11 |   14 |       0 |                    0/0 |
+| |                  +-----------------------------------------+----------------+------+---------+------------------------+
+| +Projection        | other.name AS `other.name`              |             11 |   14 |      14 |                    1/0 |
+| |                  +-----------------------------------------+----------------+------+---------+------------------------+
+| +SelectOrSemiApply | anon_9                                  |             14 |   14 |       0 |                    0/0 |
+| |\                 +-----------------------------------------+----------------+------+---------+------------------------+
+| | +Filter          | anon_7:Location                         |             14 |    0 |      10 |                    0/0 |
+| | |                +-----------------------------------------+----------------+------+---------+------------------------+
+| | +Expand(All)     | (other)-[anon_6:WORKS_IN]->(anon_7)     |             14 |   10 |      38 |                   20/0 |
+| | |                +-----------------------------------------+----------------+------+---------+------------------------+
+| | +Argument        | other                                   |             14 |   10 |       0 |                    0/0 |
+| |                  +-----------------------------------------+----------------+------+---------+------------------------+
+| +LetAntiSemiApply  |                                         |             14 |   14 |       0 |                    0/0 |
+| |\                 +-----------------------------------------+----------------+------+---------+------------------------+
+| | +Filter          | anon_5:Person                           |             12 |    0 |      10 |                    0/0 |
+| | |                +-----------------------------------------+----------------+------+---------+------------------------+
+| | +Expand(All)     | (other)-[anon_4:FRIENDS_WITH]->(anon_5) |             12 |   10 |      51 |                   28/0 |
+| | |                +-----------------------------------------+----------------+------+---------+------------------------+
+| | +Argument        | other                                   |             14 |   14 |       0 |                    0/0 |
+| |                  +-----------------------------------------+----------------+------+---------+------------------------+
+| +NodeByLabelScan   | p:Person                                |             14 |   14 |      35 |                    1/0 |
++--------------------+-----------------------------------------+----------------+------+---------+------------------------+
+
+Total database accesses: 142, total allocated memory: 64
+----
+
+======
+
+
+[[query-plan-select-or-semi-apply]]
+=== Select Or Semi Apply
+
+The `SelectOrSemiApply` operator tests for the presence of a pattern predicate and evaluates a predicate,
+and is a variation of the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`] operator.
+This operator allows for the mixing of normal predicates and pattern predicates that check for the presence of a pattern.
+First, the normal expression predicate is evaluated, and, only if it returns `false`, is the costly pattern predicate evaluated.
+
+
+.SelectOrSemiApply
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH (other:Person)
+WHERE other.age > 25 OR (other)-[:FRIENDS_WITH]->(:Person)
+RETURN other.name
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++--------------------+-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator           | Details                                 | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++--------------------+-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults    | `other.name`                            |             11 |   10 |       0 |                |                        |           |                     |
+| |                  +-----------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Projection        | other.name AS `other.name`              |             11 |   10 |      20 |                |                        |           |                     |
+| |                  +-----------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +SelectOrSemiApply | other.age > $autoint_0                  |             14 |   10 |       0 |            392 |                    0/0 |     0.190 | Fused in Pipeline 2 |
+| |\                 +-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Limit           | 1                                       |             14 |   10 |       0 |            752 |                        |           |                     |
+| | |                +-----------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +Filter          | anon_3:Person                           |             12 |   10 |      20 |                |                        |           |                     |
+| | |                +-----------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +Expand(All)     | (other)-[anon_2:FRIENDS_WITH]->(anon_3) |             12 |   10 |      37 |                |                        |           |                     |
+| | |                +-----------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +Argument        | other                                   |             14 |   14 |       0 |           2168 |                    2/0 |     0.435 | Fused in Pipeline 1 |
+| |                  +-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +NodeByLabelScan   | other:Person                            |             14 |   14 |      35 |                |                        |           | Fused in Pipeline 0 |
++--------------------+-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 148, total allocated memory: 2952
+----
+
+======
+
+
+[[query-plan-select-or-anti-semi-apply]]
+=== Select Or Anti Semi Apply
+
+The `SelectOrAntiSemiApply` operator is used to evaluate `OR` between a predicate and a negative pattern predicate (i.e. a pattern predicate preceded with `NOT`), and is a variation of the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`] operator.
+If the predicate returns `true`, the pattern predicate is not tested.
+If the predicate returns `false` or `null`, `SelectOrAntiSemiApply` will instead test the pattern predicate.
+
+
+.SelectOrAntiSemiApply
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH (other:Person)
+WHERE other.age > 25 OR NOT (other)-[:FRIENDS_WITH]->(:Person)
+RETURN other.name
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++------------------------+-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator               | Details                                 | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++------------------------+-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults        | `other.name`                            |              4 |    4 |       0 |                |                        |           |                     |
+| |                      +-----------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Projection            | other.name AS `other.name`              |              4 |    4 |       8 |                |                        |           |                     |
+| |                      +-----------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +SelectOrAntiSemiApply | other.age > $autoint_0                  |             14 |    4 |       0 |            200 |                    0/0 |     0.155 | Fused in Pipeline 3 |
+| |\                     +-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Anti                |                                         |             14 |    4 |       0 |           1256 |                    0/0 |     0.170 | In Pipeline 2       |
+| | |                    +-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Limit               | 1                                       |              0 |   10 |       0 |            752 |                        |           |                     |
+| | |                    +-----------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +Filter              | anon_3:Person                           |             12 |   10 |      20 |                |                        |           |                     |
+| | |                    +-----------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +Expand(All)         | (other)-[anon_2:FRIENDS_WITH]->(anon_3) |             12 |   10 |      37 |                |                        |           |                     |
+| | |                    +-----------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +Argument            | other                                   |             14 |   14 |       0 |           2168 |                    2/0 |     0.449 | Fused in Pipeline 1 |
+| |                      +-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +NodeByLabelScan       | other:Person                            |             14 |   14 |      35 |                |                        |           | Fused in Pipeline 0 |
++------------------------+-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 136, total allocated memory: 4208
+----
+
+======
+
+
+[[query-plan-let-select-or-semi-apply]]
+=== Let Select Or Semi Apply
+
+The `LetSelectOrSemiApply` operator is planned for pattern predicates that are combined with other predicates using `OR`.
+This is a variation of the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`] operator.
+
+
+.LetSelectOrSemiApply
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+CYPHER runtime=slotted
+MATCH (other:Person)
+WHERE (other)-[:FRIENDS_WITH]->(:Person) OR (other)-[:WORKS_IN]->(:Location) OR other.age = 5
+RETURN other.name
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime SLOTTED
+
+Runtime version {neo4j-version-minor}
+
++-----------------------+-----------------------------------------+----------------+------+---------+------------------------+
+| Operator              | Details                                 | Estimated Rows | Rows | DB Hits | Page Cache Hits/Misses |
++-----------------------+-----------------------------------------+----------------+------+---------+------------------------+
+| +ProduceResults       | `other.name`                            |             13 |   14 |       0 |                    0/0 |
+| |                     +-----------------------------------------+----------------+------+---------+------------------------+
+| +Projection           | other.name AS `other.name`              |             13 |   14 |      14 |                    1/0 |
+| |                     +-----------------------------------------+----------------+------+---------+------------------------+
+| +SelectOrSemiApply    | anon_9                                  |             14 |   14 |       0 |                    0/0 |
+| |\                    +-----------------------------------------+----------------+------+---------+------------------------+
+| | +Filter             | anon_7:Location                         |             14 |    0 |       4 |                    0/0 |
+| | |                   +-----------------------------------------+----------------+------+---------+------------------------+
+| | +Expand(All)        | (other)-[anon_6:WORKS_IN]->(anon_7)     |             14 |    4 |      15 |                    8/0 |
+| | |                   +-----------------------------------------+----------------+------+---------+------------------------+
+| | +Argument           | other                                   |             14 |    4 |       0 |                    0/0 |
+| |                     +-----------------------------------------+----------------+------+---------+------------------------+
+| +LetSelectOrSemiApply | other.age = $autoint_0                  |             14 |   14 |      14 |                    0/0 |
+| |\                    +-----------------------------------------+----------------+------+---------+------------------------+
+| | +Filter             | anon_5:Person                           |             12 |    0 |      10 |                    0/0 |
+| | |                   +-----------------------------------------+----------------+------+---------+------------------------+
+| | +Expand(All)        | (other)-[anon_4:FRIENDS_WITH]->(anon_5) |             12 |   10 |      51 |                   28/0 |
+| | |                   +-----------------------------------------+----------------+------+---------+------------------------+
+| | +Argument           | other                                   |             14 |   14 |       0 |                    0/0 |
+| |                     +-----------------------------------------+----------------+------+---------+------------------------+
+| +NodeByLabelScan      | other:Person                            |             14 |   14 |      35 |                    1/0 |
++-----------------------+-----------------------------------------+----------------+------+---------+------------------------+
+
+Total database accesses: 179, total allocated memory: 64
+----
+
+======
+
+
+[[query-plan-let-select-or-anti-semi-apply]]
+=== Let Select Or Anti Semi Apply
+
+The `LetSelectOrAntiSemiApply` operator is planned for negated pattern predicates -- i.e. pattern predicates preceded with `NOT` -- that are combined with other predicates using `OR`.
+This operator is a variation of the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`] operator.
+
+
+.LetSelectOrAntiSemiApply
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+CYPHER runtime=slotted
+MATCH (other:Person)
+WHERE NOT (other)-[:FRIENDS_WITH]->(:Person) OR (other)-[:WORKS_IN]->(:Location) OR other.age = 5
+RETURN other.name
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime SLOTTED
+
+Runtime version {neo4j-version-minor}
+
++---------------------------+-----------------------------------------+----------------+------+---------+------------------------+
+| Operator                  | Details                                 | Estimated Rows | Rows | DB Hits | Page Cache Hits/Misses |
++---------------------------+-----------------------------------------+----------------+------+---------+------------------------+
+| +ProduceResults           | `other.name`                            |             12 |   14 |       0 |                    0/0 |
+| |                         +-----------------------------------------+----------------+------+---------+------------------------+
+| +Projection               | other.name AS `other.name`              |             12 |   14 |      14 |                    1/0 |
+| |                         +-----------------------------------------+----------------+------+---------+------------------------+
+| +SelectOrSemiApply        | anon_9                                  |             14 |   14 |       0 |                    0/0 |
+| |\                        +-----------------------------------------+----------------+------+---------+------------------------+
+| | +Filter                 | anon_7:Location                         |             14 |    0 |      10 |                    0/0 |
+| | |                       +-----------------------------------------+----------------+------+---------+------------------------+
+| | +Expand(All)            | (other)-[anon_6:WORKS_IN]->(anon_7)     |             14 |   10 |      38 |                   20/0 |
+| | |                       +-----------------------------------------+----------------+------+---------+------------------------+
+| | +Argument               | other                                   |             14 |   10 |       0 |                    0/0 |
+| |                         +-----------------------------------------+----------------+------+---------+------------------------+
+| +LetSelectOrAntiSemiApply | other.age = $autoint_0                  |             14 |   14 |      14 |                    0/0 |
+| |\                        +-----------------------------------------+----------------+------+---------+------------------------+
+| | +Filter                 | anon_5:Person                           |             12 |    0 |      10 |                    0/0 |
+| | |                       +-----------------------------------------+----------------+------+---------+------------------------+
+| | +Expand(All)            | (other)-[anon_4:FRIENDS_WITH]->(anon_5) |             12 |   10 |      51 |                   28/0 |
+| | |                       +-----------------------------------------+----------------+------+---------+------------------------+
+| | +Argument               | other                                   |             14 |   14 |       0 |                    0/0 |
+| |                         +-----------------------------------------+----------------+------+---------+------------------------+
+| +NodeByLabelScan          | other:Person                            |             14 |   14 |      35 |                    1/0 |
++---------------------------+-----------------------------------------+----------------+------+---------+------------------------+
+
+Total database accesses: 208, total allocated memory: 64
+----
+
+======
+
+[[query-plan-roll-up-apply]]
+=== Roll Up Apply
+
+The `RollUpApply` operator is used to execute an expression which takes as input a pattern, and returns a list with content from the matched pattern; for example, when using a pattern expression or pattern comprehension in a query.
+This operator is a variation of the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`] operator.
+
+
+.RollUpApply
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+CYPHER runtime=slotted
+MATCH (p:Person)
+RETURN p.name, [(p)-[:WORKS_IN]->(location) | location.name] AS cities
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime SLOTTED
+
+Runtime version {neo4j-version-minor}
+
++-----------------+-----------------------------------+----------------+------+---------+------------------------+
+| Operator        | Details                           | Estimated Rows | Rows | DB Hits | Page Cache Hits/Misses |
++-----------------+-----------------------------------+----------------+------+---------+------------------------+
+| +ProduceResults | `p.name`, cities                  |             14 |   14 |       0 |                    0/0 |
+| |               +-----------------------------------+----------------+------+---------+------------------------+
+| +Projection     | p.name AS `p.name`                |             14 |   14 |      14 |                    0/0 |
+| |               +-----------------------------------+----------------+------+---------+------------------------+
+| +RollUpApply    | cities, anon_0                    |             14 |   14 |       0 |                    0/0 |
+| |\              +-----------------------------------+----------------+------+---------+------------------------+
+| | +Projection   | location.name AS anon_0           |             15 |   15 |      15 |                    1/0 |
+| | |             +-----------------------------------+----------------+------+---------+------------------------+
+| | +Expand(All)  | (p)-[anon_2:WORKS_IN]->(location) |             15 |   15 |      53 |                   28/0 |
+| | |             +-----------------------------------+----------------+------+---------+------------------------+
+| | +Argument     | p                                 |             14 |   14 |       0 |                    0/0 |
+| |               +-----------------------------------+----------------+------+---------+------------------------+
+| +NodeByLabelScan| p:Person                          |             14 |   14 |      35 |                    1/0 |
++-----------------+-----------------------------------+----------------+------+---------+------------------------+
+
+Total database accesses: 153, total allocated memory: 64
+----
+
+======
+
+
+
 [[query-plan-transaction-apply]]
-== TransactionApply
-// TransactionApply
+=== TransactionApply
 
 `TransactionApply` works like the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`] operator but will commit the current transaction after a specified number of rows.
 
@@ -2867,6 +3237,388 @@ Total database accesses: 24, total allocated memory: 5472
 ----
 
 ======
+
+
+[[query-plan-argument]]
+=== Argument
+
+The `Argument` operator indicates the variable to be used as an argument to the right-hand side of an xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`] operator.
+
+
+.Argument
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH (s:Person {name: 'me'})
+MERGE (s)-[:FRIENDS_WITH]->(s)
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++-----------------+----+-------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator        | Id | Details                                               | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-----------------+----+-------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults |  0 |                                                       |              1 |    0 |       0 |                |                        |           |                     |
+| |               +----+-------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +EmptyResult    |  1 |                                                       |              1 |    0 |       0 |                |                        |           |                     |
+| |               +----+-------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Apply          |  2 |                                                       |              1 |    1 |       0 |                |                        |           |                     |
+| |\              +----+-------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +LockingMerge |  3 | CREATE (s)-[anon_0:FRIENDS_WITH]->(s), LOCK(s)        |              1 |    1 |       1 |                |                        |           |                     |
+| | |             +----+-------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +Expand(Into) |  4 | (s)-[anon_0:FRIENDS_WITH]->(s)                        |              0 |    0 |      10 |            904 |                        |           |                     |
+| | |             +----+-------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +Argument     |  5 | s                                                     |              1 |    3 |       0 |           2280 |                    2/0 |     0.460 | Fused in Pipeline 1 |
+| |               +----+-------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +NodeIndexSeek  |  6 | RANGE INDEX s:Person(name) WHERE name = $autostring_0 |              1 |    1 |       2 |            376 |                    1/0 |     0.211 | In Pipeline 0       |
++-----------------+----+-------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 15, total allocated memory: 2232
+----
+
+======
+
+[[query-plan-argument-tracker]]
+=== Argument Tracker
+
+The `ArgumentTracker` operator is used to ensure row-by-row semantics.
+This restricts the xref:planning-and-tuning/runtimes/index.adoc[Cypher runtime] to not batch operations in larger chunks.
+
+.ArgumentTracker
+======
+
+[NOTE]
+The below query uses a xref:subqueries/call-subquery.adoc#variable-scope-clause[variable scope clause] (introduced in Neo4j 5.23) to import variables into the `CALL` subquery.
+If you are using an older version of Neo4j, use an xref:subqueries/call-subquery.adoc#importing-with[importing `WITH` clause] instead.
+
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH (s:Person {name: 'me'})
+CALL (s) {
+   SET s.seen = coalesce(s.seen + 1,1)
+   RETURN s.seen AS result
+}
+RETURN result;
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
++--------------------+----+---------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator           | Id | Details                                                 | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++--------------------+----+---------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults    |  0 | result                                                  |              1 |    1 |       0 |              0 |                        |           |                     |
+| |                  +----+---------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Apply             |  1 |                                                         |              1 |    0 |       0 |                |                        |           |                     |
+| |\                 +----+---------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +ArgumentTracker |  7 |                                                         |              1 |    0 |       0 |            736 |                        |           |                     |
+| | |                +----+---------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +Projection      |  2 | s.seen AS result                                        |              1 |    1 |       2 |                |                        |           |                     |
+| | |                +----+---------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +Eager           |  3 | read/set conflict for property: seen (Operator: 4 vs 2) |              1 |    1 |       0 |            976 |                    0/0 |     0.298 | Fused in Pipeline 2 |
+| | |                +----+---------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +SetProperty     |  4 | s.seen = coalesce(s.seen + $autoint_1, $autoint_2)      |              1 |    1 |       2 |                |                        |           |                     |
+| | |                +----+---------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +Argument        |  5 | s                                                       |              1 |    1 |       0 |           2408 |                    2/0 |     1.734 | Fused in Pipeline 1 |
+| |                  +----+---------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +NodeIndexSeek     |  6 | RANGE INDEX s:Person(name) WHERE name = $autostring_0   |              1 |    1 |       2 |            368 |                    1/0 |     0.183 | In Pipeline 0       |
++--------------------+----+---------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 6, total allocated memory: 4136
+----
+
+======
+
+
+[[query-plan-cartesian-product]]
+=== Cartesian Product
+
+The `CartesianProduct` operator produces a cartesian product of the two inputs -- each row coming from the left child operator will be combined with all the rows from the right child operator.
+`CartesianProduct` generally exhibits bad performance and ought to be avoided if possible.
+
+
+.CartesianProduct
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH
+  (p:Person),
+  (t:Team)
+RETURN p, t
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++--------------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator           | Details  | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++--------------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults    | p, t     |            140 |  140 |       0 |                |                    2/0 |     1.917 |                     |
+| |                  +----------+----------------+------+---------+----------------+------------------------+-----------+                     |
+| +CartesianProduct  |          |            140 |  140 |       0 |           1736 |                        |     1.209 | In Pipeline 2       |
+| |\                 +----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +NodeByLabelScan | t:Team   |             10 |   10 |      11 |            136 |                    1/0 |     1,145 | In Pipeline 1       |
+| |                  +----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +NodeByLabelScan   | p:Person |             15 |   15 |      16 |            120 |                    1/0 |     0,409 | In Pipeline 0       |
++--------------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 142, total allocated memory: 1816
+----
+
+======
+
+
+[[execution-plans-operators-hash-join-general]]
+=== Hash joins in general
+
+Hash joins have two inputs: the build input and probe input.
+The query planner assigns these roles so that the smaller of the two inputs is the build input.
+The build input is pulled in eagerly, and is used to build a probe table.
+Once this is complete, the probe table is checked for each row coming from the probe input side.
+
+In query plans, the build input is always the left operator, and the probe input the right operator.
+
+[[query-plan-node-hash-join]]
+=== Node Hash Join
+
+The `NodeHashJoin` operator is a variation of the xref::planning-and-tuning/operators/operators-detail.adoc#execution-plans-operators-hash-join-general[hash join].
+`NodeHashJoin` executes the hash join on node ids.
+As primitive types and arrays can be used, it can be done very efficiently.
+
+
+.NodeHashJoin
+======
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH (bob:Person {name: 'Bob'})-[:WORKS_IN]->(loc)<-[:WORKS_IN]-(matt:Person {name: 'Mattias'})
+USING JOIN ON loc
+RETURN loc.name
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++------------------+----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator         | Details                                                  | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++------------------+----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults  | `loc.name`                                               |             10 |    0 |       0 |                |                    0/0 |     0.000 |                     |
+| |                +----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+                     |
+| +Projection      | loc.name AS `loc.name`                                   |             10 |    0 |       0 |                |                    0/0 |     0.000 |                     |
+| |                +----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+                     |
+| +Filter          | not anon_0 = anon_1                                      |             10 |    0 |       0 |                |                    0/0 |     0.000 |                     |
+| |                +----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+                     |
+| +NodeHashJoin    | loc                                                      |             10 |    0 |       0 |           3688 |                        |     0.053 | In Pipeline 2       |
+| |\               +----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Expand(All)   | (matt)-[anon_1:WORKS_IN]->(loc)                          |             19 |    0 |       0 |                |                        |           |                     |
+| | |              +----------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +NodeIndexSeek | RANGE INDEX matt:Person(name) WHERE name = $autostring_1 |              1 |    0 |       1 |            120 |                    1/0 |     0.288 | Fused in Pipeline 1 |
+| |                +----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Expand(All)     | (bob)-[anon_0:WORKS_IN]->(loc)                           |             19 |    1 |       4 |                |                        |           |                     |
+| |                +----------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeIndexSeek   | RANGE INDEX bob:Person(name) WHERE name = $autostring_0  |              1 |    1 |       2 |            120 |                    3/0 |     0.556 | Fused in Pipeline 0 |
++------------------+----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 7, total allocated memory: 3888
+----
+
+======
+
+
+[[query-plan-value-hash-join]]
+=== Value Hash Join
+
+The `ValueHashJoin` operator is a variation of the xref::planning-and-tuning/operators/operators-detail.adoc#execution-plans-operators-hash-join-general[hash join].
+This operator allows for arbitrary values to be used as the join key.
+It is most frequently used to solve predicates of the form: `n.prop1 = m.prop2` (i.e. equality predicates between two property columns).
+
+
+.ValueHashJoin
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH
+  (p:Person),
+  (q:Person)
+WHERE p.age = q.age
+RETURN p, q
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++-------------------+---------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator          | Details       | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-------------------+---------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults    | p, q         |             10 |    0 |       0 |                |                    0/0 |     0.000 |                     |
+| |                 +---------------+----------------+------+---------+----------------+------------------------+-----------+                     |
+| +ValueHashJoin     | p.age = q.age|             10 |    0 |       0 |            344 |                        |           | In Pipeline 2       |
+| |\                +---------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +NodeByLabelScan| q:Person      |             15 |    0 |       0 |            120 |                    0/0 |     0,000 | In Pipeline 1       |
+| |                 +---------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +NodeByLabelScan  | p:Person      |             15 |   15 |      16 |            120 |                    1/0 |     0,211 | In Pipeline 0       |
++-------------------+---------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 71, total allocated memory: 664
+----
+
+======
+
+
+[[query-plan-node-left-right-outer-hash-join]]
+=== Node Left/Right Outer Hash Join
+
+
+The `NodeLeftOuterHashJoin` and `NodeRightOuterHashJoin` operators are variations of the xref::planning-and-tuning/operators/operators-detail.adoc#execution-plans-operators-hash-join-general[hash join].
+The query below can be planned with either a left or a right outer join.
+The decision depends on the cardinalities of the left-hand and right-hand sides; i.e. how many rows would be returned, respectively, for `(a:Person)` and `(a)-->(b:Person)`.
+If `(a:Person)` returns fewer results than `(a)-->(b:Person)`, a left outer join -- indicated by `NodeLeftOuterHashJoin` -- is planned.
+On the other hand, if `(a:Person)` returns more results than `(a)-->(b:Person)`, a right outer join -- indicated by `NodeRightOuterHashJoin` -- is planned instead.
+
+
+.NodeRightOuterHashJoin
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH (a:Person)
+OPTIONAL MATCH (a)-->(b:Person)
+USING JOIN ON a
+RETURN a.name, b.name
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++-------------------------+------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                | Details                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-------------------------+------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults         | `a.name`, `b.name`                                   |             14 |   16 |       0 |                |                    0/0 |     0.102 |                     |
+| |                       +------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+                     |
+| +Projection             | cache[a.name] AS `a.name`, cache[b.name] AS `b.name` |             14 |   16 |       8 |                |                    0/0 |     0.055 |                     |
+| |                       +------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+                     |
+| +NodeRightOuterHashJoin | a                                                    |             14 |   16 |       0 |           4232 |                        |     0.269 | In Pipeline 2       |
+| |\                      +------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +NodeByLabelScan      | a:Person                                             |             15 |   15 |      16 |            120 |                    1/0 |     0,049 | In Pipeline 1       |
+| |                       +------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +CacheProperties        | cache[b.name], cache[a.name]                         |             13 |   13 |      39 |                |                        |           |                     |
+| |                       +------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Expand(All)            | (b)<-[anon_0]-(a)                                    |             13 |   13 |      55 |                |                        |           |                     |
+| |                       +------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeByLabelScan        | b:Person                                             |             15 |   15 |      16 |            120 |                    5/0 |     1,150 | Fused in Pipeline 0 |
++-------------------------+------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 211, total allocated memory: 4312
+----
+
+======
+
+
+
+
+
+
+
+
+[[patterns]]
+== Patterns
+
+[[unions]]
+== Unions
+
+[[create-update-data]]
+== Create and update data
+
+
+[[aggregations]]
+== Aggregations
+
+[[rows-results-projections]]
+== Rows, results, and projections
+
+[[sorting-limiting]]
+== Sorting and limiting
+
+[[schema-system-commands]]
+== Schema and system commands
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// --- apply operators ---
+
 
 
 [[query-plan-anti]]
@@ -2933,375 +3685,6 @@ Total database accesses: 178, total allocated memory: 6744
 
 ======
 
-
-[[query-plan-let-semi-apply]]
-== Let Semi Apply
-// LetSemiApply
-
-The `LetSemiApply` operator tests for the presence of a pattern predicate, and is a variation of the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`] operator.
-When a query contains multiple pattern predicates separated with `OR`, `LetSemiApply` will be used to evaluate the first of these.
-It will record the result of evaluating the predicate but will leave any filtering to another operator.
-In the example, `LetSemiApply` will be used to check for the presence of the `FRIENDS_WITH` relationship from each person.
-
-
-.LetSemiApply
-======
-
-.Query
-[source, cypher]
-----
-PROFILE
-CYPHER runtime=slotted
-MATCH (other:Person)
-WHERE (other)-[:FRIENDS_WITH]->(:Person) OR (other)-[:WORKS_IN]->(:Location)
-RETURN other.name
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime SLOTTED
-
-Runtime version {neo4j-version-minor}
-
-+--------------------+-----------------------------------------+----------------+------+---------+------------------------+
-| Operator           | Details                                 | Estimated Rows | Rows | DB Hits | Page Cache Hits/Misses |
-+--------------------+-----------------------------------------+----------------+------+---------+------------------------+
-| +ProduceResults    | `other.name`                            |             13 |   14 |       0 |                    0/0 |
-| |                  +-----------------------------------------+----------------+------+---------+------------------------+
-| +Projection        | other.name AS `other.name`              |             13 |   14 |      14 |                    1/0 |
-| |                  +-----------------------------------------+----------------+------+---------+------------------------+
-| +SelectOrSemiApply | anon_9                                  |             14 |   14 |       0 |                    0/0 |
-| |\                 +-----------------------------------------+----------------+------+---------+------------------------+
-| | +Filter          | anon_7:Location                         |             14 |    0 |       4 |                    0/0 |
-| | |                +-----------------------------------------+----------------+------+---------+------------------------+
-| | +Expand(All)     | (other)-[anon_6:WORKS_IN]->(anon_7)     |             14 |    4 |      15 |                    8/0 |
-| | |                +-----------------------------------------+----------------+------+---------+------------------------+
-| | +Argument        | other                                   |             14 |    4 |       0 |                    0/0 |
-| |                  +-----------------------------------------+----------------+------+---------+------------------------+
-| +LetSemiApply      |                                         |             14 |   14 |       0 |                    0/0 |
-| |\                 +-----------------------------------------+----------------+------+---------+------------------------+
-| | +Filter          | anon_5:Person                           |             12 |    0 |      10 |                    0/0 |
-| | |                +-----------------------------------------+----------------+------+---------+------------------------+
-| | +Expand(All)     | (other)-[anon_4:FRIENDS_WITH]->(anon_5) |             12 |   10 |      51 |                   28/0 |
-| | |                +-----------------------------------------+----------------+------+---------+------------------------+
-| | +Argument        | other                                   |             14 |   14 |       0 |                    0/0 |
-| |                  +-----------------------------------------+----------------+------+---------+------------------------+
-| +NodeByLabelScan   | other:Person                            |             14 |   14 |      35 |                    1/0 |
-+--------------------+-----------------------------------------+----------------+------+---------+------------------------+
-
-Total database accesses: 165, total allocated memory: 64
-----
-
-======
-
-
-[[query-plan-let-anti-semi-apply]]
-== Let Anti Semi Apply
-// LetAntiSemiApply
-
-The `LetAntiSemiApply` operator tests for the absence of a pattern, and is a variation of the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`] operator.
-When a query contains multiple negated pattern predicates -- i.e. predicates separated with `OR`, where at least one predicate contains `NOT` -- `LetAntiSemiApply` will be used to evaluate the first of these.
-It will record the result of evaluating the predicate but will leave any filtering to another operator.
-In the example, `LetAntiSemiApply` will be used to check for the absence of the `FRIENDS_WITH` relationship from each person.
-
-
-.LetAntiSemiApply
-======
-
-.Query
-[source, cypher]
-----
-PROFILE
-CYPHER runtime=slotted
-MATCH (other:Person)
-WHERE NOT ((other)-[:FRIENDS_WITH]->(:Person)) OR (other)-[:WORKS_IN]->(:Location)
-RETURN other.name
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime SLOTTED
-
-Runtime version {neo4j-version-minor}
-+--------------------+-----------------------------------------+----------------+------+---------+------------------------+
-| Operator           | Details                                 | Estimated Rows | Rows | DB Hits | Page Cache Hits/Misses |
-+--------------------+-----------------------------------------+----------------+------+---------+------------------------+
-| +ProduceResults    | `other.name`                            |             11 |   14 |       0 |                    0/0 |
-| |                  +-----------------------------------------+----------------+------+---------+------------------------+
-| +Projection        | other.name AS `other.name`              |             11 |   14 |      14 |                    1/0 |
-| |                  +-----------------------------------------+----------------+------+---------+------------------------+
-| +SelectOrSemiApply | anon_9                                  |             14 |   14 |       0 |                    0/0 |
-| |\                 +-----------------------------------------+----------------+------+---------+------------------------+
-| | +Filter          | anon_7:Location                         |             14 |    0 |      10 |                    0/0 |
-| | |                +-----------------------------------------+----------------+------+---------+------------------------+
-| | +Expand(All)     | (other)-[anon_6:WORKS_IN]->(anon_7)     |             14 |   10 |      38 |                   20/0 |
-| | |                +-----------------------------------------+----------------+------+---------+------------------------+
-| | +Argument        | other                                   |             14 |   10 |       0 |                    0/0 |
-| |                  +-----------------------------------------+----------------+------+---------+------------------------+
-| +LetAntiSemiApply  |                                         |             14 |   14 |       0 |                    0/0 |
-| |\                 +-----------------------------------------+----------------+------+---------+------------------------+
-| | +Filter          | anon_5:Person                           |             12 |    0 |      10 |                    0/0 |
-| | |                +-----------------------------------------+----------------+------+---------+------------------------+
-| | +Expand(All)     | (other)-[anon_4:FRIENDS_WITH]->(anon_5) |             12 |   10 |      51 |                   28/0 |
-| | |                +-----------------------------------------+----------------+------+---------+------------------------+
-| | +Argument        | other                                   |             14 |   14 |       0 |                    0/0 |
-| |                  +-----------------------------------------+----------------+------+---------+------------------------+
-| +NodeByLabelScan   | p:Person                                |             14 |   14 |      35 |                    1/0 |
-+--------------------+-----------------------------------------+----------------+------+---------+------------------------+
-
-Total database accesses: 142, total allocated memory: 64
-----
-
-======
-
-
-[[query-plan-select-or-semi-apply]]
-== Select Or Semi Apply
-// SelectOrSemiApply
-
-The `SelectOrSemiApply` operator tests for the presence of a pattern predicate and evaluates a predicate,
-and is a variation of the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`] operator.
-This operator allows for the mixing of normal predicates and pattern predicates that check for the presence of a pattern.
-First, the normal expression predicate is evaluated, and, only if it returns `false`, is the costly pattern predicate evaluated.
-
-
-.SelectOrSemiApply
-======
-
-.Query
-[source, cypher]
-----
-PROFILE
-MATCH (other:Person)
-WHERE other.age > 25 OR (other)-[:FRIENDS_WITH]->(:Person)
-RETURN other.name
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version {neo4j-version-minor}
-
-Batch size 128
-
-+--------------------+-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator           | Details                                 | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+--------------------+-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults    | `other.name`                            |             11 |   10 |       0 |                |                        |           |                     |
-| |                  +-----------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Projection        | other.name AS `other.name`              |             11 |   10 |      20 |                |                        |           |                     |
-| |                  +-----------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +SelectOrSemiApply | other.age > $autoint_0                  |             14 |   10 |       0 |            392 |                    0/0 |     0.190 | Fused in Pipeline 2 |
-| |\                 +-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| | +Limit           | 1                                       |             14 |   10 |       0 |            752 |                        |           |                     |
-| | |                +-----------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| | +Filter          | anon_3:Person                           |             12 |   10 |      20 |                |                        |           |                     |
-| | |                +-----------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| | +Expand(All)     | (other)-[anon_2:FRIENDS_WITH]->(anon_3) |             12 |   10 |      37 |                |                        |           |                     |
-| | |                +-----------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| | +Argument        | other                                   |             14 |   14 |       0 |           2168 |                    2/0 |     0.435 | Fused in Pipeline 1 |
-| |                  +-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +NodeByLabelScan   | other:Person                            |             14 |   14 |      35 |                |                        |           | Fused in Pipeline 0 |
-+--------------------+-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-Total database accesses: 148, total allocated memory: 2952
-----
-
-======
-
-
-[[query-plan-select-or-anti-semi-apply]]
-== Select Or Anti Semi Apply
-// SelectOrAntiSemiApply
-
-The `SelectOrAntiSemiApply` operator is used to evaluate `OR` between a predicate and a negative pattern predicate (i.e. a pattern predicate preceded with `NOT`), and is a variation of the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`] operator.
-If the predicate returns `true`, the pattern predicate is not tested.
-If the predicate returns `false` or `null`, `SelectOrAntiSemiApply` will instead test the pattern predicate.
-
-
-.SelectOrAntiSemiApply
-======
-
-.Query
-[source, cypher]
-----
-PROFILE
-MATCH (other:Person)
-WHERE other.age > 25 OR NOT (other)-[:FRIENDS_WITH]->(:Person)
-RETURN other.name
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version {neo4j-version-minor}
-
-Batch size 128
-
-+------------------------+-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator               | Details                                 | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+------------------------+-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults        | `other.name`                            |              4 |    4 |       0 |                |                        |           |                     |
-| |                      +-----------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Projection            | other.name AS `other.name`              |              4 |    4 |       8 |                |                        |           |                     |
-| |                      +-----------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +SelectOrAntiSemiApply | other.age > $autoint_0                  |             14 |    4 |       0 |            200 |                    0/0 |     0.155 | Fused in Pipeline 3 |
-| |\                     +-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| | +Anti                |                                         |             14 |    4 |       0 |           1256 |                    0/0 |     0.170 | In Pipeline 2       |
-| | |                    +-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| | +Limit               | 1                                       |              0 |   10 |       0 |            752 |                        |           |                     |
-| | |                    +-----------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| | +Filter              | anon_3:Person                           |             12 |   10 |      20 |                |                        |           |                     |
-| | |                    +-----------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| | +Expand(All)         | (other)-[anon_2:FRIENDS_WITH]->(anon_3) |             12 |   10 |      37 |                |                        |           |                     |
-| | |                    +-----------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| | +Argument            | other                                   |             14 |   14 |       0 |           2168 |                    2/0 |     0.449 | Fused in Pipeline 1 |
-| |                      +-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +NodeByLabelScan       | other:Person                            |             14 |   14 |      35 |                |                        |           | Fused in Pipeline 0 |
-+------------------------+-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-Total database accesses: 136, total allocated memory: 4208
-----
-
-======
-
-
-[[query-plan-let-select-or-semi-apply]]
-== Let Select Or Semi Apply
-// LetSelectOrSemiApply
-
-The `LetSelectOrSemiApply` operator is planned for pattern predicates that are combined with other predicates using `OR`.
-This is a variation of the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`] operator.
-
-
-.LetSelectOrSemiApply
-======
-
-.Query
-[source, cypher]
-----
-PROFILE
-CYPHER runtime=slotted
-MATCH (other:Person)
-WHERE (other)-[:FRIENDS_WITH]->(:Person) OR (other)-[:WORKS_IN]->(:Location) OR other.age = 5
-RETURN other.name
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime SLOTTED
-
-Runtime version {neo4j-version-minor}
-
-+-----------------------+-----------------------------------------+----------------+------+---------+------------------------+
-| Operator              | Details                                 | Estimated Rows | Rows | DB Hits | Page Cache Hits/Misses |
-+-----------------------+-----------------------------------------+----------------+------+---------+------------------------+
-| +ProduceResults       | `other.name`                            |             13 |   14 |       0 |                    0/0 |
-| |                     +-----------------------------------------+----------------+------+---------+------------------------+
-| +Projection           | other.name AS `other.name`              |             13 |   14 |      14 |                    1/0 |
-| |                     +-----------------------------------------+----------------+------+---------+------------------------+
-| +SelectOrSemiApply    | anon_9                                  |             14 |   14 |       0 |                    0/0 |
-| |\                    +-----------------------------------------+----------------+------+---------+------------------------+
-| | +Filter             | anon_7:Location                         |             14 |    0 |       4 |                    0/0 |
-| | |                   +-----------------------------------------+----------------+------+---------+------------------------+
-| | +Expand(All)        | (other)-[anon_6:WORKS_IN]->(anon_7)     |             14 |    4 |      15 |                    8/0 |
-| | |                   +-----------------------------------------+----------------+------+---------+------------------------+
-| | +Argument           | other                                   |             14 |    4 |       0 |                    0/0 |
-| |                     +-----------------------------------------+----------------+------+---------+------------------------+
-| +LetSelectOrSemiApply | other.age = $autoint_0                  |             14 |   14 |      14 |                    0/0 |
-| |\                    +-----------------------------------------+----------------+------+---------+------------------------+
-| | +Filter             | anon_5:Person                           |             12 |    0 |      10 |                    0/0 |
-| | |                   +-----------------------------------------+----------------+------+---------+------------------------+
-| | +Expand(All)        | (other)-[anon_4:FRIENDS_WITH]->(anon_5) |             12 |   10 |      51 |                   28/0 |
-| | |                   +-----------------------------------------+----------------+------+---------+------------------------+
-| | +Argument           | other                                   |             14 |   14 |       0 |                    0/0 |
-| |                     +-----------------------------------------+----------------+------+---------+------------------------+
-| +NodeByLabelScan      | other:Person                            |             14 |   14 |      35 |                    1/0 |
-+-----------------------+-----------------------------------------+----------------+------+---------+------------------------+
-
-Total database accesses: 179, total allocated memory: 64
-----
-
-======
-
-
-[[query-plan-let-select-or-anti-semi-apply]]
-== Let Select Or Anti Semi Apply
-// LetSelectOrAntiSemiApply
-
-The `LetSelectOrAntiSemiApply` operator is planned for negated pattern predicates -- i.e. pattern predicates preceded with `NOT` -- that are combined with other predicates using `OR`.
-This operator is a variation of the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`] operator.
-
-
-.LetSelectOrAntiSemiApply
-======
-
-.Query
-[source, cypher]
-----
-PROFILE
-CYPHER runtime=slotted
-MATCH (other:Person)
-WHERE NOT (other)-[:FRIENDS_WITH]->(:Person) OR (other)-[:WORKS_IN]->(:Location) OR other.age = 5
-RETURN other.name
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime SLOTTED
-
-Runtime version {neo4j-version-minor}
-
-+---------------------------+-----------------------------------------+----------------+------+---------+------------------------+
-| Operator                  | Details                                 | Estimated Rows | Rows | DB Hits | Page Cache Hits/Misses |
-+---------------------------+-----------------------------------------+----------------+------+---------+------------------------+
-| +ProduceResults           | `other.name`                            |             12 |   14 |       0 |                    0/0 |
-| |                         +-----------------------------------------+----------------+------+---------+------------------------+
-| +Projection               | other.name AS `other.name`              |             12 |   14 |      14 |                    1/0 |
-| |                         +-----------------------------------------+----------------+------+---------+------------------------+
-| +SelectOrSemiApply        | anon_9                                  |             14 |   14 |       0 |                    0/0 |
-| |\                        +-----------------------------------------+----------------+------+---------+------------------------+
-| | +Filter                 | anon_7:Location                         |             14 |    0 |      10 |                    0/0 |
-| | |                       +-----------------------------------------+----------------+------+---------+------------------------+
-| | +Expand(All)            | (other)-[anon_6:WORKS_IN]->(anon_7)     |             14 |   10 |      38 |                   20/0 |
-| | |                       +-----------------------------------------+----------------+------+---------+------------------------+
-| | +Argument               | other                                   |             14 |   10 |       0 |                    0/0 |
-| |                         +-----------------------------------------+----------------+------+---------+------------------------+
-| +LetSelectOrAntiSemiApply | other.age = $autoint_0                  |             14 |   14 |      14 |                    0/0 |
-| |\                        +-----------------------------------------+----------------+------+---------+------------------------+
-| | +Filter                 | anon_5:Person                           |             12 |    0 |      10 |                    0/0 |
-| | |                       +-----------------------------------------+----------------+------+---------+------------------------+
-| | +Expand(All)            | (other)-[anon_4:FRIENDS_WITH]->(anon_5) |             12 |   10 |      51 |                   28/0 |
-| | |                       +-----------------------------------------+----------------+------+---------+------------------------+
-| | +Argument               | other                                   |             14 |   14 |       0 |                    0/0 |
-| |                         +-----------------------------------------+----------------+------+---------+------------------------+
-| +NodeByLabelScan          | other:Person                            |             14 |   14 |      35 |                    1/0 |
-+---------------------------+-----------------------------------------+----------------+------+---------+------------------------+
-
-Total database accesses: 208, total allocated memory: 64
-----
-
-======
 
 
 [[query-plan-merge]]
@@ -3411,170 +3794,6 @@ Total database accesses: 15, total allocated memory: 2232
 ======
 
 
-[[query-plan-roll-up-apply]]
-== Roll Up Apply
-// RollUpApply
-
-The `RollUpApply` operator is used to execute an expression which takes as input a pattern, and returns a list with content from the matched pattern; for example, when using a pattern expression or pattern comprehension in a query.
-This operator is a variation of the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`] operator.
-
-
-.RollUpApply
-======
-
-.Query
-[source, cypher]
-----
-PROFILE
-CYPHER runtime=slotted
-MATCH (p:Person)
-RETURN p.name, [(p)-[:WORKS_IN]->(location) | location.name] AS cities
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime SLOTTED
-
-Runtime version {neo4j-version-minor}
-
-+-----------------+-----------------------------------+----------------+------+---------+------------------------+
-| Operator        | Details                           | Estimated Rows | Rows | DB Hits | Page Cache Hits/Misses |
-+-----------------+-----------------------------------+----------------+------+---------+------------------------+
-| +ProduceResults | `p.name`, cities                  |             14 |   14 |       0 |                    0/0 |
-| |               +-----------------------------------+----------------+------+---------+------------------------+
-| +Projection     | p.name AS `p.name`                |             14 |   14 |      14 |                    0/0 |
-| |               +-----------------------------------+----------------+------+---------+------------------------+
-| +RollUpApply    | cities, anon_0                    |             14 |   14 |       0 |                    0/0 |
-| |\              +-----------------------------------+----------------+------+---------+------------------------+
-| | +Projection   | location.name AS anon_0           |             15 |   15 |      15 |                    1/0 |
-| | |             +-----------------------------------+----------------+------+---------+------------------------+
-| | +Expand(All)  | (p)-[anon_2:WORKS_IN]->(location) |             15 |   15 |      53 |                   28/0 |
-| | |             +-----------------------------------+----------------+------+---------+------------------------+
-| | +Argument     | p                                 |             14 |   14 |       0 |                    0/0 |
-| |               +-----------------------------------+----------------+------+---------+------------------------+
-| +NodeByLabelScan| p:Person                          |             14 |   14 |      35 |                    1/0 |
-+-----------------+-----------------------------------+----------------+------+---------+------------------------+
-
-Total database accesses: 153, total allocated memory: 64
-----
-
-======
-
-
-[[query-plan-argument]]
-== Argument
-// Argument
-
-The `Argument` operator indicates the variable to be used as an argument to the right-hand side of an xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`] operator.
-
-
-.Argument
-======
-
-.Query
-[source, cypher]
-----
-PROFILE
-MATCH (s:Person {name: 'me'})
-MERGE (s)-[:FRIENDS_WITH]->(s)
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version {neo4j-version-minor}
-
-Batch size 128
-
-+-----------------+----+-------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator        | Id | Details                                               | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+-----------------+----+-------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults |  0 |                                                       |              1 |    0 |       0 |                |                        |           |                     |
-| |               +----+-------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +EmptyResult    |  1 |                                                       |              1 |    0 |       0 |                |                        |           |                     |
-| |               +----+-------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Apply          |  2 |                                                       |              1 |    1 |       0 |                |                        |           |                     |
-| |\              +----+-------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| | +LockingMerge |  3 | CREATE (s)-[anon_0:FRIENDS_WITH]->(s), LOCK(s)        |              1 |    1 |       1 |                |                        |           |                     |
-| | |             +----+-------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| | +Expand(Into) |  4 | (s)-[anon_0:FRIENDS_WITH]->(s)                        |              0 |    0 |      10 |            904 |                        |           |                     |
-| | |             +----+-------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| | +Argument     |  5 | s                                                     |              1 |    3 |       0 |           2280 |                    2/0 |     0.460 | Fused in Pipeline 1 |
-| |               +----+-------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +NodeIndexSeek  |  6 | RANGE INDEX s:Person(name) WHERE name = $autostring_0 |              1 |    1 |       2 |            376 |                    1/0 |     0.211 | In Pipeline 0       |
-+-----------------+----+-------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-Total database accesses: 15, total allocated memory: 2232
-----
-
-======
-
-[[query-plan-argument-tracker]]
-== Argument Tracker
-// ArgumentTracker
-
-The `ArgumentTracker` operator is used to ensure row-by-row semantics.
-This restricts the xref:planning-and-tuning/runtimes/index.adoc[Cypher runtime] to not batch operations in larger chunks.
-
-.ArgumentTracker
-======
-
-[NOTE]
-The below query uses a xref:subqueries/call-subquery.adoc#variable-scope-clause[variable scope clause] (introduced in Neo4j 5.23) to import variables into the `CALL` subquery.
-If you are using an older version of Neo4j, use an xref:subqueries/call-subquery.adoc#importing-with[importing `WITH` clause] instead.
-
-.Query
-[source, cypher]
-----
-PROFILE
-MATCH (s:Person {name: 'me'})
-CALL (s) {
-   SET s.seen = coalesce(s.seen + 1,1)
-   RETURN s.seen AS result
-}
-RETURN result;
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version {neo4j-version-minor}
-
-+--------------------+----+---------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator           | Id | Details                                                 | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+--------------------+----+---------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults    |  0 | result                                                  |              1 |    1 |       0 |              0 |                        |           |                     |
-| |                  +----+---------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Apply             |  1 |                                                         |              1 |    0 |       0 |                |                        |           |                     |
-| |\                 +----+---------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| | +ArgumentTracker |  7 |                                                         |              1 |    0 |       0 |            736 |                        |           |                     |
-| | |                +----+---------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| | +Projection      |  2 | s.seen AS result                                        |              1 |    1 |       2 |                |                        |           |                     |
-| | |                +----+---------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| | +Eager           |  3 | read/set conflict for property: seen (Operator: 4 vs 2) |              1 |    1 |       0 |            976 |                    0/0 |     0.298 | Fused in Pipeline 2 |
-| | |                +----+---------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| | +SetProperty     |  4 | s.seen = coalesce(s.seen + $autoint_1, $autoint_2)      |              1 |    1 |       2 |                |                        |           |                     |
-| | |                +----+---------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| | +Argument        |  5 | s                                                       |              1 |    1 |       0 |           2408 |                    2/0 |     1.734 | Fused in Pipeline 1 |
-| |                  +----+---------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +NodeIndexSeek     |  6 | RANGE INDEX s:Person(name) WHERE name = $autostring_0   |              1 |    1 |       2 |            368 |                    1/0 |     0.183 | In Pipeline 0       |
-+--------------------+----+---------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-Total database accesses: 6, total allocated memory: 4136
-----
-
-======
 
 
 // --- expand operators ---
@@ -4337,192 +4556,6 @@ Total database accesses: 0, total allocated memory: 184
 ======
 
 
-[[execution-plans-operators-hash-join-general]]
-== Hash joins in general
-
-Hash joins have two inputs: the build input and probe input.
-The query planner assigns these roles so that the smaller of the two inputs is the build input.
-The build input is pulled in eagerly, and is used to build a probe table.
-Once this is complete, the probe table is checked for each row coming from the probe input side.
-
-In query plans, the build input is always the left operator, and the probe input the right operator.
-
-There are four hash join operators:
-
-* xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-node-hash-join[NodeHashJoin]
-* xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-value-hash-join[ValueHashJoin]
-* xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-node-left-right-outer-hash-join[NodeLeftOuterHashJoin]
-* xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-node-left-right-outer-hash-join[NodeRightOuterHashJoin]
-
-
-[[query-plan-node-hash-join]]
-== Node Hash Join
-// NodeHashJoin
-
-The `NodeHashJoin` operator is a variation of the xref::planning-and-tuning/operators/operators-detail.adoc#execution-plans-operators-hash-join-general[hash join].
-`NodeHashJoin` executes the hash join on node ids.
-As primitive types and arrays can be used, it can be done very efficiently.
-
-
-.NodeHashJoin
-======
-.Query
-[source, cypher]
-----
-PROFILE
-MATCH (bob:Person {name: 'Bob'})-[:WORKS_IN]->(loc)<-[:WORKS_IN]-(matt:Person {name: 'Mattias'})
-USING JOIN ON loc
-RETURN loc.name
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version {neo4j-version-minor}
-
-Batch size 128
-
-+------------------+----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator         | Details                                                  | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+------------------+----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults  | `loc.name`                                               |             10 |    0 |       0 |                |                    0/0 |     0.000 |                     |
-| |                +----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+                     |
-| +Projection      | loc.name AS `loc.name`                                   |             10 |    0 |       0 |                |                    0/0 |     0.000 |                     |
-| |                +----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+                     |
-| +Filter          | not anon_0 = anon_1                                      |             10 |    0 |       0 |                |                    0/0 |     0.000 |                     |
-| |                +----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+                     |
-| +NodeHashJoin    | loc                                                      |             10 |    0 |       0 |           3688 |                        |     0.053 | In Pipeline 2       |
-| |\               +----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| | +Expand(All)   | (matt)-[anon_1:WORKS_IN]->(loc)                          |             19 |    0 |       0 |                |                        |           |                     |
-| | |              +----------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| | +NodeIndexSeek | RANGE INDEX matt:Person(name) WHERE name = $autostring_1 |              1 |    0 |       1 |            120 |                    1/0 |     0.288 | Fused in Pipeline 1 |
-| |                +----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +Expand(All)     | (bob)-[anon_0:WORKS_IN]->(loc)                           |             19 |    1 |       4 |                |                        |           |                     |
-| |                +----------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +NodeIndexSeek   | RANGE INDEX bob:Person(name) WHERE name = $autostring_0  |              1 |    1 |       2 |            120 |                    3/0 |     0.556 | Fused in Pipeline 0 |
-+------------------+----------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-Total database accesses: 7, total allocated memory: 3888
-----
-
-======
-
-
-[[query-plan-value-hash-join]]
-== Value Hash Join
-// ValueHashJoin
-
-The `ValueHashJoin` operator is a variation of the xref::planning-and-tuning/operators/operators-detail.adoc#execution-plans-operators-hash-join-general[hash join].
-This operator allows for arbitrary values to be used as the join key.
-It is most frequently used to solve predicates of the form: `n.prop1 = m.prop2` (i.e. equality predicates between two property columns).
-
-
-.ValueHashJoin
-======
-
-.Query
-[source, cypher]
-----
-PROFILE
-MATCH
-  (p:Person),
-  (q:Person)
-WHERE p.age = q.age
-RETURN p, q
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version {neo4j-version-minor}
-
-Batch size 128
-
-+-------------------+---------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator          | Details       | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+-------------------+---------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults    | p, q         |             10 |    0 |       0 |                |                    0/0 |     0.000 |                     |
-| |                 +---------------+----------------+------+---------+----------------+------------------------+-----------+                     |
-| +ValueHashJoin     | p.age = q.age|             10 |    0 |       0 |            344 |                        |           | In Pipeline 2       |
-| |\                +---------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| | +NodeByLabelScan| q:Person      |             15 |    0 |       0 |            120 |                    0/0 |     0,000 | In Pipeline 1       |
-| |                 +---------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +NodeByLabelScan  | p:Person      |             15 |   15 |      16 |            120 |                    1/0 |     0,211 | In Pipeline 0       |
-+-------------------+---------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-Total database accesses: 71, total allocated memory: 664
-----
-
-======
-
-
-[[query-plan-node-left-right-outer-hash-join]]
-== Node Left/Right Outer Hash Join
-// NodeLeftOuterHashJoin
-// NodeRightOuterHashJoin
-
-The `NodeLeftOuterHashJoin` and `NodeRightOuterHashJoin` operators are variations of the xref::planning-and-tuning/operators/operators-detail.adoc#execution-plans-operators-hash-join-general[hash join].
-The query below can be planned with either a left or a right outer join.
-The decision depends on the cardinalities of the left-hand and right-hand sides; i.e. how many rows would be returned, respectively, for `(a:Person)` and `(a)-->(b:Person)`.
-If `(a:Person)` returns fewer results than `(a)-->(b:Person)`, a left outer join -- indicated by `NodeLeftOuterHashJoin` -- is planned.
-On the other hand, if `(a:Person)` returns more results than `(a)-->(b:Person)`, a right outer join -- indicated by `NodeRightOuterHashJoin` -- is planned instead.
-
-
-.NodeRightOuterHashJoin
-======
-
-.Query
-[source, cypher]
-----
-PROFILE
-MATCH (a:Person)
-OPTIONAL MATCH (a)-->(b:Person)
-USING JOIN ON a
-RETURN a.name, b.name
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version {neo4j-version-minor}
-
-Batch size 128
-
-+-------------------------+------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator                | Details                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+-------------------------+------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults         | `a.name`, `b.name`                                   |             14 |   16 |       0 |                |                    0/0 |     0.102 |                     |
-| |                       +------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+                     |
-| +Projection             | cache[a.name] AS `a.name`, cache[b.name] AS `b.name` |             14 |   16 |       8 |                |                    0/0 |     0.055 |                     |
-| |                       +------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+                     |
-| +NodeRightOuterHashJoin | a                                                    |             14 |   16 |       0 |           4232 |                        |     0.269 | In Pipeline 2       |
-| |\                      +------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| | +NodeByLabelScan      | a:Person                                             |             15 |   15 |      16 |            120 |                    1/0 |     0,049 | In Pipeline 1       |
-| |                       +------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +CacheProperties        | cache[b.name], cache[a.name]                         |             13 |   13 |      39 |                |                        |           |                     |
-| |                       +------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Expand(All)            | (b)<-[anon_0]-(a)                                    |             13 |   13 |      55 |                |                        |           |                     |
-| |                       +------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +NodeByLabelScan        | b:Person                                             |             15 |   15 |      16 |            120 |                    5/0 |     1,150 | Fused in Pipeline 0 |
-+-------------------------+------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-Total database accesses: 211, total allocated memory: 4312
-----
-
-======
-
 
 [[query-plan-triadic-selection]]
 == Triadic Selection
@@ -4711,55 +4744,6 @@ Total database accesses: 256, total allocated memory: 7376
 
 ======
 
-
-[[query-plan-cartesian-product]]
-== Cartesian Product
-// CartesianProduct
-
-The `CartesianProduct` operator produces a cartesian product of the two inputs -- each row coming from the left child operator will be combined with all the rows from the right child operator.
-`CartesianProduct` generally exhibits bad performance and ought to be avoided if possible.
-
-
-.CartesianProduct
-======
-
-.Query
-[source, cypher]
-----
-PROFILE
-MATCH
-  (p:Person),
-  (t:Team)
-RETURN p, t
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version {neo4j-version-minor}
-
-Batch size 128
-
-+--------------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator           | Details  | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+--------------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults    | p, t     |            140 |  140 |       0 |                |                    2/0 |     1.917 |                     |
-| |                  +----------+----------------+------+---------+----------------+------------------------+-----------+                     |
-| +CartesianProduct  |          |            140 |  140 |       0 |           1736 |                        |     1.209 | In Pipeline 2       |
-| |\                 +----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| | +NodeByLabelScan | t:Team   |             10 |   10 |      11 |            136 |                    1/0 |     1,145 | In Pipeline 1       |
-| |                  +----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +NodeByLabelScan   | p:Person |             15 |   15 |      16 |            120 |                    1/0 |     0,409 | In Pipeline 0       |
-+--------------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-Total database accesses: 142, total allocated memory: 1816
-----
-
-======
 
 
 [[query-plan-foreach]]
