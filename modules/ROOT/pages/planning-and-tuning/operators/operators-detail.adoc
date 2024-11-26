@@ -4565,48 +4565,211 @@ Total database accesses: 256, total allocated memory: 7376
 [[unions]]
 == Unions
 
+Union operators in Cypher combine the results from multiple query parts by merging their rows.
+For more information, see the page about the xref:clauses/union.adoc[`UNION`] clause.
+
+
+[[query-plan-union]]
+== Union
+
+The `Union` operator concatenates the results from the right child operator with the results from the left child operator.
+
+
+.Union
+======
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH (p:Location)
+  RETURN p.name
+UNION ALL
+MATCH (p:Country)
+  RETURN p.name
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++--------------------+----+--------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator           | Id | Details            | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++--------------------+----+--------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults    |  0 | `p.name`           |             20 |    0 |       0 |                |                        |           |                     |
+| |                  +----+--------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Union             |  1 |                    |             20 |    0 |       0 |              0 |                    0/0 |     0.000 | Fused in Pipeline 2 |
+| |\                 +----+--------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Projection      |  2 | `p.name`           |             10 |    0 |       0 |                |                        |           |                     |
+| | |                +----+--------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +Projection      |  3 | p.name AS `p.name` |             10 |    0 |       0 |                |                        |           |                     |
+| | |                +----+--------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +NodeByLabelScan |  4 | p:Country          |             10 |    0 |       0 |            120 |                    0/0 |     0.049 | Fused in Pipeline 1 |
+| |                  +----+--------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Projection        |  5 | `p.name`           |             10 |    0 |       0 |                |                        |           |                     |
+| |                  +----+--------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Projection        |  6 | p.name AS `p.name` |             10 |    0 |       0 |                |                        |           |                     |
+| |                  +----+--------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeByLabelScan   |  7 | p:Location         |             10 |    0 |       0 |            120 |                    0/0 |     0.077 | Fused in Pipeline 0 |
++--------------------+----+--------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 0, total allocated memory: 320
+----
+
+======
+
 [[create-update-data]]
-== Create and update data
+== Create, update, and delete data
+
+These operators modify graph data by creating, deleting, and altering nodes, relationships, and properties.
+
+[[query-plan-create]]
+=== Create
+
+The `Create` operator is used to create nodes and relationships.
 
 
-[[aggregations]]
-== Aggregations
+.Create
+======
 
-[[rows-results-projections]]
-== Rows, results, and projections
+.Query
+[source, cypher]
+----
+PROFILE
+CREATE
+  (max:Person {name: 'Max'}),
+  (chris:Person {name: 'Chris'})
+CREATE (max)-[:FRIENDS_WITH]->(chris)
+----
 
-[[sorting-limiting]]
-== Sorting and limiting
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
 
-[[schema-system-commands]]
-== Schema and system commands
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++-----------------+---------------------------------------------------------------------------+----------------+------+---------+------------------------+-----------+---------------------+
+| Operator        | Details                                                                   | Estimated Rows | Rows | DB Hits | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-----------------+---------------------------------------------------------------------------+----------------+------+---------+------------------------+-----------+---------------------+
+| +ProduceResults |                                                                           |              1 |    0 |       0 |                        |           |                     |
+| |               +---------------------------------------------------------------------------+----------------+------+---------+                        |           |                     |
+| +EmptyResult    |                                                                           |              1 |    0 |       0 |                        |           |                     |
+| |               +---------------------------------------------------------------------------+----------------+------+---------+                        |           |                     |
+| +Create         | (max:Person {name: $autostring_0}), (chris:Person {name: $autostring_1}), |              1 |    1 |       7 |                    0/0 |     0.000 | Fused in Pipeline 0 |
+|                 | (max)-[anon_0:FRIENDS_WITH]->(chris)                                      |                |      |         |                        |           |                     |
++-----------------+---------------------------------------------------------------------------+----------------+------+---------+------------------------+-----------+---------------------+
+
+Total database accesses: 7, total allocated memory: 184
+----
+
+======
 
 
+[[query-plan-delete]]
+=== Delete
+
+The `Delete` operator is used to delete a node or a relationship.
+
+.Delete
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH (you:Person {name: 'you'})
+DELETE you
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++-----------------+----+--------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator        | Id | Details                                                | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-----------------+----+--------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults |  0 |                                                        |              0 |    0 |       0 |                |                        |           |                     |
+| |               +----+--------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +EmptyResult    |  1 |                                                        |              0 |    0 |       0 |                |                        |           |                     |
+| |               +----+--------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Delete         |  2 | you                                                     |              0 |    0 |       0 |                |                        |           |                     |
+| |               +----+--------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeIndexSeek  |  3 | RANGE INDEX you:Person(name) WHERE name = $autostring_0 |              0 |    0 |       1 |            120 |                    1/0 |     0.330 | Fused in Pipeline 0 |
++-----------------+----+--------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 13, total allocated memory: 216
+----
+
+======
 
 
+[[query-plan-detach-delete]]
+=== Detach Delete
+
+The `DetachDelete` operator is used in all queries containing the xref::clauses/delete.adoc[DETACH DELETE] clause, when deleting nodes and their relationships.
 
 
+.DetachDelete
+======
 
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH (p:Person)
+DETACH DELETE p
+----
 
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
 
+Runtime PIPELINED
 
+Runtime version {neo4j-version-minor}
 
+Batch size 128
 
++------------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator         | Details  | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++------------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults  |          |             14 |    0 |       0 |                |                        |           |                     |
+| |                +----------+----------------+------+---------+----------------+                        |           |                     |
+| +EmptyResult     |          |             14 |    0 |       0 |                |                        |           |                     |
+| |                +----------+----------------+------+---------+----------------+                        |           |                     |
+| +DetachDelete    | p        |             14 |   14 |      41 |                |                        |           |                     |
+| |                +----------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeByLabelScan | p:Person |             14 |   14 |      35 |            120 |                   21/0 |    12,439 | Fused in Pipeline 0 |
++------------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
 
+Total database accesses: 112, total allocated memory: 200
+----
 
-
-// --- apply operators ---
-
-
-
-
-
+======
 
 [[query-plan-merge]]
-== Merge
+=== Merge
 // ConditionalApply -- changed in 4.3 to Merge.
 // AntiConditionalApply -- removed in 4.3 (by Merge).
-// Merge
 
 The `Merge` operator will either read or create nodes and/or relationships.
 
@@ -4657,8 +4820,7 @@ Total database accesses: 4, total allocated memory: 184
 
 
 [[query-plan-locking-merge]]
-== Locking Merge
-// LockingMerge
+=== Locking Merge
 
 The `LockingMerge` operator is similar to the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-merge[`Merge`] operator but will lock the start and end node when creating a relationship if necessary.
 
@@ -4710,13 +4872,545 @@ Total database accesses: 15, total allocated memory: 2232
 
 
 
+[[query-plan-foreach]]
+=== Foreach
+// Foreach
 
-// --- expand operators ---
+The `Foreach` operator executes a nested loop between the left child operator and the right child operator.
+In an analogous manner to the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[Apply] operator, it takes a row from the left-hand side and, using the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-argument[Argument] operator, provides it to the operator tree on the right-hand side.
+`Foreach` will yield all the rows coming in from the left-hand side; all results from the right-hand side are pulled in and discarded.
+
+
+.Foreach
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+FOREACH (value IN [1,2,3] | CREATE (:Person {age: value}))
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime SLOTTED
+
+Runtime version {neo4j-version-minor}
+
++-----------------+---------------------------------------------------------+----------------+------+---------+------------------------+
+| Operator        | Details                                                 | Estimated Rows | Rows | DB Hits | Page Cache Hits/Misses |
++-----------------+---------------------------------------------------------+----------------+------+---------+------------------------+
+| +ProduceResults |                                                         |              1 |    0 |       0 |                    0/0 |
+| |               +---------------------------------------------------------+----------------+------+---------+------------------------+
+| +EmptyResult    |                                                         |              1 |    0 |       0 |                    0/0 |
+| |               +---------------------------------------------------------+----------------+------+---------+------------------------+
+| +Foreach        | value IN [1, 2, 3], CREATE (anon_0:Person {age: value}) |              1 |    1 |       9 |                    0/0 |
++-----------------+---------------------------------------------------------+----------------+------+---------+------------------------+
+
+Total database accesses: 9, total allocated memory: 64
+----
+
+======
+
+[[query-plan-subquery-foreach]]
+=== SubqueryForeach
+
+`SubqueryForeach` works like the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-foreach[`Foreach`]operator but it is only used for executing subqueries.
+
+.SubqueryForeach
+======
+
+[NOTE]
+The below query uses a xref:subqueries/call-subquery.adoc#variable-scope-clause[variable scope clause] (introduced in Neo4j 5.23) to import variables into the `CALL` subquery.
+If you are using an older version of Neo4j, use an xref:subqueries/call-subquery.adoc#importing-with[importing `WITH` clause] instead.
+
+.Query
+[source, cypher]
+----
+PROFILE
+LOAD CSV FROM 'https://neo4j.com/docs/cypher-refcard/3.3/csv/artists.csv' AS line
+CALL (line) {
+  CREATE (a: Artist {name: line[0]})
+}
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++------------------+----+-------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator         | Id | Details                             | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++------------------+----+-------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults  |  0 |                                     |             10 |    0 |       0 |              0 |                        |           |                     |
+| |                +----+-------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +EmptyResult     |  1 |                                     |             10 |    0 |       0 |                |                    0/0 |     0.000 | Fused in Pipeline 3 |
+| |                +----+-------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +SubqueryForeach |  2 |                                     |             10 |    4 |       0 |           4080 |                        |           |                     |
+| |\               +----+-------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +Create        |  3 | (a:Artist {name: line[$autoint_0]}) |             10 |    4 |      12 |                |                        |           |                     |
+| | |              +----+-------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +Argument      |  4 | line                                |             10 |    4 |       0 |           3472 |                    0/0 |     0.852 | Fused in Pipeline 2 |
+| |                +----+-------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +LoadCSV         |  5 | line                                |             10 |    4 |       0 |            328 |                        |           | In Pipeline 1       |
++------------------+----+-------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 12, total allocated memory: 4928
+----
+
+======
+
+
+[[query-plan-transaction-foreach]]
+=== TransactionForeach
+
+`TransactionForeach` works like the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-foreach[`Foreach`] operator but will commit the current transaction after a specified number of rows.
+
+.TransactionForeach
+======
+
+[NOTE]
+The below query uses a xref:subqueries/call-subquery.adoc#variable-scope-clause[variable scope clause] (introduced in Neo4j 5.23) to import variables into the `CALL` subquery.
+If you are using an older version of Neo4j, use an xref:subqueries/call-subquery.adoc#importing-with[importing `WITH` clause] instead.
+
+.Query
+[source, cypher]
+----
+PROFILE
+LOAD CSV FROM 'https://neo4j.com/docs/cypher-refcard/3.3/csv/artists.csv' AS line
+CALL (line) {
+  CREATE (a: Artist {name: line[0]})
+} IN TRANSACTIONS OF 100 ROWS
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
+++---------------------+----+--------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+ | Operator            | Id | Details                                          | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
+ +---------------------+----+--------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+ | +ProduceResults     |  0 |                                                  |             10 |    0 |       0 |              0 |                        |           |                     |
+ | |                   +----+--------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+ | +EmptyResult        |  1 |                                                  |             10 |    0 |       0 |                |                    0/0 |     0.000 | Fused in Pipeline 3 |
+ | |                   +----+--------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+ | +TransactionForeach |  2 | IN TRANSACTIONS OF $autoint_1 ROWS ON ERROR FAIL |             10 |    4 |       0 |           4856 |                        |           |                     |
+ | |\                  +----+--------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+ | | +Create           |  3 | (a:Artist {name: line[$autoint_0]})              |             10 |    4 |      12 |                |                        |           |                     |
+ | | |                 +----+--------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+ | | +Argument         |  4 | line                                             |             10 |    4 |       0 |           3472 |                    0/0 |     0.712 | Fused in Pipeline 2 |
+ | |                   +----+--------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+ | +LoadCSV            |  5 | line                                             |             10 |    4 |       0 |            328 |                        |           | In Pipeline 1       |
+ +---------------------+----+--------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+ Total database accesses: 12, total allocated memory: 5704
+----
+
+======
+
+[[query-plan-set-labels]]
+=== Set Labels
+
+The `SetLabels` operator is used when setting labels on a node.
+
+.SetLabels
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH (n)
+SET n:Person
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++-----------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator        | Details  | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-----------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults |          |             35 |    0 |       0 |                |                        |           |                     |
+| |               +----------+----------------+------+---------+----------------+                        |           |                     |
+| +EmptyResult    |          |             35 |    0 |       0 |                |                        |           |                     |
+| |               +----------+----------------+------+---------+----------------+                        |           |                     |
+| +SetLabels      | n:Person |             35 |   35 |      22 |                |                        |           |                     |
+| |               +----------+----------------+------+---------+----------------+                        |           |                     |
+| +AllNodesScan   | n        |             35 |   35 |      36 |            120 |                    3/0 |     0.873 | Fused in Pipeline 0 |
++-----------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 58, total allocated memory: 184
+----
+
+======
+
+
+[[query-plan-remove-labels]]
+=== Remove Labels
+
+The `RemoveLabels` operator is used when deleting labels from a node.
+
+.RemoveLabels
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH (n)
+REMOVE n:Person
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++-----------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator        | Details  | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-----------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults |          |             35 |    0 |       0 |                |                        |           |                     |
+| |               +----------+----------------+------+---------+----------------+                        |           |                     |
+| +EmptyResult    |          |             35 |    0 |       0 |                |                        |           |                     |
+| |               +----------+----------------+------+---------+----------------+                        |           |                     |
+| +RemoveLabels   | n:Person |             35 |   35 |      15 |                |                        |           |                     |
+| |               +----------+----------------+------+---------+----------------+                        |           |                     |
+| +AllNodesScan   | n        |             35 |   35 |      36 |            120 |                    3/0 |     0.765 | Fused in Pipeline 0 |
++-----------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 51, total allocated memory: 184
+----
+
+======
+
+
+[[query-plan-set-node-properties-from-map]]
+=== Set Node Properties From Map
+
+The `SetNodePropertiesFromMap` operator is used when setting properties from a map on a node.
+
+.SetNodePropertiesFromMap
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH (n)
+SET n = {weekday: 'Monday', meal: 'Lunch'}
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++---------------------------+---------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                  | Details                                           | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++---------------------------+---------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults           |                                                   |             35 |    0 |       0 |                |                        |           |                     |
+| |                         +---------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +EmptyResult              |                                                   |             35 |    0 |       0 |                |                        |           |                     |
+| |                         +---------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +SetNodePropertiesFromMap | n = {weekday: $autostring_0, meal: $autostring_1} |             35 |   35 |     105 |                |                        |           |                     |
+| |                         +---------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +AllNodesScan             | n                                                 |             35 |   35 |      36 |            120 |                    5/0 |     3.954 | Fused in Pipeline 0 |
++---------------------------+---------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 141, total allocated memory: 184
+----
+
+======
+
+
+[[query-plan-set-relationship-properties-from-map]]
+=== Set Relationship Properties From Map
+
+The `SetRelationshipPropertiesFromMap` operator is used when setting properties from a map on a relationship.
+
+.SetRelationshipPropertiesFromMap
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH (n)-[r]->(m)
+SET r = {weight: 5, unit: 'kg'}
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++-----------------------------------+-----------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                          | Details                                       | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-----------------------------------+-----------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults                   |                                               |             28 |    0 |       0 |                |                        |           |                     |
+| |                                 +-----------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +EmptyResult                      |                                               |             28 |    0 |       0 |                |                        |           |                     |
+| |                                 +-----------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +SetRelationshipPropertiesFromMap | r = {weight: $autoint_0, unit: $autostring_1} |             28 |   28 |      84 |                |                        |           |                     |
+| |                                 +-----------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +DirectedAllRelationshipsScan     | (n)-[r]->(m)                                  |             28 |   28 |      28 |            120 |                    5/0 |    15.278 | Fused in Pipeline 0 |
++-----------------------------------+-----------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 112, total allocated memory: 184
+----
+
+======
+
+
+[[query-plan-set-property]]
+=== Set Property
+// SetProperty
+
+The `SetProperty` operator is used when setting a property on a node or relationship.
+
+.SetProperty
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH (n)
+SET n.checked = true
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++-----------------+------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator        | Details          | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-----------------+------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults |                  |             35 |    0 |       0 |                |                        |           |                     |
+| |               +------------------+----------------+------+---------+----------------+                        |           |                     |
+| +EmptyResult    |                  |             35 |    0 |       0 |                |                        |           |                     |
+| |               +------------------+----------------+------+---------+----------------+                        |           |                     |
+| +SetProperty    | n.checked = true |             35 |   35 |      70 |                |                        |           |                     |
+| |               +------------------+----------------+------+---------+----------------+                        |           |                     |
+| +AllNodesScan   | n                |             35 |   35 |      36 |            120 |                    3/0 |     0.753 | Fused in Pipeline 0 |
++-----------------+------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 106, total allocated memory: 184
+----
+
+======
+
+[[query-plan-set-properties]]
+=== Set Properties
+
+The `SetProperties` operator is used when setting multiple properties on a node or relationship.
+
+.SetProperties
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH (n)
+SET n.weekDay = 'Monday', n.meal = 'Lunch'
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++-----------------+----+---------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator        | Id | Details                                           | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-----------------+----+---------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults |  0 |                                                   |             35 |    0 |       0 |              0 |                        |           |                     |
+| |               +----+---------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +EmptyResult    |  1 |                                                   |             35 |    0 |       0 |                |                        |           |                     |
+| |               +----+---------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +SetProperties  |  2 | n.weekDay = $autostring_0, n.meal = $autostring_1 |             35 |   35 |     105 |                |                        |           |                     |
+| |               +----+---------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +AllNodesScan   |  3 | n                                                 |             35 |   35 |      36 |            248 |                    3/0 |   152.289 | Fused in Pipeline 0 |
++-----------------+----+---------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 141, total allocated memory: 312
+----
+
+======
+
+
+[[query-plan-load-csv]]
+=== Load CSV
+
+The `LoadCSV` operator loads data from a CSV source into the query.
+It is used whenever the xref::clauses/load-csv.adoc[LOAD CSV] clause is used in a query.
+
+
+.LoadCSV
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+LOAD CSV FROM 'https://neo4j.com/docs/cypher-refcard/3.3/csv/artists.csv' AS line
+RETURN line
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++-----------------+---------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| Operator        | Details | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline      |
++-----------------+---------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| +ProduceResults | line    |             10 |    4 |       0 |                |                    0/0 |     0.210 |               |
+| |               +---------+----------------+------+---------+----------------+------------------------+-----------+               |
+| +LoadCSV        | line    |             10 |    4 |       0 |             72 |                        |           | In Pipeline 1 |
++-----------------+---------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+
+Total database accesses: 0, total allocated memory: 184
+----
+
+======
+
+
+[[query-plan-eager]]
+=== Eager
+
+The `Eager` operator causes all preceding operators to execute fully, for the whole dataset, before continuing execution.
+This is done to ensure isolation between parts of the query plan that might otherwise affect each other.
+
+Values from the graph are fetched in a lazy manner; i.e. a pattern matching might not be fully exhausted before updates are applied.
+To maintain correct semantics, the query planner will insert `Eager` operators into the query plan to prevent updates from influencing pattern matching, or other read operations.
+This scenario is exemplified by the query below, where the `DELETE` clause would otherwise influence both the `MATCH` clause and the `MERGE` clause.
+For more information on how the `Eager` operator can ensure correct semantics, see the section on xref::clauses/clause-composition.adoc[Clause composition].
+
+The `Eager` operator can cause high memory usage when importing data or migrating graph structures.
+In such cases, the operations should be split into simpler steps; e.g. importing nodes and relationships separately.
+Alternatively, the records to be updated can be returned, followed by an update statement.
+
+
+.Eager
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH (a:Person {name: 'me'}), (b:Person {name: 'Bob'})
+DETACH DELETE a, b
+MERGE (:Person {name: 'me'})
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++---------------------+----+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator            | Id | Details                                                                                        | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++---------------------+----+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults     |  0 |                                                                                                |              0 |    0 |       0 |              0 |                        |           |                     |
+| |                   +----+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +EmptyResult        |  1 |                                                                                                |              0 |    0 |       0 |                |                        |           |                     |
+| |                   +----+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Apply              |  2 |                                                                                                |              0 |    1 |       0 |                |                        |           |                     |
+| |\                  +----+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +Merge            |  3 | CREATE (anon_0:Person {name: $autostring_2})                                                   |              0 |    1 |       3 |                |                        |           |                     |
+| | |                 +----+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +NodeIndexSeek    |  4 | RANGE INDEX anon_0:Person(name) WHERE name = $autostring_2                                     |              0 |    0 |       1 |           3304 |                    1/0 |     0.663 | Fused in Pipeline 3 |
+| |                   +----+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Eager              |  5 | read/delete conflict for variable: anon_0 (Operator: 6 vs 4, and 1 more conflicting operators) |              0 |    1 |       0 |            360 |                    0/0 |     0.008 | In Pipeline 2       |
+| |                   +----+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +DetachDelete       |  6 | b                                                                                              |              0 |    1 |       4 |                |                        |           |                     |
+| |                   +----+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +DetachDelete       |  7 | a                                                                                              |              0 |    1 |       5 |                |                        |           |                     |
+| |                   +----+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Eager              |  8 | read/delete conflict for variable: b (Operator: 6 vs 10, and 1 more conflicting operators),    |              0 |    1 |       0 |            360 |                    1/0 |     0.226 | Fused in Pipeline 1 |
+| |                   |    | read/set conflict for label: Person (Operator: 3 vs 10),                                       |                |      |         |                |                        |           |                     |
+| |                   |    | read/set conflict for property: name (Operator: 3 vs 10)                                       |                |      |         |                |                        |           |                     |
+| |                   +----+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +MultiNodeIndexSeek |  9 | RANGE INDEX a:Person(name) WHERE name = $autostring_0,                                         |              0 |    1 |       4 |            376 |                    2/0 |     0.218 | In Pipeline 0       |
+|                     |    | RANGE INDEX b:Person(name) WHERE name = $autostring_1                                          |                |      |         |                |                        |           |                     |
++---------------------+----+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 17, total allocated memory: 4184
+----
+
+======
 
 
 [[query-plan-assert-same-node]]
-== Assert Same Node
-// AssertSameNode
+=== Assert Same Node
 
 The `AssertSameNode` operator is used to ensure that no node property uniqueness constraints are violated in the slotted and interpreted runtime.
 The example looks for the presence of a team node with the supplied name and id, and if one does not exist, it will be created.
@@ -4767,8 +5461,7 @@ Total database accesses: 2, total allocated memory: 64
 
 [role=label--new-5.8]
 [[query-plan-assert-same-relationship]]
-== Assert Same Relationship
-// AssertSameRelationship
+=== Assert Same Relationship
 
 The `AssertSameRelationship` operator is used to ensure that no relationship property uniqueness constraints are violated in the slotted and interpreted runtime.
 The example looks for the presence of a `WORKS_IN` relationship with the supplied  `id` and `badgeNumber`.
@@ -4819,7 +5512,20 @@ Total database accesses: 2, total allocated memory: 64
 ======
 
 
-// DropResult -- removed in 4.3
+
+
+
+[[aggregations]]
+== Aggregations
+
+[[rows-results-projections]]
+== Rows, results, and projections
+
+[[sorting-limiting]]
+== Sorting and limiting
+
+[[schema-system-commands]]
+== Schema and system commands
 
 
 [[query-plan-empty-result]]
@@ -4909,280 +5615,6 @@ Total database accesses: 36, total allocated memory: 184
 
 ======
 
-
-[[query-plan-load-csv]]
-== Load CSV
-// LoadCSV
-
-The `LoadCSV` operator loads data from a CSV source into the query.
-It is used whenever the xref::clauses/load-csv.adoc[LOAD CSV] clause is used in a query.
-
-
-.LoadCSV
-======
-
-.Query
-[source, cypher]
-----
-PROFILE
-LOAD CSV FROM 'https://neo4j.com/docs/cypher-refcard/3.3/csv/artists.csv' AS line
-RETURN line
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version {neo4j-version-minor}
-
-Batch size 128
-
-+-----------------+---------+----------------+------+---------+----------------+------------------------+-----------+---------------+
-| Operator        | Details | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline      |
-+-----------------+---------+----------------+------+---------+----------------+------------------------+-----------+---------------+
-| +ProduceResults | line    |             10 |    4 |       0 |                |                    0/0 |     0.210 |               |
-| |               +---------+----------------+------+---------+----------------+------------------------+-----------+               |
-| +LoadCSV        | line    |             10 |    4 |       0 |             72 |                        |           | In Pipeline 1 |
-+-----------------+---------+----------------+------+---------+----------------+------------------------+-----------+---------------+
-
-Total database accesses: 0, total allocated memory: 184
-----
-
-======
-
-
-
-
-
-
-[[query-plan-foreach]]
-== Foreach
-// Foreach
-
-The `Foreach` operator executes a nested loop between the left child operator and the right child operator.
-In an analogous manner to the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[Apply] operator, it takes a row from the left-hand side and, using the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-argument[Argument] operator, provides it to the operator tree on the right-hand side.
-`Foreach` will yield all the rows coming in from the left-hand side; all results from the right-hand side are pulled in and discarded.
-
-
-.Foreach
-======
-
-.Query
-[source, cypher]
-----
-PROFILE
-FOREACH (value IN [1,2,3] | CREATE (:Person {age: value}))
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime SLOTTED
-
-Runtime version {neo4j-version-minor}
-
-+-----------------+---------------------------------------------------------+----------------+------+---------+------------------------+
-| Operator        | Details                                                 | Estimated Rows | Rows | DB Hits | Page Cache Hits/Misses |
-+-----------------+---------------------------------------------------------+----------------+------+---------+------------------------+
-| +ProduceResults |                                                         |              1 |    0 |       0 |                    0/0 |
-| |               +---------------------------------------------------------+----------------+------+---------+------------------------+
-| +EmptyResult    |                                                         |              1 |    0 |       0 |                    0/0 |
-| |               +---------------------------------------------------------+----------------+------+---------+------------------------+
-| +Foreach        | value IN [1, 2, 3], CREATE (anon_0:Person {age: value}) |              1 |    1 |       9 |                    0/0 |
-+-----------------+---------------------------------------------------------+----------------+------+---------+------------------------+
-
-Total database accesses: 9, total allocated memory: 64
-----
-
-======
-
-[[query-plan-transaction-foreach]]
-== TransactionForeach
-// TransactionForeach
-
-`TransactionForeach` works like the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-foreach[`Foreach`] operator but will commit the current transaction after a specified number of rows.
-
-.TransactionForeach
-======
-
-[NOTE]
-The below query uses a xref:subqueries/call-subquery.adoc#variable-scope-clause[variable scope clause] (introduced in Neo4j 5.23) to import variables into the `CALL` subquery.
-If you are using an older version of Neo4j, use an xref:subqueries/call-subquery.adoc#importing-with[importing `WITH` clause] instead.
-
-.Query
-[source, cypher]
-----
-PROFILE
-LOAD CSV FROM 'https://neo4j.com/docs/cypher-refcard/3.3/csv/artists.csv' AS line
-CALL (line) {
-  CREATE (a: Artist {name: line[0]})
-} IN TRANSACTIONS OF 100 ROWS
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version {neo4j-version-minor}
-
-Batch size 128
-
-++---------------------+----+--------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
- | Operator            | Id | Details                                          | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
- +---------------------+----+--------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
- | +ProduceResults     |  0 |                                                  |             10 |    0 |       0 |              0 |                        |           |                     |
- | |                   +----+--------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
- | +EmptyResult        |  1 |                                                  |             10 |    0 |       0 |                |                    0/0 |     0.000 | Fused in Pipeline 3 |
- | |                   +----+--------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
- | +TransactionForeach |  2 | IN TRANSACTIONS OF $autoint_1 ROWS ON ERROR FAIL |             10 |    4 |       0 |           4856 |                        |           |                     |
- | |\                  +----+--------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
- | | +Create           |  3 | (a:Artist {name: line[$autoint_0]})              |             10 |    4 |      12 |                |                        |           |                     |
- | | |                 +----+--------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
- | | +Argument         |  4 | line                                             |             10 |    4 |       0 |           3472 |                    0/0 |     0.712 | Fused in Pipeline 2 |
- | |                   +----+--------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
- | +LoadCSV            |  5 | line                                             |             10 |    4 |       0 |            328 |                        |           | In Pipeline 1       |
- +---------------------+----+--------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
- Total database accesses: 12, total allocated memory: 5704
-----
-
-======
-
-[[query-plan-subquery-foreach]]
-== SubqueryForeach
-// SubqueryForeach
-
-`SubqueryForeach` works like the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-foreach[`Foreach`]operator but it is only used for executing subqueries.
-
-.SubqueryForeach
-======
-
-[NOTE]
-The below query uses a xref:subqueries/call-subquery.adoc#variable-scope-clause[variable scope clause] (introduced in Neo4j 5.23) to import variables into the `CALL` subquery.
-If you are using an older version of Neo4j, use an xref:subqueries/call-subquery.adoc#importing-with[importing `WITH` clause] instead.
-
-.Query
-[source, cypher]
-----
-PROFILE
-LOAD CSV FROM 'https://neo4j.com/docs/cypher-refcard/3.3/csv/artists.csv' AS line
-CALL (line) {
-  CREATE (a: Artist {name: line[0]})
-}
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version {neo4j-version-minor}
-
-Batch size 128
-
-+------------------+----+-------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator         | Id | Details                             | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+------------------+----+-------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults  |  0 |                                     |             10 |    0 |       0 |              0 |                        |           |                     |
-| |                +----+-------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +EmptyResult     |  1 |                                     |             10 |    0 |       0 |                |                    0/0 |     0.000 | Fused in Pipeline 3 |
-| |                +----+-------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +SubqueryForeach |  2 |                                     |             10 |    4 |       0 |           4080 |                        |           |                     |
-| |\               +----+-------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| | +Create        |  3 | (a:Artist {name: line[$autoint_0]}) |             10 |    4 |      12 |                |                        |           |                     |
-| | |              +----+-------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| | +Argument      |  4 | line                                |             10 |    4 |       0 |           3472 |                    0/0 |     0.852 | Fused in Pipeline 2 |
-| |                +----+-------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +LoadCSV         |  5 | line                                |             10 |    4 |       0 |            328 |                        |           | In Pipeline 1       |
-+------------------+----+-------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-Total database accesses: 12, total allocated memory: 4928
-----
-
-======
-
-
-[[query-plan-eager]]
-== Eager
-// Eager
-
-The `Eager` operator causes all preceding operators to execute fully, for the whole dataset, before continuing execution.
-This is done to ensure isolation between parts of the query plan that might otherwise affect each other.
-
-Values from the graph are fetched in a lazy manner; i.e. a pattern matching might not be fully exhausted before updates are applied.
-To maintain correct semantics, the query planner will insert `Eager` operators into the query plan to prevent updates from influencing pattern matching, or other read operations.
-This scenario is exemplified by the query below, where the `DELETE` clause would otherwise influence both the `MATCH` clause and the `MERGE` clause.
-For more information on how the `Eager` operator can ensure correct semantics, see the section on xref::clauses/clause-composition.adoc[Clause composition].
-
-The `Eager` operator can cause high memory usage when importing data or migrating graph structures.
-In such cases, the operations should be split into simpler steps; e.g. importing nodes and relationships separately.
-Alternatively, the records to be updated can be returned, followed by an update statement.
-
-
-.Eager
-======
-
-.Query
-[source, cypher]
-----
-PROFILE
-MATCH (a:Person {name: 'me'}), (b:Person {name: 'Bob'})
-DETACH DELETE a, b
-MERGE (:Person {name: 'me'})
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version {neo4j-version-minor}
-
-Batch size 128
-
-+---------------------+----+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator            | Id | Details                                                                                        | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+---------------------+----+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults     |  0 |                                                                                                |              0 |    0 |       0 |              0 |                        |           |                     |
-| |                   +----+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +EmptyResult        |  1 |                                                                                                |              0 |    0 |       0 |                |                        |           |                     |
-| |                   +----+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Apply              |  2 |                                                                                                |              0 |    1 |       0 |                |                        |           |                     |
-| |\                  +----+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| | +Merge            |  3 | CREATE (anon_0:Person {name: $autostring_2})                                                   |              0 |    1 |       3 |                |                        |           |                     |
-| | |                 +----+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| | +NodeIndexSeek    |  4 | RANGE INDEX anon_0:Person(name) WHERE name = $autostring_2                                     |              0 |    0 |       1 |           3304 |                    1/0 |     0.663 | Fused in Pipeline 3 |
-| |                   +----+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +Eager              |  5 | read/delete conflict for variable: anon_0 (Operator: 6 vs 4, and 1 more conflicting operators) |              0 |    1 |       0 |            360 |                    0/0 |     0.008 | In Pipeline 2       |
-| |                   +----+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +DetachDelete       |  6 | b                                                                                              |              0 |    1 |       4 |                |                        |           |                     |
-| |                   +----+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +DetachDelete       |  7 | a                                                                                              |              0 |    1 |       5 |                |                        |           |                     |
-| |                   +----+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Eager              |  8 | read/delete conflict for variable: b (Operator: 6 vs 10, and 1 more conflicting operators),    |              0 |    1 |       0 |            360 |                    1/0 |     0.226 | Fused in Pipeline 1 |
-| |                   |    | read/set conflict for label: Person (Operator: 3 vs 10),                                       |                |      |         |                |                        |           |                     |
-| |                   |    | read/set conflict for property: name (Operator: 3 vs 10)                                       |                |      |         |                |                        |           |                     |
-| |                   +----+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +MultiNodeIndexSeek |  9 | RANGE INDEX a:Person(name) WHERE name = $autostring_0,                                         |              0 |    1 |       4 |            376 |                    2/0 |     0.218 | In Pipeline 0       |
-|                     |    | RANGE INDEX b:Person(name) WHERE name = $autostring_1                                          |                |      |         |                |                        |           |                     |
-+---------------------+----+------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-Total database accesses: 17, total allocated memory: 4184
-----
-
-======
 
 
 [[query-plan-eager-aggregation]]
@@ -5819,61 +6251,7 @@ Total database accesses: 3, total allocated memory: 704
 ======
 
 
-[[query-plan-union]]
-== Union
-// Union
 
-The `Union` operator concatenates the results from the right child operator with the results from the left child operator.
-
-
-.Union
-======
-.Query
-[source, cypher]
-----
-PROFILE
-MATCH (p:Location)
-  RETURN p.name
-UNION ALL
-MATCH (p:Country)
-  RETURN p.name
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version {neo4j-version-minor}
-
-Batch size 128
-
-+--------------------+----+--------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator           | Id | Details            | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+--------------------+----+--------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults    |  0 | `p.name`           |             20 |    0 |       0 |                |                        |           |                     |
-| |                  +----+--------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Union             |  1 |                    |             20 |    0 |       0 |              0 |                    0/0 |     0.000 | Fused in Pipeline 2 |
-| |\                 +----+--------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| | +Projection      |  2 | `p.name`           |             10 |    0 |       0 |                |                        |           |                     |
-| | |                +----+--------------------+----------------+------+---------+----------------+                        |           |                     |
-| | +Projection      |  3 | p.name AS `p.name` |             10 |    0 |       0 |                |                        |           |                     |
-| | |                +----+--------------------+----------------+------+---------+----------------+                        |           |                     |
-| | +NodeByLabelScan |  4 | p:Country          |             10 |    0 |       0 |            120 |                    0/0 |     0.049 | Fused in Pipeline 1 |
-| |                  +----+--------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +Projection        |  5 | `p.name`           |             10 |    0 |       0 |                |                        |           |                     |
-| |                  +----+--------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Projection        |  6 | p.name AS `p.name` |             10 |    0 |       0 |                |                        |           |                     |
-| |                  +----+--------------------+----------------+------+---------+----------------+                        |           |                     |
-| +NodeByLabelScan   |  7 | p:Location         |             10 |    0 |       0 |            120 |                    0/0 |     0.077 | Fused in Pipeline 0 |
-+--------------------+----+--------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-Total database accesses: 0, total allocated memory: 320
-----
-
-======
 
 
 [[query-plan-unwind]]
@@ -6269,432 +6647,10 @@ Total database accesses: 107, total allocated memory: 200
 ======
 
 
-[[query-plan-create]]
-== Create (nodes and relationships)
-// Create
 
-The `Create` operator is used to create nodes and relationships.
 
 
-.Create
-======
 
-.Query
-[source, cypher]
-----
-PROFILE
-CREATE
-  (max:Person {name: 'Max'}),
-  (chris:Person {name: 'Chris'})
-CREATE (max)-[:FRIENDS_WITH]->(chris)
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version {neo4j-version-minor}
-
-Batch size 128
-
-+-----------------+---------------------------------------------------------------------------+----------------+------+---------+------------------------+-----------+---------------------+
-| Operator        | Details                                                                   | Estimated Rows | Rows | DB Hits | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+-----------------+---------------------------------------------------------------------------+----------------+------+---------+------------------------+-----------+---------------------+
-| +ProduceResults |                                                                           |              1 |    0 |       0 |                        |           |                     |
-| |               +---------------------------------------------------------------------------+----------------+------+---------+                        |           |                     |
-| +EmptyResult    |                                                                           |              1 |    0 |       0 |                        |           |                     |
-| |               +---------------------------------------------------------------------------+----------------+------+---------+                        |           |                     |
-| +Create         | (max:Person {name: $autostring_0}), (chris:Person {name: $autostring_1}), |              1 |    1 |       7 |                    0/0 |     0.000 | Fused in Pipeline 0 |
-|                 | (max)-[anon_0:FRIENDS_WITH]->(chris)                                      |                |      |         |                        |           |                     |
-+-----------------+---------------------------------------------------------------------------+----------------+------+---------+------------------------+-----------+---------------------+
-
-Total database accesses: 7, total allocated memory: 184
-----
-
-======
-
-
-[[query-plan-delete]]
-== Delete (nodes and relationships)
-// Delete
-
-The `Delete` operator is used to delete a node or a relationship.
-
-
-.Delete
-======
-
-.Query
-[source, cypher]
-----
-PROFILE
-MATCH (you:Person {name: 'you'})
-DELETE you
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version {neo4j-version-minor}
-
-Batch size 128
-
-+-----------------+----+--------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator        | Id | Details                                                | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+-----------------+----+--------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults |  0 |                                                        |              0 |    0 |       0 |                |                        |           |                     |
-| |               +----+--------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +EmptyResult    |  1 |                                                        |              0 |    0 |       0 |                |                        |           |                     |
-| |               +----+--------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Delete         |  2 | you                                                     |              0 |    0 |       0 |                |                        |           |                     |
-| |               +----+--------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +NodeIndexSeek  |  3 | RANGE INDEX you:Person(name) WHERE name = $autostring_0 |              0 |    0 |       1 |            120 |                    1/0 |     0.330 | Fused in Pipeline 0 |
-+-----------------+----+--------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-Total database accesses: 13, total allocated memory: 216
-----
-
-======
-
-
-[[query-plan-detach-delete]]
-== Detach Delete
-// DetachDelete
-
-The `DetachDelete` operator is used in all queries containing the xref::clauses/delete.adoc[DETACH DELETE] clause, when deleting nodes and their relationships.
-
-
-.DetachDelete
-======
-
-.Query
-[source, cypher]
-----
-PROFILE
-MATCH (p:Person)
-DETACH DELETE p
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version {neo4j-version-minor}
-
-Batch size 128
-
-+------------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator         | Details  | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+------------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults  |          |             14 |    0 |       0 |                |                        |           |                     |
-| |                +----------+----------------+------+---------+----------------+                        |           |                     |
-| +EmptyResult     |          |             14 |    0 |       0 |                |                        |           |                     |
-| |                +----------+----------------+------+---------+----------------+                        |           |                     |
-| +DetachDelete    | p        |             14 |   14 |      41 |                |                        |           |                     |
-| |                +----------+----------------+------+---------+----------------+                        |           |                     |
-| +NodeByLabelScan | p:Person |             14 |   14 |      35 |            120 |                   21/0 |    12,439 | Fused in Pipeline 0 |
-+------------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-Total database accesses: 112, total allocated memory: 200
-----
-
-======
-
-
-// MergeCreateNode -- removed in 4.3
-
-// MergeCreateRelationship -- removed in 4.3
-
-
-[[query-plan-set-labels]]
-== Set Labels
-// SetLabels
-
-The `SetLabels` operator is used when setting labels on a node.
-
-
-.SetLabels
-======
-
-.Query
-[source, cypher]
-----
-PROFILE
-MATCH (n)
-SET n:Person
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version {neo4j-version-minor}
-
-Batch size 128
-
-+-----------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator        | Details  | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+-----------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults |          |             35 |    0 |       0 |                |                        |           |                     |
-| |               +----------+----------------+------+---------+----------------+                        |           |                     |
-| +EmptyResult    |          |             35 |    0 |       0 |                |                        |           |                     |
-| |               +----------+----------------+------+---------+----------------+                        |           |                     |
-| +SetLabels      | n:Person |             35 |   35 |      22 |                |                        |           |                     |
-| |               +----------+----------------+------+---------+----------------+                        |           |                     |
-| +AllNodesScan   | n        |             35 |   35 |      36 |            120 |                    3/0 |     0.873 | Fused in Pipeline 0 |
-+-----------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-Total database accesses: 58, total allocated memory: 184
-----
-
-======
-
-
-[[query-plan-remove-labels]]
-== Remove Labels
-// RemoveLabels
-
-The `RemoveLabels` operator is used when deleting labels from a node.
-
-
-.RemoveLabels
-======
-
-.Query
-[source, cypher]
-----
-PROFILE
-MATCH (n)
-REMOVE n:Person
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version {neo4j-version-minor}
-
-Batch size 128
-
-+-----------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator        | Details  | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+-----------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults |          |             35 |    0 |       0 |                |                        |           |                     |
-| |               +----------+----------------+------+---------+----------------+                        |           |                     |
-| +EmptyResult    |          |             35 |    0 |       0 |                |                        |           |                     |
-| |               +----------+----------------+------+---------+----------------+                        |           |                     |
-| +RemoveLabels   | n:Person |             35 |   35 |      15 |                |                        |           |                     |
-| |               +----------+----------------+------+---------+----------------+                        |           |                     |
-| +AllNodesScan   | n        |             35 |   35 |      36 |            120 |                    3/0 |     0.765 | Fused in Pipeline 0 |
-+-----------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-Total database accesses: 51, total allocated memory: 184
-----
-
-======
-
-
-[[query-plan-set-node-properties-from-map]]
-== Set Node Properties From Map
-// SetNodePropertiesFromMap
-
-The `SetNodePropertiesFromMap` operator is used when setting properties from a map on a node.
-
-
-.SetNodePropertiesFromMap
-======
-
-.Query
-[source, cypher]
-----
-PROFILE
-MATCH (n)
-SET n = {weekday: 'Monday', meal: 'Lunch'}
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version {neo4j-version-minor}
-
-Batch size 128
-
-+---------------------------+---------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator                  | Details                                           | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+---------------------------+---------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults           |                                                   |             35 |    0 |       0 |                |                        |           |                     |
-| |                         +---------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +EmptyResult              |                                                   |             35 |    0 |       0 |                |                        |           |                     |
-| |                         +---------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +SetNodePropertiesFromMap | n = {weekday: $autostring_0, meal: $autostring_1} |             35 |   35 |     105 |                |                        |           |                     |
-| |                         +---------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +AllNodesScan             | n                                                 |             35 |   35 |      36 |            120 |                    5/0 |     3.954 | Fused in Pipeline 0 |
-+---------------------------+---------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-Total database accesses: 141, total allocated memory: 184
-----
-
-======
-
-
-[[query-plan-set-relationship-properties-from-map]]
-== Set Relationship Properties From Map
-// SetRelationshipPropertiesFromMap
-
-The `SetRelationshipPropertiesFromMap` operator is used when setting properties from a map on a relationship.
-
-
-.SetRelationshipPropertiesFromMap
-======
-
-.Query
-[source, cypher]
-----
-PROFILE
-MATCH (n)-[r]->(m)
-SET r = {weight: 5, unit: 'kg'}
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version {neo4j-version-minor}
-
-Batch size 128
-
-+-----------------------------------+-----------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator                          | Details                                       | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+-----------------------------------+-----------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults                   |                                               |             28 |    0 |       0 |                |                        |           |                     |
-| |                                 +-----------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +EmptyResult                      |                                               |             28 |    0 |       0 |                |                        |           |                     |
-| |                                 +-----------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +SetRelationshipPropertiesFromMap | r = {weight: $autoint_0, unit: $autostring_1} |             28 |   28 |      84 |                |                        |           |                     |
-| |                                 +-----------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +DirectedAllRelationshipsScan     | (n)-[r]->(m)                                  |             28 |   28 |      28 |            120 |                    5/0 |    15.278 | Fused in Pipeline 0 |
-+-----------------------------------+-----------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-Total database accesses: 112, total allocated memory: 184
-----
-
-======
-
-
-[[query-plan-set-property]]
-== Set Property
-// SetProperty
-
-The `SetProperty` operator is used when setting a property on a node or relationship.
-
-
-.SetProperty
-======
-
-.Query
-[source, cypher]
-----
-PROFILE
-MATCH (n)
-SET n.checked = true
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version {neo4j-version-minor}
-
-Batch size 128
-
-+-----------------+------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator        | Details          | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+-----------------+------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults |                  |             35 |    0 |       0 |                |                        |           |                     |
-| |               +------------------+----------------+------+---------+----------------+                        |           |                     |
-| +EmptyResult    |                  |             35 |    0 |       0 |                |                        |           |                     |
-| |               +------------------+----------------+------+---------+----------------+                        |           |                     |
-| +SetProperty    | n.checked = true |             35 |   35 |      70 |                |                        |           |                     |
-| |               +------------------+----------------+------+---------+----------------+                        |           |                     |
-| +AllNodesScan   | n                |             35 |   35 |      36 |            120 |                    3/0 |     0.753 | Fused in Pipeline 0 |
-+-----------------+------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-Total database accesses: 106, total allocated memory: 184
-----
-
-======
-
-[[query-plan-set-properties]]
-== Set Properties
-// SetProperties
-
-The `SetProperties` operator is used when setting multiple properties on a node or relationship.
-
-
-.SetProperties
-======
-
-.Query
-[source, cypher]
-----
-PROFILE
-MATCH (n)
-SET n.weekDay = 'Monday', n.meal = 'Lunch'
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version {neo4j-version-minor}
-
-Batch size 128
-
-+-----------------+----+---------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator        | Id | Details                                           | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+-----------------+----+---------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults |  0 |                                                   |             35 |    0 |       0 |              0 |                        |           |                     |
-| |               +----+---------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +EmptyResult    |  1 |                                                   |             35 |    0 |       0 |                |                        |           |                     |
-| |               +----+---------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +SetProperties  |  2 | n.weekDay = $autostring_0, n.meal = $autostring_1 |             35 |   35 |     105 |                |                        |           |                     |
-| |               +----+---------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +AllNodesScan   |  3 | n                                                 |             35 |   35 |      36 |            248 |                    3/0 |   152.289 | Fused in Pipeline 0 |
-+-----------------+----+---------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-Total database accesses: 141, total allocated memory: 312
-----
-
-======
 
 [[query-plan-create-constraint]]
 == Create Constraint
