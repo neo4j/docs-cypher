@@ -17,11 +17,11 @@ To recreate the graph, run the following query against an empty Neo4j database:
 
 [source, cypher, role=test-setup]
 ----
-CREATE (charlie:Person {name: 'Charlie Sheen'}),
-       (martin:Person {name: 'Martin Sheen'}),
-       (michael:Person {name: 'Michael Douglas'}),
-       (oliver:Person {name: 'Oliver Stone'}),
-       (rob:Person {name: 'Rob Reiner'}),
+CREATE (charlie:Person:Actor {name: 'Charlie Sheen'}),
+       (martin:Person:Actor {name: 'Martin Sheen'}),
+       (michael:Person:Actor {name: 'Michael Douglas'}),
+       (oliver:Person:Director {name: 'Oliver Stone'}),
+       (rob:Person:Director {name: 'Rob Reiner'}),
        (wallStreet:Movie {title: 'Wall Street'}),
        (charlie)-[:ACTED_IN {role: 'Bud Fox'}]->(wallStreet),
        (martin)-[:ACTED_IN {role: 'Carl Fox'}]->(wallStreet),
@@ -124,8 +124,10 @@ The above query uses the xref:functions/list.adoc#functions-labels[`labels()`] a
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
 | label | labelCount
-| ["Person"] | 5
-2+d| Rows: 1
+| ["Person", "Actor"] | 3
+| ["Person", "Director"] | 2
+
+2+d| Rows: 2
 |===
 
 For a list of all label expressions supported by Cypher, see xref:patterns/reference.adoc#label-expressions[Patterns -> Label expressions].
@@ -489,4 +491,127 @@ The above query uses the xref:functions/aggregating.adoc#functions-collect[`coll
 |===
 
 For more information about how Cypher queries work, see xref:clauses/clause-composition.adoc[].
+
+[role=label--new-5.26]
+[[dynamic-match]]
+== MATCH using dynamic node labels and relationship types
+
+Node labels and relationship types can be referenced dynamically in expressions, parameters, and variables when matching nodes and relationships.
+This allows for more flexible queries and mitigates the risk of Cypher injection.
+(For more information about Cypher injection, see link:https://neo4j.com/developer/kb/protecting-against-cypher-injection/[Neo4j Knowledge Base -> Protecting against Cypher injection]).
+
+.Syntax for matching node labels dynamically
+[source, syntax]
+----
+MATCH (n:$(<expr>))
+MATCH (n:$any(<expr>))
+MATCH (n:$all(<expr>))
+----
+
+[NOTE]
+`MATCH (n:$all(<expr>))` is functionally equivalent to `MATCH (n:$(<expr>))`.
+
+.Syntax for matching relationship types dynamically
+[source, syntax]
+----
+MATCH ()-[r:$(<expr>))]->()
+MATCH ()-[r:$any(<expr>)]->()
+MATCH ()-[r:$all(<expr>))]->()
+----
+
+The expression must evaluate to a `STRING NOT NULL | LIST<STRING NOT NULL> NOT NULL` value.
+If you use a `LIST<STRING>` with more than one item in a relationship pattern with dynamic relationship types, no results will be returned.
+This is because a relationship can only have exactly one type.
+
+[NOTE]
+Queries using dynamic values may not be as performant as those using static values.
+This is because the xref:planning-and-tuning/execution-plans.adoc[Cypher planner] uses statically available information when planning queries to determine whether to use an xref:indexes/search-performance-indexes/overview.adoc[index] or not, and this is not possible when using dynamic values.
+
+.Match labels dynamically
+[source, cypher]
+----
+WITH ["Person", "Director"] AS labels
+MATCH (directors:$(labels))
+RETURN directors
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| directors
+
+| (:Person:Director {name: "Oliver Stone"})
+| (:Person:Director {name: "Rob Reiner"})
+
+1+d|Rows: 2
+|===
+
+.Match nodes dynamically using the `any()` function
+[source, cypher]
+----
+MATCH (n:$any(["Movie", "Actor"]))
+RETURN n AS nodes
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| nodes
+
+| (:Person:Actor {name: "Charlie Sheen"})
+| (:Person:Actor {name: "Martin Sheen"})
+| (:Person:Actor {name: "Michael Douglas"})
+| (:Movie {title: "Wall Street"})
+| (:Movie {title: "The American President"})
+
+1+d|Rows: 5
+|===
+
+
+.Parameter
+[source, parameters]
+----
+{
+  "label": "Movie"
+}
+----
+
+.Match nodes dynamically using a parameter
+[source, cypher]
+----
+MATCH (movie:$($label))
+RETURN movie.title AS movieTitle
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| movieTitle
+
+| "Wall Street"
+| "The American President"
+
+1+d|Rows: 2
+|===
+
+
+.Match relationships dynamically using a variable
+[source, cypher]
+----
+CALL db.relationshipTypes()
+YIELD relationshipType
+MATCH ()-[r:$(relationshipType)]->()
+RETURN relationshipType, count(r) AS relationshipCount
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| relationshipType | relationshipCount
+
+| "ACTED_IN" | 5
+| "DIRECTED" | 2
+
+2+d|Rows: 2
+|===
 
