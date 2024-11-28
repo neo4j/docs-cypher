@@ -4623,6 +4623,201 @@ Total database accesses: 0, total allocated memory: 320
 
 ======
 
+[[aggregation-operators]]
+== Aggregation operators
+
+Aggregation operators are used to compute summary statistics over groups of graph data, enabling operations such as counting nodes, relationships or properties.
+
+
+[[query-plan-eager-aggregation]]
+=== Eager Aggregation
+
+The `EagerAggregation` operator evaluates a grouping expression and uses the result to group rows into different groupings.
+For each of these groupings, `EagerAggregation` will then evaluate all aggregation functions and return the result.
+To do this, `EagerAggregation`, as the name implies, needs to pull in all data eagerly from its source and build up state, which leads to increased memory pressure in the system.
+
+
+.EagerAggregation
+======
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH (l:Location)<-[:WORKS_IN]-(p:Person)
+RETURN
+  l.name AS location,
+  collect(p.name) AS people
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++-------------------+----+------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator          | Id | Details                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-------------------+----+------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults   |  0 | location, people                                     |              4 |    6 |       0 |                |                    0/0 |     0.022 | In Pipeline 1       |
+| |                 +----+------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +EagerAggregation |  1 | cache[l.name] AS location, collect(p.name) AS people |              4 |    6 |      30 |           2584 |                        |           |                     |
+| |                 +----+------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Filter           |  2 | p:Person                                             |             15 |   15 |      30 |                |                        |           |                     |
+| |                 +----+------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Expand(All)      |  3 | (l)<-[anon_0:WORKS_IN]-(p)                           |             15 |   15 |      26 |                |                        |           |                     |
+| |                 +----+------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +CacheProperties  |  4 | cache[l.name]                                        |             10 |   10 |      20 |                |                        |           |                     |
+| |                 +----+------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeByLabelScan  |  5 | l:Location                                           |             10 |   10 |      11 |            120 |                    4/0 |     0.813 | Fused in Pipeline 0 |
++-------------------+----+------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 117, total allocated memory: 2664
+----
+
+======
+
+
+[[query-plan-ordered-aggregation]]
+=== Ordered Aggregation
+
+The `OrderedAggregation` operator is an optimization of the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-eager-aggregation[`EagerAggregation`] operator that takes advantage of the ordering of the incoming rows.
+This operator uses lazy evaluation and has a lower memory pressure in the system than the `EagerAggregation` operator.
+
+
+.OrderedAggregation
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH (p:Person)
+WHERE p.name STARTS WITH 'P'
+RETURN p.name, count(*) AS count
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++-----------------------+--------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+--------------+---------------+
+| Operator              | Details                                                                        | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Ordered by   | Pipeline      |
++-----------------------+--------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+--------------+---------------+
+| +ProduceResults       | `p.name`, count                                                                |              0 |    2 |       0 |                |                    0/0 |     0.045 |              |               |
+| |                     +--------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+              |               |
+| +OrderedAggregation   | cache[p.name] AS `p.name`, count(*) AS count                                   |              0 |    2 |       0 |            288 |                    0/0 |     0.175 | `p.name` ASC | In Pipeline 1 |
+| |                     +--------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+--------------+---------------+
+| +NodeIndexSeekByRange | RANGE INDEX p:Person(name) WHERE name STARTS WITH $autostring_0, cache[p.name] |              0 |    2 |       3 |            120 |                    0/1 |     0.529 | p.name ASC   | In Pipeline 0 |
++-----------------------+--------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+--------------+---------------+
+
+Total database accesses: 3, total allocated memory: 352
+----
+
+======
+
+
+[[query-plan-node-count-from-count-store]]
+=== Node Count From Count Store
+
+The `NodeCountFromCountStore` operator uses the count store to answer questions about node counts.
+This is much faster than the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-eager-aggregation[`EagerAggregation`] operator which achieves the same result by actually counting.
+However, as the count store only stores a limited range of combinations, `EagerAggregation` will still be used for more complex queries.
+For example, we can get counts for all nodes, and nodes with a label, but not nodes with more than one label.
+
+
+.NodeCountFromCountStore
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH (p:Person)
+RETURN count(p) AS people
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++--------------------------+------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                 | Details                      | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++--------------------------+------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults          | people                       |              1 |    1 |       0 |                |                        |           |                     |
+| |                        +------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +NodeCountFromCountStore | count( (:Person) ) AS people |              1 |    1 |       1 |            120 |                    0/0 |     0.169 | Fused in Pipeline 0 |
++--------------------------+------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 1, total allocated memory: 184
+----
+
+======
+
+
+[[query-plan-relationship-count-from-count-store]]
+=== Relationship Count From Count Store
+
+The `RelationshipCountFromCountStore` operator uses the count store to answer questions about relationship counts.
+This is much faster than the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-eager-aggregation[`EagerAggregation`] operator which achieves the same result by actually counting.
+However, as the count store only stores a limited range of combinations, `EagerAggregation` will still be used for more complex queries.
+For example, we can get counts for all relationships, relationships with a type, relationships with a label on one end, but not relationships with labels on both end nodes.
+
+
+.RelationshipCountFromCountStore
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH (p:Person)-[r:WORKS_IN]->()
+RETURN count(r) AS jobs
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version-minor}
+
+Batch size 128
+
++----------------------------------+--------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                         | Details                                    | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++----------------------------------+--------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults                  | jobs                                       |              1 |    1 |       0 |                |                        |           |                     |
+| |                                +--------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +RelationshipCountFromCountStore | count( (:Person)-[:WORKS_IN]->() ) AS jobs |              1 |    1 |       1 |            120 |                    0/0 |     0.625 | Fused in Pipeline 0 |
++----------------------------------+--------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 1, total allocated memory: 184
+----
+
+======
+
+
 [[data-modification-operators]]
 == Data modification operators
 
@@ -5506,200 +5701,6 @@ Runtime version {neo4j-version-minor}
 +-------------------------------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+------------------------+
 
 Total database accesses: 2, total allocated memory: 64
-----
-
-======
-
-[[aggregation-operators]]
-== Aggregation operators
-
-Aggregation operators are used to compute summary statistics over groups of graph data, enabling operations such as counting nodes, relationships or properties.
-
-
-[[query-plan-eager-aggregation]]
-=== Eager Aggregation
-
-The `EagerAggregation` operator evaluates a grouping expression and uses the result to group rows into different groupings.
-For each of these groupings, `EagerAggregation` will then evaluate all aggregation functions and return the result.
-To do this, `EagerAggregation`, as the name implies, needs to pull in all data eagerly from its source and build up state, which leads to increased memory pressure in the system.
-
-
-.EagerAggregation
-======
-.Query
-[source, cypher]
-----
-PROFILE
-MATCH (l:Location)<-[:WORKS_IN]-(p:Person)
-RETURN
-  l.name AS location,
-  collect(p.name) AS people
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version {neo4j-version-minor}
-
-Batch size 128
-
-+-------------------+----+------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator          | Id | Details                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+-------------------+----+------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults   |  0 | location, people                                     |              4 |    6 |       0 |                |                    0/0 |     0.022 | In Pipeline 1       |
-| |                 +----+------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +EagerAggregation |  1 | cache[l.name] AS location, collect(p.name) AS people |              4 |    6 |      30 |           2584 |                        |           |                     |
-| |                 +----+------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Filter           |  2 | p:Person                                             |             15 |   15 |      30 |                |                        |           |                     |
-| |                 +----+------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +Expand(All)      |  3 | (l)<-[anon_0:WORKS_IN]-(p)                           |             15 |   15 |      26 |                |                        |           |                     |
-| |                 +----+------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +CacheProperties  |  4 | cache[l.name]                                        |             10 |   10 |      20 |                |                        |           |                     |
-| |                 +----+------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +NodeByLabelScan  |  5 | l:Location                                           |             10 |   10 |      11 |            120 |                    4/0 |     0.813 | Fused in Pipeline 0 |
-+-------------------+----+------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-Total database accesses: 117, total allocated memory: 2664
-----
-
-======
-
-
-[[query-plan-ordered-aggregation]]
-=== Ordered Aggregation
-
-The `OrderedAggregation` operator is an optimization of the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-eager-aggregation[`EagerAggregation`] operator that takes advantage of the ordering of the incoming rows.
-This operator uses lazy evaluation and has a lower memory pressure in the system than the `EagerAggregation` operator.
-
-
-.OrderedAggregation
-======
-
-.Query
-[source, cypher]
-----
-PROFILE
-MATCH (p:Person)
-WHERE p.name STARTS WITH 'P'
-RETURN p.name, count(*) AS count
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version {neo4j-version-minor}
-
-Batch size 128
-
-+-----------------------+--------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+--------------+---------------+
-| Operator              | Details                                                                        | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Ordered by   | Pipeline      |
-+-----------------------+--------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+--------------+---------------+
-| +ProduceResults       | `p.name`, count                                                                |              0 |    2 |       0 |                |                    0/0 |     0.045 |              |               |
-| |                     +--------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+              |               |
-| +OrderedAggregation   | cache[p.name] AS `p.name`, count(*) AS count                                   |              0 |    2 |       0 |            288 |                    0/0 |     0.175 | `p.name` ASC | In Pipeline 1 |
-| |                     +--------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+--------------+---------------+
-| +NodeIndexSeekByRange | RANGE INDEX p:Person(name) WHERE name STARTS WITH $autostring_0, cache[p.name] |              0 |    2 |       3 |            120 |                    0/1 |     0.529 | p.name ASC   | In Pipeline 0 |
-+-----------------------+--------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+--------------+---------------+
-
-Total database accesses: 3, total allocated memory: 352
-----
-
-======
-
-
-[[query-plan-node-count-from-count-store]]
-=== Node Count From Count Store
-
-The `NodeCountFromCountStore` operator uses the count store to answer questions about node counts.
-This is much faster than the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-eager-aggregation[`EagerAggregation`] operator which achieves the same result by actually counting.
-However, as the count store only stores a limited range of combinations, `EagerAggregation` will still be used for more complex queries.
-For example, we can get counts for all nodes, and nodes with a label, but not nodes with more than one label.
-
-
-.NodeCountFromCountStore
-======
-
-.Query
-[source, cypher]
-----
-PROFILE
-MATCH (p:Person)
-RETURN count(p) AS people
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version {neo4j-version-minor}
-
-Batch size 128
-
-+--------------------------+------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator                 | Details                      | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+--------------------------+------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults          | people                       |              1 |    1 |       0 |                |                        |           |                     |
-| |                        +------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +NodeCountFromCountStore | count( (:Person) ) AS people |              1 |    1 |       1 |            120 |                    0/0 |     0.169 | Fused in Pipeline 0 |
-+--------------------------+------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-Total database accesses: 1, total allocated memory: 184
-----
-
-======
-
-
-[[query-plan-relationship-count-from-count-store]]
-=== Relationship Count From Count Store
-
-The `RelationshipCountFromCountStore` operator uses the count store to answer questions about relationship counts.
-This is much faster than the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-eager-aggregation[`EagerAggregation`] operator which achieves the same result by actually counting.
-However, as the count store only stores a limited range of combinations, `EagerAggregation` will still be used for more complex queries.
-For example, we can get counts for all relationships, relationships with a type, relationships with a label on one end, but not relationships with labels on both end nodes.
-
-
-.RelationshipCountFromCountStore
-======
-
-.Query
-[source, cypher]
-----
-PROFILE
-MATCH (p:Person)-[r:WORKS_IN]->()
-RETURN count(r) AS jobs
-----
-
-.Query Plan
-[role="queryplan", subs="attributes+"]
-----
-Planner COST
-
-Runtime PIPELINED
-
-Runtime version {neo4j-version-minor}
-
-Batch size 128
-
-+----------------------------------+--------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator                         | Details                                    | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+----------------------------------+--------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults                  | jobs                                       |              1 |    1 |       0 |                |                        |           |                     |
-| |                                +--------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +RelationshipCountFromCountStore | count( (:Person)-[:WORKS_IN]->() ) AS jobs |              1 |    1 |       1 |            120 |                    0/0 |     0.625 | Fused in Pipeline 0 |
-+----------------------------------+--------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-Total database accesses: 1, total allocated memory: 184
 ----
 
 ======
