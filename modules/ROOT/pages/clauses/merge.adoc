@@ -703,10 +703,6 @@ The expression must evaluate to a `STRING NOT NULL | LIST<STRING NOT NULL> NOT N
 Using a `LIST<STRING>` with more than one item when merging a relationship using dynamic relationship types will fail.
 This is because a relationship can only have exactly one type.
 
-[NOTE]
-Queries using dynamic values may not be as performant as those using static values.
-This is because the xref:planning-and-tuning/execution-plans.adoc[Cypher planner] uses statically available information when planning queries to determine whether to use an xref:indexes/search-performance-indexes/overview.adoc[index] or not, and this is not possible when using dynamic values.
-
 .Parameters
 [source, parameters]
 ----
@@ -730,7 +726,7 @@ RETURN greta.name AS name, labels(greta) AS labels, type(rel) AS relType, collec
 // end::clauses_merge_dynamic_merge[]
 
 .Result
-[role="queryresult",options="footer",cols="3*<m"]
+[role="queryresult",options="footer",cols="4*<m"]
 |===
 | name | labels | relType | movies
 
@@ -740,5 +736,47 @@ RETURN greta.name AS name, labels(greta) AS labels, type(rel) AS relType, collec
 | ["Ladybird", "Little Women", "Barbie"]
 
 4+d|Rows: 1 +
+|===
+
+[[dynamic-merge-caveats]]
+=== Performance caveats
+
+`MERGE` queries that use dynamic values may not be as performant as those using static values.
+This is because the xref:planning-and-tuning/execution-plans.adoc[Cypher planner] uses statically available information when planning queries to determine whether to use an xref:indexes/search-performance-indexes/overview.adoc[index] or not, and this is not possible when using dynamic values.
+
+As a result, `MERGE` queries with dynamic values cannot leverage xref:planning-and-tuning/operators/operators-detail.adoc#leaf-operators[index scans or seeks] and must instead use the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-all-nodes-scan[`AllNodesScan`] operator, which reads all nodes from the node store and is therefore more costly.
+
+To circumvent possible performance issues, place the dynamic labels or relationship types within `ON CREATE` or `ON MATCH` subclauses.
+
+.Parameters
+[source, parameters]
+----
+{
+    "onMatchLabels": ["Filmmaker", "AwardRecipient"],
+    "onCreateLabels":  ["ScreenWriter", "AwardWinner"]
+}
+----
+
+.Merge nodes using dynamic values in `ON CREATE` and `ON MATCH` subclauses
+[source, cypher]
+----
+MERGE (n:Person {name: "Greta Gerwig"}) 
+ON MATCH 
+    SET n:$($onMatchLabels)
+ON CREATE 
+    SET n:$($onCreateLabels)
+RETURN labels(n) AS gretaLabels
+----
+
+Because a `Person` node with the `name` "Greta Gerwig" already exists, this query will only `SET` the dynamic labels added to the `ON MATCH` subclause.
+
+.Result
+[role="queryresult",options="footer",cols="1*<m"]
+|===
+| gretaLabels
+
+| ["Person", "Director", "Filmmaker", "AwardRecipient"]
+
+1+d|Rows: 1 
 |===
 
