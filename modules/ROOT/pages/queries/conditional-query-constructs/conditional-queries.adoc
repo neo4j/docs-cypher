@@ -1,0 +1,108 @@
+= Conditional queries (WHEN)
+:page-role: new-2025.02
+
+The `WHEN` clause in Cypher allows conditional execution of parts of a query.
+It enables different query branches or subqueries to run based on specified conditions.
+
+[[example-graph]]
+== Example graph
+
+The following graph is used for the examples below:
+
+image::conditionals_graph.svg[width="400",role="middle"]
+
+To recreate the graph, run the following query against an empty Neo4j database:
+
+[source, cypher, role=test-setup]
+----
+CREATE
+  (alice:Person {name:'Alice', age: 38, eyes: 'brown'}),
+  (bob:Person {name: 'Bob', age: 25, eyes: 'blue'}),
+  (charlie:Person {name: 'Charlie', age: 53, eyes: 'green'}),
+  (daniel:Person {name: 'Daniel', eyes: 'brown'}),
+  (eskil:Person {name: 'Eskil', age: 41, eyes: 'blue'}),
+  (alice)-[:KNOWS]->(bob),
+  (alice)-[:KNOWS]->(charlie),
+  (bob)-[:KNOWS]->(daniel),
+  (charlie)-[:KNOWS]->(daniel),
+  (bob)-[:MARRIED]->(eskil)
+----
+
+== Syntax
+
+[source, cypher]
+----
+<regular query> ::=
+  <union query> | <when query> | <single query> ;
+
+<union query> ::=
+  <single query> , 
+  "UNION" , [ "ALL" | "DISTINCT" ] , ( <union query> | <single query> ) ;
+
+<when query> ::=
+  <when> , { <when> } , [ <else> ] ;
+
+<when> ::=
+  "WHEN" , <predicate> , "THEN" , <single query> ;
+
+<else> ::=
+  "ELSE" , <single-query>
+----
+
+
+== Standalone conditional queries
+
+[source, cypher]
+----
+WHEN false THEN RETURN 1 AS x
+WHEN true THEN RETURN 2 AS x
+ELSE RETURN 3 AS x
+----
+
+== Conditional subqueries
+
+[source, cypher]
+----
+ MATCH (n:Person)
+ OPTIONAL MATCH (n)-[:KNOWS]->(m)
+ CALL (n,m) {
+   WHEN m IS NULL THEN {
+      CREATE (f: Person {name: 'Peter', age: n.age}), (n)-[:KNOWS]->(f)
+   }
+ }
+----
+
+[source, cypher]
+----
+MATCH (n:Person)
+WHERE EXISTS {
+    WHEN n.age > 40 THEN {
+      MATCH (n)<-[:MARRIED]-(x:Person)
+      RETURN x
+   }
+   ELSE {
+      MATCH (n)<-[:KNOWS]-(x:Person)
+      RETURN x
+   }
+}
+ RETURN n.name
+----
+
+== Conditional `UNION` queries
+
+[source, cypher]
+----
+{
+    WHEN true THEN RETURN 1 AS x
+    WHEN false THEN RETURN 2 AS x
+    ELSE RETURN 3 AS x
+}
+UNION
+{
+    WHEN false THEN RETURN 4 AS x
+    WHEN false THEN RETURN 5 AS x
+    ELSE RETURN 6 AS x
+}
+----
+
+== Rules
