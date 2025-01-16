@@ -1,8 +1,10 @@
 = Conditional queries (WHEN)
 :page-role: new-2025.02
 
-The `WHEN` clause in Cypher allows conditional execution of parts of a query.
-It enables different query branches or subqueries to run based on specified conditions.
+The `WHEN` clause in Cypher allows conditional execution of parts of a query, enabling different query branches or subqueries to run based on specified conditions.
+Much like `UNION`, `WHEN` cannot be used as a regular clause in a query (though it can be used as a standalone clause).
+Instead, it encloses different query branches or subqueries as a condition for their execution.
+In this way, it performs similar a control-flow structure to the `IF` statements of other programming languages.
 
 [[example-graph]]
 == Example graph
@@ -28,30 +30,15 @@ CREATE
   (bob)-[:MARRIED]->(eskil)
 ----
 
-== Syntax
+== Standalone `WHEN` branches
 
-[source, cypher]
-----
-<regular query> ::=
-  <union query> | <when query> | <single query> ;
+`WHEN` branches can be used independently of other query parts.
+The first predicate that evaluates to `true` will be executed.
+If no `WHEN` branches were executed and an `ELSE` branch exists, it is executed.
+If no `WHEN` branches evaluates to `true` and no `ELSE` branch is present, no rows are produced.
+The following example demonstrates this basic logic:
 
-<union query> ::=
-  <single query> , 
-  "UNION" , [ "ALL" | "DISTINCT" ] , ( <union query> | <single query> ) ;
-
-<when query> ::=
-  <when> , { <when> } , [ <else> ] ;
-
-<when> ::=
-  "WHEN" , <predicate> , "THEN" , <single query> ;
-
-<else> ::=
-  "ELSE" , <single-query>
-----
-
-
-== Standalone conditional queries
-
+.Basic `WHEN` logic
 [source, cypher]
 ----
 WHEN false THEN RETURN 1 AS x
@@ -59,18 +46,48 @@ WHEN true THEN RETURN 2 AS x
 ELSE RETURN 3 AS x
 ----
 
+Since the second `WHEN` branch is `true`, it will execute, while the preceding branch (which is `false`) and the succeeding `ELSE` branch will be skipped.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| x
+| 2
+
+1+d| Rows: 1
+|===
+
 == Conditional subqueries
 
+`WHEN` can be used inside a subquery to execute operations only when a condition evaluates to `true`.
+
+In the below example, `WHEN` is used to execute a xref:subqueries/call-subquery.adoc[`CALL` subquery] for each row that the condition (`m IS NULL`) evaluates to `true`. 
+
+.`WHEN` inside a `CALL` subquery
 [source, cypher]
 ----
- MATCH (n:Person)
- OPTIONAL MATCH (n)-[:KNOWS]->(m)
- CALL (n,m) {
-   WHEN m IS NULL THEN {
-      CREATE (f: Person {name: 'Peter', age: n.age}), (n)-[:KNOWS]->(f)
-   }
- }
+MATCH (n:Person)
+OPTIONAL MATCH (n)-[:KNOWS]->(m)
+CALL {
+  WHEN m IS NULL THEN {
+    MERGE (f: Person {name: 'Peter'}), (n)-[:KNOWS]->(f)
+    RETURN f, collect(n.name) AS newFriends
+  }
+}
+RETURN f.name AS newNode, newFriends
 ----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| newNode | newFriends
+
+| "Peter"
+| ["Daniel", "Eskil"]
+
+2+d| Rows: 1
+|===
+
 
 [source, cypher]
 ----
