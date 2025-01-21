@@ -2,7 +2,7 @@
 :page-role: new-2025.02
 
 The `WHEN` clause in Cypher allows conditional execution of parts of a query, enabling different query branches or subqueries to run based on specified conditions.
-Much like `UNION`, `WHEN` cannot be used as a regular clause in a query (though it can be used as a standalone clause).
+Much like `UNION`, `WHEN` cannot be used as a regular clause in a query (though it can be used as standalone branches).
 Instead, it encloses different query branches or subqueries as a condition for their execution.
 In this way, it performs similar a control-flow structure to the `IF` statements of other programming languages.
 
@@ -60,17 +60,21 @@ Since the second `WHEN` branch is `true`, it will execute, while the preceding b
 == Conditional subqueries
 
 `WHEN` can be used inside a subquery to execute operations only when a condition evaluates to `true`.
-
-In the below example, `WHEN` is used to execute a xref:subqueries/call-subquery.adoc[`CALL` subquery] for each row that the condition (`m IS NULL`) evaluates to `true`. 
+For example, in a xref:subqueries/call-subquery.adoc[`CALL` subquery], you can use `WHEN` to ensure that particular actions are executed when a certain criteria is met.
 
 .`WHEN` inside a `CALL` subquery
+=====
+
+In this example, `WHEN` is used to execute a `CALL` subquery for each row that the condition (`m IS NULL`) evaluates to `true`. 
+
+.Conditional `CALL` subquery
 [source, cypher]
 ----
 MATCH (n:Person)
 OPTIONAL MATCH (n)-[:KNOWS]->(m)
 CALL {
   WHEN m IS NULL THEN {
-    MERGE (f: Person {name: 'Peter'}), (n)-[:KNOWS]->(f)
+    MERGE (f: Person {name: 'Peter', age: 36, eyes: 'green'}), (n)-[:KNOWS]->(f)
     RETURN f, collect(n.name) AS newFriends
   }
 }
@@ -87,23 +91,51 @@ RETURN f.name AS newNode, newFriends
 
 2+d| Rows: 1
 |===
+=====
 
 
+.`WHEN` inside an `EXISTS` subquery
+=====
+
+Here `WHEN` is used inside an xref:subqueries/existential.adoc[`EXISTS` subquery] to conditionally execute different branches based on the evaluation of the condition (`n.age > 40`).
+If the condition evaluates to `true`, the subquery fetches people that the `person` knows; otherwise, it retrieves who the `person` is married to.
+
+.`WHEN` inside `EXISTS` subquery
 [source, cypher]
 ----
-MATCH (n:Person)
+MATCH (person:Person)
 WHERE EXISTS {
-    WHEN n.age > 40 THEN {
-      MATCH (n)<-[:MARRIED]-(x:Person)
-      RETURN x
-   }
-   ELSE {
-      MATCH (n)<-[:KNOWS]-(x:Person)
-      RETURN x
-   }
+  WHEN person.age > 40 THEN {
+    MATCH (person)-[:KNOWS]->(x:Person)
+    RETURN x AS knows
+  }
+  ELSE {
+    MATCH (person)-[:MARRIED]->(x:Person)
+    RETURN x AS marriedTo
+  }
 }
- RETURN n.name
+RETURN DISTINCT person.name AS person, 
+       collect(knows.name) AS knows, 
+       collect(marriedTo.name) AS marriedTo
 ----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| person   | knows | marriedTo
+
+| "Alice"  | ["Bob", "Charlie"]         | []
+| "Bob"    | ["Daniel"]                 | ["Eskil"]
+| "Charlie"| ["Daniel"]                 | []
+| "Daniel" | ["Bob", "Charlie", "Peter"]| []
+| "Eskil"  | ["Peter"]                  | ["Bob"]
+| "Peter"  | ["Daniel", "Eskil"]        | []
+
+3+d| Rows: 6
+|===
+
+=====
+
 
 == Conditional `UNION` queries
 
