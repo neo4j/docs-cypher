@@ -1,4 +1,4 @@
-= Conditional queries (WHEN)
+= Conditional queries (`WHEN...THEN...ELSE`)
 :page-role: new-2025.02
 
 The `WHEN` clause in Cypher allows conditional execution of parts of a query, enabling different query branches or subqueries to run based on specified conditions.
@@ -22,7 +22,7 @@ CREATE
   (bob:Person {name: 'Bob', age: 25, eyes: 'blue'}),
   (charlie:Person {name: 'Charlie', age: 53, eyes: 'green'}),
   (daniel:Person {name: 'Daniel', age: 32, eyes: 'brown'}),
-  (eskil:Person {name: 'Eskil', age: 41, eyes: 'blue'}),
+  (eskil:Person {name: 'Eskil', age: 39, eyes: 'blue'}),
   (alice)-[:KNOWS]->(bob),
   (alice)-[:KNOWS]->(charlie),
   (bob)-[:KNOWS]->(daniel),
@@ -71,7 +71,7 @@ In this example, `WHEN` is used to execute a `CALL` subquery for each row that t
 [source, cypher]
 ----
 MATCH (n:Person)
-OPTIONAL MATCH (n)-[:KNOWS]->(m)
+OPTIONAL MATCH (n)-[:KNOWS]->(m:Person)
 CALL (*) {
   WHEN m IS NULL THEN {
     MERGE (f: Person {name: 'Peter', age: 36, eyes: 'green'})
@@ -79,7 +79,8 @@ CALL (*) {
     RETURN f, n.name AS newFriend
   }
 }
-RETURN f.name AS newNode, collect(newFriend) AS newFriends
+RETURN f.name AS newNode,
+       collect(newFriend) AS newFriends
 ----
 
 .Result
@@ -95,7 +96,7 @@ RETURN f.name AS newNode, collect(newFriend) AS newFriends
 =====
 
 
-.`WHEN` inside an `EXISTS` subquery
+.Conditional `EXISTS` subquery
 =====
 
 Here `WHEN` is used inside an xref:subqueries/existential.adoc[`EXISTS` subquery] to conditionally execute different branches based on the evaluation of the condition (`n.age > 40`).
@@ -104,49 +105,34 @@ If the condition evaluates to `true`, the subquery fetches people that the `pers
 .`WHEN` inside `EXISTS` subquery
 [source, cypher]
 ----
-MATCH (person:Person)-[r]->(connection:Person)
+MATCH (n:Person)
 WHERE EXISTS {
-  WHEN person.age > 40 THEN {
-    MATCH (person)-[:KNOWS]->(x:Person)
+  WHEN n.age > 40 THEN {
+    MATCH (n)-[:KNOWS]->(x:Person)
     RETURN x
   }
   ELSE {
-    MATCH (person)-[:MARRIED]->(y:Person)
+    MATCH (n)-[:MARRIED]->(x:Person)
     RETURN x
   }
 }
-RETURN person.name AS person,
-       type(r) AS relationship,
-       connection.name AS connection
+RETURN n.name AS names
 ----
 
+Since each condition is satisfied by a distinct node, the query only returns two rows.
 
-
-+---------------------------------+
-| name     | type(r)   | z.name   |
-+---------------------------------+
-| "Eskil"  | "KNOWS"   | "Peter"  |
-| "Bob"    | "KNOWS"   | "Daniel" |
-| "Bob"    | "MARRIED" | "Eskil"  |
-| "Daniel" | "KNOWS"   | "Peter"  |
-+---------------------------------+
 .Result
-[role="queryresult",options="header,footer",cols="3*<m"]
+[role="queryresult",options="header,footer",cols="1*<m"]
 |===
-| person   | knows | marriedTo
+| names
 
-| "Alice"  | ["Bob", "Charlie"]         | []
-| "Bob"    | ["Daniel"]                 | ["Eskil"]
-| "Charlie"| ["Daniel"]                 | []
-| "Daniel" | ["Bob", "Charlie", "Peter"]| []
-| "Eskil"  | ["Peter"]                  | ["Bob"]
-| "Peter"  | ["Daniel", "Eskil"]        | []
+| "Charlie"
+| "Bob"
 
-3+d| Rows: 6
+1+d| Rows: 2
 |===
 
 =====
-
 
 == Conditional `UNION` queries
 
