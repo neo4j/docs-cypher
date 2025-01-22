@@ -21,7 +21,7 @@ CREATE
   (alice:Person {name:'Alice', age: 38, eyes: 'brown'}),
   (bob:Person {name: 'Bob', age: 25, eyes: 'blue'}),
   (charlie:Person {name: 'Charlie', age: 53, eyes: 'green'}),
-  (daniel:Person {name: 'Daniel', eyes: 'brown'}),
+  (daniel:Person {name: 'Daniel', age: 32, eyes: 'brown'}),
   (eskil:Person {name: 'Eskil', age: 41, eyes: 'blue'}),
   (alice)-[:KNOWS]->(bob),
   (alice)-[:KNOWS]->(charlie),
@@ -72,13 +72,14 @@ In this example, `WHEN` is used to execute a `CALL` subquery for each row that t
 ----
 MATCH (n:Person)
 OPTIONAL MATCH (n)-[:KNOWS]->(m)
-CALL {
+CALL (*) {
   WHEN m IS NULL THEN {
-    MERGE (f: Person {name: 'Peter', age: 36, eyes: 'green'}), (n)-[:KNOWS]->(f)
-    RETURN f, collect(n.name) AS newFriends
+    MERGE (f: Person {name: 'Peter', age: 36, eyes: 'green'})
+    MERGE (n)-[:KNOWS]->(f)
+    RETURN f, n.name AS newFriend
   }
 }
-RETURN f.name AS newNode, newFriends
+RETURN f.name AS newNode, collect(newFriend) AS newFriends
 ----
 
 .Result
@@ -103,22 +104,32 @@ If the condition evaluates to `true`, the subquery fetches people that the `pers
 .`WHEN` inside `EXISTS` subquery
 [source, cypher]
 ----
-MATCH (person:Person)
+MATCH (person:Person)-[r]->(connection:Person)
 WHERE EXISTS {
   WHEN person.age > 40 THEN {
     MATCH (person)-[:KNOWS]->(x:Person)
-    RETURN x AS knows
+    RETURN x
   }
   ELSE {
-    MATCH (person)-[:MARRIED]->(x:Person)
-    RETURN x AS marriedTo
+    MATCH (person)-[:MARRIED]->(y:Person)
+    RETURN x
   }
 }
-RETURN DISTINCT person.name AS person, 
-       collect(knows.name) AS knows, 
-       collect(marriedTo.name) AS marriedTo
+RETURN person.name AS person,
+       type(r) AS relationship,
+       connection.name AS connection
 ----
 
+
+
++---------------------------------+
+| name     | type(r)   | z.name   |
++---------------------------------+
+| "Eskil"  | "KNOWS"   | "Peter"  |
+| "Bob"    | "KNOWS"   | "Daniel" |
+| "Bob"    | "MARRIED" | "Eskil"  |
+| "Daniel" | "KNOWS"   | "Peter"  |
++---------------------------------+
 .Result
 [role="queryresult",options="header,footer",cols="3*<m"]
 |===
