@@ -57,7 +57,7 @@ Since the second `WHEN` branch is `true`, it will execute, while the preceding b
 |===
 
 [[query-branches-column-rules]]
-== Branch consistency: columns and names
+== Branch consistency: column numbers and names
 
 Similar to `UNION`, the number and names of the columns must be identical in all branches included in a `WHEN`/`ELSE` branch.
 
@@ -71,8 +71,8 @@ ELSE RETURN 3 AS y
 .Not allowed: returning different number of columns in different branches
 [source, cypher, role=test-fail]
 ----
-WHEN true THEN RETURN 2 AS x
-ELSE RETURN 3 AS y
+WHEN true THEN RETURN 2 AS x, 3 AS y
+ELSE RETURN 3 AS x
 ----
 
 == Conditional subqueries
@@ -157,7 +157,8 @@ Since each condition is satisfied by a distinct node, the query only returns two
 
 Conditional queries can also be combined using `UNION [DISTINCT]` or `UNION ALL` (the former alternative removes duplicates from the result set, the latter does not).
 
-If the conditional query begins with `WHEN`, it must be enclosed with curly braces, `{}`.
+If the conditional query begins with `WHEN` and involves `UNION`, the `WHEN` branches must be enclosed within top-level curly braces, `{}`.
+(Such top-level braces can also be used to xref:queries/composed-queries/combined-queries.adoc[combine `UNION` and `UNION ALL`].)
 
 .Combining conditional queries with `UNION`
 [source, cypher]
@@ -175,41 +176,68 @@ UNION
 }
 ----
 
-Similarly, if `WHEN` branches are combined with more than one `UNION` operator, curly operators must be used a
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| x
 
-`UNION` and `UNION ALL` is combined, curly braces must be used around
+| 1
+| 6
+
+1+d| Rows: 2
+|===
+
+If the queries combined by the `UNION` does not begin with `WHEN`, then top-level braces are not necessary.
+In the example below, `UNION` is used to combine the results of two conditional subqueries (the first `CALL`, enclosing the combined conditional subqueries, is necessary to enable the collection for each `person` in the final results).
 
 
+ necessary to group these subqueries together so that their results can be collected for each person in the final return statement.
 
-
-.Combining conditional queries 
-
+.Combining conditional subqueries with `UNION`
+[source, cypher]
+----
 MATCH (n:Person)
-OPTIONAL MATCH (n)-[:KNOWS]->(m:Person)
-CALL (*) {
-	WHEN m IS NULL THEN {
-      MERGE (f: Person {name: 'Peter', age: 36, eyes: 'green'})
-      MERGE (n)-[:KNOWS]->(f)
-      RETURN f, n.name AS newFriend
-   }
+CALL (n) { 
+  OPTIONAL MATCH (n)-[r:LOVES]->(m:Person)
+  CALL (*) {
+    WHEN r IS NULL THEN {
+      RETURN n.name AS person, "Loves no one" AS message
+    }
+    ELSE {
+      RETURN n.name AS person, "Loves somebody" AS message
+    }
+  }
+  RETURN person, message
+  UNION
+  CALL (*) {
+    WHEN n.age < 30 THEN {
+       RETURN n.name AS person, "Younger person" AS message
+    }
+    ELSE {
+       RETURN n.name AS person, "Older person" AS message
+    }
+  }
+  RETURN person, message
 }
-RETURN f.name AS newNode,
-       collect(newFriend) AS newFriends
-}
-UNION 
-{
-MATCH (n:Person)
-OPTIONAL MATCH (n)-[:LOVES]->(m:Person)
-CALL (*) {
-	WHEN m IS NULL THEN {
-      MERGE (f: Person {name: 'John'})
-      MERGE (n)-[:KNOWS]->(f)
-      RETURN f, n.name AS newFriend
-   }
-}
-RETURN f.name AS newNode,
-       collect(newFriend) AS newFriends
+RETURN person, collect(message) as status
+----
 
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| person | status
+
+| "Alice"   | ["Loves no one", "Older person"]
+| "Charlie" | ["Loves no one", "Older person"]
+| "Daniel"  | ["Loves no one", "Older person"]
+| "Eskil"   | ["Loves no one", "Older person"]
+| "Peter"   | ["Loves no one", "Older person"]
+| "John"    | ["Loves no one", "Older person"]
+| "Bob"     | ["Loves somebody", "Younger person"]
+
+2+d| Rows: 7
+
+|===
 
 
 == Rules
