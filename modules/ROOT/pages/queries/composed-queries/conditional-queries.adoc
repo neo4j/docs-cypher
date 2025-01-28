@@ -1,16 +1,15 @@
 = Conditional queries (`WHEN`)
 :page-role: new-2025.02
 
-`WHEN`, together with `THEN` and `ELSE`, enables different branches of a query to execute based on specified conditions.
+`WHEN`, together with `THEN` and `ELSE`, enables different branches of a query to execute based on certain conditions.
 In this way, it performs similar a control-flow mechanism to the `IF` statements found in other programming languages.
-`WHEN` constructs can be used as standalone branches, as part of subqueries, or combined `UNION` queries, but it cannot be used as a regular clause in a query.
 
 [[example-graph]]
 == Example graph
 
 The following graph is used for the examples below:
 
-image::conditionals_graph.svg[width="400",role="middle"]
+image::conditional_query_graph.svg[width="600",role="middle"]
 
 To recreate the graph, run the following query against an empty Neo4j database:
 
@@ -29,15 +28,16 @@ CREATE
   (charlie)-[:LOVES]->(alice)
 ----
 
+[[standalone-when-logic]]
 == Standalone `WHEN` branches and basic logic
 
 `WHEN` branches can be used independently of other clauses.
 The first predicate that evaluates to `true` will be executed.
 If no `WHEN` branches are executed and an `ELSE` branch exists, it is executed.
 If no `WHEN` branches evaluates to `true` and no `ELSE` branch is present, no branches are executed and no rows are produced.
-The following example demonstrates this basic logic:
+The following example demonstrates this logic:
 
-.Basic `WHEN` logic
+.`WHEN` logic
 [source, cypher]
 ----
 WHEN false THEN RETURN 1 AS x
@@ -56,8 +56,8 @@ Since the second `WHEN` branch is `true`, it will execute, while the preceding b
 1+d| Rows: 1
 |===
 
-[[query-branches-column-rules]]
-=== Branch consistency: column numbers and names
+[[when-rules]]
+== Rules
 
 Similar to `UNION`, the number and names of the columns must be identical in all parts of a `WHEN`/`ELSE` construct.
 
@@ -75,13 +75,29 @@ WHEN true THEN RETURN 2 AS x, 3 AS y
 ELSE RETURN 3 AS x
 ----
 
+`WHEN` can also not positioned as a regular clause in a query.
+For example, it cannot immediately succeed a `MATCH` clause.
+
+.Not allowed: using `WHEN` constructs as regular clauses
+[source, cypher, role=test-fail]
+----
+MATCH (n)-[:WORKS_FOR]->(m:Person)
+  WHEN m IS NULL THEN {
+   MERGE (n)-[:WORKS_FOR]->(f: Person {name: 'Peter', age: 36})
+  }
+RETURN n.name AS employees,
+       m.name AS manager,
+       f.name AS newManagerNode
+----
+
+Instead, if `WHEN` constructs are part of a larger query, they must be either be placed within a subquery and/or on different sides of combined `UNION` queries.
+
 == Conditional subqueries
 
-`WHEN` can be used inside a xref:subqueries/index.adoc[subquery] to execute a set of operations only when a condition evaluates to `true`.
+`WHEN` can be used inside one or several chained xref:subqueries/index.adoc[subqueries] to execute a set of operations only when a specified condition evaluates to `true`.
 
 .Conditional `CALL` subquery
 =====
-
 In this example, `WHEN` is used to execute a xref:subqueries/call-subquery.adoc[`CALL` subquery] for each row that the condition (`m IS NULL`) evaluates to `true`. 
 
 .Conditional `CALL` subquery
@@ -96,16 +112,16 @@ CALL (*) {
    RETURN f, n.name AS newFriend
  }
 }
-RETURN f.name AS employer,
+RETURN f.name AS manager,
       collect(newFriend) AS employees
 ----
 
-Because only `Daniel` and `Eskil` had no outgoing `KNOWS` relationships, they have now been connected as acquaintances with the new `Peter` node.
+Because only `Daniel` and `Eskil` had no outgoing `WORKS_FOR` relationships, they have now been connected as employees of the new `Peter` node.
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| employeer | employees
+| manager | employees
 
 | "Peter"
 | ["Daniel", "Eskil"]
@@ -117,7 +133,6 @@ Because only `Daniel` and `Eskil` had no outgoing `KNOWS` relationships, they ha
 
 .Conditional `EXISTS` subquery
 =====
-
 In this example, `WHEN` is used inside an xref:subqueries/existential.adoc[`EXISTS` subquery] to conditionally execute different branches based on the evaluation of the condition (`n.age > 40`).
 If the condition evaluates to `true`, the subquery fetches people that the `person` knows; otherwise, it retrieves who the `person` is married to.
 
@@ -125,7 +140,7 @@ If the condition evaluates to `true`, the subquery fetches people that the `pers
 Unlike `CALL` subqueries, variables returned in an `EXISTS` subquery is not available to the outer scope (the same is true for xref:subqueries/count.adoc[`COUNT`] and xref:subqueries/collect.adoc[`COLLECT` subqueries]).
 
 .`WHEN` inside `EXISTS` subquery
-[source, cypher]xxs
+[source, cypher]
 ----
 MATCH (n:Person)
 WHERE EXISTS {
@@ -138,7 +153,9 @@ WHERE EXISTS {
     RETURN x
   }
 }
-RETURN n.name AS name, n.age AS age, exists((n)-[:LOVES]->()) as hasLovesRel
+RETURN n.name AS name,
+       n.age AS age,
+       exists((n)-[:LOVES]->()) AS hasLovesRel
 ----
 
 Since each condition is satisfied by a distinct node, the query only returns two rows.
@@ -163,12 +180,13 @@ Since each condition is satisfied by a distinct node, the query only returns two
 Disjointed conditional subqueries be chained in succession, each executing depending on a set of defined condition.
 
 This example uses conditional logic to assign age groups to individuals.
-It then collects the names of their managers (who they `WORK_FOR`), tagging them as "Older manager" or "Younger manager" based on their age relative to the individual.
+It then collects the names and age grouping of their managers (who they `WORK_FOR`).
 
-.Combining several conditional `CALL` subqueries
+.Chaining several conditional `CALL` subqueries
 [source, cypher]
 ----
-MATCH (n:Person)-[r:WORKS_FOR]->(m:Person)
+MATCH (n:Person)
+OPTIONAL MATCH (n)-[r:WORKS_FOR]->(m:Person)
 CALL (*) { 
   WHEN n.age > 60 THEN {
     SET n.ageGroup = 'Veteran'
@@ -185,27 +203,29 @@ CALL (*) {
 }
 CALL (*) {
   WHEN m.age > n.age THEN {
-    RETURN collect([m.name, "Older manager"]) AS manager
+    RETURN collect([m.name, m.ageGroup]) AS manager
   }
   ELSE {
-    RETURN collect([m.name, "Younger manager"]) AS manager
+    RETURN collect([m.name, m.ageGroup]) AS manager
   }
 }
 RETURN n.name AS name, ageGroup, manager
 ----
+
 
 .Result
 [role="queryresult",options="header,footer",cols="3*<m"]
 |===
 | name  | ageGroup | manager
 
-| "Alice"   | "Veteran" | [["Daniel", "Younger manager"]]
-| "Bob"     | "Junior"  | [["Alice", "Older manager"]]
-| "Charlie" | "Veteran" | [["Daniel", "Younger manager"]]
-| "Daniel"  | "Senior"  | [["Peter", "Older manager"]]
-| "Eskil"   | "Senior"  | [["Peter", "Younger manager"]]
+| "Alice"   | "Veteran" | [["Daniel", "Senior"]]
+| "Bob"     | "Junior"  | [["Alice", "Veteran"]]
+| "Charlie" | "Veteran" | [["Daniel", "Senior"]]
+| "Daniel"  | "Senior"  | [["Peter", "Senior"]]
+| "Eskil"   | "Senior"  | [["Peter", "Senior"]]
+| "Peter"   | "Senior"  | [[NULL, NULL]]
 
-3+d| Rows: 5
+3+d| Rows: 6
 |===
 
 =====
@@ -214,10 +234,9 @@ RETURN n.name AS name, ageGroup, manager
 [[combined-conditional-queries]]
 == Combining conditional queries with `UNION`
 
-Conditional queries can also be combined using `UNION [DISTINCT]` or `UNION ALL` (the former alternative removes duplicates from the result set, the latter does not).
+The results of multiple conditional queries can also be combined using `UNION [DISTINCT]` or `UNION ALL`; the former alternative removes duplicates from the result set, the latter does not (for more information, see xref:queries/composed-queries/combined-queries.adoc[]).
 
-If the conditional query begins with `WHEN` and involves `UNION`, the `WHEN` branches must be enclosed within curly braces, `{}`.
-(Such top-level braces can also be used to xref:queries/composed-queries/combined-queries.adoc[combine `UNION` and `UNION ALL`].)
+If the conditional query begins with `WHEN` and involves `UNION`, the `WHEN` branches must be enclosed within curly braces, `{}` (the same `{}` can also be used to xref:queries/composed-queries/combined-queries.adoc#combining-union-and-union-all[combine `UNION` and `UNION ALL`]).
 
 .Combining conditional branches with `UNION` using `{}`
 [source, cypher]
@@ -246,8 +265,14 @@ UNION
 1+d| Rows: 2
 |===
 
-If the queries combined by the `UNION` does not begin with a `WHEN` branch, then top-level braces are not necessary.
+If the queries combined by the `UNION` does not begin with a `WHEN` branch, then enclosing curly braces are not necessary (though they can still be used).
+
+.Combining conditional logic with `UNION`
+=====
 In the example below, `UNION` is used to combine the results of two conditional subqueries (the first `CALL`, enclosing the whole query, is necessary to enable the collection for each `person` from each conditional subquery part in the final results).
+
+The query categorizes people based on two conditions: whether they have a `LOVES` relationship and whether they are younger or older than `40`.
+The final result provides a list of `status` messages for each `person`, showing the combined outcome of both conditions.
 
 .Combining conditional subqueries with `UNION`
 [source, cypher]
@@ -275,7 +300,7 @@ CALL (n) {
   }
   RETURN person, message
 }
-RETURN person, collect(message) as status
+RETURN person, collect(message) AS status
 ----
 
 .Result
@@ -284,13 +309,14 @@ RETURN person, collect(message) as status
 | person | status
 
 | "Alice"   | ["Loves no one", "Older person"]
-| "Charlie" | ["Loves no one", "Older person"]
+| "Charlie" | ["Loves somebody", "Older person"]
 | "Daniel"  | ["Loves no one", "Younger person"]
 | "Eskil"   | ["Loves no one", "Younger person"]
 | "Peter"   | ["Loves no one", "Younger person"]
 | "Bob"     | ["Loves somebody", "Younger person"]
 
-2+d| Rows: 7
+2+d| Rows: 6
 
 |===
 
+=====
