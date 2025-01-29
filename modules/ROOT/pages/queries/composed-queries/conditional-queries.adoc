@@ -39,11 +39,11 @@ CREATE
 [source, syntax]
 ----
 WHEN predicate THEN [{]
-  <expression or query>
+  <conditionalQuery>
   [}]
 [WHEN ...]
 [ELSE [{]
-  <expression or queryn>
+  <conditionalQuery>
 [}]]
 ----
 
@@ -96,7 +96,7 @@ The enclosing `{}` in the above example and the below examples are not required 
 |===
 
 
-[[when-rules]]
+[[conditional-rules]]
 == Rules
 
 Similar to `UNION`, the number and names of the columns must be identical in all parts of a `WHEN`/`ELSE` construct.
@@ -139,30 +139,31 @@ RETURN n.name AS employees,
        f.name AS newManagerNode
 ----
 
-Instead, if `WHEN` constructs are part of a larger query, they must be either be placed within a subquery and/or on different sides of combined `UNION` queries.
+Instead, if `WHEN` constructs are part of a larger query, they must either be placed within a subquery and/or on different sides of combined `UNION` queries.
 
+[[conditional-subqueries]]
 == Conditional subqueries
 
-`WHEN` can be used inside one or several chained xref:subqueries/index.adoc[subqueries] to execute a set of operations only when a specified condition evaluates to `true`.
+`WHEN` can be used inside one or several xref:subqueries/call-subquery.adoc[`CALL` subqueries] to execute a set of operations only when a specified condition evaluates to `true`.
 
-.Syntax for conditional subqueries
+.Syntax for conditional `CALL` subqueries
 [source, syntax]
 ----
-[<outerScope>]
-<conditionalSubquery> {
+[<outerQuery>]
+<callSubquery> {
   WHEN predicate THEN [{]
-    <expression or query>
+    <conditionalQuery>
  [}]
- [WHEN ...]
+ [WHEN ...]*
  [ELSE [{]
-  <expression or query>
+  <conditionalQuery>
  [}]]
 }
-[<secondConditionalSubquery> ...]
-[<outerScope>]
+[<callSubquery> ...]*
+[<outerQuery>]
 ----
 
-.Conditional `CALL` subquery
+.Single conditional `CALL` subquery
 =====
 In this example, `WHEN` is used to execute a xref:subqueries/call-subquery.adoc[`CALL` subquery] for each row that the condition (`m IS NULL`) evaluates to `true`. 
 
@@ -196,51 +197,10 @@ Because only `Daniel` and `Eskil` had no outgoing `WORKS_FOR` relationships, the
 |===
 =====
 
-
-.Conditional `EXISTS` subquery
-=====
-In this example, `WHEN` is used inside an xref:subqueries/existential.adoc[`EXISTS` subquery] to conditionally execute different branches based on the evaluation of the condition (`n.age > 40`).
-If the condition evaluates to `true`, the subquery fetches people that the `person` knows; otherwise, it retrieves who the `person` loves.
-[NOTE]
-Unlike `CALL` subqueries, variables returned in an `EXISTS` subquery are not available to the outer scope (the same is true for xref:subqueries/count.adoc[`COUNT`] and xref:subqueries/collect.adoc[`COLLECT` subqueries]).
-
-.`WHEN` inside `EXISTS` subquery
-[source, cypher]
-----
-MATCH (n:Person)
-WHERE EXISTS {
-  WHEN n.age > 40 THEN {
-    MATCH (n)-[:WORKS_FOR]->(x:Person)
-    RETURN x
-  }
-  ELSE {
-    MATCH (n)-[:LOVES]->(x:Person)
-    RETURN x
-  }
-}
-RETURN n.name AS name,
-       n.age AS age,
-       exists((n)-[:LOVES]->()) AS hasLovesRel
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="3*<m"]
-|===
-| names | age | hasLovesRel
-
-| "Alice" | 65 | FALSE
-| "Charlie" | 61 | TRUE
-| "Bob" | 25 | TRUE
-
-3+d| Rows: 2
-|===
-
+.Chaining conditional `CALL` subqueries
 =====
 
-.Chaining conditional subqueries
-=====
-
-Disjointed conditional subqueries be chained in succession, each executing depending on a set of defined conditions.
+Disjointed conditional `CALL` subqueries be chained in succession, each executing depending on a set of defined conditions.
 
 This example uses conditional logic to assign age groups to individuals.
 It then collects the names and age grouping of their managers (who they `WORK_FOR`).
@@ -275,7 +235,6 @@ CALL (*) {
 RETURN n.name AS name, ageGroup, manager
 ----
 
-
 .Result
 [role="queryresult",options="header,footer",cols="3*<m"]
 |===
@@ -293,6 +252,64 @@ RETURN n.name AS name, ageGroup, manager
 
 =====
 
+xref:subqueries/existential.adoc[`EXISTS`], xref:subqueries/collect.adoc[`COLLECT`], and xref:subqueries/count.adoc[`COUNT`] subquery expressions can also contain `WHEN` branches.
+
+.Syntax for conditional `EXISTS`, `COLLECT`, and `COUNT` subqueries
+[source, syntax]
+----
+[<outerExpression>]
+EXISTS|COUNT|COLLECT {
+  WHEN predicate THEN [{]
+    <conditionalQuery>
+ [}]
+ [WHEN ...]*
+ [ELSE [{]
+  <conditionalQuery>
+ [}]]
+}
+[<outerExpression>]
+----
+
+
+.Conditional `EXISTS` subquery
+=====
+In this example, `WHEN` is used inside an xref:subqueries/existential.adoc[`EXISTS` subquery] to conditionally execute different branches based on the evaluation of the predicate (`n.age > 40`). 
+
+[NOTE]
+Unlike `CALL` subqueries, variables returned in an `EXISTS` subquery are not available to the outer scope (the same is true for xref:subqueries/count.adoc[`COUNT`] and xref:subqueries/collect.adoc[`COLLECT` subqueries]).
+
+.`WHEN` inside `EXISTS` subquery
+[source, cypher]
+----
+MATCH (n:Person)
+WHERE EXISTS {
+  WHEN n.age > 40 THEN {
+    RETURN n.name AS x
+  }
+  ELSE {
+    MATCH (n)-[:LOVES]->(x:Person)
+    RETURN x
+  }
+}
+RETURN n.name AS name,
+       n.age AS age
+----
+
+`Alice` and `Charlie` are both older than 40, so they are returned by the `WHEN` branch, while `Bob` is returned by the `ELSE` branch.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| names | age 
+
+| "Alice" | 65
+| "Charlie" | 61
+| "Bob" | 25
+
+2+d| Rows: 3
+|===
+
+=====
 
 [[combined-conditional-queries]]
 == Combining conditional queries with `UNION`
@@ -306,23 +323,24 @@ If the conditional query begins with `WHEN` and involves `UNION`, the `WHEN` bra
 ----
 {
   WHEN predicate THEN [{]
-  <expression or query>
+  <conditionalQuery>
   [}]
-[WHEN ...]
+[WHEN ...]*
 [ELSE [{]
-  <expression or query>
+  <conditionalQuery>
 [}]]
 }
 UNION [DISTINCT|ALL]
 {
   WHEN predicate THEN [{]
-  <expression or query>
+  <conditionalQuery>
   [}]
-[WHEN ...]
+[WHEN ...]*
 [ELSE [{]
-  <expression or query>
+  <conditionalQuery>
 [}]]
 }
+UNION [DISTINCT|ALL]*
 ----
 
 .Combining conditional branches with `UNION` using `{}`
@@ -354,35 +372,6 @@ UNION
 
 If the queries combined by the `UNION` does not begin with a `WHEN` branch, then enclosing curly braces are not necessary.
 
-.Syntax for combining conditional subqueries with `UNION`
-[source, syntax]
-----
-[<outerScope>]
-<conditionalSubquery> {
-  WHEN predicate THEN [{]
-   <expression or query>
-  [}]
-  [WHEN ...]
-  [ELSE [{]
-    <expression or query>
-  [}]]
-}
-[<secondConditionalSubquery> ...]
-[<outerScope>]
-UNION [DISTINCT|ALL]
-[<outerScope>]
-<conditionalSubquery> {
-  WHEN predicate THEN [{]
-   <expression or query>
-  [}]
-  [WHEN ...]
-  [ELSE [{]
-    <expression or query>
-  [}]]
-}
-[<secondConditionalSubquery> ...]
-[<outerScope>]
-----
 
 .Combining conditional logic with `UNION`
 =====
