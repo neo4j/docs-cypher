@@ -22,28 +22,27 @@ For more uses of `WHERE`, see xref:expressions/predicate-expressions/index.adoc[
 
 The following graph is used for the examples below:
 
-image::graph_where_clause.svg[width="600",role="middle"]
+image::graph_where_clause.svg[width="700",role="middle"]
 
 To recreate the graph, run the following query in an empty Neo4j database:
 
 [source, cypher, role=test-setup]
 ----
 CREATE (andy:Swedish:Person {name: 'Andy', age: 36}),
-       (timothy:Person {name: 'Timothy', age: 25}),
+       (timothy:Person {name: 'Timothy', age: 38}),
        (peter:Person {name: 'Peter', age: 35}),
-       (lisa:Person {name: 'Lisa', age: 28}),
+       (lisa:Person {name: 'Lisa', age: 48}),
        (john:Person {name: 'John', age: 40}),
-       (susan:Person {name: 'Susan', age: 22}),
+       (susan:Person {name: 'Susan', age: 32}),
        (andy)-[:KNOWS {since: 2012}]->(timothy),
        (andy)-[:KNOWS {since: 1999}]->(peter),
        (peter)-[:KNOWS {since: 2005}]->(lisa),
        (lisa)-[:KNOWS {since: 2010}]->(john),
-       (john)-[:KNOWS {since: 2015}]->(susan)
+       (john)-[:KNOWS {since: 2021}]->(susan)
 ----
 
-[[filter-on-node-label]]
+[[basic-filtering]]
 == Basic filtering
-
 
 .Filter on a node label
 [source, cypher]
@@ -67,7 +66,7 @@ RETURN n.name AS name
 [source, cypher]
 ----
 MATCH (n:Person)
-WHERE n.age < 30
+WHERE n.age < 35
 RETURN n.name AS name, n.age AS age
 ----
 
@@ -76,25 +75,23 @@ RETURN n.name AS name, n.age AS age
 |===
 | name | age
 
-| "Timothy" | 25
-| "Lisa" | 28
-| "Susan" | 22
+| "Susan" | 32 
 
-2+d|Rows: 3
+2+d|Rows: 1
 |===
 
 .Filter on a relationship property
 [source, cypher]
 ----
-MATCH (n:Person)-[k:KNOWS]->(f)
+MATCH (:Person {name:'Andy'})-[k:KNOWS]->(f)
 WHERE k.since < 2000
-RETURN f.name AS name
+RETURN f.name AS oldFriend
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
-| name
+| oldFriend
 
 | "Peter"
 
@@ -102,10 +99,10 @@ RETURN f.name AS name
 |===
 
 
-[[filter-on-dynamic-property]]
+[[filter-on-dynamic-properties]]
 == Filter on dynamic properties
 
-To filter on a property using a dynamically computed name, use square brackets:
+To filter on a property using a dynamically computed name, use square brackets `[]`:
 
 .Parameters
 [source, parameters]
@@ -119,7 +116,7 @@ To filter on a property using a dynamically computed name, use square brackets:
 [source, cypher]
 ----
 MATCH (n:Person)
-WHERE n[$propname] < 30
+WHERE n[$propname] > 40
 RETURN n.name AS name, n.age AS age
 ----
 
@@ -128,22 +125,20 @@ RETURN n.name AS name, n.age AS age
 |===
 | name | age
 
-| "Timothy" | 25
-| "Lisa" | 28
-| "Susan" | 22
+| "Lisa" | 48
 
-2+d|Rows: 3
+2+d|Rows: 1
 |===
 
 
-[[usage-with-with-clause]]
+[[where-and-with]]
 == Using `WHERE` after `WITH`
 
 xref:clauses/with.adoc[`WITH`] can be used to manipulate the output of a clause before it is passed on to subsequent query parts.
 Once such a manipulation has occurred, the original clause output is not available to subsequent clauses.
 For example, in the below query, `WITH` manipulates the output of the preceding `MATCH` in such a way that the succeeding `RETURN` no longer has access to the variable `n` declared in the `MATCH`.
 
-.`WITH` manipulating clause output
+.`WITH` only retains explicitly listed variables; others become inaccessible
 [source, cypher, role=test-fail]
 ----
 MATCH (n:Person)
@@ -159,7 +154,7 @@ However, because `WHERE` is a subclause and not a clause, its scope is not limit
 ----
 MATCH (n:Person)
 WITH n.name as name
-WHERE n.age = 25
+WHERE n.age = 38
 RETURN name
 ----
 
@@ -177,17 +172,18 @@ The name for `Timothy` is returned because the `WHERE` clause still acts as a fi
 However, `WITH` still reduces the scope for the rest of the query moving forward.
 In this case, `name` is the only variable in scope for the `RETURN` clause.
 
-[[pattern-element-predicates]]
+[[filter-patterns]]
 == Filter patterns
 
-`WHERE` clauses can be added to fixed-length and variable-length patterns in order to specify additional constraints.
+`WHERE` clauses can be added to xref:patterns/fixed-length-patterns.adoc[fixed-length] and xref:patterns/variable-length-patterns.adoc[variable-length patterns] in order to specify additional constraints.
 
+[[fixed-length-patterns]]
 === Fixed-length patterns
 
 .`WHERE` inside a node pattern
 [source, cypher]
 ----
-WITH 30 AS minAge
+WITH 35 AS minAge
 MATCH (a:Person WHERE a.name = 'Andy')-[:KNOWS]->(b:Person WHERE b.age > minAge)
 RETURN b.name AS name
 ----
@@ -197,7 +193,7 @@ RETURN b.name AS name
 |===
 | name
 
-| "Peter"
+| "Timothy"
 
 1+d|Rows: 1
 |===
@@ -228,17 +224,17 @@ RETURN [(a)-->(b WHERE b:Person) | b.name] AS friends
 ----
 WITH 2000 AS minYear
 MATCH (a:Person)-[r:KNOWS WHERE r.since < minYear]->(b:Person)
-RETURN r.since AS knowsSince
+RETURN a.name AS person, b.name AS friend, r.since AS knowsSince
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols="1*<m"]
+[role="queryresult",options="header,footer",cols="3*<m"]
 |===
-| knowsSince
+| name | friend | knowsSince
 
-| 1999
+| "Andy" | "Peter" | 1999
 
-1+d|Rows: 1
+3+d|Rows: 1
 |===
 
 Relationship pattern predicates can also be used inside pattern comprehensions, where the same caveats apply:
@@ -261,19 +257,19 @@ RETURN [(a)-[r:KNOWS WHERE r.since < minYear]->(b:Person) | r.since] AS years
 1+d|Rows: 1
 |===
 
+[[variable-length-patterns]]
 === Variable-length patterns
 
-If matching for variable length patterns, `WHERE` can only be used together with the xref:patterns/variable-length-patterns.adoc#quantified-path-patterns[quantified path pattern] syntax.
+If matching for variable length patterns, `WHERE` can only be used together with the xref:patterns/variable-length-patterns.adoc#quantified-path-patterns[quantified path pattern] or xref:patterns/variable-length-patterns.adoc#quantified-relationships[quantified relationships] syntax.
 
-.Allowed - `WHERE` predicate inside a quantified path pattern
+.Allowed - `WHERE` predicate inside a quantified relationship
 [source, cypher]
 ----
-MATCH p = (a:Person {name: "Andy"})
-      ((:Person)-[r:KNOWS]->(:Person WHERE r.since < 2011)) {1,3}
+MATCH p = (a:Person {name: "Andy"})-[r:KNOWS WHERE r.since < 2011]->{1,4}(:Person)
 RETURN [n IN nodes(p) | n.name] AS paths
 ----
 
-Note that any paths including `Timothy` are excluded by the `WHERE` predicate (`Andy` knows him since `2012`).
+Note that any path´s including `Timothy` and `Susan` are excluded by the `WHERE` predicate, since their incoming `KNOWS` relationships both have a `since` value that is higher than `2011.`
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
@@ -287,14 +283,13 @@ Note that any paths including `Timothy` are excluded by the `WHERE` predicate (`
 1+d|Rows: 3
 |===
 
-
 For more information about using `WHERE` predicates in quantified path patterns, see xref:patterns/variable-length-patterns.adoc#quantified-path-patterns-predicates[Predicated in quantified path patterns].
 
-`WHERE` is not allowed in variable-length patterns using the old,non-GQL compliant xref:patterns/reference.adoc#variable-length-relationships[variable-length relationship] syntax.
+`WHERE` is not allowed in variable-length patterns using the non-GQL compliant xref:patterns/reference.adoc#variable-length-relationships[variable-length relationship] syntax.
 
 .Not allowed - `WHERE` inside a variable-length relationship
 [source, cypher, role=test-fail]
 ----
-MATCH p = (a:Person {name: 'Andy'})-[r:KNOWS*1..3 WHERE r.since < 2010]->(b:Person)
+MATCH p = (a:Person {name: 'Andy'})-[r:KNOWS*1..4 WHERE r.since < 2011]->(b:Person)
 RETURN [n IN nodes(p) | n.name] AS path
 ----
