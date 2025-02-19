@@ -1,5 +1,6 @@
 = Predicate operators
 :table-caption!:
+:description: Information about using predicate operators in Cypher (including boolean, comparison, string, and list operators).
 
 Predicate operators are used to evaluate expressions and return `BOOLEAN` values.
 They are categorized as follows:
@@ -14,22 +15,18 @@ They are categorized as follows:
 
 The following graph is used for the examples below:
 
+image::predicate_operators.svg[width="500",role="middle"]
+
 To recreate the graph, run the following query in an empty Neo4j database:
 
 [source, cypher, role=test-setup]
 ----
-CREATE (alice:Person {name:'Alice', age: 65, email: 'alice@company.com', occupation: 'Project manager'}),
-       (cecil:Person {name: 'Cecil', age: 25, email: 'bob@company.com', occupation: 'Software developer'}),
-       (cecilia:Person {name: 'Cecilia', age: 31, occupation: 'Software developer'}),
-       (charlie:Person {name: 'Charlie', age: 61, occupation: 'Security engineer'}),
-       (daniel:Person {name: 'Daniel', age: 39, email: 'daniel@company.com', occupation: 'Director'}),
-       (eskil:Person {name: 'Eskil', age: 39, email: 'eskil@private.se'}),
-       (cecil)-[:WORKS_FOR]->(alice),
-       (cecilia)-[:WORKS_FOR]->(alice),
-       (alice)-[:WORKS_FOR]->(daniel),
-       (charlie)-[:WORKS_FOR]->(daniel),
-       (cecil)-[:LOVES]->(eskil),
-       (charlie)-[:LOVES]->(alice)
+CREATE (alice:Person {name:'Alice', age: 65, role: 'Project manager', email: 'alice@company.com'}),
+       (cecil:Person {name: 'Cecil', age: 25, role: 'Software developer', email: 'cecil@private.se'}),
+       (cecilia:Person {name: 'Cecilia', age: 31, role: 'Software developer'}),
+       (charlie:Person {name: 'Charlie', age: 61, role: 'Security engineer'}),
+       (daniel:Person {name: 'Daniel', age: 39, role: 'Director', email: 'daniel@company.com'}),
+       (eskil:Person {name: 'Eskil', age: 39, role: 'CEO', email: 'eskil@company.com'})
 ----
 
 [[boolean-operators]]
@@ -64,14 +61,14 @@ The boolean operators comprise:
 [source, cypher]
 ----
 MATCH (n:Person)
-WHERE n.age > 30 AND n.occupation = 'Software developer'
-RETURN n.name AS name, n.age AS age, n.occupation AS occupation
+WHERE n.age > 30 AND n.role = 'Software developer'
+RETURN n.name AS name, n.age AS age, n.role AS role
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="3*<m"]
 |===
-| name | age | occupation
+| name | age | role
 
 | "Cecilia" | 31 | "Software developer"
 
@@ -82,14 +79,14 @@ RETURN n.name AS name, n.age AS age, n.occupation AS occupation
 [source, cypher]
 ----
 MATCH (n:Person)
-WHERE n.age < 30 OR n.occupation = 'Software developer'
-RETURN n.name AS name, n.age AS age, n.occupation AS occupation
+WHERE n.age < 30 OR n.role = 'Software developer'
+RETURN n.name AS name, n.age AS age, n.role AS role
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="3*<m"]
 |===
-| name | age | occupation
+| name | age | role
 
 | "Cecilia" | 31  | "Software developer"
 | "Cecil" | 25 | "Software developer"
@@ -101,58 +98,60 @@ RETURN n.name AS name, n.age AS age, n.occupation AS occupation
 [source, cypher]
 ----
 MATCH (n:Person)
-WHERE n.age > 30 XOR n.occupation = 'Software developer'
-RETURN n.name AS name, n.age AS age, n.occupation AS occupation
+WHERE n.age > 30 XOR n.role = 'Software developer'
+RETURN n.name AS name, n.age AS age, n.role AS role
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols="3*<m"]
+[role="queryresult",options="header,footer",cols="5*<m"]
 |===
-| name | age | occupation
+| name | age | role
 
 | "Alice" | 65 | "Project manager"
 | "Cecil" | 25 | "Software developer"
 | "Charlie" | 61 | "Security engineer"
+| "Eskil"   | 39  | "CEO"  
 | "Daniel" | 39 | "Director"
 
-3+d|Rows: 4
+3+d|Rows: 5
 |===
 
 .`NOT` operator
 [source, cypher]
 ----
 MATCH (n:Person)
-WHERE NOT (n)-[:LOVES]->(:Person)
-RETURN n.name AS name
+WHERE NOT n.age = 39
+RETURN n.name AS name, n.age AS age
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols="1*<m"]
+[role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| name
+| name | age |
 
-| "Eskil"
-| "Alice"
-| "Cecilia"
-| "Daniel"
+| "Alice" | 65
+| "Cecil" | 25
+| "Cecilia" | 31
+| "Charlie" | 61
 
-1+d|Rows: 4
+2+d|Rows: 4
 |===
 
 .Combining boolean operators
 [source, cypher]
 ----
 MATCH (n:Person)
-WHERE n.occupation = 'Software developer' XOR (n.age > 60 AND n.occupation = 'Security engineer') OR NOT (n.occupation = 'Director' OR n.name = 'Eskil')
-RETURN n.name AS name, n.age AS age, n.occupation AS occupation
+WHERE n.role = 'Software developer' XOR (n.age > 60 AND n.role = 'Security engineer') OR NOT (n.role = 'Director' OR n.name = 'Eskil')
+RETURN n.name AS name, n.age AS age, n.role AS role
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="3*<m"]
 |===
-| name | age | occupation
+| name | age | role
 
 | "Alice" | 65 | "Project manager"
+| "Cecil"   | 25  | "Software developer" 
 | "Cecilia" | 31 | "Software developer"
 | "Daniel" | 39 | "Director"
 
@@ -186,14 +185,14 @@ For more information about `null`, see xref:values-and-types/working-with-null.a
 [source, cypher]
 ----
 MATCH (n:Person)
-WHERE n.occupation = 'Software developer'
-RETURN n.name AS name, n.occupation AS occupation
+WHERE n.role = 'Software developer'
+RETURN n.name AS name, n.role AS role
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| name | occupation
+| name | role
 
 | "Cecil" | "Software developer"
 | "Cecilia" | "Software developer"
@@ -205,18 +204,19 @@ RETURN n.name AS name, n.occupation AS occupation
 [source, cypher]
 ----
 MATCH (n:Person)
-WHERE n.occupation <> 'Software developer'
-RETURN n.name AS name, n.occupation AS occupation
+WHERE n.role <> 'Software developer'
+RETURN n.name AS name, n.role AS role
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| name | occupation
+| name | role
 
 | "Alice" | "Project manager"
 | "Charlie" | "Security engineer"
 | "Daniel" | "Director"
+| "Eskil" | "CEO"
 
 2+d|Rows: 3
 |===
@@ -326,7 +326,7 @@ RETURN n.name AS name
 ----
 MATCH (n:Person)
 WHERE n.email IS NOT NULL
-RETURN n.name AS name
+RETURN n.name AS name, n.email AS email
 ----
 
 .Result
@@ -335,12 +335,11 @@ RETURN n.name AS name
 | name | email
 
 | "Alice" | "alice@company.com"
-| "Cecil" | "bob@company.com"
+| "Cecil" | "cecil@private.se"
 | "Daniel" | "daniel@company.com"
-| "Eskil" | "eskil@private.se"
+| "Eskil" | "eskil@company.se"
 
 2+d|Rows: 4
-
 |===
 
 =====
@@ -567,14 +566,14 @@ RETURN n.name AS name
 [source, cypher]
 ----
 MATCH (n:Person)
-WHERE n.occupation ENDS WITH 'developer'
-RETURN n.name AS name, n.occupation AS occupation
+WHERE n.role ENDS WITH 'developer'
+RETURN n.name AS name, n.role AS role
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| name | occupation
+| name | role
 
 | "Cecil" | "Software developer"
 | "Cecilia" | "Software developer"
@@ -586,15 +585,15 @@ RETURN n.name AS name, n.occupation AS occupation
 [source, cypher]
 ----
 MATCH (n:Person)
-WHERE n.occupation CONTAINS 'eng'
-RETURN n.name AS name, n.occupation AS occupation
+WHERE n.role CONTAINS 'eng'
+RETURN n.name AS name, n.role AS role
 ----
 
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| name | occupation
+| name | role
 
 | "Charlie" | "Security engineer"
 
@@ -614,7 +613,7 @@ Flags are given at the beginning of the regular expression.
 .Regular expressions
 =====
 
-.Regular expressio (`=~`)
+.Regular expression (`=~`)
 [source, cypher]
 ----
 MATCH (n:Person)
@@ -628,8 +627,8 @@ RETURN n.name AS name, n.email AS email
 | name | email
 
 | "Alice" | "alice@company.com"
-| "Cecil" | "bob@company.com"
 | "Daniel" | "daniel@company.com"
+| "Eskil" | "eskil@company.com"
 
 2+d|Rows: 3
 |===
@@ -682,7 +681,7 @@ RETURN n.name AS name, n.email AS email
 |===
 | name | email
 
-| "Eskil" | "eskil@private.se" 
+| "Cecil" | "cecil@private.se"
 
 2+d|Rows: 1
 
@@ -822,14 +821,14 @@ To check if an element exists in a xref:values-and-types/lists.adoc[`LIST`], use
 [source, cypher]
 ----
 MATCH (n:Person)
-WHERE n.occupation IN ['Software developer', 'Project manager']
-RETURN n.name AS name, n.occupation AS occupation
+WHERE n.role IN ['Software developer', 'Project manager']
+RETURN n.name AS name, n.role AS role
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| name | occupation
+| name | role
 
 | "Alice"   | "Project manager"
 | "Cecil"   | "Software developer"
