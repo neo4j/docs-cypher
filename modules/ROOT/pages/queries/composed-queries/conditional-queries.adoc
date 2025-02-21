@@ -205,7 +205,7 @@ Because only `Daniel` and `Eskil` had no outgoing `WORKS_FOR` relationships, the
 Disjointed conditional `CALL` subqueries be chained in succession, each executing depending on a set of defined conditions.
 
 This example uses conditional logic to assign age groups to individuals.
-It then collects the names and age grouping of their managers (who they `WORK_FOR`).
+The second `CALL` then collects the names and age groupings of their managers (who they `WORK_FOR`), but only for individuals whose manager is older than them.
 
 .Chaining several conditional `CALL` subqueries
 [source, cypher]
@@ -230,26 +230,20 @@ CALL (*) {
   WHEN m.age > n.age THEN {
     RETURN collect([m.name, m.ageGroup]) AS manager
   }
-  ELSE {
-    RETURN collect([m.name, m.ageGroup]) AS manager
-  }
 }
 RETURN n.name AS name, ageGroup, manager
 ----
+
+`Bob` returned because he is the only person in the graph with an older manager.
 
 .Result
 [role="queryresult",options="header,footer",cols="3*<m"]
 |===
 | name  | ageGroup | manager
 
-| "Alice"   | "Veteran" | [["Daniel", "Senior"]]
 | "Bob"     | "Junior"  | [["Alice", "Veteran"]]
-| "Charlie" | "Veteran" | [["Daniel", "Senior"]]
-| "Daniel"  | "Senior"  | [["Peter", "Senior"]]
-| "Eskil"   | "Senior"  | [["Peter", "Senior"]]
-| "Peter"   | "Senior"  | \[[NULL, NULL]]
 
-3+d| Rows: 6
+3+d| Rows: 1
 |===
 
 =====
@@ -297,7 +291,8 @@ RETURN n.name AS name,
        n.age AS age
 ----
 
-`Alice` and `Charlie` are both older than 40, so they are returned by the `WHEN` branch, while `Bob` is returned by the `ELSE` branch.
+`Alice` and `Charlie` are both older than `40,` so they are returned by the `WHEN` branch, while `Bob` is returned by the `ELSE` branch.
+Note that some `Person` nodes in the graph are not matched in either branch of the conditional subquery, and are therefore not returned.
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -372,7 +367,7 @@ UNION
 1+d| Rows: 2
 |===
 
-If the queries combined by the `UNION` does not begin with a `WHEN` branch, then enclosing curly braces are not necessary.
+If the queries combined by the `UNION` do not begin with a `WHEN` branch, then enclosing curly braces are not necessary.
 
 
 .Combining conditional logic with `UNION`
@@ -400,10 +395,10 @@ CALL (n) {
   UNION
   CALL (*) {
     WHEN n.age < 40 THEN {
-     RETURN n.name AS person, "Younger person" AS message
+     RETURN n.name AS person, "Under 40" AS message
     }
     ELSE {
-     RETURN n.name AS person, "Older person" AS message
+     RETURN n.name AS person, "40 or older" AS message
     }
   }
   RETURN person, message
@@ -416,11 +411,11 @@ RETURN person, collect(message) AS status
 |===
 | person | status
 
-| "Alice"   | ["Loves no one", "Older person"]
-| "Charlie" | ["Loves somebody", "Older person"]
-| "Daniel"  | ["Loves no one", "Younger person"]
-| "Eskil"   | ["Loves no one", "Younger person"]
-| "Peter"   | ["Loves no one", "Younger person"]
+| "Alice"   | ["Loves no one", "40 or older"]
+| "Charlie" | ["Loves somebody", "40 or older"]
+| "Daniel"  | ["Loves no one", "Under 40"]
+| "Eskil"   | ["Loves no one", "Under 40"]
+| "Peter"   | ["Loves no one", "Under 40"]
 | "Bob"     | ["Loves somebody", "Younger person"]
 
 2+d| Rows: 6
