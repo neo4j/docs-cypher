@@ -16,8 +16,8 @@ New features are added to the language continuously, and occasionally, some feat
 This section lists all of the features that have been removed, deprecated, added, or extended in different Cypher versions.
 Replacement syntax for deprecated and removed features are also indicated.
 
-[[cypher-deprecations-additions-removals-2025.01]]
-== Neo4j 2025.01
+[[cypher-deprecations-additions-removals-2025.03]]
+== Neo4j 2025.03
 
 === Removed features
 [cols="2", options="header"]
@@ -83,6 +83,17 @@ Instead, use the xref:functions/scalar.adoc#functions-properties[`properties()`]
 MATCH (n)-[r:REL]->(m) SET n = properties(r)
 ----
 
+a|
+label:functionality[]
+label:removed[]
+[source, cypher, role="noheader"]
+----
+REVOKE READ {*} ON GRAPH * NODES A FROM missingUser
+REVOKE ROLE missingRole FROM bob
+----
+a|
+Errors have replaced notifications for impossible link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/manage-roles/#access-control-revoke-roles[`REVOKE`] commands where a user, role, or database does not exist.
+
 |===
 
 
@@ -96,13 +107,33 @@ MATCH (n)-[r:REL]->(m) SET n = properties(r)
 a|
 label:functionality[]
 label:updated[]
+[source, cypher, role=noheader]
+----
+MATCH SHORTEST $param (:A)-[:R]->{0,10}(:B)
+----
+
+[source, cypher, role=noheader]
+----
+MATCH p = ANY $param (:A)-[:R]->{0,10}(:B)
+----
+
+[source, cypher, role=noheader]
+----
+MATCH SHORTEST $param GROUPS (:A)-[:R]->{0,10}(:B)
+----
+
+a| Parameters can now be used in xref:patterns/shortest-paths.adoc[`SHORTEST` and `ANY` path patterns].
+
+a|
+label:functionality[]
+label:updated[]
 [source, cypher, role="noheader"]
 ----
 CALL db.schema.nodeTypeProperties() YIELD propertyTypes RETURN propertyTypes;
 CALL db.schema.relTypeProperties() YIELD propertyTypes RETURN propertyTypes;
 ----
 a|
-The column `propertyTypes` returned by the procedures link:{neo4j-docs-base-uri}/operations-manual/{page-version}/procedures/#procedure_db_schema_nodetypeproperties[`db.schema.nodeTypeProperties()`] and link:{neo4j-docs-base-uri}/operations-manual/{page-version}/procedures/#procedure_db_schema_reltypeproperties[`db.schema.relTypeProperties()`] previously returned a list of strings representing the potential Java types for a given property.
+The column `propertyTypes` returned by the procedures link:{neo4j-docs-base-uri}/operations-manual/current/procedures/#procedure_db_schema_nodetypeproperties[`db.schema.nodeTypeProperties()`] and link:{neo4j-docs-base-uri}/operations-manual/current/procedures/#procedure_db_schema_reltypeproperties[`db.schema.relTypeProperties()`] previously returned a list of strings representing the potential Java types for a given property.
 It now returns a list of strings representing the possible Cypher Types the given property has.
 For all available Cypher types, see the section on xref::values-and-types/property-structural-constructed.adoc#types-synonyms[types and their synonyms].
 
@@ -132,6 +163,136 @@ Several  xref:clauses/transaction-clauses.adoc#query-listing-transactions[`SHOW 
 * `startTime` and `currentQueryStartTime` now return a `ZONED DATETIME` instead of a `STRING` representation of a temporal value.
 * `clientAddress` and `outerTransactionId` now return `null` instead of an empty `STRING` when unavailable.
 * The current query-related columns — `currentQuery`, `currentQueryId`, `parameters`, `planner`, `runtime`, `indexes`, `currentQueryStartTime`, `currentQueryElapsedTime`, `currentQueryCpuTime`, `currentQueryIdleTime`, and `currentQueryStatus` — now return `null` when no query is executing.
+
+a|
+label:functionality[]
+label:updated[]
+[source, cypher, role="noheader"]
+----
+USE graph.byName('tom`s-database')
+
+USE graph.propertiesByName('database.with.dot')
+----
+|  xref::expressions/expressions-overview.adoc#graphreferences[Graph references] in arguments of the functions xref:functions/graph.adoc#functions-graph-byname[`graph.byName`] and xref:functions/graph.adoc#functions-graph-propertiesByName[`graph.propertiesByName`] in Cypher 25 are parsed as `<symbolic-name>` or `<symbolic-name>.<symbolic-name>` and now support escaping names.
+For more information, see xref:syntax/expressions.adoc#graph-references[Cypher expressions -> Graph references].
+Graph name parts that contain unsupported characters for unescaped symbolic names now require backtick quoting.
+Graph name parts with special characters may require additional escaping of those characters:
+
+* `++USE graph.byName('`tom``s-database`')++`
+
+* `++USE graph.propertiesByName('database.with.dot')++`
+
+Note that escaping graph names within the graph functions string argument is not supported in Cypher 5.
+
+a|
+label:functionality[]
+label:updated[]
+[source, cypher, role="noheader"]
+----
+CREATE (:Person)
+MATCH (p:Person)
+RETURN count(p) AS count
+----
+
+| Queries no longer require xref:clauses/with.adoc[`WITH`] to transition between reading and writing operations.
+
+|===
+
+=== New features
+
+[cols="2", options="header"]
+|===
+| Feature
+| Details
+
+a|
+label:functionality[]
+label:new[]
+
+[source, cypher, role="noheader"]
+----
+WHEN false THEN RETURN 1 AS x
+WHEN true THEN RETURN 2 AS x
+ELSE RETURN 3 AS x
+----
+
+[source, cypher, role="noheader"]
+----
+ MATCH (n:Person)
+ OPTIONAL MATCH (n)-[:KNOWS]->(m)
+ CALL (*) {
+   WHEN m IS NULL THEN {
+      CREATE (f: Person {name: 'Peter', age: n.age}),
+      (n)-[:KNOWS]->(f)
+         RETURN f, n.name AS newConnection
+   }
+ }
+RETURN f.name AS newNode,
+       collect(newConnection) AS newConnections
+----
+
+| Introduction of `WHEN`/`ELSE` branches which enable the composition of conditional queries, similar to the `IF` statement in other programming languages.
+For more information, see xref:queries/composed-queries/conditional-queries.adoc[].
+
+a|
+label:functionality[]
+label:new[]
+[source, cypher, role="noheader"]
+----
+{
+   MATCH (n:Actor)
+   RETURN n.name AS name
+   UNION
+   MATCH (n:Director)
+   RETURN n.name AS name
+}
+UNION ALL
+MATCH (n:Movie)
+RETURN n.title AS name
+----
+
+| `UNION [DISTINCT]` and `UNION ALL` can now be combined in the same query by using curly braces.
+For more information, see xref:queries/composed-queries/combined-queries.adoc#combining-union-and-union-all[Combining `UNION` and `UNION ALL`].
+
+a|
+label:functionality[]
+label:new[]
+[source, cypher, role="noheader"]
+----
+CREATE DATABASE db OPTIONS { seedRestoreUntil: ... }
+----
+| The option `seedRestoreUntil` can now be specified in the `CREATE DATABASE` `OPTIONS` map.
+This allows a database to be seeded up to a specific date or transaction ID.
+For more information, see link:{neo4j-docs-base-uri}/operations-manual/current/clustering/databases/#cluster-seed-uri[Operations Manual -> Clustering -> Seed from URI].
+|===
+
+[[cypher-deprecations-additions-removals-2025.01]]
+== Neo4j 2025.01
+
+=== Deprecated features
+
+[cols="2", options="header"]
+|===
+| Feature
+| Details
+
+a|
+label:functionality[]
+label:deprecated[]
+[source, cypher, role="noheader"]
+----
+CYPHER eagerAnalyzer=ir MATCH (a)-->(b) DELETE b RETURN a
+----
+
+[source, cypher, role="noheader"]
+----
+CYPHER eagerAnalyzer=lp MATCH (a)-->(b) DELETE b RETURN a
+----
+a|
+
+The Cypher query option `eagerAnalyzer` is deprecated and will be removed without a replacement.
+Eagerness analysis is systematically performed on the logical plan regardless of the value provided.
+
 |===
 
 [[cypher-deprecations-additions-removals-5.26]]
@@ -167,8 +328,8 @@ MATCH (where {...})
 ----
 MATCH (...)-[where {...}]->()
 ----
-a| The unescaped variable named `where` (or any casing variant, like `WHERE`) used in a node or relationship pattern followed directly by a property key-value expression is deprecated.
-To continue using variables with this name, use backticks to escape the variable name:
+a| The variable named `where` (or any casing variant, like `WHERE`) used in a node or relationship pattern followed directly by a property key-value expression is deprecated.
+To continue using variables with this name, use backticks to quote the variable name:
 
 * Node patterns: `MATCH (++`where`++ { ... })`
 * Relationship patterns: `MATCH (...)-[++`where`++ { ... }]->()`
@@ -186,7 +347,7 @@ label:deprecated[]
 ----
 ... + n:A&B\|C
 ----
-a| Using an unparenthesized label expression predicate as the right-hand side operand of `+` is deprecated.
+a| Using an unparenthesized label expression predicate as the right-hand side operand of `\+` is deprecated.
 Parenthesize the label expression predicate on the right-hand side of `+`: `... + (n:A)`.
 
 a|
@@ -196,8 +357,8 @@ label:deprecated[]
 ----
 CASE x ... WHEN is :: STRING THEN ... END
 ----
-a| Using an unescaped variable named `is` (or any casing variant, like `IS`) as a `WHEN` operand in a xref:queries/case.adoc#case-simple[simple `CASE`] expression is deprecated.
-To continue using variables with this name in simple `CASE` expressions, use backticks to escape the variable name: `CASE x ... WHEN ++`is`++ :: STRING THEN ... END`
+a| Using a variable named `is` (or any casing variant, like `IS`) as a `WHEN` operand in a xref:expressions/conditional-expressions.adoc#case-simple[simple `CASE`] expression is deprecated.
+To continue using variables with this name in simple `CASE` expressions, use backticks to quote the variable name: `CASE x ... WHEN ++`is`++ :: STRING THEN ... END`
 
 a|
 label:functionality[]
@@ -209,8 +370,8 @@ CASE x ... WHEN contains + 1 THEN ... END
 ----
 CASE x ... WHEN contains - 1 THEN ... END
 ----
-a| Using an unescaped variable named `contains` (or any casing variant, like `CONTAINS`) in addition or subtraction operations within a `WHEN` operand of a xref:queries/case.adoc#case-simple[simple `CASE`] expression is deprecated.
-To continue using variables with this name, use backticks to escape the variable name:
+a| Using a variable named `contains` (or any casing variant, like `CONTAINS`) in addition or subtraction operations within a `WHEN` operand of a xref:expressions/conditional-expressions.adoc#case-simple[simple `CASE`] expression is deprecated.
+To continue using variables with this name, use backticks to quote the variable name:
 
 * Additions: `CASE x ... WHEN ++`contains`++ + 1 THEN ... END` 
 * Subtractions: `CASE x ... WHEN ++`contains`++ - 1 THEN ... END`
@@ -225,8 +386,8 @@ CASE x ... WHEN in[1] THEN ... END
 ----
 CASE x ... WHEN in["abc"] THEN ... END
 ----
-a| Using the `[]` operator on an unescaped variable named `in` (or any casing variant, like `IN`) within a `WHEN` operand of a xref:queries/case.adoc#case-simple[simple `CASE`] expression is deprecated.
-To continue using variables with this name, use backticks to escape the variable name:
+a| Using the `[]` operator on a variable named `in` (or any casing variant, like `IN`) within a `WHEN` operand of a xref:expressions/conditional-expressions.adoc#case-simple[simple `CASE`] expression is deprecated.
+To continue using variables with this name, use backticks to quote the variable name:
 	
 * `CASE x ... WHEN ++`in`++[1] THEN ... END` 
 * `CASE x ... WHEN ++`in`++["abc"] THEN ... END`
@@ -241,7 +402,7 @@ CALL db.schema.nodeTypeProperties() YIELD propertyTypes RETURN propertyTypes;
 CALL db.schema.relTypeProperties() YIELD propertyTypes RETURN propertyTypes;
 ----
 a|
-The column `propertyTypes` currently returned by the procedures link:{neo4j-docs-base-uri}/operations-manual/{page-version}/procedures/#procedure_db_schema_nodetypeproperties[`db.schema.nodeTypeProperties()`] and link:{neo4j-docs-base-uri}/operations-manual/{page-version}/procedures/#procedure_db_schema_reltypeproperties[`db.schema.relTypeProperties()`] produces a list of strings representing the potential Java types for a given property.
+The column `propertyTypes` currently returned by the procedures link:{neo4j-docs-base-uri}/operations-manual/current/procedures/#procedure_db_schema_nodetypeproperties[`db.schema.nodeTypeProperties()`] and link:{neo4j-docs-base-uri}/operations-manual/current/procedures/#procedure_db_schema_reltypeproperties[`db.schema.relTypeProperties()`] produces a list of strings representing the potential Java types for a given property.
 In an upcoming major release of Neo4j, this will be updated to represent the possible Cypher types for that property instead.
 For all available Cypher types, see the section on xref::values-and-types/property-structural-constructed.adoc#types-synonyms[types and their synonyms].
 
@@ -254,7 +415,7 @@ CREATE DATABASE db OPTIONS { seedCredentials: ...,  seedConfig: ... }
 ----
 | The `CREATE DATABASE` option `seedCredentials` has been deprecated.
 For seeding from cloud storage, it is recommended to use `CloudSeedProvider` which will read cloud credentials and configuration from standard locations.
-For further information, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/clustering/databases/#cloud-seed-provider[Managing databases in a cluster -> CloudSeedProvider].
+For further information, see link:{neo4j-docs-base-uri}/operations-manual/current/clustering/databases/#cloud-seed-provider[Managing databases in a cluster -> CloudSeedProvider].
 
 a|
 label:functionality[]
@@ -267,7 +428,20 @@ CREATE DATABASE db OPTIONS { storeFormat: 'high_limit' }
 ----
 | The `standard` and `high_limit` store formats have been deprecated.
 Creating databases with these formats is therefore also deprecated.
-For more information on the deprecation of these formats, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/database-internals/store-formats/#format-deprecations[Store formats -> Format deprecations].
+For more information on the deprecation of these formats, see link:{neo4j-docs-base-uri}/operations-manual/current/database-internals/store-formats/#format-deprecations[Store formats -> Format deprecations].
+
+a|
+label:functionality[]
+label:deprecated[]
+[source, cypher, role="noheader"]
+----
+USE my.db ...
+
+----
+| In xref:clauses/use.adoc[`USE`] clauses, databases and aliases with unquoted `.` are deprecated unless the `.` is used to indicate that the database or alias belongs to a composite database.
+Names containing `.` should be quoted using backticks. 
+For example, `USE `my.db`` is valid.
+
 |===
 
 
@@ -283,13 +457,25 @@ label:functionality[]
 label:updated[]
 [source, cypher, role="noheader"]
 ----
+USE graph.byElementId("4:c0a65d96-4993-4b0c-b036-e7ebd9174905:0")
+MATCH (n) RETURN n
+----
+
+| xref:functions/graph.adoc#functions-graph-by-elementid[`graph.byElementId()`] can now be used on both link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/[standard and composite databases].
+Previously it could only be used on composite databases.
+
+a|
+label:functionality[]
+label:updated[]
+[source, cypher, role="noheader"]
+----
 CREATE DATABASE foo TOPOLOGY $p PRIMARIES $s SECONDARIES
 ----
 [source, cypher, role="noheader"]
 ----
 ALTER DATABASE foo SET TOPOLOGY $p PRIMARIES $s SECONDARIES
 ----
-| The link:{neo4j-docs-base-uri}/operations-manual/{page-version}/database-administration/standard-databases/create-databases/[`CREATE DATABASE`] and link:{neo4j-docs-base-uri}/operations-manual/{page-version}/database-administration/standard-databases/alter-databases/[`ALTER DATABASE`] commands now accept parameters for `TOPOLOGY` configuration.
+| The link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/standard-databases/create-databases/[`CREATE DATABASE`] and link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/standard-databases/alter-databases/[`ALTER DATABASE`] commands now accept parameters for `TOPOLOGY` configuration.
 
 a|
 label:functionality[]
@@ -298,7 +484,68 @@ label:updated[]
 ----
 GRANT READ {*} ON GRAPH * FOR (n) WHERE n.createdAt > date('2024-10-25') TO regularUsers
 ----
-| link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/property-based-access-control/[Property-based access control] now supports xref:values-and-types/spatial.adoc[spatial] and xref:values-and-types/temporal.adoc[temporal] values.
+| link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/property-based-access-control/[Property-based access control] now supports xref:values-and-types/spatial.adoc[spatial] and xref:values-and-types/temporal.adoc[temporal] values.
+
+
+a|
+label:functionality[]
+label:updated[]
+[source, cypher, role="noheader"]
+----
+RETURN 'val' as one, 'val' as two
+UNION
+RETURN 'val' as two, 'val' as one
+----
+
+[source, cypher, role="noheader"]
+----
+RETURN 'val' as one, 'val' as two
+UNION ALL
+RETURN 'val' as two, 'val' as one
+----
+a|
+
+Using differently ordered return items in a `UNION [ALL]` clause has been un-deprecated.
+
+|===
+
+
+=== New features
+
+[cols="2", options="header"]
+|===
+| Feature
+| Details
+
+a|
+label:functionality[]
+label:new[]
+[source, cypher, role="noheader"]
+----
+MATCH (n:$($label)),
+      ()-[r:$($type))]->()
+----
+
+[source, cypher, role="noheader"]
+----
+CREATE (n:$($label)),
+       ()-[r:$($type)]->()
+----
+
+[source, cypher, role="noheader"]
+----
+MERGE (n:$($label)),
+      ()-[r:$($type)]->()
+----
+
+[source, cypher, role="noheader"]
+----
+LOAD CSV WITH HEADERS FROM 'file:///artists-with-headers.csv' AS line
+CREATE (n:$(line.label) {name: line.Name})
+----
+
+| Added the ability to dynamically reference node labels and relationship types in xref:clauses/match.adoc#dynamic-match[`MATCH`], xref:clauses/create.adoc#dynamic-create[`CREATE`], and xref:clauses/merge.adoc#dynamic-merge[`MERGE`] clauses.
+Also introduced the ability to specify CSV columns dynamically when using xref:clauses/load-csv.adoc#dynamic-columns[`LOAD CSV`].
 |===
 
 
@@ -318,7 +565,7 @@ label:deprecated[]
 ----
 CREATE DATABASE db OPTIONS { existingDataSeedInstance: ... }
 ----
-| The `CREATE DATABASE` option `existingDataSeedInstance` has been deprecated and replaced with the option link:{neo4j-docs-base-uri}/operations-manual/{page-version}/database-administration/standard-databases/create-databases/#manage-databases-create-database-options[`existingDataSeedServer`]. The functionality is unchanged.
+| The `CREATE DATABASE` option `existingDataSeedInstance` has been deprecated and replaced with the option link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/standard-databases/create-databases/#manage-databases-create-database-options[`existingDataSeedServer`]. The functionality is unchanged.
 |===
 
 === Updated features
@@ -336,7 +583,7 @@ label:updated[]
 CREATE (n:Label {property: 'name'}), 
 ()-[r:REL_TYPE]->()
 ----
-| Neo4j's link:{neo4j-docs-base-uri}/operations-manual/{page-version}/database-internals/store-formats/#store-format-overview[block format] now implements xref:appendix/gql-conformance/index.adoc[GQL's] limit on the maximum length of identifiers.
+| Neo4j's link:{neo4j-docs-base-uri}/operations-manual/current/database-internals/store-formats/#store-format-overview[block format] now implements xref:appendix/gql-conformance/index.adoc[GQL's] limit on the maximum length of identifiers.
 
 The maximum limit is set to 16,383 characters in an identifier.
 This means that node labels, relationship types, and property keys cannot include more than 16,383 characters.
@@ -356,7 +603,7 @@ label:new[]
 ----
 CREATE DATABASE db OPTIONS { existingDataSeedServer: ... }
 ----
-| The option link:{neo4j-docs-base-uri}/operations-manual/{page-version}/database-administration/standard-databases/create-databases/#manage-databases-create-database-options[`existingDataSeedServer`] has been added to `CREATE DATABASE`. The functionality is the same as the deprecated option `existingDataSeedServer`, which this replaces.
+| The option link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/standard-databases/create-databases/#manage-databases-create-database-options[`existingDataSeedServer`] has been added to `CREATE DATABASE`. The functionality is the same as the deprecated option `existingDataSeedServer`, which this replaces.
 |===
 
 [[cypher-deprecations-additions-removals-5.24]]
@@ -436,7 +683,7 @@ label:new[]
 SET n[$prop] = "hello world"
 REMOVE n[$prop]
 ----
-| Added the ability to dynamically reference properties in xref:clauses/set.adoc#set-dynamically-a-property[SET] and xref:clauses/remove.adoc#remove-remove-a-property-dynamically[REMOVE] clauses.
+| Added the ability to dynamically reference properties in xref:clauses/set.adoc#dynamic-set-property[SET] and xref:clauses/remove.adoc#dynamic-remove-property[REMOVE] clauses.
 
 a|
 label:functionality[]
@@ -448,7 +695,7 @@ DROP [COMPOSITE] DATABASE ... [RESTRICT \| CASCADE ALIAS[ES]]
 
 | Added the ability to drop database aliases while deleting a database.
 This will affect local database aliases targeting the database and constituent database aliases belonging to the composite database.
-For more information, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/database-administration/standard-databases/delete-databases/#delete-databases-with-aliases[Delete a database with local database aliases targeting it] and link:{neo4j-docs-base-uri}/operations-manual/{page-version}/database-administration/composite-databases/delete-composite-databases/#composite-databases-delete-with-aliases[Delete a composite database with constituent database aliases].
+For more information, see link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/standard-databases/delete-databases/#delete-databases-with-aliases[Delete a database with local database aliases targeting it] and link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/composite-databases/delete-composite-databases/#composite-databases-delete-with-aliases[Delete a composite database with constituent database aliases].
 
 a|
 label:functionality[]
@@ -476,7 +723,7 @@ SET AUTH 'native' {
   SET PASSWORD CHANGE REQUIRED
 }
 ----
-| Added the ability set which link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/auth-providers[auth providers] apply to a user (Enterprise Edition).
+| Added the ability set which link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/auth-providers[auth providers] apply to a user (Enterprise Edition).
 
 Administration of the native (username / password) auth via the new syntax is also now supported (Community Edition).
 
@@ -491,7 +738,7 @@ SET AUTH 'externalProviderName' {
   SET ID 'userIdForExternalProvider'
 }
 ----
-| Added the ability add and remove user link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/auth-providers[auth providers] via the `ALTER USER` command.
+| Added the ability add and remove user link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/auth-providers[auth providers] via the `ALTER USER` command.
 
 Setting the native (username / password) auth provider via this new syntax is also supported (Community Edition), but removing any auth provider or setting a non-native auth provider is only supported in Enterprise Edition.
 
@@ -514,7 +761,7 @@ label:new[] +
 SET AUTH
 ----
 a|
-New privilege that allows a user to modify user link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/auth-providers[auth providers].
+New privilege that allows a user to modify user link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/auth-providers[auth providers].
 This is a sub-privilege of the `ALTER USER` privilege.
 Like all `GRANT`/`DENY` commands this is only available in Enterprise Edition.
 
@@ -664,7 +911,7 @@ GRANT TRAVERSE ON GRAPH * FOR (n:Email) WHERE n.classification IS NULL TO regula
 ----
 DENY MATCH {*} ON GRAPH * FOR (n) WHERE n.classification <> 'UNCLASSIFIED' TO regularUsers
 ----
-| Introduction of link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/property-based-access-control[property-based access control] for read privileges. The ability to read, traverse and match nodes based on node property values is now supported in Enterprise Edition.
+| Introduction of link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/property-based-access-control[property-based access control] for read privileges. The ability to read, traverse and match nodes based on node property values is now supported in Enterprise Edition.
 
 a|
 label:functionality[]
@@ -831,7 +1078,7 @@ RETURN 1 AS a
 UNION DISTINCT
 RETURN 1 AS a
 ----
-| The keyword `DISTINCT` can now be added after a xref:clauses/union.adoc#union-distinct[UNION] as the explicit form of a `UNION` with duplicate removal.
+| The keyword `DISTINCT` can now be added after a xref:queries/composed-queries/combined-queries.adoc#union-distinct[UNION] as the explicit form of a `UNION` with duplicate removal.
 
 a|
 label:functionality[]
@@ -890,9 +1137,9 @@ RETURN CASE n.prop
         END
 ----
 
-| Extension of the xref::queries/case.adoc#case-simple[simple `CASE` expression], allowing multiple matching values to be comma-separated in the same `WHEN` statement.
+| Extension of the xref::expressions/conditional-expressions.adoc#case-simple[simple `CASE` expression], allowing multiple matching values to be comma-separated in the same `WHEN` statement.
 The simple `CASE` uses an implied equals (`=`) comparator, and this extension additionally allows other comparison predicates to be explicitly specified before the matching value
-in an xref::queries/case.adoc#case-extended-simple[extended version of the simple `CASE`].
+in an xref::expressions/conditional-expressions.adoc#case-extended-simple[extended version of the simple `CASE`].
 
 a|
 label:functionality[]
@@ -1096,7 +1343,7 @@ GRANT LOAD ON CIDR "127.0.0.1/32" TO role
 DENY LOAD ON CIDR "::1/128" TO role
 ----
 | Added the ability to grant or deny `LOAD` privilege on a CIDR range.
-For more information, see the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/load-privileges/#access-control-load-cidr[Operations Manual -> The CIDR privilege].
+For more information, see the link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/load-privileges/#access-control-load-cidr[Operations Manual -> The CIDR privilege].
 
 |===
 
@@ -1117,9 +1364,9 @@ label:deprecated[]
 RETURN 1 as my\u0085identifier
 ----
 a|
-The Unicode character \`\u0085` is deprecated for unescaped identifiers and will be considered as a whitespace character in the future.
-To continue using it, escape the identifier by adding backticks around the identifier.
-This applies to all unescaped identifiers in Cypher, such as label expressions, properties, variable names or parameters.
+The Unicode character \`\u0085` is deprecated for identifiers not quoted in backticks and will be considered as a whitespace character in the future.
+To continue using it, quote the identifier with backticks.
+This applies to all identifiers in Cypher, such as label expressions, properties, variable names or parameters.
 In the given example, the quoted identifier would be \`my�identifier`.
 
 a|
@@ -1130,8 +1377,8 @@ label:deprecated[]
 RETURN 1 as my$Identifier
 ----
 a|
-The character with the Unicode representation \`\u0024` is deprecated for unescaped identifiers and will not be supported in the future. To continue using it, escape the identifier by adding backticks around the identifier.
-This applies to all unescaped identifiers in Cypher, such as label expressions, properties, variable names or parameters. In the given example, the quoted identifier would be \`my$identifier`.
+The character with the Unicode representation \`\u0024` is deprecated for identifiers not quoted in backticks and will not be supported in the future. To continue using it, quote the identifier with backticks.
+This applies to all identifiers in Cypher, such as label expressions, properties, variable names or parameters. In the given example, the quoted identifier would be \`my$identifier`.
 
 The following Unicode Characters are deprecated in identifiers:
 '\u0000', '\u0001', '\u0002', '\u0003', '\u0004', '\u0005', '\u0006', '\u0007',
@@ -1329,7 +1576,7 @@ CALL cdc.query(from, selectors)
 ----
 
 | Introduction of the Change Data Capture (CDC) feature.
-For details, see link:{neo4j-docs-base-uri}/cdc/{page-version}/[Change Data Capture].
+For details, see link:{neo4j-docs-base-uri}/cdc/current/[Change Data Capture].
 
 a|
 label:functionality[]
@@ -1949,7 +2196,7 @@ label:new[]
 `server.tag`
 
 a| New functionality to change tags at runtime via `ALTER SERVER`.
-More information can be found in the link:{neo4j-docs-base-uri}/operations-manual/{page-version}/clustering/servers#alter-server-options[Operations Manual -> `ALTER SERVER` options].
+More information can be found in the link:{neo4j-docs-base-uri}/operations-manual/current/clustering/servers#alter-server-options[Operations Manual -> `ALTER SERVER` options].
 
 a|
 label:functionality[]
@@ -2799,7 +3046,7 @@ label:deprecated[]
 CREATE DATABASE databaseName.withDot ...
 ----
 a|
-Creating a database with unescaped dots in the name has been deprecated, instead escape the database name:
+Creating a database with dots in the name has been deprecated, instead quote the database name using backticks:
 
 [source, cypher, role="noheader"]
 ----
@@ -4623,7 +4870,7 @@ EXECUTE
 ----
 a|
 New Cypher commands for administering privileges for executing procedures and user defined functions.
-See link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/dbms-administration/#access-control-dbms-administration-execute[The DBMS `EXECUTE` privileges].
+See link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/dbms-administration/#access-control-dbms-administration-execute[The DBMS `EXECUTE` privileges].
 
 a|
 label:syntax[]
@@ -4891,28 +5138,28 @@ New support for `YIELD` and `WHERE` clauses to allow filtering results.
 a|
 label:functionality[]
 label:new[] +
-link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/database-administration/#access-control-database-administration-transaction[TRANSACTION MANAGEMENT] privileges
+link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-transaction[TRANSACTION MANAGEMENT] privileges
 a|
 New Cypher commands for administering transaction management.
 
 a|
 label:functionality[]
 label:new[] +
-DBMS link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/dbms-administration/#access-control-dbms-administration-user-management[USER MANAGEMENT] privileges
+DBMS link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/dbms-administration/#access-control-dbms-administration-user-management[USER MANAGEMENT] privileges
 a|
 New Cypher commands for administering user management.
 
 a|
 label:functionality[]
 label:new[] +
-DBMS link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/dbms-administration/#access-control-dbms-administration-database-management[DATABASE MANAGEMENT] privileges
+DBMS link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/dbms-administration/#access-control-dbms-administration-database-management[DATABASE MANAGEMENT] privileges
 a|
 New Cypher commands for administering database management.
 
 a|
 label:functionality[]
 label:new[] +
-DBMS link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/dbms-administration/#access-control-dbms-administration-privilege-management[PRIVILEGE MANAGEMENT] privileges
+DBMS link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/dbms-administration/#access-control-dbms-administration-privilege-management[PRIVILEGE MANAGEMENT] privileges
 a|
 New Cypher commands for administering privilege management.
 
@@ -5285,21 +5532,21 @@ This Neo4j Enterprise Edition only feature involves a new runtime that has many 
 a|
 label:functionality[]
 label:new[] +
-link:{neo4j-docs-base-uri}/operations-manual/{page-version}/database-administration/standard-databases/manage-databases/[Multi-database administration]
+link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/standard-databases/manage-databases/[Multi-database administration]
 a|
 New Cypher commands for administering multiple databases.
 
 a|
 label:functionality[]
 label:new[] +
-link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/[Access control]
+link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/[Access control]
 a|
 New Cypher commands for administering role-based access control.
 
 a|
 label:functionality[]
 label:new[] +
-link:{neo4j-docs-base-uri}/operations-manual/{page-version}/authentication-authorization/manage-privileges/[Fine-grained security]
+link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/manage-privileges/[Fine-grained security]
 a|
 New Cypher commands for administering dbms, database, graph and sub-graph access control.
 
