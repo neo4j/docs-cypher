@@ -1,5 +1,11 @@
 = FILTER
-:description: 
+:description: Information about Cypher's `FILTER` clause.
+:table-caption!:
+:page-role: new-2025.03
+
+`FILTER` is used to add filters to queries, similar to Cypher's xref:clauses/where.adoc[`WHERE`] subclause.
+Unlike `WHERE`, `FILTER` is not a subclause, which means it can be used outside of the context of the xref:clauses/match.adoc[`MATCH`], xref:clauses/optional-match.adoc[`OPTIONAL MATCH`], and xref:clauses/with.adoc[`WITH`] clauses.
+It is not, however, as versatile as `WHERE`.
 
 [[example-graph]]
 == Example graph
@@ -26,43 +32,128 @@ CREATE (andy:Swedish:Person {name: 'Andy', age: 36}),
 ----
 
 
+[[basic-filtering]]
 == Basic filtering
 
+.Filter on a node label
+[source, cypher]
+----
 MATCH (n)
 FILTER n:Swedish
 RETURN n.name AS name
+----
 
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| name
+
+| "Andy"
+
+1+|Rows: 1
+|===
+
+.Filter on a node property
+[source, cypher]
+----
 MATCH (n:Person)
 FILTER n.age < 35
 RETURN n.name AS name, n.age AS age
+----
 
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | age
+
+| "Susan" | 32
+
+2+|Rows: 1
+|===
+
+.Filter on a relationship property
+[source, cypher]
+----
 MATCH (p:Person)-[r:KNOWS]->(n:Person)
-FILTER r.since > 2000
-RETURN p.name, n.name
+FILTER r.since > 2010
+RETURN p.name AS person,
+       r.since AS knowsSince,
+       n.name AS otherPerson
+----
 
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| person | knowsSince | otherPerson
+
+| "Andy" | 2012       | "Timothy"
+| "John" | 2021       | "Susan"
+
+3+|Rows: 2
+|===
+
+[[filter-on-dynamic-properties]]
 == Filter on dynamic properties
 
+To filter on a property using a dynamically computed name, use square brackets `[]`:
+
+.Parameters
+[source, parameters]
+----
+{
+  "propname": "age"
+}
+----
+
+.Filter on a dynamically computed node property
+[source, cypher]
+----
 MATCH (n:Person)
 FILTER n[$propname] > 40
 RETURN n.name AS name, n.age AS age
+----
 
-== `WITH`, `WHERE`, and `FILTER`
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | age
 
-=== FILTER as a substitute for `WITH * WHERE`
-* Filter makes WITH * WHERE ... redundant
+| "Lisa" | 48
 
+2+d|Rows: 1
+|===
+
+[[filter-with-where]]
+== `FILTER` replacing `WITH * WHERE`
+
+Unlike `WHERE`, which relies on `MATCH`, `OPTIONAL MATCH`, or `WITH` to define its scope, `FILTER` -- being a clause rather than a subclause -- can filter queries independently of these clauses.
+This can make some queries more concise.
+
+For example, the following two queries are equivalent:
+
+.Filter using `WITH * WHERE`
+[source, cypher]
+----
 UNWIND [1, 2, 3, 4, 5, 6] AS x
 WITH x
 WHERE x > 2
 RETURN x
+----
 
-same as 
-
+.Filter using `FILTER`
+[source, cypher]
+----
 UNWIND [1, 2, 3, 4, 5, 6] AS x
-FILTER > 2
+FILTER x > 2
 RETURN x
+----
 
-load csv
+As such, `FILTER` can be seen as a substitute for the `WITH * WHERE <predicate>` constructs in Cypher.
+
+.Using `FILTER` instead of `WITH * WHERE` in `LOAD CSV`
+=====
+
+The following two xref:clauses/load-csv.adoc[`LOAD CSV`] commands are equivalent:
 
 .companies.csv
 [source, csv, filename="companies.csv"]
@@ -70,10 +161,11 @@ load csv
 Id,Name,Location,Email,BusinessType
 1,Neo4j,San Mateo,contact@neo4j.com,P
 2,AAA,,info@aaa.com,
-3,BBB,Chicago, ,G
+3,BBB,Chicago, info@ ,G
 ,CCC,Michigan,info@ccc.com,G
 ----
 
+.`LOAD CSV` using `WITH * WHERE`
 [source, cypher]
 ----
 LOAD CSV WITH HEADERS FROM 'file:///companies.csv' AS row
@@ -82,6 +174,7 @@ WHERE row.Id IS NOT NULL
 MERGE (c:Company {id: row.Id})
 ----
 
+.`LOAD CSV` using `FILTER`
 [source, cypher]
 ----
 LOAD CSV WITH HEADERS FROM 'file:///companies.csv' AS row
@@ -89,25 +182,40 @@ FILTER row.Id IS NOT NULL
 MERGE (c:Company {id: row.Id})
 ----
 
+=====
 
-* Variable scope
+[[limitations]]
+== Limitations
 
+While `FILTER` replaces `WITH * WHERE <predicate>` constructs, it does not include the ability of `WITH` to manipulate the variables in scope for subsequent clauses.
+Nor can `FILTER` alias or create new variables.
+In other words, `FILTER` only has the function of `WITH * WHERE <predicate>` not `WITH <selectedVariable> AS <newVariableName> WHERE <predicate>`.
 
-* Filter cannot exist in patterns
+Unlike `WHERE`, `FILTER` cannot be used to add filters to patterns.
 
+.`WHERE` inside a node pattern
+[source, cypher]
+----
+WITH 35 AS minAge
+MATCH (a:Person WHERE a.name = 'Andy')-[:KNOWS]->(b:Person WHERE b.age > minAge)
+RETURN b.name AS name`
+----
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| name
 
+| "Timothy"
 
+1+d|Rows: 1
+|===
 
+.Not allowed -- `FILTER` inside a pattern
+[source, cypher, role=test-fail]
+----
+WITH 35 AS minAge
+MATCH (a:Person FILTER a.name = 'Andy')-[:KNOWS]->(b:Person FILTER b.age > minAge)
+RETURN b.name AS name
+----
 
-
-
-
-
-
-
-
-== Differences between `FILTER` and `WHERE`
-
-
-
-
+For more information about how to use `WHERE` in fixed-length and variable-length pattern matching, see xref:clauses/where.adoc#filter-patterns[`WHERE` -> Filter patterns].
