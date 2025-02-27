@@ -4,8 +4,7 @@
 :page-role: new-2025.03
 
 `FILTER` is used to add filters to queries, similar to Cypher's xref:clauses/where.adoc[`WHERE`].
-Unlike `WHERE`, `FILTER` is not a subclause, which means it can be used independently of the xref:clauses/match.adoc[`MATCH`], xref:clauses/optional-match.adoc[`OPTIONAL MATCH`], and xref:clauses/with.adoc[`WITH`] clauses.
-It is not, however, as versatile as `WHERE`.
+Unlike `WHERE`, `FILTER` is not a subclause, which means it can be used independently of the xref:clauses/match.adoc[`MATCH`], xref:clauses/optional-match.adoc[`OPTIONAL MATCH`], and xref:clauses/with.adoc[`WITH`] clauses, but not within them.
 
 [[example-graph]]
 == Example graph
@@ -123,10 +122,111 @@ RETURN n.name AS name, n.age AS age
 2+d|Rows: 1
 |===
 
-[[filter-with-where]]
-== `FILTER` as a substitute for `WITH * WHERE`
+[[filter-where-differeces]]
+== Differences between `FILTER` and `WHERE`
 
-Unlike `WHERE`, which relies on `MATCH`, `OPTIONAL MATCH`, or `WITH` to define its scope, `FILTER` -- being a clause rather than a subclause -- can filter queries independently of these clauses.
+`FILTER` and `WHERE` are both used to apply filter to queries.
+However, there are a number of important differences between them that arise from the fact that `FILTER` is a clause and `WHERE` is a subclause:
+
+* While `WHERE` should not be understood as a filter after the matching is finished (it should rather be seen as adding constraints to a described pattern), `FILTER` should be understood as performing post-match filtering, and not as adding constraints to a described patterns.
+* `FILTER` cannot be used within `MATCH`, `OPTIONAL MATCH`, or `WITH` clauses but only alongside them.
+This means that, unlike `WHERE`, `FILTER` cannot be used to add filters inside patterns.
+
+.Distinction between `FILTER` and `WHERE`
+=====
+
+This `OPTIONAL MATCH` example highlights the differences between the `WHERE` subclause and the `FILTER` clause.
+
+.`WHERE` constraining an `OPTIONAL MATCH` pattern
+[source, cypher]
+----
+UNWIND [32,37,40] AS ages
+OPTIONAL MATCH (p:Person) 
+WHERE p.age = ages
+RETURN p.name AS name, p.age AS age
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | age
+
+| "Susan" | 32
+| NULL | NULL
+| "John" | 40
+
+2+d|Rows: 3
+|===
+
+Because `WHERE` is a subclause belonging to `OPTIONAL MATCH`, it only filters the matches, but does not affect the number of returned rows.
+In this case, `OPTIONAL MATCH` always keeps all rows from xref:clauses/unwind.adoc[`UNWIND`], and `WHERE` does not remove any rows returning `NULL.`
+The same is not true if `WHERE` is exchanged for `FILTER`:
+
+.`FILTER` adding a post-filtering to `OPTIONAL MATCH`
+[source, cypher]
+----
+UNWIND [32,37,40] AS ages
+OPTIONAL MATCH (p:Person) 
+FILTER p.age = ages
+RETURN p.name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | age
+
+| "Susan" | 32
+| "John" | 40
+
+2+d|Rows: 2
+|===
+
+Unlike `WHERE`, FILTER is not part of the `OPTIONAL MATCH` and so removes entire rows from the result set based on the condition provided within the expression.
+That is, when `OPTIONAL MATCH` fails to find a match and `p` is `NULL`, `FILTER p.age = ages` cannot be evaluated, causing the entire row to be removed.
+
+=====
+
+.`FILTER` cannot be used to add filter to patterns
+=====
+
+Because `WHERE` is a subclause qualifying a described pattern, it can be used inside patterns.
+
+.`WHERE` inside a node pattern
+[source, cypher]
+----
+WITH 35 AS minAge
+MATCH (a:Person WHERE a.name = 'Andy')-[:KNOWS]->(b:Person WHERE b.age > minAge)
+RETURN b.name AS name`
+----
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| name
+
+| "Timothy"
+
+1+d|Rows: 1
+|===
+
+The same is not true for `FILTER` which, as a clause, cannot be placed with a pattern.
+
+.Not allowed -- `FILTER` inside a pattern
+[source, cypher, role=test-fail]
+----
+WITH 35 AS minAge
+MATCH (a:Person FILTER a.name = 'Andy')-[:KNOWS]->(b:Person FILTER b.age > minAge)
+RETURN b.name AS name
+----
+
+For more information about how to use `WHERE` in fixed-length and variable-length pattern matching, see xref:clauses/where.adoc#filter-patterns[`WHERE` -> Filter patterns].
+
+=====
+
+[[filter-with-where]]
+=== `FILTER` as a substitute for `WITH * WHERE`
+
+Unlike `WHERE`, which relies on `MATCH`, `OPTIONAL MATCH`, or `WITH` to define its scope, `FILTER` can filter queries independently of these clauses.
 This can make some queries more concise.
 
 For example, the following two queries are equivalent:
@@ -184,38 +284,6 @@ MERGE (c:Company {id: row.Id})
 
 =====
 
-[[limitations]]
-== Limitations
-
-While `FILTER` can act as a substitute for `WITH * WHERE <predicate>` constructs, it does not include the ability of `WITH` to manipulate the variables in scope for subsequent clauses.
+However, while `FILTER` can act as a substitute for `WITH * WHERE <predicate>` constructs, it does not include the ability of `WITH` to manipulate the variables in scope for subsequent clauses.
 Nor can `FILTER` alias or create new variables.
 In other words, `FILTER` only has the function of `WITH * WHERE <predicate>` and not `WITH <selectedVariable> AS <newVariableName> WHERE <predicate>`.
-
-Additionally, unlike `WHERE`, `FILTER` cannot be used to add filters to patterns.
-
-.`WHERE` inside a node pattern
-[source, cypher]
-----
-WITH 35 AS minAge
-MATCH (a:Person WHERE a.name = 'Andy')-[:KNOWS]->(b:Person WHERE b.age > minAge)
-RETURN b.name AS name`
-----
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| name
-
-| "Timothy"
-
-1+d|Rows: 1
-|===
-
-.Not allowed -- `FILTER` inside a pattern
-[source, cypher, role=test-fail]
-----
-WITH 35 AS minAge
-MATCH (a:Person FILTER a.name = 'Andy')-[:KNOWS]->(b:Person FILTER b.age > minAge)
-RETURN b.name AS name
-----
-
-For more information about how to use `WHERE` in fixed-length and variable-length pattern matching, see xref:clauses/where.adoc#filter-patterns[`WHERE` -> Filter patterns].
