@@ -1,0 +1,125 @@
+= Path pattern expressions
+:table-caption!:
+:description: Information about path pattern expressions in Cypher.
+
+Similar to xref::subqueries/existential.adoc[existential subqueries], path pattern expressions can be used to assert whether a specified path exists at least once in a graph.
+While existential subqueries are more powerful and capable of performing anything achievable with path pattern expressions, path pattern expressions are more concise.
+
+For more information about graph pattern matching in Cypher, see xref:patterns/index.adoc[].
+
+[[path-pattern-expression-rules]]
+== Rules
+
+Path pattern expressions have the following restrictions (use cases that require extended functionality should consider using xref::subqueries/existential.adoc[existential subqueries] instead):
+
+* Path pattern expressions may only use a subset of xref::patterns/reference.adoc#graph-patterns[graph pattern] semantics.
+
+* A path pattern expression must be a xref::patterns/reference.adoc#path-patterns[path pattern] of length greater than zero.
+In other words, it must contain at least one xref::patterns/reference.adoc#relationship-patterns[relationship] or xref::patterns/reference.adoc#variable-length-relationships[variable-length relationship].
+
+* Path pattern expressions may not declare new variables.
+They can only reference existing variables.
+
+* Path pattern expressions may only be used in positions where a xref:expressions/expressions-overview.adoc#boolean[boolean expression] is expected.
+The following sections will demonstrate how to use path pattern expressions in a `WHERE` clause.
+
+[[example-graph]]
+== Example graph
+
+The following graph is used for the examples below:
+
+image::path_pattern_expressions.svg[width="500",role="middle"]
+
+To recreate the graph, run the following query in an empty Neo4j database:
+
+[source, cypher]
+----
+CREATE (alice:Person {name:'Alice', age: 65, role: 'Project manager'}),
+       (cecil:Person {name: 'Cecil', age: 25, role: 'Software developer'}),
+       (cecilia:Person {name: 'Cecilia', age: 31, role: 'Software developer'}),
+       (cecil)-[:WORKS_FOR {since: 2023}]->(alice),
+       (cecilia)-[:WORKS_FOR {since: 2015}]->(alice)
+----
+
+[[filter-on-patterns]]
+== Examples
+
+.Simple path pattern expression
+[source, cypher]
+----
+MATCH (employee:Person)
+WHERE (employee)-[:WORKS_FOR]->(:Person {name: 'Alice'})
+RETURN employee.name AS employee
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| employee
+
+| "Cecil"
+| "Cecilia"
+
+1+d|Rows: 2
+|===
+
+.Path pattern expression including boolean operators `NOT` and `AND`
+[source, cypher]
+----
+MATCH (employee:Person)
+WHERE NOT employee.name = 'Cecil' AND (employee)-[:WORKS_FOR]->(:Person {name: 'Alice'})
+RETURN employee.name AS employee
+----
+
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| employee
+
+| "Cecilia"
+
+1+d|Rows: 1
+|===
+
+For more information about Cypher's boolean operators, see xref:expressions/predicates/boolean-operators.adoc[Predicate expressions -> Boolean operators].
+
+Patterns can be placed inside expressions.
+
+.Pattern inside an expression
+[source, cypher]
+----
+RETURN NOT (:Person {name: "Alice"})<-[:WORKS_FOR {since: 2023}]-(:Person) AS patternCheck
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| patternCheck
+
+| FALSE
+
+1+d|Rows: 1
+|===
+
+[NOTE]
+`NOT` is required in the above example to make the query a valid predicate expression. Without it, the query would be invalid because the expression would not return a `BOOLEAN` value.
+
+The xref:functions/predicate.adoc#functions-exists[`exists()`] function can be used to check for the presence of a pattern.
+Note that this function not as versatile as the xref:subqueries/existential.adoc[`EXISTS`] subqueries.
+
+.Using the `exists()` function to check if a pattern exists
+[source, cypher]
+----
+RETURN exists((:Person)-[:WORKS_FOR {since: 2023}]->(:Person {name: "Alice"})) AS patternCheck
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| patternCheck
+
+| TRUE
+
+1+d|Rows: 1
+|===
