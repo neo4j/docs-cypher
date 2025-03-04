@@ -1,0 +1,424 @@
+= Conditional queries (`WHEN`)
+:description: Information about how to use `WHEN` to construct conditional queries in Cypher.
+:page-role: new-2025.03
+
+`WHEN`, together with `THEN` and `ELSE`, enables different branches of a query to execute based on certain conditions.
+In this way, it performs similar a control-flow mechanism to the `IF` statement in other programming languages.
+
+[NOTE]
+For information about using `WHEN` branches in expressions, see xref:expressions/conditional-expressions.adoc[]
+
+[[example-graph]]
+== Example graph
+
+The following graph is used for the examples below:
+
+image::conditional_query_graph.svg[width="700",role="middle"]
+
+To recreate the graph, run the following query against an empty Neo4j database:
+
+[source, cypher, role=test-setup]
+----
+CREATE (alice:Person {name:'Alice', age: 65}),
+       (bob:Person {name: 'Bob', age: 25}),
+       (charlie:Person {name: 'Charlie', age: 61}),
+       (daniel:Person {name: 'Daniel', age: 39}),
+       (eskil:Person {name: 'Eskil', age: 39}),
+       (bob)-[:WORKS_FOR]->(alice),
+       (alice)-[:WORKS_FOR]->(daniel),
+       (charlie)-[:WORKS_FOR]->(daniel),
+       (bob)-[:LOVES]->(eskil),
+       (charlie)-[:LOVES]->(alice)
+----
+
+[[standalone-when-logic]]
+== Standalone `WHEN` branches
+
+.Syntax for standalone `WHEN` branches
+[source, syntax]
+----
+WHEN predicate THEN [{]
+  <conditionalQuery>
+  [}]
+[WHEN ...]*
+[ELSE [{]
+  <conditionalQuery>
+[}]]
+----
+
+The first branch with a predicate that evaluates to `true` will be executed.
+If no `WHEN` branches are executed and an `ELSE` branch exists, it is executed.
+If no `WHEN` branches evaluates to `true` and no `ELSE` branch is present, no branches are executed and no rows are produced.
+The following examples demonstrates this logic:
+
+.Conditional logic
+[source, cypher]
+----
+WHEN false THEN RETURN 1 AS x
+WHEN true THEN RETURN 2 AS x
+WHEN true THEN RETURN 3 AS x
+ELSE RETURN 3 AS x
+----
+
+Since the second `WHEN` branch is `true`, it will execute, while the preceding branch (which is `false`) and the succeeding `WHEN` branch (which is `true`) as well as the `ELSE` branch will be skipped.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| x
+| 2
+
+1+d| Rows: 1
+|===
+
+.Conditionally executing queries in standalone `WHEN` branches
+[source, cypher]
+----
+WHEN true THEN {
+  MATCH (n:Person) WHERE n.name STARTS WITH "A"
+  RETURN n.name AS name
+}
+ELSE { 
+  MATCH (n:Person)
+  RETURN n.name AS name
+}
+----
+
+[NOTE]
+The enclosing `{}` in the above example and the below examples are not required (unless explicitly stated), but they clarify the different conditional branches of the query.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| name
+| "Alice"
+
+1+d| Rows: 1
+|===
+
+
+[[conditional-rules]]
+== Rules
+
+Similar to `UNION`, the number and names of the columns must be identical in all parts of a `WHEN`/`ELSE` construct.
+This means that expressions returned must be aliased using `AS`.
+
+
+.Not allowed: not aliasing returned expressions
+[source, cypher, role=test-fail]
+----
+WHEN true THEN RETURN 2
+ELSE RETURN 3
+----
+
+.Not allowed: using different column names in different branches
+[source, cypher, role=test-fail]
+----
+WHEN true THEN RETURN 2 AS x
+ELSE RETURN 3 AS y
+----
+
+.Not allowed: returning different number of columns in different branches
+[source, cypher, role=test-fail]
+----
+WHEN true THEN RETURN 2 AS x, 3 AS y
+ELSE RETURN 3 AS x
+----
+
+`WHEN` can also not be positioned as a regular clause in a query.
+For example, it cannot immediately succeed a `MATCH` clause.
+
+.Not allowed: using `WHEN` constructs as regular clauses
+[source, cypher, role=test-fail]
+----
+MATCH (n)-[:WORKS_FOR]->(m:Person)
+  WHEN m IS NULL THEN {
+   MERGE (n)-[:WORKS_FOR]->(f: Person {name: 'Peter', age: 36})
+  }
+RETURN n.name AS employees,
+       m.name AS manager,
+       f.name AS newManagerNode
+----
+
+Instead, if `WHEN` constructs are part of a larger query, they must either be placed within a subquery and/or on different sides of combined `UNION` queries.
+
+[[conditional-subqueries]]
+== Conditional subqueries
+
+`WHEN` can be used inside one or several xref:subqueries/call-subquery.adoc[`CALL` subqueries] to execute a set of operations only when a specified condition evaluates to `true`.
+
+.Syntax for conditional `CALL` subqueries
+[source, syntax]
+----
+[<outerQuery>]
+<callSubquery> {
+  WHEN predicate THEN [{]
+    <conditionalQuery>
+ [}]
+ [WHEN ...]*
+ [ELSE [{]
+  <conditionalQuery>
+ [}]]
+}
+[<callSubquery> ...]*
+[<outerQuery>]
+----
+
+.Single conditional `CALL` subquery
+=====
+In this example, `WHEN` is used to execute a xref:subqueries/call-subquery.adoc[`CALL` subquery] for each row that the condition (`m IS NULL`) evaluates to `true`. 
+
+.Conditional `CALL` subquery
+[source, cypher]
+----
+MATCH (n:Person)
+OPTIONAL MATCH (n)-[:WORKS_FOR]->(m:Person)
+CALL (*) {
+ WHEN m IS NULL THEN {
+   MERGE (f: Person {name: 'Peter', age: 36})
+   MERGE (n)-[:WORKS_FOR]->(f)
+   RETURN f, n.name AS employee
+ }
+}
+RETURN f.name AS manager,
+      collect(employee) AS employees
+----
+
+Because only `Daniel` and `Eskil` had no outgoing `WORKS_FOR` relationships, they have now been connected as employees of the new `Peter` node.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| manager | employees
+
+| "Peter"
+| ["Daniel", "Eskil"]
+
+2+d| Rows: 1
+|===
+=====
+
+.Chaining conditional `CALL` subqueries
+=====
+
+Disjointed conditional `CALL` subqueries be chained in succession, each executing depending on a set of defined conditions.
+
+This example uses conditional logic to assign age groups to individuals.
+The second `CALL` then collects the names and age groupings of their managers (who they `WORK_FOR`), but only for individuals whose manager is older than them.
+
+.Chaining several conditional `CALL` subqueries
+[source, cypher]
+----
+MATCH (n:Person)
+OPTIONAL MATCH (n)-[r:WORKS_FOR]->(m:Person)
+CALL (*) { 
+  WHEN n.age > 60 THEN {
+    SET n.ageGroup = 'Veteran'
+    RETURN n.ageGroup AS ageGroup
+  }
+  WHEN n.age >= 35 AND n.age <= 59 THEN {
+    SET n.ageGroup = 'Senior'
+    RETURN n.ageGroup AS ageGroup
+  }
+  ELSE {
+    SET n.ageGroup = 'Junior'
+    RETURN n.ageGroup AS ageGroup
+  }
+}
+CALL (*) {
+  WHEN m.age > n.age THEN {
+    RETURN collect([m.name, m.ageGroup]) AS manager
+  }
+}
+RETURN n.name AS name, ageGroup, manager
+----
+
+`Bob` is returned because he is the only person in the graph with an older manager.
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| name  | ageGroup | manager
+
+| "Bob" | "Junior" | [["Alice", "Veteran"]]
+
+3+d| Rows: 1
+|===
+
+=====
+
+xref:subqueries/existential.adoc[`EXISTS`], xref:subqueries/collect.adoc[`COLLECT`], and xref:subqueries/count.adoc[`COUNT`] subquery expressions can also contain `WHEN` branches.
+
+.Syntax for conditional `EXISTS`, `COLLECT`, and `COUNT` subqueries
+[source, syntax]
+----
+[<outerExpression>]
+EXISTS|COUNT|COLLECT {
+  WHEN predicate THEN [{]
+   <conditionalQuery>
+ [}]
+ [WHEN ...]*
+ [ELSE [{]
+   <conditionalQuery>
+ [}]]
+}
+[<outerExpression>]
+----
+
+
+.Conditional `EXISTS` subquery
+=====
+In this example, `WHEN` is used inside an `EXISTS` subquery to conditionally execute different branches based on the evaluation of the predicate (`n.age > 40`). 
+
+[NOTE]
+Unlike `CALL` subqueries, variables returned in an `EXISTS` subquery are not available to the outer scope (the same is true for `COUNT` and `COLLECT` subqueries).
+
+.`WHEN` inside an `EXISTS` subquery
+[source, cypher]
+----
+MATCH (n:Person)
+WHERE EXISTS {
+  WHEN n.age > 40 THEN {
+    RETURN n.name AS x
+  }
+  ELSE {
+    MATCH (n)-[:LOVES]->(x:Person)
+    RETURN x
+  }
+}
+RETURN n.name AS name,
+       n.age AS age
+----
+
+`Alice` and `Charlie` are both older than `40,` so they are returned by the `WHEN` branch, while `Bob` is returned by the `ELSE` branch.
+Note that some `Person` nodes in the graph are not matched in either branch of the conditional subquery, and are therefore not returned.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | age 
+
+| "Alice" | 65
+| "Charlie" | 61
+| "Bob" | 25
+
+2+d| Rows: 3
+|===
+
+=====
+
+[[combined-conditional-queries]]
+== Combining conditional queries with `UNION`
+
+The results of multiple conditional queries can also be combined using `UNION [DISTINCT]` or `UNION ALL`; the former alternative removes duplicates from the result set, the latter does not (for more information, see xref:queries/composed-queries/combined-queries.adoc[]).
+
+If the conditional query begins with `WHEN` and involves `UNION`, the `WHEN` branches *must* be enclosed within curly braces, `{}` (the same `{}` can also be used to xref:queries/composed-queries/combined-queries.adoc#combining-union-and-union-all[combine `UNION` and `UNION ALL`]).
+
+.Syntax for combining standalone `WHEN` branches with `UNION` using `{}`
+[source, syntax]
+----
+{
+  WHEN predicate THEN [{]
+    <conditionalQuery>
+  [}]
+  [WHEN ...]*
+  [ELSE [{]
+    <conditionalQuery>
+[}]]
+}
+UNION [DISTINCT|ALL]
+{
+  WHEN predicate THEN [{]
+   <conditionalQuery>
+  [}]
+  [WHEN ...]*
+  [ELSE [{]
+    <conditionalQuery>
+[}]]
+}
+[UNION [DISTINCT|ALL] ...]*
+----
+
+.Combining conditional branches with `UNION` using `{}`
+[source, cypher]
+----
+{
+  WHEN true THEN RETURN 1 AS x
+  WHEN false THEN RETURN 2 AS x
+  ELSE RETURN 3 AS x
+}
+UNION
+{
+  WHEN false THEN RETURN 4 AS x
+  WHEN false THEN RETURN 5 AS x
+  ELSE RETURN 6 AS x
+}
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| x
+
+| 1
+| 6
+
+1+d| Rows: 2
+|===
+
+If the queries combined by the `UNION` do not begin with a `WHEN` branch, then enclosing curly braces are not necessary.
+
+
+.Combining conditional logic with `UNION`
+=====
+In the example below, `UNION` is used to combine the results of two conditional subqueries (the first `CALL`, enclosing the whole query, is necessary to enable the collection for each `person` from each conditional subquery part in the final results).
+
+The query categorizes people based on two conditions: whether they have a `LOVES` relationship and whether they are younger or older than `40`.
+The final result provides a list of `status` messages for each `person`, showing the combined outcome of both conditions.
+
+.Combining conditional subqueries with `UNION`
+[source, cypher]
+----
+MATCH (n:Person)
+CALL (n) { 
+  OPTIONAL MATCH (n)-[r:LOVES]->(m:Person)
+  CALL (*) {
+    WHEN r IS NULL THEN {
+      RETURN n.name AS person, "Loves no one" AS message
+    }
+    ELSE {
+      RETURN n.name AS person, "Loves somebody" AS message
+    }
+  }
+  RETURN person, message
+  UNION
+  CALL (*) {
+    WHEN n.age < 40 THEN {
+     RETURN n.name AS person, "Under 40" AS message
+    }
+    ELSE {
+     RETURN n.name AS person, "40 or older" AS message
+    }
+  }
+  RETURN person, message
+}
+RETURN person, collect(message) AS status
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| person | status
+
+| "Alice"   | ["Loves no one", "40 or older"]
+| "Charlie" | ["Loves somebody", "40 or older"]
+| "Daniel"  | ["Loves no one", "Under 40"]
+| "Eskil"   | ["Loves no one", "Under 40"]
+| "Peter"   | ["Loves no one", "Under 40"]
+| "Bob"     | ["Loves somebody", "Under 40"]
+
+2+d| Rows: 6
+
+|===
+
+=====

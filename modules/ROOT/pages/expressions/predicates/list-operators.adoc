@@ -1,0 +1,273 @@
+= List operators
+:description: Information about Cypher's list operators.
+:table-caption!:
+
+List operators are used to perform operations on xref:values-and-types/lists.adoc[`LIST`] values.
+Cypher contains the following list operator:
+
+* Membership: `IN`
+
+For additional list predicates, see:
+
+* The following predicate functions: xref:functions/predicate.adoc#functions-all[`all()`], xref:functions/predicate.adoc#functions-any[`any()`], xref:functions/predicate.adoc#functions-none[`none()`], and xref:functions/predicate.adoc#functions-single[`single()`].
+* The xref:functions/predicate.adoc#functions-isempty[`isEmpty()`] function.
+
+[[example-graph]]
+== Example graph
+
+The following graph is used for the examples below:
+
+image::predicate_operators.svg[width="500",role="middle"]
+
+To recreate the graph, run the following query in an empty Neo4j database:
+
+[source, cypher, role=test-setup]
+----
+CREATE (alice:Person {name:'Alice', age: 65, role: 'Project manager', email: 'alice@company.com'}),
+       (cecil:Person {name: 'Cecil', age: 25, role: 'Software developer', email: 'cecil@private.se'}),
+       (cecilia:Person {name: 'Cecilia', age: 31, role: 'Software developer'}),
+       (charlie:Person {name: 'Charlie', age: 61, role: 'Security engineer'}),
+       (daniel:Person {name: 'Daniel', age: 39, role: 'Director', email: 'daniel@company.com'}),
+       (eskil:Person {name: 'Eskil', age: 39, role: 'CEO', email: 'eskil@company.com'})
+----
+
+== Examples
+
+.Basic `LIST` membership checks
+=====
+
+.`IN` operator
+[source, cypher]
+----
+MATCH (n:Person)
+WHERE n.role IN ['Software developer', 'Project manager']
+RETURN n.name AS name, n.role AS role
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | role
+
+| "Alice"   | "Project manager"
+| "Cecil"   | "Software developer"
+| "Cecilia" | "Software developer"
+
+2+d|Rows: 3
+|===
+
+.Checking membership in a dynamic `LIST`
+[source, cypher]
+----
+MATCH (p:Person)
+WITH p, ['Software developer', 'CEO'] AS roles
+WHERE p.role IN roles
+RETURN p.name AS name, p.role AS role
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | role
+
+| "Cecil" | "Software developer"
+| "Cecilia" | "Software developer"
+| "Eskil" | "CEO"
+
+2+d|Rows: 3
+|===
+
+The below query finds `Person` nodes that share the `role` of `Cecil` or `Eskil` but have a different `name`.
+
+.Multiple `IN` operators
+[source, cypher]
+----
+WITH ['Cecil', 'Eskil'] AS names
+MATCH (ce:Person)
+WHERE ce.name IN names
+WITH collect(ce.role) AS roles, names
+MATCH (p:Person)
+WHERE p.role IN roles AND NOT p.name IN names
+RETURN p.name AS name, p.role AS role
+----
+
+Only `Cecilia` is returned because she shares a `role` with `Cecil` (no `Person` node in the graph shares a `role` with `Eskil`).
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | role
+
+| "Cecilia" | "Software developer"
+
+2+d|Rows: 1
+|===
+
+
+=====
+
+.Checking membership in `LIST` values containing duplicates
+=====
+
+The presence of duplicate values in a `LIST` does not affect the result of the `IN` operator, which checks whether an element appears at least once.
+For example, the below query returns `TRUE` (two `Person` nodes are `39` years old).
+
+.Membership check in a `LIST` with duplicate values
+[source, cypher]
+----
+MATCH (p:Person)
+WITH collect(p.age) AS allAges
+RETURN 39 IN allAges AS listWithDuplicates
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| listWithDuplicates
+
+| TRUE
+
+1+d|Rows: 1
+|===
+
+=====
+
+
+[[null-behavior]]
+== `NULL` behavior
+
+When `NULL` is involved in a membership check, the result is will be `NULL`.
+
+.Using the `IN` operator with `NULL`
+[source, cypher]
+----
+RETURN NULL IN [1, 2, NULL] AS nullInList, 123 IN NULL AS valueInNull
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| nullInList | valueInNull 
+
+| NULL | NULL
+
+2+d|Rows: 1
+|===
+
+To check if `NULL` is a member of a `LIST`, use the xref:functions/predicate.adoc#functions-any[`any()`] function:
+
+.Checking if `NULL` is a member of a `LIST`
+[source, cypher]
+----
+RETURN any(x IN [1, 2, NULL] WHERE x IS NULL) AS containsNull
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| containsNull
+
+| TRUE
+
+1+d|Rows: 1
+|===
+
+[[nested-lists]]
+== Nested lists
+
+When used with nested `LIST` values, the `IN` operator evaluates whether a `LIST` is an exact match to any of the nested `LIST` values that are part of an outer `LIST`.
+Partial matches of individual elements within a nested `LIST` will return `FALSE`.
+
+.Checking for membership in nested `LIST` values
+[source, cypher]
+----
+RETURN [0, 2] IN [[1, 2], [3, 4]] AS listInNestedList
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| listInNestedList
+
+| FALSE
+
+1+d|Rows: 1
+|===
+
+
+.Checking for membership in nested `LIST` values
+[source, cypher]
+----
+RETURN [3, 4] IN [[1, 2], [3, 4]] AS listInNestedList
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| listInNestedList
+
+| TRUE
+
+1+d|Rows: 1
+|===
+
+
+.Checking for partial membership in nested `LIST` values
+[source, cypher]
+----
+RETURN [1] IN [[1, 2], [3, 4]] AS listInNestedTest
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| listInNestedList
+
+| FALSE
+
+1+d|Rows: 1
+|===
+
+[[list-subsets]]
+== List subsets
+
+A subset check verifies if all elements of one `LIST` exist in another.
+The xref:functions/predicate.adoc#functions-all[`all()`] function is used to ensure that every element in the first `LIST` is found in the second `LIST`.
+
+.Subset check
+[source, cypher]
+----
+WITH [1,3,4] AS sub, [3,5,1,7,6,2,8,4] AS list
+RETURN all(x IN sub WHERE x IN list) AS subInList
+----
+
+This returns `TRUE` because all elements in `sub` are part of `list`.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| subInList
+
+| TRUE
+
+1+d|Rows: 1
+|===
+
+.Subset check
+[source, cypher]
+----
+WITH [1,3,9] AS sub, [3,5,1,7,6,2,8,4] AS list
+RETURN all(x IN sub WHERE x IN list) AS subInList
+----
+
+This returns `FALSE` because all elements in `sub` are not part of `list`.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| subInList
+
+| FALSE
+
+1+d|Rows: 1
+|===

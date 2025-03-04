@@ -1,0 +1,289 @@
+= FILTER
+:description: Information about Cypher's `FILTER` clause.
+:table-caption!:
+:page-role: new-2025.03
+
+`FILTER` is used to add filters to queries, similar to Cypher's xref:clauses/where.adoc[`WHERE`].
+Unlike `WHERE`, `FILTER` is not a subclause, which means it can be used independently of the xref:clauses/match.adoc[`MATCH`], xref:clauses/optional-match.adoc[`OPTIONAL MATCH`], and xref:clauses/with.adoc[`WITH`] clauses, but not within them.
+
+[[example-graph]]
+== Example graph
+
+The following graph is used for the examples below:
+
+image::filter_clause.svg[width="700",role="middle"]
+
+To recreate the graph, run the following query in an empty Neo4j database:
+
+[source, cypher, role=test-setup]
+----
+CREATE (andy:Swedish:Person {name: 'Andy', age: 36}),
+       (timothy:Person {name: 'Timothy', age: 38}),
+       (peter:Person {name: 'Peter', age: 35}),
+       (lisa:Person {name: 'Lisa', age: 48}),
+       (john:Person {name: 'John', age: 40}),
+       (susan:Person {name: 'Susan', age: 32}),
+       (andy)-[:KNOWS {since: 2012}]->(timothy),
+       (andy)-[:KNOWS {since: 1999}]->(peter),
+       (peter)-[:KNOWS {since: 2005}]->(lisa),
+       (lisa)-[:KNOWS {since: 2010}]->(john),
+       (john)-[:KNOWS {since: 2021}]->(susan)
+----
+
+
+[[basic-filtering]]
+== Basic filtering
+
+.Filter on a node label
+[source, cypher]
+----
+MATCH (n)
+FILTER n:Swedish
+RETURN n.name AS name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| name
+
+| "Andy"
+
+1+|Rows: 1
+|===
+
+.Filter on a node property
+[source, cypher]
+----
+MATCH (n:Person)
+FILTER n.age < 35
+RETURN n.name AS name, n.age AS age
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | age
+
+| "Susan" | 32
+
+2+|Rows: 1
+|===
+
+.Filter on a relationship property
+[source, cypher]
+----
+MATCH (p:Person)-[r:KNOWS]->(n:Person)
+FILTER r.since > 2010
+RETURN p.name AS person,
+       r.since AS knowsSince,
+       n.name AS otherPerson
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| person | knowsSince | otherPerson
+
+| "Andy" | 2012       | "Timothy"
+| "John" | 2021       | "Susan"
+
+3+|Rows: 2
+|===
+
+[[filter-on-dynamic-properties]]
+== Filter on dynamic properties
+
+To filter on a property using a dynamically computed name, use square brackets `[]`:
+
+.Parameters
+[source, parameters]
+----
+{
+  "propname": "age"
+}
+----
+
+.Filter on a dynamically computed node property
+[source, cypher]
+----
+MATCH (n:Person)
+FILTER n[$propname] > 40
+RETURN n.name AS name, n.age AS age
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | age
+
+| "Lisa" | 48
+
+2+d|Rows: 1
+|===
+
+[[filter-where-differeces]]
+== Differences between `FILTER` and `WHERE`
+
+`FILTER` and `WHERE` are both used to apply filter to queries.
+However, there are a number of important differences between them that arise from the fact that `FILTER` is a clause and `WHERE` is a subclause:
+
+* While `WHERE` should not be understood as a filter after the matching is finished (it should rather be seen as adding constraints to a described pattern), `FILTER` should be understood as performing post-match filtering, and not as adding constraints to a described patterns.
+* `FILTER` cannot be used within `MATCH`, `OPTIONAL MATCH`, or `WITH` clauses but only alongside them.
+This means that, unlike `WHERE`, `FILTER` cannot be used to add filters inside patterns.
+
+.Distinction between `FILTER` and `WHERE`
+=====
+
+This `OPTIONAL MATCH` example highlights the differences between the `WHERE` subclause and the `FILTER` clause.
+
+.`WHERE` constraining an `OPTIONAL MATCH` pattern
+[source, cypher]
+----
+UNWIND [32,37,40] AS ages
+OPTIONAL MATCH (p:Person) 
+WHERE p.age = ages
+RETURN p.name AS name, p.age AS age
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | age
+
+| "Susan" | 32
+| NULL | NULL
+| "John" | 40
+
+2+d|Rows: 3
+|===
+
+Because `WHERE` is a subclause belonging to `OPTIONAL MATCH`, it only filters the matches, but does not affect the number of returned rows.
+In this case, `OPTIONAL MATCH` always keeps all rows from xref:clauses/unwind.adoc[`UNWIND`], and `WHERE` does not remove any rows returning `NULL.`
+The same is not true if `WHERE` is exchanged for `FILTER`:
+
+.`FILTER` adding post-filtering to `OPTIONAL MATCH`
+[source, cypher]
+----
+UNWIND [32,37,40] AS ages
+OPTIONAL MATCH (p:Person) 
+FILTER p.age = ages
+RETURN p.name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | age
+
+| "Susan" | 32
+| "John" | 40
+
+2+d|Rows: 2
+|===
+
+Unlike `WHERE`, `FILTER` is not part of the `OPTIONAL MATCH` and so removes entire rows from the result set based on the condition provided within the expression.
+That is, when `OPTIONAL MATCH` fails to find a match and `p` is `NULL`, `FILTER p.age = ages` cannot be evaluated, causing the entire row to be removed.
+
+=====
+
+.`FILTER` cannot be used within patterns
+=====
+
+Because `WHERE` is a subclause qualifying a described pattern, it can be used inside patterns.
+
+.`WHERE` inside a node pattern
+[source, cypher]
+----
+WITH 35 AS minAge
+MATCH (a:Person WHERE a.name = 'Andy')-[:KNOWS]->(b:Person WHERE b.age > minAge)
+RETURN b.name AS name`
+----
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| name
+
+| "Timothy"
+
+1+d|Rows: 1
+|===
+
+The same is not true for `FILTER` which, as a clause, cannot be placed with a pattern.
+
+.Not allowed -- `FILTER` inside a pattern
+[source, cypher, role=test-fail]
+----
+WITH 35 AS minAge
+MATCH (a:Person FILTER a.name = 'Andy')-[:KNOWS]->(b:Person FILTER b.age > minAge)
+RETURN b.name AS name
+----
+
+For more information about how to use `WHERE` in fixed-length and variable-length pattern matching, see xref:clauses/where.adoc#filter-patterns[`WHERE` -> Filter patterns].
+
+=====
+
+[[filter-with-where]]
+=== `FILTER` as a substitute for `WITH * WHERE`
+
+Unlike `WHERE`, which relies on `MATCH`, `OPTIONAL MATCH`, or `WITH` to define its scope, `FILTER` can filter queries independently of these clauses.
+This can make some queries more concise.
+
+For example, the following two queries are equivalent:
+
+.Filter using `WITH * WHERE`
+[source, cypher]
+----
+UNWIND [1, 2, 3, 4, 5, 6] AS x
+WITH x
+WHERE x > 2
+RETURN x
+----
+
+.Filter using `FILTER`
+[source, cypher]
+----
+UNWIND [1, 2, 3, 4, 5, 6] AS x
+FILTER x > 2
+RETURN x
+----
+
+As such, `FILTER` can be seen as a substitute for the `WITH * WHERE <predicate>` constructs in Cypher.
+
+.Using `FILTER` instead of `WITH * WHERE` in `LOAD CSV`
+=====
+
+The following two xref:clauses/load-csv.adoc[`LOAD CSV`] commands are equivalent:
+
+.companies.csv
+[source, csv, filename="companies.csv"]
+----
+Id,Name,Location,Email,BusinessType
+1,Neo4j,San Mateo,contact@neo4j.com,P
+2,AAA,,info@aaa.com,
+3,BBB,Chicago, info@ ,G
+,CCC,Michigan,info@ccc.com,G
+----
+
+.`LOAD CSV` using `WITH * WHERE`
+[source, cypher]
+----
+LOAD CSV WITH HEADERS FROM 'file:///companies.csv' AS row
+WITH row
+WHERE row.Id IS NOT NULL
+MERGE (c:Company {id: row.Id})
+----
+
+.`LOAD CSV` using `FILTER`
+[source, cypher]
+----
+LOAD CSV WITH HEADERS FROM 'file:///companies.csv' AS row
+FILTER row.Id IS NOT NULL
+MERGE (c:Company {id: row.Id})
+----
+
+=====
+
+However, while `FILTER` can act as a substitute for `WITH * WHERE <predicate>` constructs, it does not include the ability of `WITH` to manipulate the variables in scope for subsequent clauses.
+Nor can `FILTER` alias or create new variables.
+In other words, `FILTER` only has the function of `WITH * WHERE <predicate>` and not `WITH <selectedVariable> AS <newVariableName> WHERE <predicate>`.
