@@ -1,71 +1,206 @@
 :description: `WHERE` adds constraints to the patterns in a `MATCH` or `OPTIONAL MATCH` clause or filters the results of a `WITH` clause.
-
-[[query-where]]
+:table-caption!:
 = WHERE
 
-[[where-introduction]]
-== Introduction
-
-The `WHERE` clause is not a clause in its own right -- rather, it is part of the `MATCH`, `OPTIONAL MATCH`, and `WITH` clauses.
+The `WHERE` clause is not a clause in its own right -- rather, it is subclause used with xref:clauses/match.adoc[`MATCH`], xref:clauses/optional-match.adoc[`OPTIONAL MATCH`], and xref:clauses/with.adoc[`WITH`] clauses.
 
 When used with `MATCH` and `OPTIONAL MATCH`, `WHERE` adds constraints to the patterns described.
 _It should not be seen as a filter after the matching is finished._
 
-In the case of `WITH`, however, `WHERE` simply filters the results.
-
 In the case of multiple `MATCH` / `OPTIONAL MATCH` clauses, the predicate in `WHERE` is always a part of the patterns in the directly preceding `MATCH` / `OPTIONAL MATCH`.
 Both results and performance may be impacted if `WHERE` is put inside the wrong `MATCH` clause.
 
-xref:indexes/search-performance-indexes/managing-indexes.adoc[Indexes] may be used to optimize queries using `WHERE` in a variety of cases.
+When used after `WITH`, `WHERE` simply filters the results.
+
+[TIP]
+For more uses of `WHERE`, see xref:expressions/predicates/index.adoc[].
 
 [[where-example-graph]]
 == Example graph
 
 The following graph is used for the examples below:
 
-image::graph_where_clause.svg[width="600",role="middle"]
+image::graph_where_clause.svg[width="700",role="middle"]
 
 To recreate the graph, run the following query in an empty Neo4j database:
 
 [source, cypher, role=test-setup]
 ----
-CREATE
-(andy:Swedish:Person {name: 'Andy', age: 36, belt: 'white'}),
-(timothy:Person {name: 'Timothy', age: 25}),
-(peter:Person {name: 'Peter', age: 35, email: 'peter_n@example.com'}),
-(andy)-[:KNOWS {since: 2012}]->(timothy),
-(andy)-[:KNOWS {since: 1999}]->(peter)
+CREATE (andy:Swedish:Person {name: 'Andy', age: 36}),
+       (timothy:Person {name: 'Timothy', age: 38}),
+       (peter:Person {name: 'Peter', age: 35}),
+       (lisa:Person {name: 'Lisa', age: 48}),
+       (john:Person {name: 'John', age: 40}),
+       (susan:Person {name: 'Susan', age: 32}),
+       (andy)-[:KNOWS {since: 2012}]->(timothy),
+       (andy)-[:KNOWS {since: 1999}]->(peter),
+       (peter)-[:KNOWS {since: 2005}]->(lisa),
+       (lisa)-[:KNOWS {since: 2010}]->(john),
+       (john)-[:KNOWS {since: 2021}]->(susan)
 ----
 
-[[query-where-basic]]
-== Basic usage
+[[basic-filtering]]
+== Basic filtering
 
-[[node-pattern-predicates]]
-=== Node pattern predicates
-
-`WHERE` can appear inside a node pattern in a `MATCH` clause or a pattern comprehension:
-
-.Query
+.Filter on a node label
 [source, cypher]
 ----
-WITH 30 AS minAge
-MATCH (a:Person WHERE a.name = 'Andy')-[:KNOWS]->(b:Person WHERE b.age > minAge)
-RETURN b.name
+MATCH (n)
+WHERE n:Swedish
+RETURN n.name AS name
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
-| b.name
+| name
+
+| "Andy"
+
+1+|Rows: 1
+|===
+
+.Filter on a node property
+[source, cypher]
+----
+MATCH (n:Person)
+WHERE n.age < 35
+RETURN n.name AS name, n.age AS age
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | age
+
+| "Susan" | 32 
+
+2+d|Rows: 1
+|===
+
+.Filter on a relationship property
+[source, cypher]
+----
+MATCH (:Person {name:'Andy'})-[k:KNOWS]->(f)
+WHERE k.since < 2000
+RETURN f.name AS oldFriend
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| oldFriend
+
 | "Peter"
-|Rows: 1
+
+1+|Rows: 1
+|===
+
+
+[[filter-on-dynamic-properties]]
+== Filter on dynamic properties
+
+To filter on a property using a dynamically computed name, use square brackets `[]`:
+
+.Parameters
+[source, parameters]
+----
+{
+  "propname": "age"
+}
+----
+
+.Filter on a dynamically computed node property
+[source, cypher]
+----
+MATCH (n:Person)
+WHERE n[$propname] > 40
+RETURN n.name AS name, n.age AS age
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | age
+
+| "Lisa" | 48
+
+2+d|Rows: 1
+|===
+
+
+[[where-and-with]]
+== Using `WHERE` after `WITH`
+
+xref:clauses/with.adoc[`WITH`] can be used to manipulate the output of a clause before it is passed on to subsequent query parts.
+Once such a manipulation has occurred, the original clause output is not available to subsequent clauses.
+For example, in the below query, `WITH` manipulates the output of the preceding `MATCH` in such a way that the succeeding `RETURN` no longer has access to the variable `n` declared in the `MATCH`.
+
+.`WITH` only retains explicitly listed variables; others become inaccessible
+[source, cypher, role=test-fail]
+----
+MATCH (n:Person)
+WITH n.name as name
+RETURN n
+----
+
+The above query would work if the `RETURN` clause instead referenced the `name` variable produced by `WITH`.
+However, because `WHERE` is a subclause and not a clause, its scope is not limited by immediately preceding `WITH` clauses.
+
+.`WHERE` is not limited by an immediately preceding `WITH`
+[source, cypher]
+----
+MATCH (n:Person)
+WITH n.name as name
+WHERE n.age = 38
+RETURN name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| name
+
+| "Timothy"
+
+1+d|Rows: 1
+|===
+
+The name for `Timothy` is returned because the `WHERE` clause still acts as a filter on the `MATCH`.
+However, `WITH` still reduces the scope for the rest of the query moving forward.
+In this case, `name` is the only variable in scope for the `RETURN` clause.
+
+[[filter-patterns]]
+== Filter patterns
+
+`WHERE` clauses can be added to xref:patterns/fixed-length-patterns.adoc[fixed-length] and xref:patterns/variable-length-patterns.adoc[variable-length patterns] in order to specify additional constraints.
+
+[[fixed-length-patterns]]
+=== Fixed-length patterns
+
+.`WHERE` inside a node pattern
+[source, cypher]
+----
+WITH 35 AS minAge
+MATCH (a:Person WHERE a.name = 'Andy')-[:KNOWS]->(b:Person WHERE b.age > minAge)
+RETURN b.name AS name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| name
+
+| "Timothy"
+
+1+d|Rows: 1
 |===
 
 When used this way, predicates in `WHERE` can reference the node variable that the `WHERE` clause belongs to, but not other elements of the `MATCH` pattern.
 
 The same rule applies to pattern comprehensions:
 
-.Query
+.`WHERE` inside a pattern comprehension
 [source, cypher]
 ----
 MATCH (a:Person {name: 'Andy'})
@@ -80,761 +215,29 @@ RETURN [(a)-->(b WHERE b:Person) | b.name] AS friends
 |Rows: 1
 |===
 
-[[boolean-operations]]
-=== Boolean operations
-
-The following boolean operators can be used with the `WHERE` clause: `AND`, `OR`, `XOR`, and `NOT`.
-For more information on how operators work with `null`, see the chapter on xref::values-and-types/working-with-null.adoc[Working with null].
-
-.Query
-[source, cypher]
-----
-MATCH (n:Person)
-WHERE n.name = 'Peter' XOR (n.age < 30 AND n.name = 'Timothy') OR NOT (n.name = 'Timothy' OR n.name = 'Peter')
-RETURN
-  n.name AS name,
-  n.age AS age
-ORDER BY name
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| name | age
-| "Andy" | 36
-| "Peter" | 35
-| "Timothy" | 25
-2+|Rows: 3
-|===
-
-
-[[filter-on-node-label]]
-=== Filter on node label
-
-To filter nodes by label, write a label predicate after the `WHERE` keyword using `WHERE n:foo`:
-
-.Query
-[source, cypher]
-----
-MATCH (n)
-WHERE n:Swedish
-RETURN n.name, n.age
-----
-
-The `name` and `age` values for `Andy` are returned:
-
-.Result
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| n.name | n.age
-| "Andy" | 36
-2+|Rows: 1
-|===
-
-
-[[filter-on-node-property]]
-=== Filter on node property
-
-To filter on a node property, write your clause after the `WHERE` keyword:
-
-.Query
-[source, cypher]
-----
-MATCH (n:Person)
-WHERE n.age < 30
-RETURN n.name, n.age
-----
-
-The `name` and `age` values for `Timothy` are returned because he is less than 30 years of age:
-
-.Result
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| n.name | n.age
-| "Timothy" | 25
-2+|Rows: 1
-|===
-
-
-[[filter-on-relationship-property]]
-=== Filter on relationship property
-
-To filter on a relationship property, write your clause after the `WHERE` keyword:
-
-.Query
-[source, cypher]
-----
-MATCH (n:Person)-[k:KNOWS]->(f)
-WHERE k.since < 2000
-RETURN f.name, f.age, f.email
-----
-
-The `name`, `age` and `email` values for `Peter` are returned because `Andy` has known him since before 2000:
-
-.Result
-[role="queryresult",options="header,footer",cols="3*<m"]
-|===
-| f.name | f.age | f.email
-| "Peter" | 35 | "peter_n@example.com"
-3+|Rows: 1
-|===
-
-
-[[filter-on-dynamic-property]]
-=== Filter on dynamically-computed node property
-
-To filter on a property using a dynamically computed name, use square bracket syntax:
-
-.Parameters
-[source, parameters]
-----
-{
-  "propname": "age"
-}
-----
-
-.Query
-[source, cypher]
-----
-MATCH (n:Person)
-WHERE n[$propname] < 30
-RETURN n.name, n.age
-----
-
-The `name` and `age` values for `Timothy` are returned because he is less than 30 years of age:
-
-.Result
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| n.name | n.age
-| "Timothy" | 25
-2+|Rows: 1
-|===
-
-
-[[property-existence-checking]]
-=== Property existence checking
-
-Use the `IS NOT NULL` predicate to only include nodes or relationships in which a property exists:
-
-.Query
-[source, cypher]
-----
-MATCH (n:Person)
-WHERE n.belt IS NOT NULL
-RETURN n.name, n.belt
-----
-
-The `name` and `belt` values for `Andy` are returned because he is the only one with a `belt` property:
-
-.Result
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| n.name | n.belt
-| "Andy" | "white"
-2+|Rows: 1
-|===
-
-
-[[usage-with-with-clause]]
-=== Using `WITH`
-
-As `WHERE` is not considered a clause in its own right, its scope is not limited by a `WITH` directly before it.
-
-.Query
-[source, cypher]
-----
-MATCH (n:Person)
-WITH n.name as name
-WHERE n.age = 25
-RETURN name
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| name
-| "Timothy"
-|Rows: 1
-|===
-
-
-The name for `Timothy` is returned because the `WHERE` clause still acts as a filter on the `MATCH`.
-`WITH` reduces the scope for the rest of the query moving forward.
-In this case, `name` is now the only variable in scope for the `RETURN` clause.
-
-
-[[query-where-string]]
-== `STRING` matching
-
-The prefix and suffix of a `STRING` can be matched using `STARTS WITH` and `ENDS WITH`.
-To undertake a substring search (that is, match regardless of the location within a `STRING`), use `CONTAINS`.
-
-The matching is _case-sensitive_.
-Attempting to use these operators on values which are not `STRING` values will return `null`.
-
-[[match-string-start]]
-=== Prefix `STRING` search using `STARTS WITH`
-
-The `STARTS WITH` operator is used to perform case-sensitive matching on the beginning of a `STRING`:
-
-.Query
-[source, cypher]
-----
-MATCH (n:Person)
-WHERE n.name STARTS WITH 'Pet'
-RETURN n.name, n.age
-----
-
-The `name` and `age` values for `Peter` are returned because his name starts with "Pet":
-
-.Result
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| n.name | n.age
-| "Peter" | 35
-2+|Rows: 1
-|===
-
-
-[[match-string-end]]
-=== Suffix `STRING` search using `ENDS WITH`
-
-The `ENDS WITH` operator is used to perform case-sensitive matching on the ending of a `STRING`:
-
-.Query
-[source, cypher]
-----
-MATCH (n:Person)
-WHERE n.name ENDS WITH 'ter'
-RETURN n.name, n.age
-----
-
-The `name` and `age` values for `Peter` are returned because his name ends with "ter":
-
-.Result
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| n.name | n.age
-| "Peter" | 35
-2+|Rows: 1
-|===
-
-
-[[match-string-contains]]
-=== Substring search using `CONTAINS`
-
-The `CONTAINS` operator is used to perform case-sensitive matching regardless of location within a `STRING`:
-
-.Query
-[source, cypher]
-----
-MATCH (n:Person)
-WHERE n.name CONTAINS 'ete'
-RETURN n.name, n.age
-----
-
-The `name` and `age` for `Peter` are are returned because his name contains "ete":
-
-.Result
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| n.name | n.age
-| "Peter" | 35
-2+|Rows: 1
-|===
-
-
-[[match-string-is-normalized]]
-=== Checking if a `STRING` `IS NORMALIZED`
-
-The `IS NORMALIZED` operator is used to check whether the given `STRING` is in the `NFC` Unicode normalization form:
-
-.Query
-[source, cypher]
-----
-MATCH (n:Person)
-WHERE n.name IS NORMALIZED
-RETURN n.name AS normalizedNames
-----
-
-The given `STRING` values contain only normalized Unicode characters, therefore all the matched `name` properties are returned.
-For more information, see the section about the xref:syntax/operators.adoc#match-string-is-normalized[normalization operator].
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| normalizedNames
-| 'Andy'
-| 'Timothy'
-| 'Peter'
-
-1+d|Rows: 3
-|===
-
-Note that the `IS NORMALIZED` operator returns `null` when used on a non-`STRING` value.
-For example,  `RETURN 1 IS NORMALIZED` returns `null`.
-
-[[match-string-negation]]
-=== String matching negation
-
-Use the `NOT` keyword to exclude all matches on given `STRING` from your result:
-
-.Query
-[source, cypher]
-----
-MATCH (n:Person)
-WHERE NOT n.name ENDS WITH 'y'
-RETURN n.name, n.age
-----
-
-The `name` and `age` values `Peter` are returned because his name does not end with "y":
-
-.Result
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| n.name | n.age
-| "Peter" | 35
-2+|Rows: 1
-|===
-
-
-[[query-where-regex]]
-== Regular expressions
-
-Cypher supports filtering using regular expressions.
-The regular expression syntax is inherited from the link:https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/util/regex/Pattern.html[Java regular expressions].
-This includes support for flags that change how `STRING` values are matched, including case-insensitive `(?i)`, multiline `(?m)`, and dotall `(?s)`.
-
-Flags are given at the beginning of the regular expression.
-For an example of a regular expression flag given at the beginning of a pattern, see the xref::clauses/where.adoc#case-insensitive-regular-expressions[case-insensitive regular expression] section.
-
-[[matching-using-regular-expressions]]
-=== Matching using regular expressions
-
-To match on regular expressions, use `=~ 'regexp'`:
-
-
-.Query
-[source, cypher]
-----
-MATCH (n:Person)
-WHERE n.name =~ 'Tim.*'
-RETURN n.name, n.age
-----
-
-The `name` and `age` values for `Timothy` are returned because his name starts with "Tim".
-
-.Result
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| n.name | n.age
-| "Timothy" | 25
-2+|Rows: 1
-|===
-
-
-[[escaping-in-regular-expressions]]
-=== Escaping in regular expressions
-
-Characters like `.` or `*` have special meaning in a regular expression.
-To use these as ordinary characters, without special meaning, escape them.
-
-.Query
-[source, cypher]
-----
-MATCH (n:Person)
-WHERE n.email =~ '.*\\.com'
-RETURN n.name, n.age, n.email
-----
-
-The `name`, `age`, and `email` values for `Peter` are returned because his email ends with ".com":
-
-.Result
-[role="queryresult",options="header,footer",cols="3*<m"]
-|===
-| n.name | n.age | n.email
-| "Peter" | 35 | "peter_n@example.com"
-3+|Rows: 1
-|===
-
-Note that the regular expression constructs in
-link:https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/util/regex/Pattern.html[Java regular expressions]
-are applied only after resolving the escaped character sequences in the given
-xref::expressions/expressions-overview.adoc#expressions-string-literals[string literal].
-It is sometimes necessary to add additional backslashes to express regular expression
-constructs.
-This list clarifies the combination of these two definitions, containing the original escape sequence and the resulting character in the regular expression:
-
-[options="header", cols=">1,<2,<2"]
-|===================
-|String literal sequence|Resulting Regex sequence|Regex match
-|`\t`|Tab|Tab
-|`\\t`|`\t`|Tab
-|`\b`|Backspace|Backspace
-|`\\b`|`\b`|Word boundary
-|`\n`|Newline|NewLine
-|`\\n`|`\n`|Newline
-|`\r`|Carriage return|Carriage return
-|`\\r`|`\r`|Carriage return
-|`\f`|Form feed|Form feed
-|`\\f`|`\f`|Form feed
-|`\'`|Single quote|Single quote
-|`\"`|Double quote|Double quote
-|`\\`|Backslash|Backslash
-|`\\\`|`\\`|Backslash
-|`\uxxxx`|Unicode UTF-16 code point (4 hex digits must follow the `\u`)|Unicode UTF-16 code point (4 hex digits must follow the `\u`)
-|`\\uxxxx`|`\uxxxx`|Unicode UTF-16 code point (4 hex digits must follow the `\u`)
-|===================
-
-[NOTE]
-====
-Using regular expressions with unsanitized user input makes you vulnerable to Cypher injection.
-Consider using xref:syntax/parameters.adoc[parameters] instead.
-====
-
-[[case-insensitive-regular-expressions]]
-=== Case-insensitive regular expressions
-
-By pre-pending a regular expression with `(?i)`, the whole expression becomes case-insensitive:
-
-.Query
-[source, cypher]
-----
-MATCH (n:Person)
-WHERE n.name =~ '(?i)AND.*'
-RETURN n.name, n.age
-----
-
-The `name` and `age` for `Andy` are returned because his name starts with 'AND' irrespective of casing:
-
-.Result
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| n.name | n.age
-| "Andy" | 36
-2+|Rows: 1
-|===
-
-[[path-pattern-expressions]]
-== Path pattern expressions
-
-Similar to xref::subqueries/existential.adoc[existential subqueries], path pattern expressions can be used to assert whether a specified path exists at least once in a graph.
-While existential subqueries are more powerful and capable of performing anything achievable with path pattern expressions, path pattern expressions are more concise.
-
-Path pattern expressions have the following restrictions (use cases that require extended functionality should consider using xref::subqueries/existential.adoc[existential subqueries] instead):
-
-* Path pattern expressions may only use a subset of xref::patterns/reference.adoc#graph-patterns[graph pattern] semantics.
-
-* A path pattern expression must be a xref::patterns/reference.adoc#path-patterns[path pattern] of length greater than zero.
-In other words, it must contain at least one xref::patterns/reference.adoc#relationship-patterns[relationship] or xref::patterns/reference.adoc#variable-length-relationships[variable-length relationship].
-
-* Path pattern expressions may not declare new variables.
-They can only reference existing variables.
-
-* Path pattern expressions may only be used in positions where a xref:expressions/expressions-overview.adoc#boolean[boolean expression] is expected.
-The following sections will demonstrate how to use path pattern expressions in a `WHERE` clause.
-
-[[filter-on-patterns]]
-=== Filter on patterns
-
-.Query
-[source, cypher]
-----
-MATCH
-  (timothy:Person {name: 'Timothy'}),
-  (other:Person)
-WHERE (other)-->(timothy)
-RETURN other.name, other.age
-----
-
-The `name` and `age` values for nodes that have an outgoing relationship to `Timothy` are returned:
-
-.Result
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| other.name | other.age
-| "Andy" | 36
-2+|Rows: 1
-|===
-
-
-[[filter-on-patterns-using-not]]
-=== Filter on patterns using `NOT`
-
-The `NOT` operator can be used to exclude a pattern:
-
-.Query
-[source, cypher]
-----
-MATCH
-  (peter:Person {name: 'Peter'}),
-  (other:Person)
-WHERE NOT (other)-->(peter)
-RETURN other.name, other.age
-----
-
-The `name` and `age` values for nodes that do not have an outgoing relationship to `Peter` are returned:
-
-.Result
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| other.name | other.age
-| "Timothy" | 25
-| "Peter" | 35
-2+|Rows: 2
-|===
-
-
-[[filter-on-patterns-with-properties]]
-=== Filter on patterns with properties
-
-Properties can also be added to patterns:
-
-.Query
-[source, cypher]
-----
-MATCH (other:Person)
-WHERE (other)-[:KNOWS]-({name: 'Timothy'})
-RETURN other.name, other.age
-----
-
-The `name` and `age` values are returned for nodes that have a relationship with the type `KNOWS` connected to `Timothy`:
-
-.Result
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| other.name | other.age
-| "Andy" | 36
-2+|Rows: 1
-|===
-
-[[query-where-lists]]
-== Lists
-
-[[where-in-operator]]
-=== `IN` operator
-
-To check if an element exists in a list, use the `IN` operator.
-The below query checks whether a property exists in a literal list:
-
-.Query
-[source, cypher]
-----
-MATCH (a:Person)
-WHERE a.name IN ['Peter', 'Timothy']
-RETURN a.name, a.age
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| a.name | a.age
-| "Timothy" | 25
-| "Peter" | 35
-2+|Rows: 2
-|===
-
-
-[[missing-properties-and-values]]
-== Missing properties and values
-
-[[default-to-false-missing-property]]
-=== Default to `false` if property is missing
-
-As missing properties evaluate to `null`, the comparison in the example will evaluate to `false` for nodes without the `belt` property:
-
-.Query
-[source, cypher]
-----
-MATCH (n:Person)
-WHERE n.belt = 'white'
-RETURN n.name, n.age, n.belt
-----
-
-Only the `name`, `age`, and `belt` values of nodes with white belts are returned:
-
-.Result
-[role="queryresult",options="header,footer",cols="3*<m"]
-|===
-| n.name | n.age | n.belt
-| "Andy" | 36 | "white"
-3+|Rows: 1
-|===
-
-
-[[default-to-true-missing-property]]
-=== Default to `true` if property is missing
-
-To compare node or relationship properties against missing properties, use the `IS NULL` operator:
-
-.Query
-[source, cypher]
-----
-MATCH (n:Person)
-WHERE n.belt = 'white' OR n.belt IS NULL
-RETURN n.name, n.age, n.belt
-ORDER BY n.name
-----
-
-This returns all values for all nodes, even those without the `belt` property:
-
-.Result
-[role="queryresult",options="header,footer",cols="3*<m"]
-|===
-| n.name | n.age | n.belt
-| "Andy" | 36 | "white"
-| "Peter" | 35 | <null>
-| "Timothy" | 25 | <null>
-3+|Rows: 3
-|===
-
-
-[[filter-on-null]]
-=== Filter on `null`
-
-To test if a value or variable is `null`, use the `IS NULL` operator.
-To test if a value or variable is not `null`, use the `IS NOT NULL` operator
-`NOT(IS NULL x)` also works.
-
-.Query
-[source, cypher]
-----
-MATCH (person:Person)
-WHERE person.name = 'Peter' AND person.belt IS NULL
-RETURN person.name, person.age, person.belt
-----
-
-The `name` and `age` values for nodes that have name `Peter` but no `belt` property are returned:
-
-.Result
-[role="queryresult",options="header,footer",cols="3*<m"]
-|===
-| person.name | person.age | person.belt
-| "Peter" | 35 | <null>
-3+|Rows: 1
-|===
-
-
-[[query-where-ranges]]
-== Using ranges
-
-[[simple-range]]
-=== Simple range
-
-To check whether an element exists within a specific range, use the inequality operators `<`, `<=`, `>=`, `>`:
-
-.Query
-[source, cypher]
-----
-MATCH (a:Person)
-WHERE a.name >= 'Peter'
-RETURN a.name, a.age
-----
-
-The `name` and `age` values of nodes having a `name` property lexicographically (i.e. using the dictionary order) greater than or equal to `Peter` are returned:
-
-.Result
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| a.name | a.age
-| "Timothy" | 25
-| "Peter" | 35
-2+|Rows: 2
-|===
-
-
-[[composite-range]]
-=== Composite range
-
-Several inequalities can be used to construct a range:
-
-.Query
-[source, cypher]
-----
-MATCH (a:Person)
-WHERE a.name > 'Andy' AND a.name < 'Timothy'
-RETURN a.name, a.age
-----
-
-The `name` and `age` values of nodes having a `name` property lexicographically between `Andy` and `Timothy` are returned:
-
-.Result
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| a.name | a.age
-| "Peter" | 35
-2+|Rows: 1
-|===
-
-
-[[pattern-element-predicates]]
-== Pattern element predicates
-
-`WHERE` clauses can be added to pattern elements in order to specify additional constraints:
-
-[[relationship-pattern-predicates]]
-=== Relationship pattern predicates
-
 `WHERE` can also appear inside a relationship pattern in a `MATCH` clause:
 
-.Query
+.`WHERE` inside relationship pattern
 [source, cypher]
 ----
 WITH 2000 AS minYear
 MATCH (a:Person)-[r:KNOWS WHERE r.since < minYear]->(b:Person)
-RETURN r.since
+RETURN a.name AS person, b.name AS friend, r.since AS knowsSince
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols="1*<m"]
+[role="queryresult",options="header,footer",cols="3*<m"]
 |===
-| r.since
-| 1999
-|Rows: 1
-|===
+| name | friend | knowsSince
 
-However, it cannot be used inside of variable-length relationships, as this would lead to an error.
-For example:
+| "Andy" | "Peter" | 1999
 
-.Query
-[source, cypher, role=test-fail]
-----
-WITH 2000 AS minYear
-MATCH (a:Person)-[r:KNOWS*1..3 WHERE r.since > b.yearOfBirth]->(b:Person)
-RETURN r.since
-----
-
-.Error message
-[source, output]
-----
-Relationship pattern predicates are not supported for variable-length relationships.
-----
-
-
-Putting predicates inside a relationship pattern can help with readability.
-Note that it is strictly equivalent to using a standalone `WHERE` sub-clause.
-
-.Query
-[source, cypher]
-----
-WITH 2000 AS minYear
-MATCH (a:Person)-[r:KNOWS]->(b:Person)
-WHERE r.since < minYear
-RETURN r.since
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| r.since
-| 1999
-|Rows: 1
+3+d|Rows: 1
 |===
 
 Relationship pattern predicates can also be used inside pattern comprehensions, where the same caveats apply:
 
-.Query
+.Relationship pattern predicate inside a pattern comprehension
 [source, cypher]
 ----
 WITH 2000 AS minYear
@@ -846,8 +249,45 @@ RETURN [(a)-[r:KNOWS WHERE r.since < minYear]->(b:Person) | r.since] AS years
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | years
+
 | [1999]
-|Rows: 1
+
+1+d|Rows: 1
 |===
 
+[[variable-length-patterns]]
+=== Variable-length patterns
 
+If matching for variable length patterns, `WHERE` can only be used together with the xref:patterns/variable-length-patterns.adoc#quantified-path-patterns[quantified path pattern] or xref:patterns/variable-length-patterns.adoc#quantified-relationships[quantified relationships] syntax.
+
+.Allowed - `WHERE` predicate inside a quantified relationship
+[source, cypher]
+----
+MATCH p = (a:Person {name: "Andy"})-[r:KNOWS WHERE r.since < 2011]->{1,4}(:Person)
+RETURN [n IN nodes(p) | n.name] AS paths
+----
+
+Note that any path´s including `Timothy` and `Susan` are excluded by the `WHERE` predicate, since their incoming `KNOWS` relationships both have a `since` value that is higher than `2011.`
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| paths
+
+| ["Andy", "Peter"]
+| ["Andy", "Peter", "Lisa"]
+| ["Andy", "Peter", "Lisa", "John"]
+
+1+d|Rows: 3
+|===
+
+For more information about using `WHERE` predicates in quantified path patterns, see xref:patterns/variable-length-patterns.adoc#quantified-path-patterns-predicates[Predicated in quantified path patterns].
+
+`WHERE` is not allowed in variable-length patterns using the non-GQL compliant xref:patterns/reference.adoc#variable-length-relationships[variable-length relationship] syntax.
+
+.Not allowed - `WHERE` inside a variable-length relationship
+[source, cypher, role=test-fail]
+----
+MATCH p = (a:Person {name: 'Andy'})-[r:KNOWS*1..4 WHERE r.since < 2011]->(b:Person)
+RETURN [n IN nodes(p) | n.name] AS path
+----

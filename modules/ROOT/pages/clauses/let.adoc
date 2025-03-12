@@ -1,0 +1,394 @@
+= LET
+:description: Information about Cypher's `LET` clause.
+:table-caption!:
+:page-role: new-2025.04
+
+`LET` binds expressions to variables.
+For queries involving several chained expressions, it can be a more succinct and readable alternative to xref:clauses/with.adoc[`WITH`].
+Unlike `WITH`, `LET` does not drop variables from the scope of subsequent clauses.
+Nor can it be used for aggregations or in combination with `DISTINCT`; it can only be used to bind new variables.
+
+[[example-graph]]
+== Example graph
+
+A graph with the following schema is used for the examples below:
+
+image::let_clause.svg[width="600",role="middle"]
+
+To recreate the graph, run the following query against an empty Neo4j database.
+
+[source, cypher, role=test-setup]
+----
+CREATE (techCorp:Supplier {name: 'TechCorp', email: 'contact@techcorp.com'}),
+       (foodies:Supplier {name: 'Foodies Inc.', email: 'info@foodies.com'}),
+             
+       (laptop:Product {name: 'Laptop', price: 1000}),
+       (phone:Product {name: 'Phone', price: 500}),
+       (headphones:Product {name: 'Headphones', price: 250}),
+       (chocolate:Product {name: 'Chocolate', price: 5}),
+       (coffee:Product {name: 'Coffee', price: 10}),
+             
+       (amir:Customer {firstName: 'Amir', lastName: 'Rahman', email: 'amir.rahman@example.com', discount: 0.1}),
+       (keisha:Customer {firstName: 'Keisha', lastName: 'Nguyen', email: 'keisha.nguyen@example.com', discount: 0.2}),
+       (mateo:Customer {firstName: 'Mateo', lastName: 'Ortega', email: 'mateo.ortega@example.com', discount: 0.05}),
+       (hannah:Customer {firstName: 'Hannah', lastName: 'Connor', email: 'hannah.connor@example.com', discount: 0.15}),
+       (leila:Customer {firstName: 'Leila', lastName: 'Haddad', email: 'leila.haddad@example.com', discount: 0.1}),
+       (niko:Customer {firstName: 'Niko', lastName: 'Petrov', email: 'niko.petrov@example.com', discount: 0.25}),
+       (yusuf:Customer {firstName: 'Yusuf', lastName: 'Abdi', email: 'yusuf.abdi@example.com', discount: 0.1}),
+
+       (amir)-[:BUYS {date: date('2024-10-09')}]->(laptop),
+       (amir)-[:BUYS {date: date('2025-01-10')}]->(chocolate),
+       (keisha)-[:BUYS {date: date('2023-07-09')}]->(headphones),
+       (mateo)-[:BUYS {date: date('2025-03-05')}]->(chocolate),
+       (mateo)-[:BUYS {date: date('2025-03-05')}]->(coffee),
+       (mateo)-[:BUYS {date: date('2024-04-11')}]->(laptop),
+       (hannah)-[:BUYS {date: date('2023-12-11')}]->(coffee),
+       (hannah)-[:BUYS {date: date('2024-06-02')}]->(headphones),
+       (leila)-[:BUYS {date: date('2023-05-17')}]->(laptop),
+       (niko)-[:BUYS {date: date('2025-02-27')}]->(phone),
+       (niko)-[:BUYS {date: date('2024-08-23')}]->(headphones),
+       (niko)-[:BUYS {date: date('2024-12-24')}]->(coffee),
+       (yusuf)-[:BUYS {date: date('2024-12-24')}]->(chocolate),
+       (yusuf)-[:BUYS {date: date('2025-01-02')}]->(laptop),
+        
+       (techCorp)-[:SUPPLIES]->(laptop),
+       (techCorp)-[:SUPPLIES]->(phone),
+       (techCorp)-[:SUPPLIES]->(headphones),
+       (foodies)-[:SUPPLIES]->(chocolate),
+       (foodies)-[:SUPPLIES]->(coffee)
+----
+
+[[assigning-expressions-to-variables]]
+== Bind values to variables
+
+`LET` is used to bind variables to the results of expressions.
+
+.Syntax
+[source, syntax]
+----
+LET variable = expression, variable = expression
+----
+
+.Using `LET` to bind a variable
+[source, cypher]
+----
+MATCH (c:Customer)
+LET fullName = c.firstName + ' ' + c.lastName
+RETURN fullName
+----
+
+.Result
+[role="queryresult",options="header,footer", cols="1*<m"]
+|===
+| fullName
+
+| "Amir Rahman"
+| "Keisha Nguyen"
+| "Mateo Ortega"
+| "Hannah Connor"
+| "Leila Haddad"
+| "Niko Petrov"
+| "Yusuf Abdi"
+
+1+d|Rows: 7
+
+|===
+
+.Using `LET` to bind several variables
+[source, cypher]
+----
+MATCH (s:Supplier)-[:SUPPLIES]->(p:Product)
+LET supplier = s.name, product = p.name
+RETURN supplier, product
+----
+
+.Result
+[role="queryresult",options="header,footer", cols="2*<m"]
+|===
+| supplier | product
+
+| "TechCorp" | "Laptop"
+| "TechCorp" | "Phone"
+| "TechCorp" | "Headphones"
+| "Foodies Inc." | "Chocolate"
+| "Foodies Inc." | "Coffee"
+
+2+d|Rows: 4
+|===
+
+[[let-and-with-differences]]
+== Differences between `LET` and `WITH`
+
+There are important differences between `LET` and `WITH` that can be divided into the following categories:
+
+* xref:clauses/let.adoc#variable-scope[Variables in scope]
+* xref:clauses/let.adoc#chaining-expressions[Chaining expressions]
+* xref:clauses/let.adoc#aggregations-distinct[Aggregations and `DISTINCT`]
+
+[[variable-scope]]
+=== Variables in scope
+
+`LET` does not drop variables from the scope of subsequent clauses, while `WITH` does.
+As such, `LET <variable> = <expression>` is a substitute for `WITH *, <expression> AS <variable>`, not `WITH <expression> AS <variable>` (which would drop any variables present in the preceding clause not referenced in `<expression>`).
+
+.Variables in scope: comparing `LET` and `WITH`
+=====
+
+Any variable not explicitly referenced by `WITH` (or carried over by `WITH *`) is dropped from the scope of subsequent clauses.
+
+.Not allowed -- Referencing a variable dropped by `WITH`
+[source, cypher, role=test-fail]
+----
+MATCH (s:Supplier)-[:SUPPLIES]->(p:Product)
+WITH s.name AS supplier
+RETURN supplier, p.name AS product
+----
+
+.Error message
+[source, error]
+----
+Variable `p` not defined
+----
+
+`LET`, however, cannot regulate which variables are in scope.
+Replacing `WITH` with `LET` in the above query would, therefore, return results.
+
+.`LET` does not drop variables
+[source, cypher]
+----
+MATCH (s:Supplier)-[:SUPPLIES]->(p:Product)
+LET supplier =  s.name
+RETURN supplier, p.name AS product
+----
+
+.Result
+[role="queryresult",options="header,footer", cols="2*<m"]
+|===
+| supplier | product
+
+| "TechCorp" | "Laptop"
+| "TechCorp" | "Phone"
+| "TechCorp" | "Headphones"
+| "Foodies Inc." | "Chocolate"
+| "Foodies Inc." | "Coffee"
+
+2+d|Rows: 5
+
+|===
+
+=====
+
+[[chaining-expressions]]
+=== Chaining expressions
+
+The fact that `LET` does not drop variables means that it can be used to chain expressions in a clear and concise manner, where variables bound in one `LET` clause can be referenced by subsequent clauses.
+
+.Chaining expressions: comparing `LET` and `WITH`
+=====
+
+The below query shows that variables bound by a `LET` clause be referenced by subsequent clauses without being explicitly carried over.
+Specifically, the variable `isExpensive` is created in the first `LET` clause and referenced again in the subsequent clauses.
+Note also that the variable `p`, bound in the `MATCH` clause, is available in the final `RETURN` clause despite not being referenced in any of `LET` clauses.
+
+.`LET` referencing variables assigned in previous a `LET`
+[source, cypher]
+----
+MATCH (p:Product)
+LET isExpensive = p.price >= 500
+LET isAffordable = NOT isExpensive
+LET discountCategory = CASE 
+    WHEN isExpensive THEN 'High-end'
+    ELSE 'Budget'
+END
+RETURN p.name AS product, p.price AS price, isAffordable, discountCategory
+ORDER BY price
+----
+
+.Result
+[role="queryresult",options="header,footer", cols="4*<m"]
+|===
+| product | price | isAffordable | discountCategory
+
+| "Chocolate" | 5 | TRUE | 'Budget'
+| "Coffee" | 10 | TRUE | 'Budget'
+| "Headphones" | 250 | TRUE | 'Budget'
+| "Phone" | 600   | FALSE | 'High-end'
+| "Laptop" | 1000  | FALSE | 'High-end'
+
+4+d|Rows: 5
+|===
+
+Using `WITH`, the same query would become less succinct, as `WITH` would have to explicitly carry over each variable in between clauses:
+
+.Less succinct `WITH` equivalent
+[source, cypher]
+----
+MATCH (p:Product)
+WITH p, p.price >= 500 AS isExpensive
+WITH p, isExpensive, NOT isExpensive AS isAffordable
+WITH p, isExpensive, isAffordable, 
+     CASE 
+         WHEN isExpensive THEN 'High-end' 
+         ELSE 'Budget' 
+     END AS discountCategory
+RETURN p.name AS product, p.price AS price, isAffordable, discountCategory
+ORDER BY price
+----
+
+=====
+
+[[aggregations-distinct]]
+=== Aggregations and `DISTINCT`
+
+Unlike `WITH`, `LET` cannot perform aggregations or be combined with `DISTINCT`.
+For example, in the following query, `WITH` could not be replaced by `LET`:
+
+.Combining `WITH DISTINCT` and aggregations on expressions
+[source, source]
+----
+MATCH (c:Customer)-[:BUYS]->(p:Product)
+WITH DISTINCT c, sum(p.price) AS totalSpent
+RETURN c.firstName AS customer, totalSpent
+----
+
+.Result
+[role="queryresult",options="header,footer", cols="2*<m"]
+|===
+| customer | totalSpent
+
+| "Amir" | 1005
+| "Keisha" | 250
+| "Mateo" | 1015
+| "Hannah" | 260
+| "Leila" | 1000
+| "Niko" | 760
+| "Yusuf" | 1005
+
+2+d|Rows: 7
+|===
+
+.Combining `WITH` and `LET`
+[source, source]
+----
+MATCH (c:Customer)-[:BUYS]->(p:Product)
+WITH DISTINCT c, sum(p.price) AS totalSpent
+LET fullName = c.firstName + ' ' + c.lastName
+RETURN fullName, totalSpent
+----
+
+.Result
+[role="queryresult",options="header,footer", cols="2*<m"]
+|===
+| customer | totalSpent
+
+| "Amir Rahman" | 1005
+| "Keisha Nguyen" | 250
+| "Mateo Ortega" | 1015
+| "Hannah Connor" | 260
+| "Leila Haddad" | 1000
+| "Niko Petrov" | 760
+| "Yusuf Abdi" | 1005
+
+2+d|Rows: 7
+|===
+
+[[advanced-examples]]
+== Advanced examples
+
+The following examples demonstrates how `LET`, and its ability to chain expressions, can be used in more advanced queries:
+
+.Scenario 1: Supplier notification on customer purchases and discounts
+=====
+
+This example retrieves information about what `Product` a `Customer` has bought, and from what `Supplier`.
+It then calculates the `price` after applying the `discount` and constructs a `message` for each purchase, including the `fullName` of each `Customer` and the `effectivePrice` of a `Product` after a discount, sent to the `Supplier` `email`.
+
+This example highlights that `LET` does not drop variables.
+All variables introduced in the `MATCH` and subsequent `LET` clauses are available in the final `RETURN` clause.
+
+.Retrieve `Customer` purchase details, including discount information
+[source, cypher]
+----
+MATCH (c:Customer)-[b:BUYS]->(p:Product)<--(s:Supplier)
+LET fullname = c.firstName + ' ' + c.lastName,
+    effectivePrice = p.price * (1 - c.discount)
+LET message = fullname + " bought " + p.name + " for $" + effectivePrice + " after a " + (c.discount * 100) + "% discount"
+RETURN b.date AS date, message, s.email AS toSupplier
+ORDER BY date
+----
+
+.Result
+[role="queryresult",options="header,footer", cols="1m, 2m, 1m"]
+|===
+| date | message | toSupplier
+
+| 2023-05-17 | "Leila Haddad bought Laptop for $900.0 after a 10.0% discount" | "contact@techcorp.com"
+| 2023-07-09 | "Keisha Nguyen bought Headphones for $200.0 after a 20.0% discount" | "contact@techcorp.com"
+| 2023-12-11 | "Hannah Connor bought Coffee for $8.5 after a 15.0% discount" | "info@foodies.com"
+| 2024-04-11 | "Mateo Ortega bought Laptop for $950.0 after a 5.0% discount" | "contact@techcorp.com"
+| 2024-06-02 | "Hannah Connor bought Headphones for $212.5 after a 15.0% discount" | "contact@techcorp.com"
+| 2024-08-23 | "Niko Petrov bought Headphones for $187.5 after a 25.0% discount" | "contact@techcorp.com"
+| 2024-10-09 | "Amir Rahman bought Laptop for $900.0 after a 10.0% discount" | "contact@techcorp.com"
+| 2024-12-24 | "Yusuf Abdi bought Chocolate for $4.5 after a 10.0% discount" | "info@foodies.com"
+| 2024-12-24 | "Niko Petrov bought Coffee for $7.5 after a 25.0% discount" | "info@foodies.com"
+| 2025-01-02 | "Yusuf Abdi bought Laptop for $900.0 after a 10.0% discount" | "contact@techcorp.com"
+| 2025-01-10 | "Amir Rahman bought Chocolate for $4.5 after a 10.0% discount" | "info@foodies.com"
+| 2025-02-27 | "Niko Petrov bought Phone for $375.0 after a 25.0% discount" | "contact@techcorp.com"
+| 2025-03-05 | "Mateo Ortega bought Chocolate for $4.75 after a 5.0% discount" | "info@foodies.com"
+| 2025-03-05 | "Mateo Ortega bought Coffee for $9.5 after a 5.0% discount" | "info@foodies.com"
+
+3+d| Rows: 14
+|===
+
+=====
+
+.Scenario 2: Supplier gift card distribution based on customer spending
+=====
+
+The example calculates the `customerRevenue` for each `Customer` after applying their `discount` on each `Product` they bought. Customers are then categorized into three groups based on their total spending: Category `A` for those who spent more than `850`, Category `B` for those who spent more than `350` but less than or equal to `850`, and Category `C` for those who spent `350` or less.
+Category `C` customers are excluded from the results using the xref:clauses/filter.adoc[`FILTER`] clause, leaving only Category `A` and `B` customers eligible for a gift card.
+The `amount` in the gift card is assigned based on the category, with with Category `A` receiving `20` and Category `B` receiving `10`.
+The details of the gift card are then sent to the `email` of the relevant customers.
+
+This example highlights how `LET` can be used to succinctly chain expressions, and also that it cannot be used to perform aggregations.
+
+.Calculate customer gift card distribution based on spending
+[source, cypher]
+----
+MATCH (customer:Customer)-[bought:BUYS]->(product:Product)
+LET effectivePrice = product.price * (1 - customer.discount)
+WITH customer, bought, sum(effectivePrice) AS customerRevenue
+LET category = CASE 
+    WHEN customerRevenue > 850 THEN 'A'
+    WHEN customerRevenue > 350 THEN 'B'
+    ELSE 'C'
+  END
+FILTER category <> 'C'
+LET amount = CASE 
+    WHEN category = 'A' THEN 20
+    WHEN category = 'B' THEN 10
+END
+LET message = {
+    type: 'giftcard',
+    addressee: customer.firstName + ' ' + customer.lastName,
+    amount: amount,
+    year: bought.date.year
+}
+RETURN message, customer.email AS toCustomer, customerRevenue
+ORDER BY amount
+----
+
+.Result
+[role="queryresult",options="header,footer", cols="3m, 2m, 1m"]
+|===
+| message | toCustomer | customerRevenue
+
+| {amount: 10, addressee: "Niko Petrov", type: "giftcard", year: 2025} | "niko.petrov@example.com" | 375.0
+| {amount: 20, addressee: "Amir Rahman", type: "giftcard", year: 2024} | "amir.rahman@example.com" | 900.0
+| {amount: 20, addressee: "Mateo Ortega", type: "giftcard", year: 2024} | "mateo.ortega@example.com" | 950.0
+| {amount: 20, addressee: "Leila Haddad", type: "giftcard", year: 2023} | "leila.haddad@example.com" | 900.0
+| {amount: 20, addressee: "Yusuf Abdi", type: "giftcard", year: 2025} | "yusuf.abdi@example.com" | 900.0
+
+3+d|Rows: 5
+|===
+=====

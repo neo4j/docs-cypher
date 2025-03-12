@@ -1,0 +1,306 @@
+= String operators
+:description: Information about Cypher's predicate string operators.
+:table-caption!:
+
+String operators are used to perform operations on `STRING` values.
+Cypher contains the following string operators:
+
+* Prefix: `STARTS WITH` (case sensitive)
+* Suffix: `ENDS WITH` (case sensitive)
+* substring: `CONTAINS` (case sensitive)
+* Regular expression: `=~`
+* `IS NORMALIZED`
+* `IS NOT NORMALIZED`
+
+These operators perform _case-sensitive_ matching.
+Attempting to use them on values which are not `STRING` values will return `NULL`.
+
+[[example-graph]]
+== Example graph
+
+The following graph is used for the examples below:
+
+image::predicate_operators.svg[width="500",role="middle"]
+
+To recreate the graph, run the following query in an empty Neo4j database:
+
+[source, cypher, role=test-setup]
+----
+CREATE (alice:Person {name:'Alice', age: 65, role: 'Project manager', email: 'alice@company.com'}),
+       (cecil:Person {name: 'Cecil', age: 25, role: 'Software developer', email: 'cecil@private.se'}),
+       (cecilia:Person {name: 'Cecilia', age: 31, role: 'Software developer'}),
+       (charlie:Person {name: 'Charlie', age: 61, role: 'Security engineer'}),
+       (daniel:Person {name: 'Daniel', age: 39, role: 'Director', email: 'daniel@company.com'}),
+       (eskil:Person {name: 'Eskil', age: 39, role: 'CEO', email: 'eskil@company.com'})
+----
+
+== Examples
+
+.Prefix, suffix, and substring operators
+=====
+
+.`STARTS WITH` operator
+[source, cypher]
+----
+MATCH (n:Person)
+WHERE n.name STARTS WITH 'C'
+RETURN n.name AS name
+----
+
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| name
+
+| "Cecil"
+| "Cecilia"
+| "Charlie"
+
+1+d|Rows: 3
+|===
+
+.`ENDS WITH` operator
+[source, cypher]
+----
+MATCH (n:Person)
+WHERE n.role ENDS WITH 'developer'
+RETURN n.name AS name, n.role AS role
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | role
+
+| "Cecil" | "Software developer"
+| "Cecilia" | "Software developer"
+
+2+d|Rows: 2
+|===
+
+.`CONTAINS` operator
+[source, cypher]
+----
+MATCH (n:Person)
+WHERE n.role CONTAINS 'eng'
+RETURN n.name AS name, n.role AS role
+----
+
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | role
+
+| "Charlie" | "Security engineer"
+
+2+d|Rows: 1
+|===
+
+=====
+
+[[regular-expressions]]
+== Regular expressions
+
+Cypher supports filtering using regular expressions.
+The regular expression syntax is inherited from the link:https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/util/regex/Pattern.html[Java regular expressions].
+This includes support for flags that change how `STRING` values are matched, including the case-insensitive `(?i)`, multiline `(?m)`, and dotall `(?s)` flags.
+Flags are given at the beginning of the regular expression.
+
+.Regular expressions
+=====
+
+.Regular expression (`=~`)
+[source, cypher]
+----
+MATCH (n:Person)
+WHERE n.email =~ '.*@company.com'
+RETURN n.name AS name, n.email AS email
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | email
+
+| "Alice" | "alice@company.com"
+| "Daniel" | "daniel@company.com"
+| "Eskil" | "eskil@company.com"
+
+2+d|Rows: 3
+|===
+
+By pre-pending a regular expression with the flag `(?i)`, the whole expression becomes case-insensitive:
+
+.Case-insensitive regular expression `(?i)` 
+[source, cypher]
+----
+MATCH (n:Person)
+WHERE n.name =~ '(?i)CEC.*'
+RETURN n.name
+----
+
+The names of both `Cecil` and `Cecilia` are returned because their name starts with `'CEC'` regardless of casing:
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| name
+
+| "Cecil"
+| "Cecilia"
+
+1+d|Rows: 2
+|===
+
+
+=====
+
+[[escaping-in-regular-expressions]]
+=== Escaping in regular expressions
+
+Characters such as `.` or `*` have special meaning in a regular expression.
+To use these as ordinary characters without special meaning, escape them.
+
+.Escaped characters in a regular expression
+[source, cypher]
+----
+MATCH (n:Person)
+WHERE n.email =~ '.*\\.se'
+RETURN n.name AS name, n.email AS email
+----
+
+`Cecil` is returned because his email ends with `'.se'`:
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | email
+
+| "Cecil" | "cecil@private.se"
+
+2+d|Rows: 1
+
+|===
+
+Note that the regular expression constructs in
+link:https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/util/regex/Pattern.html[Java regular expressions] are applied only after resolving the escaped character sequences in the given xref::expressions/expressions-overview.adoc#expressions-string-literals[string literal].
+It is sometimes necessary to add additional backslashes to express regular expression constructs.
+This list clarifies the combination of these two definitions, containing the original escape sequence and the resulting character in the regular expression:
+
+[options="header", cols=">1,<2,<2"]
+|===
+|String literal sequence|Resulting Regex sequence|Regex match
+|`\t`|Tab|Tab
+|`\\t`|`\t`|Tab
+|`\b`|Backspace|Backspace
+|`\\b`|`\b`|Word boundary
+|`\n`|Newline|NewLine
+|`\\n`|`\n`|Newline
+|`\r`|Carriage return|Carriage return
+|`\\r`|`\r`|Carriage return
+|`\f`|Form feed|Form feed
+|`\\f`|`\f`|Form feed
+|`\'`|Single quote|Single quote
+|`\"`|Double quote|Double quote
+|`\\`|Backslash|Backslash
+|`\\\`|`\\`|Backslash
+|`\uxxxx`|Unicode UTF-16 code point (4 hex digits must follow the `\u`)|Unicode UTF-16 code point (4 hex digits must follow the `\u`)
+|`\\uxxxx`|`\uxxxx`|Unicode UTF-16 code point (4 hex digits must follow the `\u`)
+|===
+
+[NOTE]
+====
+Using regular expressions with unsanitized user input makes you vulnerable to Cypher injection.
+Consider using xref:syntax/parameters.adoc[parameters] instead.
+====
+
+[[string-normalization-operators]]
+== String normalization operators
+
+The `IS NORMALIZED` operator is used to check whether the given `STRING` is in the `NFC` Unicode normalization form:
+
+[NOTE]
+====
+Unicode normalization is a process that transforms different representations of the same string into a standardized form.
+For more information, see the documentation for link:https://unicode.org/reports/tr15/#Norm_Forms[Unicode normalization forms].
+====
+
+.`IS NORMALIZED` operator
+[source, cypher]
+----
+RETURN 'the \u212B char' IS NORMALIZED AS normalized
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| normalized
+| FALSE
+
+1+|Rows: 1
+|===
+
+Because the given `STRING` contains a non-normalized Unicode character (`\u212B`), `FALSE` is returned.
+
+To normalize a `STRING`, use the xref:functions/string.adoc#functions-normalize[normalize()] function.
+
+Note that the `IS NORMALIZED` operator returns `NULL` when used on a non-`STRING` value.
+For example, `RETURN 1 IS NORMALIZED` returns `NULL`.
+
+The `IS NOT NORMALIZED` operator is used to check whether the given `STRING` is not in the `NFC` Unicode normalization form:
+
+.`IS NOT NORMALIZED`
+[source, cypher]
+----
+RETURN 'the \u212B char' IS NOT NORMALIZED AS notNormalized
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| notNormalized
+| TRUE
+
+1+|Rows: 1
+|===
+
+Because the given `STRING` contains a non-normalized Unicode character (`\u212B`), and is not normalized, `TRUE` is returned.
+
+Note that the `IS NOT NORMALIZED` operator returns `NULL` when used on a non-`STRING` value.
+For example, `RETURN 1 IS NOT NORMALIZED` returns `NULL`.
+
+
+[[defining-normalization-forms]]
+=== Using `IS NORMALIZED` with a specified normalization type
+
+It is possible to define which Unicode normalization type is used (the default is `NFC`).
+
+The available normalization types are:
+
+* `NFC`
+* `NFD`
+* `NFKC`
+* `NFKD`
+
+.Query
+[source, cypher]
+----
+WITH 'the \u00E4 char' as myString
+RETURN myString IS NFC NORMALIZED AS nfcNormalized,
+    myString IS NFD NORMALIZED AS nfdNormalized
+----
+
+The given `STRING` contains the Unicode character: `\u00E4`, which is considered normalized in `NFC` form, but not in `NFD` form.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| nfcNormalized | nfdNormalized
+| TRUE          | FALSE
+2+|Rows: 2
+|===
+
+It is also possible to specify the normalization form when using the negated normalization operator.
+For example, `RETURN "string" IS NOT NFD NORMALIZED`.

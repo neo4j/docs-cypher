@@ -1,0 +1,146 @@
+= Equality, ordering, and comparison of value types
+:description: Information about how Cypher compares and orders different value types, including equality and inequality rules.
+
+This page explains how Cypher compares and orders different value types, including equality and inequality rules.
+
+[[equality-and-comparison]]
+== Equality and comparison of values
+
+The  xref:expressions/predicates/comparison-operators.adoc[equality (`=`) and inequality (`<>`) operators] allows for comparing the equality of different values.
+
+Values of the same type are only equal if they are the same identical value (e.g. `3 = 3` and `"x" <> "xy"`).
+
+Maps are only equal if they map exactly the same keys to equal values and lists are only equal if they contain the same sequence of equal values (e.g. `[3, 4] = [1+2, 8/2]`).
+
+Values of different types are considered as equal according to the following rules:
+
+* `PATH` values are treated as lists of alternating nodes and relationships and are equal to all lists that contain an identical sequence of nodes and relationships.
+* Testing any value against `NULL` with either the `=` or `<>` operator always evaluates to `NULL`.
+This includes `NULL = NULL` and `NULL <> NULL`.
+To reliably test if a value is `NULL` use `v IS NULL` or `v IS NOT NULL` (the latter is equivalent to `NOT(v IS NULL)`).
+
+Other combinations of value types cannot be compared with each other.
+For example, nodes, relationships, and literal maps cannot be compared to one another.
+Comparing incomparable values will throw an error.
+
+[[ordering-and-comparison]]
+== Ordering and comparison of values
+
+xref:clauses/order-by.adoc[`ORDER BY`] requires that all values are orderable.
+The following points explain how comparisons are made when using the `\<=`, `<`,`>=`, `>` operators.
+
+* Numerical values are compared for ordering using numerical order (e.g. `3 < 4` is `TRUE`).
+* All comparability tests with `java.lang.Double.NaN` evaluate as `FALSE`.
+For example, `1 > b` and `1 < b` are both `FALSE` when `b` is NaN.
+* String values are compared for ordering using lexicographic order (e.g. `"x" < "xy"`).
+* Boolean values are compared for ordering such that `FALSE < TRUE`.
+* When comparing values for ordering, if one of the arguments is `NULL`, the result is always `NULL`.
+* xref:values-and-types/spatial.adoc[Spatial values] cannot be compared using the operators `\<=`, `<`,`>=`, `>`.
+To compare spatial values within a specific range, use either the xref:functions/spatial.adoc#functions-withinBBox[`point.withinBBox()`] or the xref:functions/spatial.adoc#functions-point-wgs84-2d[`point()`] function.
+ 
+[[value-hierarchy]]
+=== Hierarchy of values
+
+Values of different types are ordered based on a predefined hierarchy, from least to greatest, as outlined in the following list:
+
+* xref::values-and-types/maps.adoc#cypher-literal-maps[`MAP`]
+* xref::values-and-types/property-structural-constructed.adoc#structural-types[`NODE`]
+* xref::values-and-types/property-structural-constructed.adoc#structural-types[`RELATIONSHIP`]
+* xref::values-and-types/lists.adoc[`LIST`]
+* xref::patterns/fixed-length-patterns.adoc#path-patterns[`PATH`]
+* xref::values-and-types/temporal.adoc[`ZONED DATETIME`]
+* xref::values-and-types/temporal.adoc[`LOCAL DATETIME`]
+* xref::values-and-types/temporal.adoc[`DATE`]
+* xref::values-and-types/temporal.adoc[`ZONED TIME`]
+* xref::values-and-types/temporal.adoc[`LOCAL TIME`]
+* xref::values-and-types/temporal.adoc[`DURATION`]
+* xref::values-and-types/spatial.adoc[`POINT`]
+* xref::expressions/expressions-overview.adoc#string[`STRING`]
+* xref::expressions/expressions-overview.adoc#boolean[`BOOLEAN`]
+* Numbers: xref::expressions/expressions-overview.adoc#numerical[`INTEGER`, `FLOAT`]
+
+[NOTE]
+`NULL` is ordered after all other values.
+
+.Sorting rules for mixed Cypher types
+[source, cypher]
+----
+WITH [42, "hello", NULL, true, {name: "Alice"}, [1, 2, 3], date("2024-02-10")] AS v
+UNWIND v AS values
+RETURN values
+ORDER BY values
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| values
+
+| {name: "Alice"}
+| [1, 2, 3]
+| 2024-02-10
+| "hello"
+| TRUE
+| 42
+| NULL
+
+1+d|Rows: 7
+
+|===
+
+[[ordering-lists-maps]]
+=== Ordering list and map values
+ 
+*Lists are compared in lexicographic order:*
+
+* Elements are compared pairwise from the start to the end of the list.
+The order is defined by the first pair where the elements differ.
+For example, `[1, 'foo', 3]` is less than `[1, 2, 'bar']` because `'foo'` is less than `2`.
+* If one list is shorter, it is padded with an empty element, which is considered less than any other value (including `NULL`).
+For example, `[1, 'foo']` is less than `[1, 'foo', 3]`, and `[1]` is less than `[1, NULL]`.
+
+*Maps are ordered by size, keys, and values:*
+
+* Maps are compared primarily by size: the smallest map has the fewest entries. For example, `{a: 1}` is less than `{a: 0, b: 'foo'}`.
+* Maps of equal size are compared by the alphabetical order of their keys.
+For example, `{b: 100, a: 'foo'}` is less than `{a: '', c: NULL}` because `['a', 'b']` is less than `['a', 'c']`.
+* For maps with identical key sets, the comparison is based on the values.
+After sorting keys alphabetically, values are compared pairwise.
+For example, `{b: 100, a: 'foo'}` is less than `{a: 'foo', b: NULL}` because `['foo', 100]` is less than `['foo', NULL]`.
+
+For more information about `LIST` and `MAP` values, see xref::values-and-types/property-structural-constructed.adoc#constructed-types[Values and types -> Constructed types].
+
+[[ordering-spatial-temporal]]
+=== Ordering spatial and temporal values
+
+The following applies to the ordering of xref:values-and-types/spatial.adoc[spatial types]:
+
+* `POINT` values are ordered after lists and before temporal types.
+* `POINT` values of different coordinate reference systems (CRS) are ordered by the CRS code (the value of SRID field).
+For the currently supported set of xref::values-and-types/spatial.adoc#cypher-spatial-crs[CRS], the following ascending order applies: `4326`, `4979`, `7302`, `9157`.
+* `POINT` values with the same CRS are ordered by each coordinate value in turn; first `x`, then `y`, and finally `z`.
+* Note that this ordering is different to the order returned by the spatial index, which follows the space filling curve.
+
+The following applies to the ordering of xref:values-and-types/temporal.adoc[temporal types]:
+
+* Temporal types are ordered after spatial types but before strings.
+* Temporal values follow a chronological order.
+For example, `2023-01-01` comes before `2024-01-01`.
+* Temporal values are first sorted by type, then by value.
+For example, `DATETIME` is considered "greater" than a `DATE` and `2023-02-10T12:00:00` comes before `2023-02-10T15:00:00` because it is chronologically earlier.
+* Since there is no perfect way to compare duration values (because months and years have varying lengths), Cypher defines a specific rule for sorting them in `ORDER BY`:
+** 1 year is treated as 365.2425 days (to account for leap years).
+** 1 month is treated as 30.436875 days (which is 1/12 of a year).
+** 1 day is always 24 hours.
+
+The following applies to the comparison of temporal types:
+
+* xref::values-and-types/temporal.adoc#cypher-temporal-instants[Temporal instant values] (like `DATETIME` and `DATE`) can be compared if they are of the same type.
+An earlier instant is considered smaller (less than) compared to a later instant.
+* Instants at the same point in time but with different time zones are not considered equal.
+To ensure consistent ordering, Cypher sorts them first by their actual point in time.
+If two instants have the same time but different time zones, they are ordered by their UTC offset (west to east, meaning negative offsets come first).
+If they have the same time and offset but different named time zones, they are sorted alphabetically by the time zone name.
+* Duration values cannot be directly compared.
+Since the length of a day, month, or year varies, Cypher does not define a strict ordering for durations.
+As a result, comparing two durations `(e.g, duration1 < duration2)` will always return `NULL`.
