@@ -1,5 +1,5 @@
 = String concatenation operators
-:description: Information about Cypher's string operators.
+:description: Information about Cypher's string concatenation operators.
 :table-caption!:
 
 Cypher contains two operators for the concatenation of `STRING` values:
@@ -10,7 +10,7 @@ Cypher contains two operators for the concatenation of `STRING` values:
 The two operators are functionally equivalent.
 However, `||` is xref:appendix/gql-conformance/index.adoc[GQL conformant], while `+` is not.
 
-For additional expressions that evaluate `STRING` values, see xref:functions/string.adoc[String functions].
+For additional expressions that evaluate to `STRING` values, see xref:functions/string.adoc[String functions].
 
 [[examples]]
 == Examples
@@ -18,7 +18,7 @@ For additional expressions that evaluate `STRING` values, see xref:functions/str
 .`||` and `+`
 [source, cypher]
 ----
-RETURN 'Neo' || '4j' AS result1
+RETURN 'Neo' || '4j' AS result1,
        'Neo' + '4j' AS result2
 ----
 
@@ -87,12 +87,48 @@ RETURN p.fullName AS fullName
 1+d| Rows: 1
 |===
 
+.Adding separators in `STRING` concatenation
+[source, cypher]
+----
+RETURN 'Hello' || ', ' || 'World' AS result
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| result
+
+| "Hello, World"
+
+1+d| Rows: 1
+|===
+
+.Adding prefix, suffix, and separators in `STRING` concatenation
+[source, cypher]
+----
+RETURN 'My favorite fruits are: ' || 'apples' || ', ' || 'bananas' || ', and' || 'oranges' || '.' AS result
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| result
+
+| "My favorite fruits are: apples, bananas, and oranges."
+
+1+d| Rows: 1
+|===
+
+[[list-values-and-null]]
+== String concatenation,`LIST` values, and `NULL`
+
 `STRING` values in a `LIST` can be concatenated using the xref:functions/list.adoc#functions-reduce[`reduce()`] function.
 
 .Concatenate `STRING` values in a `LIST`
 [source, cypher]
 ----
-RETURN reduce(acc = '', item IN ['Neo', '4j'] | acc || item) AS result
+WITH ['Neo', '4j'] AS list
+RETURN reduce(acc = '', item IN list| acc || item) AS result
 ----
 
 .Result
@@ -105,17 +141,14 @@ RETURN reduce(acc = '', item IN ['Neo', '4j'] | acc || item) AS result
 1+d| Rows: 1
 |===
 
-Concatenating a `STRING` value with `NULL` returns `NULL`.
-To skip the first `NULL` value in a list of expressions, use the xref:functions/scalar.adoc#functions-coalesce[`coalesce()`] function.
+The following query uses the xref:functions/scalar.adoc#functions-head[`head()`] function to start the accumulator with the first `item` in the `list`, while the xref:functions/scalar.adoc#functions-tail[`tail()`] function returns the remaining items in the `list`.
+The `reduce()` function then concatenates these items with commas.
 
-In the following example, `coalesce()` is used with `reduce()` to replace each `NULL` value in the `LIST` with an empty `STRING` (`''`).
-This ensures that all `NULL` values are effectively skipped, allowing the `reduce()` function to concatenate the remaining `STRING` values.
-
-.Using `reduce()` and `coalesce()` to skip `NULL` values when concatenating a `LIST`
+.Add prefix and a separator (`,`) in a `STRING` concatenated from `STRING` values in a `LIST`
 [source, cypher]
 ----
-WITH ['Neo', NULL, '4j', NULL, 'Hello', NULL] AS items
-RETURN reduce(acc = '', item IN items | acc || coalesce(item, '')) AS result
+WITH ['Apples', 'Bananas', 'Oranges'] AS list
+RETURN 'My favorite fruits are: ' || reduce(acc = head(list), item IN tail(list) | acc || ', ' || item) || '.' AS result
 ----
 
 .Result
@@ -123,7 +156,72 @@ RETURN reduce(acc = '', item IN items | acc || coalesce(item, '')) AS result
 |===
 | result
 
-| "Neo4jHello"
+| "My favorite fruits are: Apples, Bananas, Oranges."
+
+1+d| Rows: 1
+|===
+
+Concatenating a `STRING` value with `NULL` returns `NULL`.
+To skip the first `NULL` value in a list of expressions, use the xref:functions/scalar.adoc#functions-coalesce[`coalesce()`] function.
+
+In the following query, `coalesce()` is used with `reduce()` to replace each `NULL` value in the `LIST` with an empty `STRING` (`''`).
+This ensures that all `NULL` values are effectively skipped, allowing the `reduce()` function to concatenate the remaining `STRING` values.
+
+.Using `reduce()` and `coalesce()` to skip `NULL` values when concatenating a `LIST`
+[source, cypher]
+----
+WITH ['Apples', NULL, 'Bananas', NULL, 'Oranges', NULL] AS list
+RETURN 'My favorite fruits are: ' || reduce(acc = head(list), item IN tail(list) | acc || coalesce(', ' || item, '')) || '.' AS result
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| result
+
+| "My favorite fruits are: Apples, Bananas, Oranges." 
+
+1+d|Rows: 1
+|===
+
+If a `LIST` is empty, `reduce()` will return `NULL` because there are no elements to process.
+In such cases, `coalesce()` can be used to replace the `NULL` with a default value (e.g., `'none'`).
+
+.Using `reduce()` and `coalesce()` to handle empty `LIST` values
+[source, cypher]
+----
+UNWIND [['Apples', 'Bananas', 'Oranges'], ['Pears'], []] AS list 
+RETURN 'My favorite fruits are: ' || coalesce(reduce(acc = head(list), item IN tail(list) | acc || ', ' || item), 'none') || '.' AS result
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| result
+
+| "My favorite fruits are: Apples, Bananas, Oranges."
+| "My favorite fruits are: Pears."
+| "My favorite fruits are: none."
+
+1+d|Rows: 3
+|===
+
+Finally, xref:values-and-types/lists.adoc#cypher-list-comprehension[
+list comprehension] allows concatenating a `STRING` value to each item in a `LIST` to generate a new `LIST` of modified `STRING` values.
+
+.List comprehension with `STRING` concatenation on `LIST` items
+[source, cypher]
+----
+WITH ['Apples', 'Bananas', 'Oranges'] AS list 
+RETURN [item IN list | 'Eat more ' || item || '!'] AS result
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| result
+
+| ["Eat more Apples!", "Eat more Bananas!", "Eat more Oranges!"]
 
 1+d| Rows: 1
 |===
