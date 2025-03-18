@@ -538,10 +538,11 @@ RETURN n.num
 === `ON ERROR RETRY`
 
 `ON ERROR RETRY` uses an exponential delay between retry attempts for transaction batches that fail due to transient errors (i.e. errors where retrying a transaction can be expected to give a different result), with an optional xref:subqueries/subqueries-in-transactions.adoc#specify-retry-duration[maximum retry duration].
-If the transaction still fails after the maximum duration, the failure is handled according to an optionally specified xref:subqueries/subqueries-in-transactions.adoc#fallback-error-handling[fallback error handling mode] (`THEN CONTINUE` (default), `THEN BREAK`, `THEN FAIL`).
+If the transaction still fails after the maximum duration, the failure is handled according to an optionally specified xref:subqueries/subqueries-in-transactions.adoc#fallback-error-handling[fallback error handling mode] (`THEN CONTINUE`, `THEN BREAK`, `THEN FAIL` (default)).
 
 `ON ERROR RETRY` increases query robustness by handling transient errors without manual intervention.
-It is particularly suitable for xref:subqueries/subqueries-in-transactions.adoc#concurrent-transactions[concurrent transactions], reducing the likelihood of xref:subqueries/subqueries-in-transactions.adoc#deadlocks[deadlocks].
+It is particularly suitable for xref:subqueries/subqueries-in-transactions.adoc#concurrent-transactions[concurrent transactions], reducing the likelihood of a query failing due to xref:subqueries/subqueries-in-transactions.adoc#deadlocks[deadlocks].
+
 
 [NOTE]
 Queries using `ON ERROR RETRY` can currently only use the xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-slotted-runtime[slotted runtime].
@@ -551,7 +552,9 @@ Queries using `ON ERROR RETRY` can currently only use the xref:planning-and-tuni
 
 The below example demonstrates a basic retry scenario.
 If a transient error occurs during the creation of a `User` node, the transaction will be retried for the default maximum retry duration (`30` seconds).
-If the retry succeeds, the query continues. If the retry fails after the default duration, it behaves like xref:subqueries/subqueries-in-transactions#on-error-continue[`ON ERROR CONTINUE`] (the default fallback).
+If the retry succeeds, the query continues.
+
+If the retry fails after the default duration, the query fails because it behaves like xref:subqueries/subqueries-in-transactions#on-error-fail[`ON ERROR FAIL`] (the default fallback).
 
 .`ON ERROR RETRY`
 [source, cypher]
@@ -623,21 +626,19 @@ CALL (i) {
 The fallback behavior specifies what will happen if a transaction has not succeeded within the time limit.
 Specifically:
 
-* `ON ERROR RETRY ... THEN CONTINUE` (default): the query will ignore recoverable errors and continue with the execution of subsequent inner transactions.
-The outer transaction will succeed, and `null` will be returned for any failed inner transactions.
+* `ON ERROR RETRY ... THEN CONTINUE`: the query will ignore recoverable errors and continue with the execution of subsequent inner transactions.
+The outer transaction succeeds, and `null` will be returned for any failed inner transactions.
 See xref:subqueries/subqueries-in-transactions.adoc#on-error-continue[`ON ERROR CONTINUE`] for more information about this behavior.
 
-[NOTE]
-Because `THEN CONTINUE` is the default fallback option it does not have to be specified.
-
 * `ON ERROR RETRY ... THEN BREAK`: the query will ignore recoverable errors and stop the execution of subsequent inner transactions.
-The out transaction succeeds, and `null` will be returned for the failed inner transaction and all subsequent ones.
+The outer transaction succeeds, and `null` will be returned for the failed inner transaction and all subsequent ones.
 See xref:subqueries/subqueries-in-transactions.adoc#on-error-break[`ON ERROR BREAK`] for more information about this behavior.
 
-* `ON ERROR RETRY ... THEN FAIL`: the query will acknowledge a recoverable error and stop the execution of subsequent inner transactions, causing the outer transaction to fail.
-all subsequent ones.
+* `ON ERROR RETRY ... THEN FAIL` (default): the query will acknowledge a recoverable error and stop the execution of subsequent inner transactions, causing the outer transaction to fail.
 See xref:subqueries/subqueries-in-transactions.adoc#on-error-fail[`ON ERROR FAIL`] for more information about this behavior.
 
+[NOTE]
+Because `THEN FAIL` is the default fallback option it does not have to be specified.
 
 // tag::tabs[]
 [.tabs]
@@ -845,6 +846,11 @@ If so, the impacted transactions are always rolled back, and an error is thrown 
 
 The latter is particularly suited for concurrent transactions, because it retries recoverable transient errors with exponential backoff between retries until the xref:subqueries/subqueries-in-transactions.adoc#specify-retry-duration[maximum retry duration] has been reached.
 
+[NOTE]
+Deadlock detection and transaction retries can be time-consuming.
+When importing data that includes a significant number of relationships to be merged between the same nodes but processed in different batches, increasing the concurrency may not enhance performance.
+On the contrary, it could slow down the import process.
+
 .Dealing with deadlocks
 =====
 
@@ -872,7 +878,7 @@ ForsetiClient[transactionId=64, clientId=12] can't acquire ExclusiveLock{owner=F
 Client[63] waits for [ForsetiClient[transactionId=64, clientId=12]]]
 ----
 
-.Query using `ON ERROR RETRY` to ignore deadlocks and complete outer transaction
+.Query using `ON ERROR CONTINUE` to ignore deadlocks and complete outer transaction
 [source, cypher]
 ----
 LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/movies.csv' AS row
@@ -928,10 +934,9 @@ RETURN status.transactionId AS transaction, status.committed AS commitStatus, st
 These are transient errors, meaning that re-running the transactions may be successful.
 To retry the any failed inner transactions, use the error option `ON ERROR RETRY`, which retries any failing transactions until the maximum retry duration has been reached.
 
-The following query uses `ON ERROR RETRY` to retry the above query for a maximum of `3` seconds.
-Note that `ON ERROR RETRY` by default falls back to the error option `THEN CONTINUE`, which ensures that any deadlocks are bypassed and that subsequent inner transactions are executed.
+The following query uses `ON ERROR RETRY ... THEN CONTINUE` to retry the above query for a maximum of `3` seconds and then continue the execution of subsequent inner transactions by ignoring any recoverable errors.
 
-.Retrying any failed inner transactions with `ON ERROR RETRY`
+.Query using `ON ERROR RETRY ... THEN CONTINUE` to retry deadlocked inner transactions and complete outer transaction
 [source, cypher]
 ----
 LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/movies.csv' AS row
@@ -939,7 +944,7 @@ CALL (row) {
    MERGE (m:Movie {movieId: row.movieId})
    MERGE (y:Year {year: row.year})
    MERGE (m)-[r:RELEASED_IN]->(y)
-} IN 2 CONCURRENT TRANSACTIONS OF 10 ROWS ON ERROR RETRY FOR 3 SECONDS REPORT STATUS AS status
+} IN 2 CONCURRENT TRANSACTIONS OF 10 ROWS ON ERROR RETRY THEN CONTINUE FOR 3 SECONDS REPORT STATUS AS status
 RETURN status.transactionID as transaction, status.committed AS successfulTransaction
 ----
 
