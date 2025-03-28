@@ -2,19 +2,218 @@
 :description: Information about Cypher's list expressions.
 :table-caption!:
 
-List expressions are a way to manipulate and query lists in Cypher.
+List expressions are a way to manipulate and query xref:values-and-types/lists.adoc[`LIST`] values in Cypher.
 They allow for operations like concatenation, element access, slicing, and transformations using comprehensions. 
 
-For more expressions that evaluate to a xref:values-and-types/lists.adoc[`LIST`] value, see xref:functions/list.adoc[List functions].
+For more expressions that evaluate to a `LIST` value, see xref:functions/list.adoc[List functions]. +
+For information about how to check membership in a `LIST` using the `IN` operator, see xref:expressions/predicates/list-operators.adoc[Predicates -> List operators].
 
-== List operators
+== Example graph
+
+[source, cypher]
+----
+CREATE (alice:Person {name:'Alice', age: 65, role: 'Project manager', skills: ['Java', 'Python']}),
+       (cecil:Person {name: 'Cecil', age: 25, role: 'Software developer', skills: ['Java', 'Python']}),
+       (cecilia:Person {name: 'Cecilia', age: 31, role: 'Software developer', skills: ['JavaScript', 'TypeScript']}),  
+       (charlie:Person {name: 'Charlie', age: 61, role: 'Security engineer', skills: ['C++', 'Python']}),
+       (daniel:Person {name: 'Daniel', age: 39, role: 'Director', skills: ['Ruby', 'Go']}),  
+       (eskil:Person {name: 'Eskil', age: 39, role: 'CEO'}),  
+
+       (alice)-[:WORKS_FOR]->(daniel),
+       (cecil)-[:WORKS_FOR]->(alice),
+       (cecilia)-[:WORKS_FOR]->(alice),
+       (charlie)-[:WORKS_FOR]->(daniel),
+       (daniel)-[:WORKS_FOR]->(eskil)
+----
+
+== List concatenation
+
+Cypher contains two list concatenation operators: `||` and `+`.
+`||` is xref:appendix/gql-conformance/index.adoc[GQL conformant], while `+` is not.
+
+.List concatenation using `||` and `+`
+[source, cypher]
+----
+RETURN [1,2] || [3,4] AS list1,
+       [1,2] + [3,4] AS list2
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| list1 | list2
+
+| [1, 2, 3, 4] | [1, 2, 3, 4]
+
+2+d|Rows: 1
+|===
+
+.Concatenating two `LIST` properties
+[source, cypher]
+----
+MATCH (cecil:Person {name: 'Cecil'}), (cecilia:Person {name: 'Cecilia'})
+RETURN cecil.skills || cecilia.skills AS combinedSkills
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| combinedSkills
+
+| ["Java", "Python", "JavaScript", "TypeScript"]
+
+1+d|Rows: 1
+|===
+
+The `+` operator can add elements to the beginning of a `LIST` value.
+This is not possible using the `||` operator.
+
+.Adding elements to the beginning of a `LIST` with `+`
+[source, cypher]
+----
+MATCH (cecil:Person {name: 'Cecil'})
+SET cecil.skills = "Cypher" + cecil.skills
+RETURN cecil.skills AS skillsList
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| skillsList
+
+| ["Cypher", "Java", "Python"] 
+
+1+d|Rows: 1
+|===
+
+If `NULL` is part of a concatenated `LIST`, `NULL` will be a part of the new `LIST`.
+
+.Concatenating `LIST` including `NULL`
+[source, cypher]
+----
+RETURN [1, 2] || [3, null] AS listWithNull
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| listWithNull
+
+| [1, 2, 3, NULL]
+
+1+d|Rows: 1
+|===
 
 == List element access
 
-== List slicing
+The subscript operator, `[]`, can be used to access specific elements in a `LIST`.
+`[0]` refers to the first element in a `LIST`, `[1]` to the second, and so on.
+`[-1]` refers to the last element in a `LIST`, `[-2]` to the penultimate element, and so on.
 
-== List comprehension
+.Accessing individual elements in a `LIST`
+[source, cypher]
+----
+WITH [1, 2, 3, 4] AS list
+RETURN list[0] AS firstElement
+       list[2] AS thirdElement
+       list[-1] AS finalElement
+----
 
-== Pattern comprehension
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| firstElement | thirdElement | finalElement
+
+| 1 | 3 | 4
+
+3+d|Rows: 1
+|===
+
+The index of the element in the `LIST` can be parameterized.
+
+.Parameters
+[source, parameters]
+----
+{
+  "myIndex" : 1
+}
+----
+
+.Accessing `LIST` elements with a parameter
+[source, cypher]
+----
+WITH [1, 2, 3, 4] AS list
+RETURN list[$myIndex] AS secondElement
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| secondElement
+
+| 2
+
+1+d|Rows: 1
+|===
+
+The xref:expressions/predicates/list-operators.adoc[`IN`] operator, which checks for `LIST` membership, can be used together with `[]` to test whether an element exists in a nested `LIST`.
+
+.Checking for membership in nested `LIST`
+[source, cypher]
+----
+WITH [[1, 2, 3], [4, 5, 6]] AS nestedList
+RETURN 3 IN nestedList[0] AS elementPresent
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| elementPresent
+
+| TRUE
+
+1+d|Rows: 1
+|===
+
+Attempting to reference an element outside the bounds of the `LIST` will return `NULL`, as will attempting to access elements from an empty `LIST`.
+
+.Out-of-bounds and empty list access
+[source, cypher]
+----
+WITH [1, 2, 3, 4] AS list, [] AS emptyList
+RETURN list[5] AS outOfBound, emptyList[0] AS emptyAccess
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| outOfBound | emptyAccess
+
+| NULL | NULL
+
+2+d|Rows: 1
+|===
 
 
+
+=== NULL and LIST comprehension
+
+
+
+If you want to remove all null values from the concatenated lists, you can use a list comprehension to filter them out. This way, you're not even concerned with their positions, and it's much cleaner and easier.
+
+Example:
+cypher
+Copy
+Edit
+RETURN [1, null, 3] || [null, 5, null] AS combinedList,
+       [x IN ([1, null, 3] || [null, 5, null]) WHERE x IS NOT NULL] AS filteredList;
+Result:
+sql
+Copy
+Edit
++---------------------------------------------+
+| combinedList           | filteredList      |
++---------------------------------------------+
+| [1, NULL, 3, NULL, 5, NULL] | [1, 3, 5]        |
++---------------------------------------------+
