@@ -3,12 +3,18 @@
 :table-caption!:
 
 List expressions are a way to manipulate and query xref:values-and-types/lists.adoc[`LIST`] values in Cypher.
-They allow for operations like concatenation, element access, slicing, and transformations using comprehensions. 
 
 For more expressions that evaluate to a `LIST` value, see xref:functions/list.adoc[List functions]. +
 For information about how to check membership in a `LIST` using the `IN` operator, see xref:expressions/predicates/list-operators.adoc[Predicates -> List operators].
 
+[[example-graph]]
 == Example graph
+
+The following graph is used for the examples below:
+
+image::list_expressions_graph.svg[width="700",role="middle"]
+
+To recreate the graph, run the following query against an empty Neo4j database:
 
 [source, cypher]
 ----
@@ -17,15 +23,16 @@ CREATE (alice:Person {name:'Alice', age: 65, role: 'Project manager', skills: ['
        (cecilia:Person {name: 'Cecilia', age: 31, role: 'Software developer', skills: ['JavaScript', 'TypeScript']}),  
        (charlie:Person {name: 'Charlie', age: 61, role: 'Security engineer', skills: ['C++', 'Python']}),
        (daniel:Person {name: 'Daniel', age: 39, role: 'Director', skills: ['Ruby', 'Go']}),  
-       (eskil:Person {name: 'Eskil', age: 39, role: 'CEO'}),  
+       (eskil:Person {name: 'Eskil', age: 39, role: 'CEO', skills: ['Java', 'C++', 'Python']}),  
 
-       (alice)-[:WORKS_FOR]->(daniel),
        (cecil)-[:WORKS_FOR]->(alice),
        (cecilia)-[:WORKS_FOR]->(alice),
        (charlie)-[:WORKS_FOR]->(daniel),
+       (alice)-[:WORKS_FOR]->(daniel),
        (daniel)-[:WORKS_FOR]->(eskil)
 ----
 
+[[list-concatenation]]
 == List concatenation
 
 Cypher contains two list concatenation operators: `||` and `+`.
@@ -65,10 +72,29 @@ RETURN cecil.skills || cecilia.skills AS combinedSkills
 1+d|Rows: 1
 |===
 
-The `+` operator can add elements to the beginning of a `LIST` value.
+The `+` operator can add elements to the beginning or end of a `LIST` value.
 This is not possible using the `||` operator.
 
-.Adding elements to the beginning of a `LIST` with `+`
+.Adding elements to the beginning of a `LIST`
+[source, cypher]
+----
+WITH [1, 2, 3, 4] AS list
+RETURN 0 + list AS newBeginning,
+       list + 5 AS newEnd
+----
+
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| newBeginning | newEnd
+
+| [0, 1, 2, 3, 4] | [1, 2, 3, 4, 5] 
+
+2+d|Rows: 1
+|===
+
+.Adding elements to the beginning of a `LIST` property `+`
 [source, cypher]
 ----
 MATCH (cecil:Person {name: 'Cecil'})
@@ -104,6 +130,9 @@ RETURN [1, 2] || [3, null] AS listWithNull
 1+d|Rows: 1
 |===
 
+For removing `NULL` values when concatenating `LIST` values, see xref:expressions/list-expressions.adoc#null-list-concatenation-list-comprehension[`NULL`, list concatenation, and list comprehension].
+
+[[list-element-access]]
 == List element access
 
 The subscript operator, `[]`, can be used to access specific elements in a `LIST`.
@@ -156,6 +185,23 @@ RETURN list[$myIndex] AS secondElement
 1+d|Rows: 1
 |===
 
+.Accessing a `LIST` within a nested `LIST`
+[source, cypher]
+----
+WITH [[1, 2], [3, 4], [5, 6]] AS nestedList
+RETURN nestedList[1] AS secondList
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| secondList
+
+| [3, 4]
+
+1+d|Rows: 1
+|===
+
 The xref:expressions/predicates/list-operators.adoc[`IN`] operator, which checks for `LIST` membership, can be used together with `[]` to test whether an element exists in a nested `LIST`.
 
 .Checking for membership in nested `LIST`
@@ -194,26 +240,300 @@ RETURN list[5] AS outOfBound, emptyList[0] AS emptyAccess
 2+d|Rows: 1
 |===
 
+[[list-slicing]]
+== List slicing
+
+`LIST` values can be sliced if a range is provided within the subscript operator.
+The bounds of the range are separated using two dots (`..`).
+This allows for extracting a subset of a `LIST` rather than a single element.
+List slicing is inclusive at the start of the range, but exclusive at the end (e.g. `list[start..end]` includes `start`, but excludes `end`).
+
+.Slice operations on a `LIST`
+[source, cypher]
+----
+WITH [1, 2, 3, 4, 5, 6] AS list
+RETURN list[2..4] AS middleElements,
+       list[..2] AS noLowerBound,
+       list[2..] AS noUpperBound
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| middleElements | noLowerBound | noUpperBound
+
+| [3, 4] | [1, 2] | [3, 4, 5, 6]
+
+3+d|Rows: 1
+|===
+
+When slicing nested `LIST` values, it is important to specify which level is sliced.
+The below example slices the outer `LIST` and returns the first two nested `LIST` values.
+
+.Slice outer `LIST`
+[source, cypher]
+----
+WITH [[1, 2, 3], [4, 5, 6], [7, 8, 9]] AS nestedList
+RETURN nestedList[0..2] AS slicedNestedList
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| slicedNestedList
+
+| [[1, 2, 3], [4, 5, 6]]
+
+1+d|Rows: 1
+|===
+
+Slicing inner `LIST` values require two `[]` operators; the first `[]` accesses elements from the outer `LIST`, while the second slices or accesses elements from the inner `LIST`.
+
+.Slice inner `LIST`
+[source, cypher]
+----
+WITH [[1, 2, 3], [4, 5, 6], [7, 8, 9]] AS nestedList
+RETURN nestedList[1][0..2] AS slicedInnerList
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| slicedInnerList
+
+| [4, 5]
+
+1+d|Rows: 1
+|===
+
+Accessing specific elements or a range of elements can also be used in combination with the `+` operator to create a new `LIST` with values inserted into specific sections of an existing `LIST` value.
+
+.Inserting elements into specific positions of a `LIST`
+[source, cypher]
+----
+WITH [1, 3, 4] AS list
+RETURN list[0] + [2] + list[1..] AS newList
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| newList
+
+| [1, 2, 3, 4]
+
+1+d|Rows: 1
+|===
+
+[[list-comprehension]]
+== List comprehension
+
+List comprehension is used to create new `LIST` values by iterating over existing `LIST` values and transforming the elements based on certain conditions or operations.
+
+.Syntax
+[source, syntax]
+----
+[item IN list [WHERE predicate] | [expression]]
+----
+
+The iteration step (`item IN list`) ensures that each element of a `list` is accessed one by one, while the `expression` optionally applies a transformation to each `item`, creating new `LIST` values containing the modified elements.
+
+.List comprehension without an expression
+[source, cypher]
+----
+RETURN [x IN range(0,10) WHERE x % 2 = 0] AS result
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| result
+
+| [0, 2, 4, 6, 8, 10] 
+
+1+d|Rows: 1
+|===
+
+.List comprehension without filtering
+[source, cypher]
+----
+RETURN [x IN range(0,5) | x * 10] AS result
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| result
+
+| [0, 10, 20, 30, 40, 50]
+
+1+d|Rows: 1
+|===
 
 
-=== NULL and LIST comprehension
+.List comprehension with both an expression and filtering
+[source, cypher]
+----
+WITH [1, 2, 3, 4, 5] AS list
+RETURN [n IN list WHERE n > 2 | n] AS filteredList
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| filteredList
+
+| [3, 4, 5]
+
+1+d|Rows: 1
+|===
+
+This below query iterates over the `skills` property of each Person node and creates a new `LIST` by xref:expressions/string-operators.adoc[concatenating the `STRING`] `" expert"` to each element in `skills`.
+
+.Modify `LIST` properties
+[source, cypher]
+----
+MATCH (p:Person) WHERE p.skills IS NOT NULL
+ORDER BY p.name
+RETURN p.name AS name,
+      [skill IN p.skills | skill + " expert"] AS modifiedSkills
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | modifiedSkills
+
+| "Alice"   | ["Java expert", "Python expert"]
+| "Cecil"   | ["Cypher expert", "Java expert", "Python expert"]
+| "Cecilia" | ["JavaScript expert", "TypeScript expert"]
+| "Charlie" | ["C++ expert", "Python expert"]
+| "Daniel"  | ["Ruby expert", "Go expert"]
+| "Eskil"   | ["Java expert", "C++ expert", "Python expert"]
+
+2+d|Rows: 6
+|===
+
+The next query uses the xref:functions/aggregating.adoc#functions-collect[`collect()`] function to gather all `Person` nodes into a `LIST`, and the `WHERE 'Python' IN person.skills` predicate filters that list to include only those nodes whose `skills` property contains `Python`.
+
+.List comprehension with a `WHERE` predicate
+[source, cypher]
+----
+MATCH (p:Person)
+RETURN [person IN collect(p) WHERE 'Python' IN person.skills | person.name] AS pythonExperts
+----
 
 
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| pythonExperts
 
-If you want to remove all null values from the concatenated lists, you can use a list comprehension to filter them out. This way, you're not even concerned with their positions, and it's much cleaner and easier.
+| ["Alice", "Cecil", "Charlie", "Eskil"]
 
-Example:
-cypher
-Copy
-Edit
-RETURN [1, null, 3] || [null, 5, null] AS combinedList,
-       [x IN ([1, null, 3] || [null, 5, null]) WHERE x IS NOT NULL] AS filteredList;
-Result:
-sql
-Copy
-Edit
-+---------------------------------------------+
-| combinedList           | filteredList      |
-+---------------------------------------------+
-| [1, NULL, 3, NULL, 5, NULL] | [1, 3, 5]        |
-+---------------------------------------------+
+1+d|Rows: 1
+|===
+
+
+List comprehension can be used to remove any unknown `NULL` values when concatenating `LIST` values.
+
+.Use a list comprehension to remove `NULL` values during list concatenation
+[source, cypher]
+----
+RETURN [x IN ([1, null, 3] || [null, 5, null]) WHERE x IS NOT NULL] AS listWithoutNull
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| listWithoutNull
+
+| [1, 3, 5]
+
+1+d|Rows: 1
+|===
+
+[[pattern-comprehension]]
+== Pattern comprehension
+
+Pattern comprehension is used to create new `LIST` values by matching graph patterns and applying conditions to the matched elements, returning custom projections.
+
+.Syntax
+[source, syntax]
+----
+[pattern [WHERE predicate] | expression]
+----
+
+The below query retrieves a list of names of people who work for `Alice` by using pattern comprehension extract the names of `employees` into a `LIST`.
+
+.Pattern comprehension on a fixed-length relationship
+[source, cypher]
+----
+MATCH (alice:Person {name: 'Alice'})
+RETURN [(alice)<-[:WORKS_FOR]-(employee) | employee.name] AS employees
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| employees
+
+| ["Cecil", "Cecilia"]
+
+1+d|Rows: 1
+|===
+
+Pattern comprehensions can include `WHERE` predicates.
+
+
+.Pattern comprehension including a `WHERE` predicate
+[source, cypher]
+----
+MATCH (alice:Person {name: 'Alice'})
+RETURN [(alice)<-[:WORKS_FOR]-(employee:Person) WHERE employee.age > 30 | employee.name || ', ' || toString(employee.age)] AS employeesAbove30
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| employeesAbove30
+
+| ["Cecilia, 31"]
+
+1+d|Rows: 1
+|===
+
+Pattern comprehension can also match for xref:patterns/variable-length-patterns.adoc[variable-length patterns].
+However, pattern comprehension does not support the xref:patterns/reference.adoc#quantifiers[GQL conformant quantifier syntax].
+
+.Not allowed - pattern comprehension to match patterns of a variable length using GQL quantifier syntax
+[source, cypher, role=test-fail]
+----
+MATCH (cecil:Person {name: 'Cecil'})
+RETURN [(cecil)-[:WORKS_FOR]->+(superior:Person) | superior.skills] AS superiorsSkills
+----
+
+Pattern comprehension only supports only the xref:patterns/reference.adoc#variable-length-relationships[variable-length relationships] syntax.
+The belowquery uses a pattern comprehension to collect the skills of all superiors in the chain above `Cecil`.
+The xref:functions/list.adoc#functions-reduce[`reduce()`] function concatenates these skills into a single `LIST`, and xref:clauses/unwind.adoc[`UNWIND`] is used to flatten this `LIST` before returning the distinct skills in a new `LIST`.
+
+.Allowed - pattern comprehension to match patterns of a variable length using variable-length relationship syntax
+[source, cypher]
+----
+MATCH (cecil:Person {name: 'Cecil'})
+WITH [(cecil)-[:WORKS_FOR*]->(superior:Person) | superior.skills] AS allSuperiorsSkills
+WITH reduce(accumulatedSkills = [], superiorSkills IN allSuperiorsSkills | accumulatedSkills || superiorSkills) AS allSkills
+UNWIND allSkills AS superiorsSkills
+RETURN collect(DISTINCT superiorsSkills) AS distinctSuperiorsSkills
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| distinctSuperiorsSkills
+
+| ["Java", "Python", "Ruby", "Go", "C++"]
+
+1+d|Rows: 1
+|===
+
