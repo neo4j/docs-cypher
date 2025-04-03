@@ -1,0 +1,181 @@
+= Temporal operators
+:description: Information about Cypher's temporal operators.
+:table-caption!:
+
+Cypher contains the following temporal operators:
+
+* Adding a xref::values-and-types/temporal.adoc#cypher-temporal-durations[`DURATION`] to either a xref::values-and-types/temporal.adoc#cypher-temporal-instants[temporal instant value] or another `DURATION`: `+`
+* Subtracting a `DURATION` from either a temporal instant value or another `DURATION`: `-`
+* Multiplying a `DURATION` with a xref::values-and-types/property-structural-constructed.adoc#property-types[number (`INTEGER` or `FLOAT`)]: `*`
+* Dividing a `DURATION` by a number: `/`
+
+For additional expressions that evaluate to a xref:values-and-types/temporal.adoc[temporal value type], see:
+
+* xref:functions/temporal/index.adoc[Temporal functions -- instant types]
+* xref:functions/temporal/duration.adoc[Temporal functions -- duration types]
+
+.Value returned from temporal operators
+[options="header"]
+|===
+| Operator | Left-hand operand | Right-hand operand | Result value type
+
+| `+`
+| Temporal instant
+| `DURATION`
+| The type of the temporal instant
+
+| `+`
+| `DURATION`
+| Temporal instant
+| The type of the temporal instant
+
+| `-`
+| Temporal instant
+| `DURATION`
+| The type of the temporal instant
+
+| `+`
+| `DURATION`
+| `DURATION`
+| `DURATION`
+
+| `-`
+| `DURATION`
+| `DURATION`
+| `DURATION`
+
+| `*`
+| `DURATION`
+| Number
+| `DURATION`
+
+| `*`
+| Number
+| `DURATION`
+| `DURATION`
+
+| `/`
+| `DURATION`
+| Number
+| `DURATION`
+
+|===
+
+[[adding-subtracting-durations]]
+== Adding and subtracting `DURATION` values
+
+`DURATION` values can be added and subtracted from temporal instant values, such as `LOCAL DATETIME`.
+In the below example, the xref:functions/temporal/index.adoc#functions-localdatetime[`localdatetime()`] function is used to create a `LOCAL DATETIME` value, and the xref:functions/temporal/duration.adoc#functions-durations[`duration()`] function is used to create a `DURATION` value.
+
+.Add and subtract a `DURATION` value to/from a `LOCAL DATETIME`
+[source, cypher]
+----
+WITH localdatetime({year:1984, month:10, day:11, hour:12, minute:31, second:14}) AS aDateTime,
+     duration({years: 12, nanoseconds: 2}) AS aDuration
+RETURN aDateTime + aDuration AS addition,
+      aDateTime - aDuration AS subtraction
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| addition | subtraction
+
+| 1996-10-11T12:31:14.000000002 | 1972-10-11T12:31:13.999999998
+
+2+d|Rows: 1
+|===
+
+When adding or subtracting a `DURATION` that results in a non-existing date, Cypher truncates the date to the nearest valid date.
+For example, if adding 1 month to January 31st, the result will not be February 31st (an invalid date) but February 28th (or 29th in a leap year).
+
+.Add 1 month to January 31st
+[source, cypher]
+----
+RETURN date("2011-01-31") + duration("P1M") AS truncatedDate
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| truncatedDate
+
+| 2011-02-28
+
+1+d|Rows: 1
+|===
+
+When adding two `DURATION` values to a temporal instant value, the order in which the durations are applied affects the result.
+
+.Add two `DURATION` values to a `DATE`
+[source, cypher]
+----
+RETURN (date("2011-01-31") + duration("P1M")) + duration("P12M") AS date1,
+       date("2011-01-31") + (duration("P1M") + duration("P12M")) AS date2
+----
+
+In `date1`, durations are added one after the other, so the date is truncated after adding the first month, resulting in `2012-02-28`.
+In `date2`, the durations are combined first, and truncation only happens once, resulting in `2012-02-29`. 
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| date1 | date2
+
+| 2012-02-28 | 2012-02-29
+
+2+d|Rows: 1
+|===
+
+[[ignored-components]]
+=== Ignored components
+
+When adding or subtracting a `DURATION` value to a temporal instant value, any xref::values-and-types/temporal.adoc#cypher-temporal-duration-component[`DURATION` components] that do not apply to that specific type are ignored.
+(For information about what components are supported by temporal instant values, see xref::values-and-types/temporal.adoc#cypher-temporal-accessing-components-temporal-instants[Components of temporal instants]).
+For example, when adding a `DURATION` to a `DATE`, only the `year`, `month`, and `day` components of a `DURATION` value are considered, while `hour`, `minute`, `second`, and `nanosecond` are ignored.
+This behavior also applies to `LOCAL TIME` and `ZONED TIME`.
+
+.Add and subtract a `DURATION` to/from a `DATE`
+[source, cypher]
+----
+WITH date({year:1984, month:10, day:11}) AS aDate,
+     duration({years: 12, nanoseconds: 2}) AS aDuration
+RETURN aDate + aDuration AS addition,
+       aDate - aDuration AS subtraction
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| addition | subtraction
+
+| 1996-10-11 | 1972-10-11
+
+2+d|Rows: 1
+|===
+
+== Multiplying and dividing `DURATION` values
+
+When multiplying or dividing a `DURATION`, each component is handled separately.
+In multiplication, the value of each component is multiplied by the given factor, while in division, each component is divided by the given number.
+If the result of the division does not fit into the original components, it overflows into smaller components (e.g. converting days into hours).
+This overflow also occurs when multiplying with fractions.
+
+.Multiply and divide a `DURATION` value
+[source, cypher]
+----
+WITH duration({days: 14, minutes: 12, seconds: 70, nanoseconds: 1}) AS aDuration
+RETURN aDuration,
+       aDuration * 2 AS multipliedDuration,
+       aDuration / 3 AS dividedDuration
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| aDuration | multipliedDuration | dividedDuration
+| P14DT13M10.000000001S | P28DT26M20.000000002S | P4DT16H4M23.333333333S
+
+3+d|Rows: 1
+|===
+
