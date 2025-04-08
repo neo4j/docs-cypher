@@ -1,7 +1,389 @@
-:description: The `WITH` clause allows query parts to be chained together, piping the results from one to be used as starting points or criteria in the next.
+:description: Information about Cypher's `WITH` clause, which allows query parts to be chained together, piping the results from one part to be used as the starting point of the next.
 
-[[query-with]]
 = WITH
+
+The `WITH` clause allows query parts to be chained together, piping the results from one part to be used as the starting points for the next.
+
+[[example-graph]]
+== Example graph
+A graph with the following schema is used for the examples below:
+
+image::with_clause.svg[width="600",role="middle"]
+
+To recreate the graph, run the following query against an empty Neo4j database.
+
+[source, cypher, role=test-setup]
+----
+CREATE (techCorp:Supplier {name: 'TechCorp', email: 'contact@techcorp.com'}),
+       (foodies:Supplier {name: 'Foodies Inc.', email: 'info@foodies.com'}),
+             
+       (laptop:Product {name: 'Laptop', price: 1000}),
+       (phone:Product {name: 'Phone', price: 500}),
+       (headphones:Product {name: 'Headphones', price: 250}),
+       (chocolate:Product {name: 'Chocolate', price: 5}),
+       (coffee:Product {name: 'Coffee', price: 10}),
+             
+       (amir:Customer {firstName: 'Amir', lastName: 'Rahman', email: 'amir.rahman@example.com', discount: 0.1}),
+       (keisha:Customer {firstName: 'Keisha', lastName: 'Nguyen', email: 'keisha.nguyen@example.com', discount: 0.2}),
+       (mateo:Customer {firstName: 'Mateo', lastName: 'Ortega', email: 'mateo.ortega@example.com', discount: 0.05}),
+       (hannah:Customer {firstName: 'Hannah', lastName: 'Connor', email: 'hannah.connor@example.com', discount: 0.15}),
+       (leila:Customer {firstName: 'Leila', lastName: 'Haddad', email: 'leila.haddad@example.com', discount: 0.1}),
+       (niko:Customer {firstName: 'Niko', lastName: 'Petrov', email: 'niko.petrov@example.com', discount: 0.25}),
+       (yusuf:Customer {firstName: 'Yusuf', lastName: 'Abdi', email: 'yusuf.abdi@example.com', discount: 0.1}),
+
+       (amir)-[:BUYS {date: date('2024-10-09')}]->(laptop),
+       (amir)-[:BUYS {date: date('2025-01-10')}]->(chocolate),
+       (keisha)-[:BUYS {date: date('2023-07-09')}]->(headphones),
+       (mateo)-[:BUYS {date: date('2025-03-05')}]->(chocolate),
+       (mateo)-[:BUYS {date: date('2025-03-05')}]->(coffee),
+       (mateo)-[:BUYS {date: date('2024-04-11')}]->(laptop),
+       (hannah)-[:BUYS {date: date('2023-12-11')}]->(coffee),
+       (hannah)-[:BUYS {date: date('2024-06-02')}]->(headphones),
+       (leila)-[:BUYS {date: date('2023-05-17')}]->(laptop),
+       (niko)-[:BUYS {date: date('2025-02-27')}]->(phone),
+       (niko)-[:BUYS {date: date('2024-08-23')}]->(headphones),
+       (niko)-[:BUYS {date: date('2024-12-24')}]->(coffee),
+       (yusuf)-[:BUYS {date: date('2024-12-24')}]->(chocolate),
+       (yusuf)-[:BUYS {date: date('2025-01-02')}]->(laptop),
+        
+       (techCorp)-[:SUPPLIES]->(laptop),
+       (techCorp)-[:SUPPLIES]->(phone),
+       (techCorp)-[:SUPPLIES]->(headphones),
+       (foodies)-[:SUPPLIES]->(chocolate),
+       (foodies)-[:SUPPLIES]->(coffee)
+----
+
+[[create-new-variables]]
+== Create new variables
+
+`WITH` can be used to create new variables if combined with `AS`, which can then be passed on to subsequent clauses.
+
+.Create a new variable
+[source, cypher]
+----
+WITH [1, 2, 3] AS list
+RETURN list
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| list
+
+| [1, 2, 3]
+
+1+d|Rows: 1
+|===
+
+In this example, the `WITH` clause binds all matched `Customer` nodes to a new variable, `chocolateCustomers`.
+The bound nodes are `MAP` values which can then be referenced from the new variable.
+
+.Create a new variable bound to matched nodes
+[source, cypher]
+----
+MATCH (c:Customer)-[:BUYS]->(:Product {name: 'Chocolate'})
+WITH c AS customer
+RETURN customer.firstName AS chocolateCustomer
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| chocolateCustomer
+
+| "Amir"
+| "Mateo"
+| "Yusuf"
+
+1+d|Rows: 3
+|===
+
+== Variable scope
+
+If a variable is not explicitly referenced in a `WITH` clause, it is dropped from the scope of the query.
+That means it cannot be referenced by subsequent clauses.
+
+In the below query, the `WITH` clause de-scopes the `p` variable.
+As a result, it is not available to the subsequent `RETURN` clause.
+
+.De-scoping a variable
+[source, cypher, role=test-fail]
+----
+MATCH (c:Customer)-[:BUYS]->(p:Product {name: 'Chocolate'})
+WITH c.name AS chocolateCustomers
+RETURN chocolateCustomers,
+       p.price AS chocolatePrice
+----
+
+.Error message
+[source, error]
+----
+Variable `p` not defined
+----
+
+[NOTE]
+The `WHERE` subclause is not limited in the same way by preceding `WITH` clauses.
+For more information, see xref:clauses/where.adoc#where-and-with[Using `WHERE` after `WITH`].
+
+To retain all variables in the scope of the query, use `WITH *`.
+
+.Retain all variables with `WITH *`
+[source, cypher]
+----
+MATCH (supplier:Supplier)-[r]->(product:Product)
+WITH *
+RETURN s.name AS company, type(r) AS relType, product.name AS product
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| company | relType | product
+
+| "TechCorp" | "SUPPLIES" | "Laptop"
+| "TechCorp" | "SUPPLIES" | "Phone"
+| "TechCorp" | "SUPPLIES" | "Headphones"
+| "Foodies Inc." | "SUPPLIES" | "Chocolate"
+| "Foodies Inc." | "SUPPLIES" | "Coffee"
+
+3+d|Rows: 5
+|===
+
+[[bind-values-to-variables]]
+== Bind values to variables
+
+`WITH` can be used to assign the values of expressions to variables.
+In the below query, the value of the xref:expressions/string-operators.adoc[`STRING` concatenation] expression is bound to a new variable `customerFullName`, and the value from the expression `chocolate.price * (1 - customer.discount)` is bound to`chocolateNetPrice`, both of which are then available in the `RETURN` clause.
+
+.Bind values to variables
+[source, cypher]
+----
+MATCH (customer:Customer)-[:BUYS]->(chocolate:Product {name: 'Chocolate'})
+WITH customer.firstName || ' ' || customer.lastName AS customerFullName,
+     chocolate.price * (1 - customer.discount) AS chocolateNetPrice
+RETURN customerFullName, chocolateNetPrice
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| customerFullName | chocolateNetPrice
+
+| "Amir Rahman" | 4.5
+| "Mateo Ortega"  | 4.75
+| "Yusuf Abdi"  | 4.5
+
+2+d|Rows: 3
+|===
+
+Several `WITH` clauses can be used to chain expressions.
+Note that each variable must be explicitly referenced in each subsequent `WITH` clause in order for it to be available in the final `RETURN`.
+
+.Chain expressions using `WITH`
+[source, cypher]
+----
+MATCH (p:Product)
+WITH p, p.price >= 500 AS isExpensive
+WITH p, isExpensive, NOT isExpensive AS isAffordable
+WITH p, isExpensive, isAffordable, 
+     CASE
+         WHEN isExpensive THEN 'High-end'
+         ELSE 'Budget'
+     END AS discountCategory
+RETURN p.name AS product,
+       p.price AS price,
+       isAffordable,
+       discountCategory
+ORDER BY price
+----
+
+.Result
+[role="queryresult",options="header,footer", cols="4*<m"]
+|===
+| product | price | isAffordable | discountCategory
+
+| "Chocolate" | 5 | TRUE | 'Budget'
+| "Coffee" | 10 | TRUE | 'Budget'
+| "Headphones" | 250 | TRUE | 'Budget'
+| "Phone" | 600   | FALSE | 'High-end'
+| "Laptop" | 1000  | FALSE | 'High-end'
+
+4+d|Rows: 5
+|===
+
+[NOTE]
+The `LET` clause can also be used to assign values to variables.
+However, unlike `WITH`, it cannot drop variables from the query scope.
+As a result, `LET` can be used to chain expressions in a more clear and concise manner than `WITH`.
+For more information, see xref:clauses/let.adoc#chaining-expressions[`LET` -> Chaining expressions].
+
+[[aggregations]]
+== Aggregations
+
+The `WITH` clause can perform aggregations and bind the results to new variables.
+In this example, the xref:functions/aggregating.adoc#functions-sum[`sum()`] function is used to calculate the total spent by each customer, and the value for each is bound to the new variable `totalSpent`.
+The xref:functions/aggregating.adoc#functions-collect[`collect()`] is used to collect each product into  `LIST` values bound to the `productsBought` variable.
+
+.`WITH` performing aggregations
+[source, cypher]
+----
+MATCH (c:Customer)-[:BUYS]->(p:Product)
+WITH c.firstName AS customer,
+     sum(p.price) AS totalSpent,
+     collect(p.name) AS productsBought
+RETURN customer, totalSpent, productsBought
+ORDER BY totalSpent DESC
+----
+
+.Result
+[role="queryresult",options="header,footer", cols="3*<m"]
+|===
+| customer | totalSpent | productsBought
+
+| "Mateo" | 1015   ["Laptop", "Chocolate", "Coffee"]
+| "Amir" | 1005 | ["Laptop", "Chocolate"]
+| "Yusuf" | 1005 | ["Laptop", "Chocolate"]
+| "Leila" | 1000 | ["Laptop"]
+| "Niko" | 760 | ["Phone", "Headphones", "Coffee"]
+| "Hannah" | 260 | ["Headphones", "Coffee"]
+| "Keisha" | 250 | ["Headphones"]
+
+3+d|Rows: 7
+|===
+
+[[remove-duplicates]]
+== Remove duplicate values
+
+`WITH` can be used to remove duplicate values from the result set if appended with the modifier `DISTINCT`.
+
+In the below query, `WITH DISTINCT` is used to remove any duplicate `discount` property values from `Customer` nodes.
+
+.`WITH DISTINCT` to remove duplicate values
+[source, cypher]
+----
+MATCH (c:Customer)
+WITH DISTINCT c.discount AS discountRate,
+     collect(c.name) AS customers,
+RETURN customers, discountRate
+ORDER BY discountRate
+----
+
+.Result
+[role="queryresult",options="header,footer", cols="2*<m"]
+|===
+| customers | discountRate
+
+| ["Mateo"] | 0.05
+| ["Amir", "Leila", "Yusuf"] | 0.1
+| ["Hannah"] | 0.15
+| ["Keisha"] | 0.2
+| ["Niko"] | 0.25
+
+2+d|Rows: 5
+|===
+
+[[ordering-pagination]]
+== Ordering and pagination
+
+`WITH` can used to order or paginate results before they are passed on to subsequent clauses.
+
+In this query, the results are ordered in an ascending order by which `Customer` has spent the most using xref:clauses/order-by.adoc[`ORDER BY`] before they are passed on to the subsequent clause.
+
+.Ordering results with `ORDER BY`
+[source, cypher]
+----
+MATCH (c:Customer)-[:BUYS]->(p:Product)
+WITH c, sum(p.price) AS totalSpent
+ORDER BY totalSpent DESC
+RETURN c.firstName AS customer, totalSpent
+----
+
+.Result
+[role="queryresult",options="header,footer", cols="2*<m"]
+|===
+| customer | totalSpent
+
+| "Mateo" | 1015
+| "Amir" | 1005
+| "Yusuf" | 1005
+| "Leila" | 1000
+| "Niko" | 760
+| "Hannah" | 260
+| "Keisha" | 250
+
+2+d|Rows: 7
+|===
+
+In the next example, xref:clauses/limit.adoc[`LIMIT`] is used to only retain the top 3 customers with the highest `totalSpent` values in the result set after ordering
+Then, the xref:clauses/set.adoc[`SET`] assigns a new property (`topSpender = true`) to those customers who have spent the most.
+
+.Limiting results with `LIMIT`
+[source, cypher]
+----
+MATCH (c:Customer)-[:BUYS]->(p:Product)
+WITH c, sum(p.price) AS totalSpent
+ORDER BY totalSpent DESC
+LIMIT 3
+SET c.topSpender = true
+RETURN c.firstName AS customer,
+       totalSpent,
+       c.topSpender AS topSpender
+----
+
+[role="queryresult",options="header,footer", cols="3*<m"]
+|===
+| customer | totalSpent | topSpender
+
+| "Mateo" | 1015 | TRUE
+| "Amir"  | 1005 | TRUE
+| "Yusuf" | 1005 | TRUE
+
+3+d|Rows: 3
+|===
+
+xref:clauses/skip.adoc[`SKIP`] can be used to discard rows from the result set.
+Her
+The SKIP clause is used to exclude the top 3 customers (the first 3 rows in the sorted result set). After skipping these top spenders, the SET clause assigns a new property (topSpender = false) to the remaining customers,
+
+.Skipping results with `SKIP`
+[source, cypher]
+----
+MATCH (c:Customer)-[:BUYS]->(p:Product)
+WITH c, sum(p.price) AS totalSpent
+ORDER BY totalSpent DESC
+SKIP 3
+SET c.topSpender = false
+RETURN c.firstName AS customer,
+       totalSpent,
+       c.topSpender AS topSpender
+----
+
+[role="queryresult",options="header,footer", cols="3*<m"]
+|===
+| customer | totalSpent | topSpender
+
+| "Leila" | 1000 | FALSE
+| "Niko" | 760 | FALSE
+| "Hannah" | 260 | FALSE
+| "Keisha" | 250 | FALSE
+
+3+d|Rows: 4
+|===
+
+== Filtering
+
+
+== Sequential 
+
+
+
+
+
+
+
+
+
+
 
 The `WITH` clause allows query parts to be chained together, piping the results from one to be used as starting points or criteria in the next.
 
