@@ -135,10 +135,6 @@ RETURN chocolateCustomers,
 Variable `p` not defined
 ----
 
-[NOTE]
-The `WHERE` subclause is not limited in the same way by preceding `WITH` clauses.
-For more information, see xref:clauses/where.adoc#where-and-with[Using `WHERE` after `WITH`].
-
 .Retain all variables with `WITH *`
 [source, cypher]
 ----
@@ -256,9 +252,7 @@ ORDER BY price
 |===
 
 [NOTE]
-The `LET` clause can also be used to assign values to variables.
-However, unlike `WITH`, it cannot drop variables from the query scope.
-As a result, `LET` can be used to chain expressions in a more clear and concise manner than `WITH`.
+The `LET` clause can be used to assign values to variables and to chain expressions more clearly and concisely than `WITH`.
 For more information, see xref:clauses/let.adoc#chaining-expressions[`LET` -> Chaining expressions].
 
 [[aggregations]]
@@ -362,9 +356,10 @@ ORDER BY discountRates
 [[ordering-pagination]]
 == Ordering and pagination
 
-`WITH` can order and paginate results before they are passed on to subsequent clauses.
+`WITH` can order and paginate results if used together with the xref:clauses/order-by.adoc[`ORDER BY`], xref:clauses/limit.adoc[`LIMIT`], and xref:clauses/skip.adoc[`SKIP`] subclauses.
+If so, these subclauses be understood as part of the result manipulation performed by `WITH` -- not as a standalone clause -- before results are passed on to subsequent clauses. 
 
-In the below query, the results are ordered in a descending order by which `Customer` has spent the most using xref:clauses/order-by.adoc[`ORDER BY`] before they are passed on to the final `RETURN` clause.
+In the below query, the results are ordered in a descending order by which `Customer` has spent the most using `ORDER BY` before they are passed on to the final `RETURN` clause.
 
 .Order results with `ORDER BY`
 [source, cypher]
@@ -372,7 +367,7 @@ In the below query, the results are ordered in a descending order by which `Cust
 MATCH (c:Customer)-[:BUYS]->(p:Product)
 WITH c,
      sum(p.price) AS totalSpent
-ORDER BY totalSpent DESC
+  ORDER BY totalSpent DESC
 RETURN c.firstName AS customer, totalSpent
 ----
 
@@ -392,7 +387,7 @@ RETURN c.firstName AS customer, totalSpent
 2+d|Rows: 7
 |===
 
-In the next example, xref:clauses/limit.adoc[`LIMIT`] is used to only retain the top 3 customers with the highest `totalSpent` values in the result set after ordering.
+In the next example, `LIMIT` is used to only retain the top 3 customers with the highest `totalSpent` values in the result set after ordering.
 Then, the xref:clauses/set.adoc[`SET`] assigns a new property (`topSpender = true`) to those customers who have spent the most.
 
 .Limit results with `LIMIT`
@@ -401,8 +396,8 @@ Then, the xref:clauses/set.adoc[`SET`] assigns a new property (`topSpender = tru
 MATCH (c:Customer)-[:BUYS]->(p:Product)
 WITH c,
      sum(p.price) AS totalSpent
-ORDER BY totalSpent DESC
-LIMIT 3
+  ORDER BY totalSpent DESC
+  LIMIT 3
 SET c.topSpender = true
 RETURN c.firstName AS customer,
        totalSpent,
@@ -420,7 +415,7 @@ RETURN c.firstName AS customer,
 3+d|Rows: 3
 |===
 
-xref:clauses/skip.adoc[`SKIP`] can be used after a `WITH` clause to discard rows from the result set.
+`SKIP` can be used after a `WITH` clause to discard rows from the result set.
 Below, `SKIP` excludes the first 3 rows in the ordered result set (i.e. the 3 `Customer` nodes with highest `totalSpent` value) and assigns a `false` value to the new `topSpender` property of the remaining `Customer` nodes.
 
 .Exclude results with `SKIP`
@@ -429,8 +424,8 @@ Below, `SKIP` excludes the first 3 rows in the ordered result set (i.e. the 3 `C
 MATCH (c:Customer)-[:BUYS]->(p:Product)
 WITH c,
      sum(p.price) AS totalSpent
-ORDER BY totalSpent DESC
-SKIP 3
+  ORDER BY totalSpent DESC
+  SKIP 3
 SET c.topSpender = false
 RETURN c.firstName AS customer,
        totalSpent,
@@ -459,8 +454,8 @@ The second `MATCH` clause then matches only from that single product to find all
 ----
 MATCH (:Supplier {name: 'Foodies Inc.'})-[:SUPPLIES]->(p:Product)
 WITH p
-ORDER BY p.price DESC
-LIMIT 1
+  ORDER BY p.price DESC
+  LIMIT 1
 MATCH (p)<-[:BUYS]-(c:Customer)
 RETURN p.name AS product
        p.price AS price,
@@ -481,14 +476,16 @@ RETURN p.name AS product
 [[filter-results]]
 == Filter results
 
-`WITH` can be used in conjunction with `WHERE` to filter results.
+`WITH` can be followed by the xref:clauses/where.adoc[`WHERE`] subclause to filter results.
+Similar to the subclauses used for xref:clauses/with.adoc#ordering-pagination[ordering and pagination], `WHERE` should be understood as part of the result manipulation performed by `WITH` -- not as a standalone clause -- before the results are passed on to subsequent clauses.
+For more information, see xref:clauses/where.adoc#where-and-with[Using `WHERE` after `WITH`].
 
 .Filter using `WITH` and `WHERE`
 [source, cypher]
 ----
 UNWIND [1, 2, 3, 4, 5, 6] AS x
 WITH x
-WHERE x > 2
+  WHERE x > 2
 RETURN x
 ----
 
@@ -504,7 +501,7 @@ RETURN x
 1+d|Rows: 4
 |===
 
-In the below query, the `WITH` and `WHERE` are used to filter out any `Supplier` nodes whose `totalSales` is less than `1000`.
+In the below query, `WITH` and `WHERE` are used to filter out any `Supplier` nodes whose `totalSales` is less than `1000`.
 Note the use of `DISTINCT` inside `collect()` to remove any duplicate `Customer` nodes.
 
 .Filter property values using `WITH` and `WHERE`
@@ -514,7 +511,7 @@ MATCH (s:Supplier)-[:SUPPLIES]->(p:Product)<-[:BUYS]-(c:Customer)
 WITH s,
      sum(p.price) AS totalSales,
      count(DISTINCT c) AS uniqueCustomers
-WHERE totalSales > 1000
+  WHERE totalSales > 1000
 RETURN s.name AS supplier,
        totalSales,
        uniqueCustomers
