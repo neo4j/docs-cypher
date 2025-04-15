@@ -12,6 +12,7 @@ The `WITH` clause serves multiple purposes in Cypher:
 * xref:clauses/with.adoc#remove-duplicate-values[Remove duplicate values]
 * xref:clauses/with.adoc#ordering-and-pagination[Order and paginate results]
 * xref:clauses/with.adoc#filter-results[Filter results]
+* xref:clauses/with.adoc#combine-write-and-read-clauses[Combine write and read clauses]
 
 [[example-graph]]
 == Example graph
@@ -61,7 +62,6 @@ CREATE (techCorp:Supplier {name: 'TechCorp', email: 'contact@techcorp.com'}),
        (foodies)-[:SUPPLIES]->(chocolate),
        (foodies)-[:SUPPLIES]->(coffee)
 ----
-// end::clauses_with_variables[]
 
 [[create-new-variables]]
 == Create new variables
@@ -95,7 +95,6 @@ MATCH (c:Customer)-[:BUYS]->(:Product {name: 'Chocolate'})
 WITH c AS customer
 RETURN customer.firstName AS chocolateCustomer
 ----
-// end::clauses_with_wildcard[]
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
@@ -195,7 +194,7 @@ For more information, see xref:subqueries/call-subquery.adoc#import-variables[`C
 == Bind values to variables
 
 `WITH` can be used to assign the values of expressions to variables.
-In the below query, the value of the xref:expressions/string-operators.adoc[`STRING` concatenation] expression is bound to a new variable `customerFullName`, and the value from the expression `chocolate.price * (1 - customer.discount)` is bound to `chocolateNetPrice`, both of which are then available in the `RETURN` clause.
+In the below query, the value of the `STRING` concatenation expression is bound to a new variable `customerFullName`, and the value from the expression `chocolate.price * (1 - customer.discount)` is bound to `chocolateNetPrice`, both of which are then available in the `RETURN` clause.
 
 .Bind values to variables
 [source, cypher]
@@ -318,38 +317,6 @@ ORDER BY discountRates
 | 0.25
 
 1+d|Rows: 5
-|===
-
-[role=label--new-2025.05]
-[[with-all-results]]
-== Explicitly project values
-
-`WITH ALL` can be used to explicitly project all values bound to a variable.
-Using it is functionally the same as using simple `WITH`.
-
-.Explicit result projection using `WITH ALL`
-[source, cypher]
-----
-MATCH (c:Customer)
-WITH ALL c.discount AS discountRates
-RETURN discountRates
-ORDER BY discountRates
-----
-
-.Result
-[role="queryresult",options="header,footer", cols="1*<m"]
-|===
-| discountRates
-
-| 0.05
-| 0.1
-| 0.1
-| 0.1
-| 0.15
-| 0.2
-| 0.25
-
-1+d|Rows: 7
 |===
 
 [[ordering-pagination]]
@@ -526,3 +493,34 @@ RETURN s.name AS supplier,
 3+d|Rows: 1
 |===
 
+[[combine-write-and-read-clauses]]
+== Combine write and read clauses
+
+If a write clause is followed by a read clause, `WITH` must be used as a separator between the two.
+
+.`WITH` used as a separator between a write clause and a read clause
+[source, cypher]
+----
+MATCH (yusuf:Customer {firstName: 'Yusuf'}),
+      (coffee:Product {name: 'Coffee'}),
+      (headphones:Product {name: 'Headphones'})
+CREATE (yusuf)-[:BUYS {date: date('2025-04-15')}]->(coffee),
+       (yusuf)-[:BUYS {date: date('2025-04-15')}]->(headphones)
+WITH yusuf
+MATCH (yusuf)-[r:BUYS]->(p:Product)
+RETURN collect(p.name) AS yusufPurchases,
+       r.date AS date
+ORDER BY date DESC
+----
+
+[role="queryresult",options="header,footer", cols="2*<m"]
+|===
+
+| yusufPurchases | date
+
+| ["Coffee", "Headphones"] | 2025-04-15
+| ["Laptop"] | 2025-01-02
+| ["Chocolate"] | 2024-12-24
+
+2+d|Rows: 3
+|===
