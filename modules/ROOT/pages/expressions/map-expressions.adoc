@@ -1,0 +1,446 @@
+= Map expressions
+:description: Information about Cypher's map expressions.
+:table-caption!:
+
+Map expressions allow you to manipulate and query xref:values-and-types/maps.adoc[`MAP`] values in Cypher.
+
+[NOTE]
+The xref:functions/list.adoc#functions-keys[`keys()`] function can be used to return a `LIST` of all the keys in a `MAP`.
+
+[[example-graph]]
+== Example graph
+
+The following graph is used for the examples below:
+
+image::values_and_types_maps_graph.svg[width="700",role="middle"]
+
+To recreate the graph, run the following query against an empty Neo4j database:
+
+[source, cypher, role=test-setup]
+----
+CREATE (keanu:Person {name: 'Keanu Reeves', nationality: 'Canadian'}),
+       (carrieAnne:Person {name: 'Carrie-Anne Moss'}),
+       (theMatrixRevolutions:Movie {title: 'The Matrix Revolutions', released: 2003}),
+       (theMatrixReloaded:Movie {title: 'The Matrix Reloaded', released: 2003}),
+       (theMatrix:Movie {title: 'The Matrix', released: 1999}),
+       (theDevilsAdvocate:Movie {title: 'The Devils Advocate', released: 1997}),
+       (theMatrixResurrections:Movie {title: 'The Matrix Resurrections', released: 2021}),
+      
+       (keanu)-[:ACTED_IN]->(theMatrix),
+       (keanu)-[:ACTED_IN]->(theMatrixRevolutions),
+       (keanu)-[:ACTED_IN]->(theMatrixReloaded),
+       (keanu)-[:ACTED_IN]->(theMatrixResurrections),
+       (keanu)-[:ACTED_IN]->(theDevilsAdvocate),
+
+       (carrieAnne)-[:ACTED_IN]->(theMatrix),
+       (carrieAnne)-[:ACTED_IN]->(theMatrixRevolutions),
+       (carrieAnne)-[:ACTED_IN]->(theMatrixReloaded),
+       (carrieAnne)-[:ACTED_IN]->(theMatrixResurrections)
+----
+
+[[map-operators]]
+== Map operators
+
+Cypher contains two map operators:
+
+* Statically access a value by key: dot operator (`.`).
+* Dynamically access a value by key: subscript operator (`[]`).
+
+[[static-map-access]]
+=== Statically access a `MAP` value
+
+`MAP` values can be accessed statically by specifying a key after the `.` operator.
+
+.Static `MAP` value access
+[source, cypher]
+----
+WITH {a: 10, b: 20, c: 30} AS map
+RETURN map.a AS firstValue,
+       map.c AS lastValue
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| firstValue | lastValue
+
+| 10 | 30
+
+2+d|Rows: 1
+|===
+
+To statically access a value in a nested `MAP`, use chained `.` operators.
+Each `.` operator traverses one level deeper into the nested structure.
+
+.Static access of a nested `MAP` value
+[source, cypher]
+----
+WITH {a: 10, b: 20, c: 30, innerMap: {x: 100, y: 200, z: 300}} AS map
+RETURN map.a AS firstOuterValue,
+       map.innerMap.y AS secondInnerValue
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| firstOuterValue | secondInnerValue
+
+| 10 | 200
+
+2+d|Rows: 1
+|===
+
+Node and relationship properties are stored as key-value pairs in a `MAP`.
+Properties can, therefore, be statically accessed using the `.` operator.
+
+.Statically access a node property
+[source, cypher]
+----
+MATCH (p:Person)
+RETURN p AS nodePropertyMaps,
+       p.name AS accessedMapValue
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| nodePropertyMaps | accessedMapValue
+
+| (:Person {nationality: "Canadian", name: "Keanu Reeves"}) | "Keanu Reeves"
+| (:Person {name: "Carrie-Anne Moss"}) | "Carrie-Anne Moss"
+
+2+d|Rows: 2
+|===
+
+
+[[dynamic-map-access]]
+=== Dynamically access a `MAP` value
+
+To dynamically access a `MAP` value, use the subscript operator, `[]`.
+The key can be provided by a variable or a parameter.
+
+.Dynamically access a `MAP` value using a variable
+[source, cypher]
+----
+WITH {a: 10, b: 20, c: 30} AS map,
+     'a' AS dynamicKey
+RETURN map[dynamicKey] AS dynamicValue
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| dynamicValue
+
+| 10
+
+1+d|Rows: 1
+|===
+
+.Parameters
+[source, parameters]
+----
+{
+  "dynamicKey" : 'a'
+}
+----
+
+.Dynamically access a `MAP` value using a parameter
+[source, cypher]
+----
+WITH {a: 10, b: 20, c: 30} AS map
+RETURN map[$dynamicKey] AS dynamicValue
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| dynamicValue
+
+| 10
+
+1+d|Rows: 1
+|===
+
+.Dynamically access a nested `MAP` value
+[source, cypher]
+----
+WITH {a: 10, b: 20, c: 30, innerMap: {x: 100, y: 200, z: 300}} AS map,
+     'z' AS dynamicInnerKey
+RETURN map.innerMap[dynamicInnerKey] AS dynamicInnerValue
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| dynamicInnerValue
+
+| 300
+
+1+d|Rows: 1
+|===
+
+It is possible to dynamically access multiple values from a `MAP` by using xref:expressions/list-expressions.adoc#list-comprehension[list comprehension].
+This query iterates over the `LIST` `dynamicKeys` and retrieves their corresponding values from the `map`.
+
+.Dynamic `MAP` value access and list comprehension
+[source, cypher]
+----
+WITH {a: 10, b: 20, c: 30} AS map,
+     ['a', 'c'] AS dynamicKeys
+RETURN [key IN dynamicKeys | map[key]] AS dynamicValue
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| dynamicValue
+
+| [10, 30]
+
+1+d|Rows: 1
+|===
+
+.Dynamically access a node property value
+[source, cypher]
+----
+MATCH (p:Person)
+LET dynamicValue = 'name'
+RETURN p[dynamicValue] AS names
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| names
+
+| "Keanu Reeves"
+| "Carrie-Anne Moss"
+
+1+d|Rows: 2
+|===
+
+Referencing a non-existent key in the `MAP` with the `[]` operator  will return `NULL`.
+
+.Dynamically referencing a non-existent `MAP` key
+[source, cypher]
+----
+WITH {a: 10, b: 20, c: 30} AS map,
+     'z' AS dynamicKey
+RETURN map[dynamicKey] AS dynamicValue
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| dynamicValue
+
+| NULL
+
+1+d|Rows: 1
+|===
+
+[[map-projection]]
+== Map projection
+
+Cypher supports map projections, which allow the creation of `MAP` values from nodes, relationships, and other `MAP` values.
+
+A map projection begins with the variable bound to the `MAP` to be projected from, and contains a body of comma-separated `MAP` keys, enclosed by curly braces, `{}`.
+Each map element specifies a key-value pair that is included in the resulting map projection.
+
+.Syntax
+[source, syntax]
+----
+mapVariable {mapElement [, ...n]}
+----
+
+`mapElement` can be one of the following:
+
+* An *key selector* that references a key in a `MAP` and pulls the corresponding value.
+* A *literal entry* that uses a custom key-value pair where the key is specified and the value is defined using an expression.
+* A *variable selector* that projects the value of a variable, using the variable name as the key, and the value it references as the value.
+* An *all-map projection* that projects all key-value pairs from `mapVariable`.
+
+[NOTE]
+The key names in a map must be of type `STRING`. +
+If `mapVariable` is `NULL`, the projection evaluates to `NULL`.
+
+.Map projection with a key selector
+=====
+
+Map projections with a key selector are useful when you need to extract specific key-value pairs from a `MAP`.
+
+.Basic example
+[source, cypher]
+----
+WITH {a: 10, b: 20, c: 30} AS map
+RETURN map{.a, .c} AS projectedMap
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| projectedMap
+
+| {a: 10, c: 30}
+
+1+d|Rows: 1
+|===
+
+In the below query, a map projection with property selectors is used to xref:functions/list.adoc#functions-collect[`collect`] only the `title` and `release` year of each movie. 
+
+.Map projection with a key selector
+[source, cypher]
+----
+MATCH (p:Person)-[:ACTED_IN]->(m:Movie)  
+RETURN p.name AS actor, collect(m{.title, .released}) AS movies  
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| actor | movies
+
+| "Keanu Reeves" | [{title: "The Matrix Resurrections", released: 2021}, {title: "The Matrix Revolutions", released: 2003}, {title: "The Matrix Reloaded", released: 2003}, {title: "The Matrix", released: 1999}, {title: "The Devils Advocate", released: 1997}]
+| "Carrie-Anne Moss" | [{title: "The Matrix Resurrections", released: 2021}, {title: "The Matrix Revolutions", released: 2003}, {title: "The Matrix Reloaded", released: 2003}, {title: "The Matrix", released: 1999}]
+
+2+d|Rows: 2
+|===
+
+=====
+
+.Map projection with a literal entry
+=====
+
+Map projections with a literal entry are useful when you want to add custom values to a projected `MAP` value without modifying the original data structure.
+
+.Basic example
+[source, cypher]
+----
+WITH {a: 10, b: 20, c: 30} AS map
+RETURN map{a: map.a, valueSum: map.a + map.b + map.c} AS projectedMap
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| projectedMap
+
+| {a: 10, valueSum: 60}
+
+1+d|Rows: 1
+|===
+
+This query uses a map projection with a literal entry, where the `size(movies)` expression calculates the total number of movies `Keanu Reeves` has acted in. 
+
+.Map projection with a literal entry
+[source, cypher]
+----
+MATCH (keanu:Person {name: 'Keanu Reeves'})-[:ACTED_IN]->(movie:Movie)
+WITH keanu, collect(movie) AS movies
+RETURN keanu {.name, totalMovies: size(movies)} AS keanuDetails
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| keanuDetails
+
+| {name: "Keanu Reeves", totalMovies: 5}
+
+1+d|Rows: 1
+|===
+
+=====
+
+.Map projection with a variable selector
+=====
+
+Map projection with a variable selector is useful when you want to project values based on a variable name.
+
+.Basic example
+[source, cypher]
+----
+MATCH (keanu:Person {name: 'Keanu Reeves'})  
+LET dob = date('1964-09-02'), birthPlace =  'Beirut, Lebanon'
+RETURN keanu{.name, dob, birthplace} AS projectedKeanu
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| projectedKeanu
+
+| {name: "Keanu Reeves", birthPlace: "Beirut, Lebanon", dob: 1964-09-02}
+
+1+d|Rows: 1
+|===
+
+The below query finds all `Person` nodes in the graph that have one or more relationships with the type `ACTED_IN` connected to `Movie` nodes. 
+It uses the xref::functions/aggregating.adoc#functions-count[count()] function to count how many `Movie` nodes are connected to each `Person` node in this way, and uses a variable selector to project the value of the count.
+
+.Map projection with a variable selector
+[source, cypher]
+----
+MATCH (actor:Person)-[:ACTED_IN]->(movie:Movie)
+WITH actor, count(movie) AS totalMovies
+RETURN actor{totalMovies, .name} AS nameAndMovies
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| nameAndMovies
+
+| {name: "Keanu Reeves", totalMovies: 5}
+| {name: "Carrie-Anne Moss", totalMovies: 4}
+
+1+d|Rows: 2
+|===
+
+=====
+
+.Map projection with an all-map projection
+=====
+
+Map projection with an all-map projection is useful when you want to project all key-value pairs from a `MAP` without explicitly listing them. 
+
+.Basic example
+[source, cypher]
+----
+WITH {a: 10, b: 20, c: 30} AS map
+RETURN map{.*} AS projectedMap
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| projectedMap
+
+| {a: 10, b: 20, c: 30}
+
+1+d|Rows: 1
+|===
+
+The below query returns all properties from the `Keanu Reeves` node.
+An all-map selector is used to project all the node properties.
+
+.Map projection with all-map selector
+[source, cypher]
+----
+MATCH (keanu:Person {name: 'Keanu Reeves'})
+RETURN keanu{.*} AS allKeanuProperties
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| AllKeanuProperties
+
+| {nationality: "Canadian", name: "Keanu Reeves"}
+
+1+d|Rows: 1
+|===
+
+
+=====

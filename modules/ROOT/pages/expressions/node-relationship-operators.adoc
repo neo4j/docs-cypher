@@ -1,0 +1,183 @@
+= Node and relationship operators
+:description: Information about Cypher's node and relationship operators, which enable the querying and manipulation of nodes and relationships.
+
+Node and relationship operators allow you to manipulate and query `NODE` and `RELATIONSHIP` property values.
+Cypher contains the following node and relationship operators:
+
+* Static property access: dot operator (`.`)
+* Dynamic property access: subscript operator (`[]`)
+
+For functions that return metadata about `NODE` and `RELATIONSHIP` values, see:
+
+* xref:functions/scalar.adoc#functions-elementid[`elementId()`]
+* xref:functions/scalar.adoc#functions-endnode[`endNode()`]
+* xref:functions/scalar.adoc#functions-id[`id()`]
+* xref:functions/list.adoc#functions-keys[`keys()`]
+* xref:functions/list.adoc#functions-labels[`labels()`]
+* xref:functions/scalar.adoc#functions-properties[`properties()`]
+* xref:functions/scalar.adoc#functions-startnode[`startNode()`]
+* xref:functions/scalar.adoc#functions-type[`type()`]
+
+
+[[example-graph]]
+== Example graph
+
+The following graph is used for the examples below:
+
+image::graph_element_operators.svg[width="600",role="middle"]
+
+To recreate the graph, run the following query against an empty Neo4j database:
+
+[source, cypher, role=test-setup]
+----
+CREATE (alice:Person {firstName:'Alice', middleName: 'Catherine', lastName: 'Baxter'}),
+       (cecil:Person {firstName: 'Cecil', middleName: 'David', lastName: 'Ericson'}),
+       (cecilia:Person {firstName: 'Cecilia', lastName: 'Farega'}),
+       (cecil)-[:WORKS_FOR {since: 2023}]->(alice),
+       (cecilia)-[:WORKS_FOR {since: 2015}]->(alice)
+----
+
+[[static-property-access]]
+== Static property access
+
+Property values can be accessed statically by specifying a property name after the `.` operator.
+
+.Access node properties statically
+[source, cypher]
+----
+MATCH (p:Person)
+RETURN p.firstName AS name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| name
+
+| "Alice"
+| "Cecil"
+| "Cecilia"
+
+1+d|Rows: 3
+|===
+
+.Access node and relationship properties statically
+[source, cypher]
+----
+MATCH (employee:Person)-[r:WORKS_FOR]-(manager:Person)
+RETURN employee.firstName AS employee,
+       r.since AS employedSince,
+       manager.firstName AS manager
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| employee | employedSince | manager 
+
+| "Cecil" | 2023 | "Alice"
+| "Cecilia" | 2015 | "Alice"
+
+3+d|Rows: 2
+|===
+
+[[dynamic-property-access]]
+== Dynamic property access
+
+Property values can be accessed dynamically by using the subscript operator, `[]`.
+
+.Access properties dynamically using a variable
+[source, cypher]
+----
+LET nodeProperty = 'lastName'
+MATCH (p:Person)
+RETURN p[nodeProperty] AS lastName
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| lastName 
+
+| "Baxter"
+| "Ericson"
+| "Farega"
+
+1+d|Rows: 3
+|===
+
+
+.Parameters
+[source, parameters]
+----
+{
+  "propertyName": 'middleName'
+}
+----
+
+.Access properties dynamically using a parameter
+[source, cypher]
+----
+MATCH (:Person)
+RETURN p[$propertyName] AS middleName
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| middleName 
+
+| "Catherine"
+| "David"
+| NULL
+
+1+d|Rows: 3
+|===
+
+== Handling `NULL` values
+
+If a property (or property value) is missing in an expression that uses tries to access a property statically or dynamically, the whole expression will evaluate to `NULL`.
+The query below performs a xref:expressions/string-operators.adoc[string concatentation] on the `firstName`, `middleName`, and `lastName` properties on `Person` nodes.
+Note that `NULL` is returned for `Cecilia`, who lacks a `middleName` property.
+
+.String concatenation using node properties
+[source, cypher]
+----
+MATCH (p:Person)
+RETURN p.firstName || ' ' || p.middleName || ' ' || p.lastName AS fullName
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| fullName 
+
+| "Alice Catherine Baxter"
+| "Cecil David Ericson"
+| NULL
+
+1+d|Rows: 3
+|===
+
+The xref:functions/scalar.adoc#functions-coalesce[`coalesce()`] function can be used to skip the first `NULL` values in an expression.
+In the below example, it replaces the first `NULL` value found with an empty `STRING`.
+
+.Use the `coalesce()` function to skip `NULL` values
+[source, cypher]
+----
+MATCH (p:Person)
+RETURN p.firstName || coalesce(' ' + p.middleName, '') || ' ' || p.lastName AS fullName
+----
+
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| fullName 
+
+| "Alice Catherine Baxter"
+| "Cecil David Ericson"
+| "Cecilia Farega"
+
+1+d|Rows: 3
+|===

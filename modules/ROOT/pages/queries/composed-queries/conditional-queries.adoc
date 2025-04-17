@@ -1,6 +1,6 @@
 = Conditional queries (`WHEN`)
 :description: Information about how to use `WHEN` to construct conditional queries in Cypher.
-:page-role: new-2025.05
+:page-role: new-2025.06
 
 `WHEN`, together with `THEN` and `ELSE`, enables different branches of a query to execute based on certain conditions.
 In this way, it performs similar a control-flow mechanism to the `IF` statement in other programming languages.
@@ -131,13 +131,13 @@ For example, it cannot immediately succeed a `MATCH` clause.
 .Not allowed: using `WHEN` constructs as regular clauses
 [source, cypher, role=test-fail]
 ----
-MATCH (n)-[:WORKS_FOR]->(m:Person)
-  WHEN m IS NULL THEN {
-   MERGE (n)-[:WORKS_FOR]->(f: Person {name: 'Peter', age: 36})
-  }
+MATCH (n)-[:WORKS_FOR]->(manager:Person)
+WHEN manager IS NULL THEN {
+  MERGE (n)-[:WORKS_FOR]->(newManager: Person {name: 'Peter', age: 36})
+}
 RETURN n.name AS employees,
        m.name AS manager,
-       f.name AS newManagerNode
+       newManager.name AS newManagerNode
 ----
 
 Instead, if `WHEN` constructs are part of a larger query, they must either be placed within a subquery and/or on different sides of combined `UNION` queries.
@@ -166,22 +166,22 @@ Instead, if `WHEN` constructs are part of a larger query, they must either be pl
 
 .Single conditional `CALL` subquery
 =====
-In this example, `WHEN` is used to execute a xref:subqueries/call-subquery.adoc[`CALL` subquery] for each row that the condition (`m IS NULL`) evaluates to `true`. 
+In this example, `WHEN` is used to execute a xref:subqueries/call-subquery.adoc[`CALL` subquery] for each row that the condition (`manager IS NULL`) evaluates to `true`.
 
 .Conditional `CALL` subquery
 [source, cypher]
 ----
 MATCH (n:Person)
-OPTIONAL MATCH (n)-[:WORKS_FOR]->(m:Person)
+OPTIONAL MATCH (n)-[:WORKS_FOR]->(manager:Person)
 CALL (*) {
- WHEN m IS NULL THEN {
-   MERGE (f: Person {name: 'Peter', age: 36})
-   MERGE (n)-[:WORKS_FOR]->(f)
-   RETURN f, n.name AS employee
- }
+  WHEN manager IS NULL THEN {
+    MERGE (newManager: Person {name: 'Peter', age: 36})
+    MERGE (n)-[:WORKS_FOR]->(newManager)
+    RETURN newManager, n.name AS employee
+  }
 }
-RETURN f.name AS manager,
-      collect(employee) AS employees
+RETURN newManager.name AS newManager,
+       collect(employee) AS employees
 ----
 
 Because only `Daniel` and `Eskil` had no outgoing `WORKS_FOR` relationships, they have now been connected as employees of the new `Peter` node.
@@ -189,7 +189,7 @@ Because only `Daniel` and `Eskil` had no outgoing `WORKS_FOR` relationships, the
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| manager | employees
+| newManager | employees
 
 | "Peter"
 | ["Daniel", "Eskil"]
@@ -394,10 +394,10 @@ CALL (n) {
   UNION
   CALL (*) {
     WHEN n.age < 40 THEN {
-     RETURN n.name AS person, "Under 40" AS message
+      RETURN n.name AS person, "Under 40" AS message
     }
     ELSE {
-     RETURN n.name AS person, "40 or older" AS message
+      RETURN n.name AS person, "40 or older" AS message
     }
   }
   RETURN person, message
