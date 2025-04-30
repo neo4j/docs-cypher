@@ -1,14 +1,15 @@
 = Sequential queries (`NEXT`)
 :description: Information about how to use `NEXT` to construct sequential queries in Cypher.
+:table-caption!:
 :page-role: new-2025.06
 
 `NEXT` allows for linear composition of queries into a sequence of smaller, self-contained segments while making return values from one segment available in the next.
 
-`NEXT` has a number of benefits:
+`NEXT` has the following benefits:
 
 * `NEXT` can improve the modularity and readability of complex queries.
-* `NEXT` reduces the need to rely on the xref:clauses/call.adoc[CALL] and xref:clauses/with.adoc[] clauses to construct complex queries.
-* `NEXT` improves the usability of xref:queries/composed-queries/conditional-queries.adoc[conditional] and xref:queries/composed-queries/combined-queries.adoc[UNION] queries.
+* `NEXT` can be used instead of xref:subqueries/call-subquery.adoc[] and the xref:clauses/with.adoc[] clause to construct complex queries.
+* `NEXT` can improve the usability of xref:queries/composed-queries/conditional-queries.adoc[conditional] and xref:queries/composed-queries/combined-queries.adoc[UNION] queries.
 
 `NEXT` was introduced as part of Cypher's xref:appendix/gql-conformance/index.adoc[].
 
@@ -19,59 +20,306 @@
 
 The following graph is used for the examples on this page:
 
-image::conditional_query_graph.svg[width="700",role="middle"]
+image::with_clause.svg[width="600",role="middle"]
 
-To recreate the graph, run the following query against an empty Neo4j database:
+To recreate the graph, run the following query against an empty Neo4j database.
 
 [source, cypher, role=test-setup]
 ----
-CREATE (alice:Person {name:'Alice', age: 65}),
-       (bob:Person {name: 'Bob', age: 25}),
-       (charlie:Person {name: 'Charlie', age: 61}),
-       (daniel:Person {name: 'Daniel', age: 39}),
-       (eskil:Person {name: 'Eskil', age: 39}),
-       (bob)-[:WORKS_FOR]->(alice),
-       (alice)-[:WORKS_FOR]->(daniel),
-       (charlie)-[:WORKS_FOR]->(daniel),
-       (bob)-[:LOVES]->(eskil),
-       (charlie)-[:LOVES]->(alice)
+CREATE (techCorp:Supplier {name: 'TechCorp', email: 'contact@techcorp.com'}),
+       (foodies:Supplier {name: 'Foodies Inc.', email: 'info@foodies.com'}),
+             
+       (laptop:Product {name: 'Laptop', price: 1000}),
+       (phone:Product {name: 'Phone', price: 500}),
+       (headphones:Product {name: 'Headphones', price: 250}),
+       (chocolate:Product {name: 'Chocolate', price: 5}),
+       (coffee:Product {name: 'Coffee', price: 10}),
+             
+       (amir:Customer {firstName: 'Amir', lastName: 'Rahman', email: 'amir.rahman@example.com', discount: 0.1}),
+       (keisha:Customer {firstName: 'Keisha', lastName: 'Nguyen', email: 'keisha.nguyen@example.com', discount: 0.2}),
+       (mateo:Customer {firstName: 'Mateo', lastName: 'Ortega', email: 'mateo.ortega@example.com', discount: 0.05}),
+       (hannah:Customer {firstName: 'Hannah', lastName: 'Connor', email: 'hannah.connor@example.com', discount: 0.15}),
+       (leila:Customer {firstName: 'Leila', lastName: 'Haddad', email: 'leila.haddad@example.com', discount: 0.1}),
+       (niko:Customer {firstName: 'Niko', lastName: 'Petrov', email: 'niko.petrov@example.com', discount: 0.25}),
+       (yusuf:Customer {firstName: 'Yusuf', lastName: 'Abdi', email: 'yusuf.abdi@example.com', discount: 0.1}),
+
+       (amir)-[:BUYS {date: date('2024-10-09')}]->(laptop),
+       (amir)-[:BUYS {date: date('2025-01-10')}]->(chocolate),
+       (keisha)-[:BUYS {date: date('2023-07-09')}]->(headphones),
+       (mateo)-[:BUYS {date: date('2025-03-05')}]->(chocolate),
+       (mateo)-[:BUYS {date: date('2025-03-05')}]->(coffee),
+       (mateo)-[:BUYS {date: date('2024-04-11')}]->(laptop),
+       (hannah)-[:BUYS {date: date('2023-12-11')}]->(coffee),
+       (hannah)-[:BUYS {date: date('2024-06-02')}]->(headphones),
+       (leila)-[:BUYS {date: date('2023-05-17')}]->(laptop),
+       (niko)-[:BUYS {date: date('2025-02-27')}]->(phone),
+       (niko)-[:BUYS {date: date('2024-08-23')}]->(headphones),
+       (niko)-[:BUYS {date: date('2024-12-24')}]->(coffee),
+       (yusuf)-[:BUYS {date: date('2024-12-24')}]->(chocolate),
+       (yusuf)-[:BUYS {date: date('2025-01-02')}]->(laptop),
+        
+       (techCorp)-[:SUPPLIES]->(laptop),
+       (techCorp)-[:SUPPLIES]->(phone),
+       (techCorp)-[:SUPPLIES]->(headphones),
+       (foodies)-[:SUPPLIES]->(chocolate),
+       (foodies)-[:SUPPLIES]->(coffee)
 ----
 
 
-[[sequential-syntax]]
-== Syntax
+== Composing queries with `NEXT`
 
-Lorem ipsum.
-
-
-[[sequential-rules]]
-== Rules
-
-Lorem ipsum.
-
-.Not allowed: not aliasing returned expressions
-[source, cypher, role=test-fail]
+.`NEXT` syntax
+[source, cypher]
 ----
-WHEN true THEN RETURN 2
-ELSE RETURN 3
+<Query1>
+
+NEXT
+
+<Query2>
+
+NEXT
+
+<Query3>
 ----
 
 
-== Using `NEXT` instead of `CALL`
+=== Passing values to subsequent queries
 
-Lorem ipsum.
+In the following example, `NEXT` passes the variable `customer` to the second query:
+
+.Passing a variable to another query via `NEXT`
+====
+.Query
+[source, cypher]
+----
+MATCH (c:Customer)-[:BUYS]->(:Product {name: 'Chocolate'})
+RETURN c AS customer
+
+NEXT
+
+RETURN customer.firstName AS chocolateCustomer
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| chocolateCustomer
+
+| "Amir"
+| "Mateo"
+| "Yusuf"
+
+1+d|Rows: 3
+|===
+====
 
 
-== Using `NEXT` instead of `WITH`
+.Passing multiple variables to another query via `NEXT`
+====
+.Query
+[source, cypher]
+----
+MATCH (c:Customer)-[:BUYS]->(p:Product {name: 'Chocolate'})
+RETURN c AS customer, p AS product
+             
+NEXT
+             
+RETURN customer.firstName AS chocolateCustomer,
+       product.price * (1 - customer.discount) AS chocolatePrice
 
-Lorem ipsum.
+----
 
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| chocolateCustomer | chocolatePrice
+
+| "Amir" | 4.5
+| "Mateo" | 4.75
+| "Yusuf" | 4.5
+
+2+d|Rows: 3
+|===
+====
+
+
+
+[NOTE]
+====
+Expressions in a `RETURN` clause must be aliased with an `AS` or a `LET` when they are followed by a `NEXT` clause.
+====
+
+// is an example necessary? not a fan of negative examples in general
+
+
+== Interactions with `CALL` subqueries and `WITH`
+
+You can use `NEXT` to rewrite queries containing  `CALL` subqueries or a `WITH` clause.
+
+.Rewriting a query with a `CALL` subquery
+====
+[cols="1,1"]
+|===
+a|
+.`CALL` subquery
+[source, cypher]
+----
+LET a = 1
+WITH a
+
+CALL(*) {
+  LET b = a + 1
+  RETURN b
+  UNION
+  LET b = a + 2
+  RETURN b
+}
+WITH a, b
+
+LET c = b + 1
+RETURN a, b, c
+----
+a|
+.`NEXT`
+[source, cypher]
+----
+LET a = 1
+RETURN a
+
+NEXT 
+
+LET b = a + 1
+RETURN a, b
+UNION
+LET b = a + 2
+RETURN a, b
+
+NEXT 
+
+LET c = b + 1
+RETURN a, b, c
+----
+|===
+====
+
+
+
+.Rewriting a `WITH` query
+====
+[cols="1,1"]
+|===
+a|
+.`WITH`
+[source, cypher]
+----
+LET a = 1
+WITH a
+LET b = a + 1
+WITH a, b
+LET c = a + b + 1
+WITH b, c
+LET d = b + c
+RETURN d
+----
+a|
+.`NEXT`
+[source, cypher]
+----
+LET a = 1
+RETURN a
+
+NEXT 
+
+LET b = a + 1
+RETURN a, b
+
+NEXT 
+
+LET c = a + b + 1
+RETURN b, c
+
+NEXT
+
+LET d = b + c
+RETURN d
+----
+|===
+====
+
+Variables which are local to a query and which are not explicitly returned are not accessible by its subsequent query in the context of `NEXT`.
+This allows you to control variable scope similarly to what you can do with `WITH`, see xref:clauses/with.adoc#variable-scope[Control variables in scope].
+
+[NOTE]
+====
+`NEXT` cannot be used inside a `CALL` subquery that uses the (deprecated) xref:subqueries/call-subquery.adoc#importing-with[importing `WITH`] syntax.
+====
 
 == Interactions with conditional queries
 
-Lorem ipsum.
+// use example with the example data set instead
+
+.`NEXT` in a conditional query
+====
+.Query
+[source, cypher]
+----
+MATCH (n)
+RETURN n
+
+NEXT 
+
+WHEN n.x > 2 THEN 
+  RETURN "large number" AS msg
+WHEN n.x > 1 THEN
+  RETURN "small number" AS msg
+ELSE
+  RETURN "tiny number" AS msg
+
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| chocolateCustomer
+
+| "Amir"
+| "Mateo"
+| "Yusuf"
+
+1+d|Rows: 3
+|===
+====
 
 
 == Interactions with `UNION` queries
 
-Lorem ipsum.
+// use example with the example data set instead
+
+.`NEXT` in a query using `UNION`
+====
+.Query
+[source, cypher]
+----
+RETURN 1 AS a
+UNION
+RETURN 2 AS a
+
+NEXT 
+
+RETURN a, a + 1 AS b
+UNION
+RETURN a, a + 2 AS b
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| chocolateCustomer
+
+| "Amir"
+| "Mateo"
+| "Yusuf"
+
+1+d|Rows: 3
+|===
+====
