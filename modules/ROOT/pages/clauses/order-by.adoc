@@ -1,14 +1,15 @@
-:description: `ORDER BY` is a sub-clause following `RETURN` or `WITH`, and it specifies that the output should be sorted and how.
+:description: Information about Cypher's `ORDER BY` subclause.
 
 [[query-order]]
 = ORDER BY
 
-`ORDER BY` specifies how the output of a clause should be sorted.
-It be used as a sub-clause following `RETURN` or `WITH`.
+`ORDER BY` is a subclause which specifies the order in which the output of a xref:clauses/return.adoc[`RETURN`] or xref:clauses/with.adoc[`WITH`] clause.
 As of Neo4j 5.24, it can also be used as a standalone clause, either on its own or in combination with `SKIP`/`OFFSET` or `LIMIT`.
 
-`ORDER BY` relies on comparisons to sort the output, see xref:values-and-types/ordering-equality-comparison.adoc[Ordering and comparison of values].
-You can sort on many different values, e.g. node/relationship properties, the node/relationship ids, or on most expressions.
+`ORDER BY` by default sorts results in an ascending order, though it can be modified to return results in a descending order.
+
+`ORDER BY` relies on comparisons to sort the output (see xref:values-and-types/ordering-equality-comparison.adoc[] for more details).
+You can sort on different values, such as node or relationship properties, IDs, or the result of expressions.
 
 [NOTE]
 ====
@@ -20,41 +21,47 @@ Unless `ORDER BY` is used, Neo4j does not guarantee the row order of a query res
 
 The following graph is used for the examples below:
 
-image::graph_order_by_clause.svg[width="600", role="middle"]
+image::list_expressions_graph.svg[width="600", role="middle"]
 
 To recreate it, run the following query against an empty Neo4j database:
 
 [source, cypher, role=test-setup]
 ----
-CREATE
-  (andy: Person {name: 'Andy', age: 34, length: 170}),
-  (bernard: Person {name: 'Bernard', age: 36}),
-  (charlotte: Person {name: 'Charlotte', age: 32, length: 185}),
-  (andy)-[:KNOWS]->(bernard),
-  (bernard)-[:KNOWS]->(charlotte)
+CREATE (alice:Person {name:'Alice', age: 65, role: 'Project manager', skills: ['Java', 'Python']}),
+       (cecil:Person {name: 'Cecil', age: 25, role: 'Software developer', skills: ['Java', 'Python']}),
+       (cecilia:Person {name: 'Cecilia', age: 31, role: 'Software developer', skills: ['JavaScript', 'TypeScript']}),
+       (charlie:Person {name: 'Charlie', age: 61, role: 'Security engineer', skills: ['C++', 'Python']}),
+       (daniel:Person {name: 'Daniel', age: 39, role: 'Director', skills: ['Ruby', 'Go']}),
+       (eskil:Person {name: 'Eskil', age: 39, role: 'CEO', skills: ['Java', 'C++', 'Python']}),
+
+       (cecil)-[:WORKS_FOR]->(alice),
+       (cecilia)-[:WORKS_FOR]->(alice),
+       (charlie)-[:WORKS_FOR]->(daniel),
+       (alice)-[:WORKS_FOR]->(daniel),
+       (daniel)-[:WORKS_FOR]->(eskil)
 ----
 
-[[order-nodes-by-property]]
-== Order nodes by property
+[[order-by-property]]
+== Order by property values
 
-`ORDER BY` is used to sort the output.
+`ORDER BY` can be used to sort property values.
 
-.Query
+.Order by node property
 // tag::clauses_order_by[]
 [source, cypher]
 ----
-MATCH (n)
-RETURN n.name, n.age
-ORDER BY n.name
+MATCH (p:Person)
+RETURN p.name, p.age
+ORDER BY p.name
 ----
 // end::clauses_order_by[]
 
-The nodes are returned, sorted by their name.
+The nodes are returned, sorted by their name in an ascending order.
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| n.name | n.age
+| p.name | p.age
 | "Andy" | 34
 | "Bernard" | 36
 | "Charlotte" | 32
@@ -62,23 +69,23 @@ The nodes are returned, sorted by their name.
 |===
 
 
-[[order-nodes-by-multiple-properties]]
-== Order nodes by multiple properties
+[[order-by-multiple-properties]]
+== Order by multiple property values
 
-You can order by multiple properties by stating each variable in the `ORDER BY` clause.
+You can order the results of multiple property values by having two or more property variables listed in the the `ORDER BY` subclause.
 Cypher will sort the result by the first variable listed, and for equals values, go to the next property in the `ORDER BY` clause, and so on.
 
-.Query
+.Order by multiple properties
 // tag::clauses_order_by_multiple[]
 [source, cypher]
 ----
-MATCH (n)
-RETURN n.name, n.age
-ORDER BY n.age, n.name
+MATCH (p:Person)
+RETURN p.name, p.age
+ORDER BY p.age, p.name
 ----
 // end::clauses_order_by_multiple[]
 
-This returns the nodes, sorted first by their age, and then by their name.
+This returns the nodes, sorted first by their `age` property, and then by their `name` property.
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -91,20 +98,20 @@ This returns the nodes, sorted first by their age, and then by their name.
 |===
 
 
-[[order-nodes-by-id]]
-== Order nodes by ID
+[[order-by-id]]
+== Order by ID
 
-`ORDER BY` is used to sort the output.
+`ORDER BY` can be used to sort nodes or relationships by their ID (retrieved by either the xref:functions/scalar.adoc#functions-elementid[`elementId()`] or xref:functions/scalar.adoc#functions-id[`id()`] functions).
 
-.Query
+.Order by element ID
 [source, cypher]
 ----
-MATCH (n)
-RETURN n.name, n.age
-ORDER BY elementId(n)
+MATCH (p:Person)
+RETURN p.name, p.age
+ORDER BY elementId(p)
 ----
 
-The nodes are returned, sorted by their internal ID.
+The nodes are returned, sorted by their internal element IDs.
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -121,12 +128,12 @@ Neo4j reuses its internal IDs when nodes and relationships are deleted.
 Applications relying on internal Neo4j IDs are, as a result, brittle and can be inaccurate.
 It is recommended to use application-generated IDs instead.
 
-[[order-nodes-by-expression]]
-== Order nodes by expression
+[[order-by-expression]]
+== Order by expressions
 
-`ORDER BY` is used to sort the output.
+`ORDER BY` can be used to results according to the results of an xref:expressions/index.adoc[expression].
 
-.Query
+.Order by 
 [source, cypher]
 ----
 MATCH (n)
@@ -140,7 +147,7 @@ The nodes are returned, sorted by their properties.
 [role="queryresult",options="header,footer",cols="3*<m"]
 |===
 | n.name | n.age | n.length
-| "Bernard" | 36 | <null>
+| "Bernard" | 36 | null
 | "Andy" | 34 | 170
 | "Charlotte" | 32 | 185
 3+d|Rows: 3
