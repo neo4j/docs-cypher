@@ -142,20 +142,17 @@ RETURN customer.firstName AS chocolateCustomer,
 |===
 ====
 
-
-
 [NOTE]
 ====
-Expressions in a `RETURN` clause must be aliased with an `AS` or a `LET` when they are followed by a `NEXT` clause.
+When followed by a `NEXT` clause, expressions in a `RETURN` clause must either be variables that have been introduced before or they must be aliased with `AS`.
 ====
-
-// is an example necessary? not a fan of negative examples in general
 
 
 == Interactions with `CALL` subqueries and `WITH`
 
 You can use `NEXT` to rewrite queries containing  `CALL` subqueries or a `WITH` clause.
 
+[[call-subquery-rewrite]]
 .Rewriting a query with a `CALL` subquery
 ====
 [cols="1,1"]
@@ -164,46 +161,49 @@ a|
 .`CALL` subquery
 [source, cypher]
 ----
-LET a = 1
-WITH a
-
-CALL(*) {
-  LET b = a + 1
-  RETURN b
-  UNION
-  LET b = a + 2
-  RETURN b
+MATCH (p:Product)
+CALL (p) {
+    MATCH (c:Customer)-[:BUYS]->(p)
+    RETURN collect(c.firstName) AS customers
 }
-WITH a, b
-
-LET c = b + 1
-RETURN a, b, c
+RETURN p.name as product, customers
 ----
 a|
 .`NEXT`
 [source, cypher]
 ----
-LET a = 1
-RETURN a
+MATCH (p:Product)
+RETURN p
 
-NEXT 
+NEXT
 
-LET b = a + 1
-RETURN a, b
-UNION
-LET b = a + 2
-RETURN a, b
+MATCH (c:Customer)-[:BUYS]->(p)
+RETURN collect(c.firstName) AS customers, p
 
-NEXT 
+NEXT
 
-LET c = b + 1
-RETURN a, b, c
+RETURN p.name as product, customers
 ----
+|===
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| product      | customers
+
+| "Laptop"     | ["Amir", "Mateo", "Leila", "Yusuf"]
+| "Phone"      | ["Niko"]
+| "Headphones" | ["Keisha", "Hannah", "Niko"]
+| "Chocolate"  | ["Amir", "Mateo", "Yusuf"]
+| "Coffee"     | ["Mateo", "Hannah", "Niko"]
+2+d|Rows: 5
 |===
 ====
 
+Even though the `NEXT` query in <<call-subquery-rewrite>> has more lines, it is divided into three segments which are easy to read.
+It also avoids the parentheses and indentation of the `CALL` subquery.
 
-
+[[with-rewrite]]
 .Rewriting a `WITH` query
 ====
 [cols="1,1"]
@@ -246,80 +246,106 @@ RETURN d
 |===
 ====
 
-Variables which are local to a query and which are not explicitly returned are not accessible by its subsequent query in the context of `NEXT`.
-This allows you to control variable scope similarly to what you can do with `WITH`, see xref:clauses/with.adoc#variable-scope[Control variables in scope].
+
+Variables which are local to a query and which are not explicitly returned are not accessible by subsequent queries in the context of `NEXT`.
+This allows you to control variable scope similarly to what you can do with `WITH`, see xref:clauses/with.adoc#variable-scope[Control variables in scope]: in <<with-rewrite>>, each occurrence of `WITH` is replaced by a `RETURN` and a `NEXT`, preserving the variable scope.
 
 [NOTE]
 ====
 `NEXT` cannot be used inside a `CALL` subquery that uses the (deprecated) xref:subqueries/call-subquery.adoc#importing-with[importing `WITH`] syntax.
 ====
 
+
 == Interactions with conditional queries
 
-// use example with the example data set instead
-
+[[next-and-conditional]]
 .`NEXT` in a conditional query
 ====
 .Query
 [source, cypher]
 ----
-MATCH (n)
-RETURN n
+MATCH (c:Customer)-[:BUYS]->(:Product)<-[:SUPPLIES]-(s:Supplier)
+RETURN c.firstName AS customer, s.name AS supplier
 
-NEXT 
+NEXT
 
-WHEN n.x > 2 THEN 
-  RETURN "large number" AS msg
-WHEN n.x > 1 THEN
-  RETURN "small number" AS msg
+WHEN supplier = "TechCorp" THEN
+  RETURN customer, "Tech enjoyer" AS personality
+WHEN supplier = "Foodies Inc." THEN
+  RETURN customer, "Tropical plant enjoyer" AS personality
+  
+NEXT
+
+RETURN customer, collect(DISTINCT personality) AS personalities
+
+NEXT
+
+WHEN size(personalities) > 1 THEN
+  RETURN customer, "Enjoyer of tech and plants" AS personality
 ELSE
-  RETURN "tiny number" AS msg
-
+  RETURN customer, personalities[0] AS personality
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols="1*<m"]
+[role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| chocolateCustomer
+| customer | personality
 
-| "Amir"
-| "Mateo"
-| "Yusuf"
+| "Amir"   | "Enjoyer of tech and plants"
+| "Mateo"  | "Enjoyer of tech and plants"
+| "Yusuf"  | "Enjoyer of tech and plants"
+| "Niko"   | "Enjoyer of tech and plants"
+| "Hannah" | "Enjoyer of tech and plants"
+| "Leila"  | "Tech enjoyer"
+| "Keisha" | "Tech enjoyer"
 
-1+d|Rows: 3
+2+d|Rows: 7
 |===
 ====
+
+In <<next-and-conditional>>, customers are assigned personality types based on the products they purchased.
+The second query is a conditional query that returns different base personality types for different suppliers the customers purchased from.
+The third query aggregates the personality types.
+Finally, the fourth query is another conditional query which subsumes multiple base personality types, if present, to a new personality.
 
 
 == Interactions with `UNION` queries
 
-// use example with the example data set instead
-
+[[next-and-union]]
 .`NEXT` in a query using `UNION`
 ====
 .Query
 [source, cypher]
 ----
-RETURN 1 AS a
-UNION
-RETURN 2 AS a
+MATCH (c:Customer)-[:BUYS]->(:Product{name: "Laptop"})
+RETURN c.firstName AS customer
+UNION ALL
+MATCH (c:Customer)-[:BUYS]-> (:Product{name: "Coffee"})
+RETURN c.firstName AS customer
 
-NEXT 
+NEXT
 
-RETURN a, a + 1 AS b
-UNION
-RETURN a, a + 2 AS b
+RETURN customer AS customer, count(customer) as numberOfProducts
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols="1*<m"]
+[role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| chocolateCustomer
+| customer | numberOfProducts
 
-| "Amir"
-| "Mateo"
-| "Yusuf"
+| "Amir"   | 1
+| "Mateo"  | 2
+| "Leila"  | 1
+| "Yusuf"  | 1
+| "Hannah" | 1
+| "Niko"   | 1
 
-1+d|Rows: 3
+
+2+d|Rows: 6
 |===
 ====
+
+In <<next-and-union>>, the list of customer names from the first query has a duplicate entry for "Mateo" who bought both a laptop and coffee.
+The use of `UNION ALL` added him to the list twice.
+The second query can access the list, because both parts of the `UNION` return a part of the list, aliased as `customer`.
+By using `count()`, the list aggregates the duplicate in the `RETURN` part of the query.
