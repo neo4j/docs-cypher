@@ -27,74 +27,94 @@ To recreate it, run the following query against an empty Neo4j database:
 
 [source, cypher, role=test-setup]
 ----
-CREATE (alice:Person {name:'Alice', age: 65, role: 'Project manager', skills: ['Java', 'Python']}),
-       (cecil:Person {name: 'Cecil', age: 25, role: 'Software developer', skills: ['Java', 'Python']}),
-       (cecilia:Person {name: 'Cecilia', age: 31, role: 'Software developer', skills: ['JavaScript', 'TypeScript']}),
-       (charlie:Person {name: 'Charlie', age: 61, role: 'Security engineer', skills: ['C++', 'Python']}),
-       (daniel:Person {name: 'Daniel', age: 39, role: 'Director', skills: ['Ruby', 'Go']}),
-       (eskil:Person {name: 'Eskil', age: 39, role: 'CEO', skills: ['Java', 'C++', 'Python']}),
+CREATE 
+  (o1:Order {id: 'ORD-001', createdAt: datetime('2024-05-01T10:00:00'), total: 200, status: 'shipped'}),
+  (o2:Order {id: 'ORD-002', createdAt: datetime('2024-05-02T14:30:00'), total: 300, status: 'pending'}),
+  (o3:Order {id: 'ORD-003', createdAt: datetime('2024-05-03T09:15:00'), total: 200, status: 'pending'}),
+  (o4:Order {id: 'ORD-004', createdAt: datetime('2024-05-04T12:45:00'), total: 150}),
+  (o5:Order {id: 'ORD-005', createdAt: datetime('2024-05-02T11:20:00'), total: 300, status: 'shipped'}),
 
-       (cecil)-[:WORKS_FOR]->(alice),
-       (cecilia)-[:WORKS_FOR]->(alice),
-       (charlie)-[:WORKS_FOR]->(daniel),
-       (alice)-[:WORKS_FOR]->(daniel),
-       (daniel)-[:WORKS_FOR]->(eskil)
+  (i1:Item {name: 'Phone'}),
+  (i2:Item {name: 'Laptop'}),
+  (i3:Item {name: 'Headphones'}),
+  (i4:Item {name: 'Charger'}),
+  (i5:Item {name: 'Keyboard'}),
+
+  (o1)-[:CONTAINS]->(i1),
+  (o1)-[:CONTAINS]->(i4),
+  (o2)-[:CONTAINS]->(i2),
+  (o3)-[:CONTAINS]->(i3),
+  (o4)-[:CONTAINS]->(i5),
+  (o5)-[:CONTAINS]->(i2),
+  (o5)-[:CONTAINS]->(i3)
 ----
+
 
 [[order-by-property]]
 == Order by property values
 
-`ORDER BY` can be used to sort property values.
+`ORDER BY` can be used to sort the result by property values.
 
 .Order by node property
 // tag::clauses_order_by[]
 [source, cypher]
 ----
-MATCH (p:Person)
-RETURN p.name, p.age
-ORDER BY p.name
+MATCH (o:Order)
+RETURN o.id AS order,
+       o.total AS total
+  ORDER BY total
 ----
 // end::clauses_order_by[]
 
-The nodes are returned, sorted by their name in an ascending order.
+The nodes are returned, sorted by the value of the `total` properties in an ascending order.
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| p.name | p.age
-| "Andy" | 34
-| "Bernard" | 36
-| "Charlotte" | 32
-2+d|Rows: 3
+| order | total
+
+| "ORD-004" | 150
+| "ORD-003" | 200
+| "ORD-001" | 200
+| "ORD-002" | 300
+| "ORD-005" | 300
+
+5+d|Rows: 2
 |===
 
 
 [[order-by-multiple-properties]]
 == Order by multiple property values
 
-You can order the results of multiple property values by having two or more property variables listed in the the `ORDER BY` subclause.
-Cypher will sort the result by the first variable listed, and for equals values, go to the next property in the `ORDER BY` clause, and so on.
+Order by multiple property values by listing two or more properties in the `ORDER BY` subclause.
+Cypher sorts by the first property, and if values are equal, it moves to the next property, and so on.
 
 .Order by multiple properties
 // tag::clauses_order_by_multiple[]
 [source, cypher]
 ----
-MATCH (p:Person)
-RETURN p.name, p.age
-ORDER BY p.age, p.name
+MATCH (o:Order)
+RETURN o.id AS order,
+       o.total AS total,
+       o.createdAt AS createdAt
+  ORDER BY total, createdAt
 ----
 // end::clauses_order_by_multiple[]
 
-This returns the nodes, sorted first by their `age` property, and then by their `name` property.
+This returns the nodes, sorted first by their `total` property, and then, for equal values, by their `createdAt` property.
 
 .Result
-[role="queryresult",options="header,footer",cols="2*<m"]
+[role="queryresult",options="header,footer",cols="3*<m"]
 |===
-| n.name | n.age
-| "Charlotte" | 32
-| "Andy" | 34
-| "Bernard" | 36
-2+d|Rows: 3
+| order | total | createdAt
+
+| "ORD-004" | 150 | 2024-05-04T12:45Z
+| "ORD-001" | 200 | 2024-05-01T10:00Z
+| "ORD-003" | 200 | 2024-05-03T09:15Z
+| "ORD-005" | 300 | 2024-05-02T11:20Z
+| "ORD-002" | 300 | 2024-05-02T14:30Z
+
+5+d|Rows: 3
 |===
 
 
@@ -106,9 +126,10 @@ This returns the nodes, sorted first by their `age` property, and then by their 
 .Order by element ID
 [source, cypher]
 ----
-MATCH (p:Person)
-RETURN p.name, p.age
-ORDER BY elementId(p)
+MATCH (o:Order)
+RETURN elementId(o) AS elementId,
+       o.id AS order
+  ORDER BY elementId
 ----
 
 The nodes are returned, sorted by their internal element IDs.
@@ -116,11 +137,15 @@ The nodes are returned, sorted by their internal element IDs.
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| n.name | n.age
-| "Andy" | 34
-| "Bernard" | 36
-| "Charlotte" | 32
-2+d|Rows: 3
+| order | elementId
+
+| "ORD-002" | "4:9350eddd-5a35-413d-8684-708b1da35d23:0"
+| "ORD-003" | "4:9350eddd-5a35-413d-8684-708b1da35d23:1"
+| "ORD-004" | "4:9350eddd-5a35-413d-8684-708b1da35d23:2"
+| "ORD-005" | "4:9350eddd-5a35-413d-8684-708b1da35d23:3"
+| "ORD-001" | "4:9350eddd-5a35-413d-8684-708b1da35d23:8"
+
+2+d|Rows: 5
 |===
 
 [NOTE]
@@ -129,33 +154,62 @@ Applications relying on internal Neo4j IDs are, as a result, brittle and can be 
 It is recommended to use application-generated IDs instead.
 
 [[order-by-expression]]
-== Order by expressions
+== Order by expressions results
 
 `ORDER BY` can be used to results according to the results of an xref:expressions/index.adoc[expression].
 
-.Order by 
+.Order by an expression result
 [source, cypher]
 ----
-MATCH (n)
-RETURN n.name, n.age, n.length
-ORDER BY keys(n)
+MATCH (o:Order)
+RETURN o.id AS order,
+       o.total * 0.9 AS discountedTotal
+  ORDER BY discountedTotal
 ----
 
-The nodes are returned, sorted by their properties.
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| order | discountedTotal
+
+| "ORD-004" | 135.0
+| "ORD-003" | 180.0
+| "ORD-001" | 180.0
+| "ORD-002" | 270.0
+| "ORD-005" | 270.0
+
+2+d|Rows: 5
+|===
+
+.Order by an expression result
+[source, cypher]
+----
+MATCH (o:Order)
+RETURN o.id AS order,
+      COUNT { (o)-[:CONTAINS]->(:Item) } AS itemCount
+   ORDER BY itemCount
+----
+
+
 
 .Result
-[role="queryresult",options="header,footer",cols="3*<m"]
+[role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| n.name | n.age | n.length
-| "Bernard" | 36 | null
-| "Andy" | 34 | 170
-| "Charlotte" | 32 | 185
-3+d|Rows: 3
+| order | itemCount
+
+| "ORD-002" | 1
+| "ORD-003" | 1
+| "ORD-004" | 1
+| "ORD-005" | 2
+| "ORD-001" | 2
+
+2+d|Rows: 5
 |===
 
 
-[[order-nodes-in-descending-order]]
-== Order nodes in descending order
+[[ascending-descending-order]]
+== Ascending and descending order
+
 
 By adding `DESC[ENDING]` after the variable to sort on, the sort will be done in reverse order.
 
