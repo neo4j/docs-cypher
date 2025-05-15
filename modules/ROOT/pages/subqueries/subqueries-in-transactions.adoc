@@ -28,7 +28,7 @@ CALL {
 } IN [[concurrency] CONCURRENT] TRANSACTIONS
 [OF batchSize ROW[S]]
 [REPORT STATUS AS statusVar]
-[ON ERROR {CONTINUE | BREAK | FAIL}];
+[ON ERROR {CONTINUE | BREAK | FAIL | RETRY [FOR] [duration SEC[OND[S]]] [THEN {CONTINUE | BREAK | FAIL}]}]
 ----
 
 == Loading CSV data
@@ -47,6 +47,7 @@ It creates nodes in separate transactions using `CALL { ... } IN TRANSACTIONS`:
 ----
 
 .Query
+// tag::subqueries_in_transactions_basic_example[]
 [source, cypher]
 ----
 LOAD CSV FROM 'file:///friends.csv' AS line
@@ -54,6 +55,8 @@ CALL (line) {
   CREATE (:Person {name: line[1], age: toInteger(line[2])})
 } IN TRANSACTIONS
 ----
+// end::subqueries_in_transactions_basic_example[]
+
 
 .Result
 [role="queryresult",options="footer",cols="1*<m"]
@@ -155,6 +158,7 @@ This example loads a CSV file with one transaction for every `2` input rows:
 ----
 
 .Query
+// tag::subqueries_in_transactions_batching[]
 [source, cypher]
 ----
 LOAD CSV FROM 'file:///friends.csv' AS line
@@ -162,6 +166,7 @@ CALL (line) {
   CREATE (:Person {name: line[1], age: toInteger(line[2])})
 } IN TRANSACTIONS OF 2 ROWS
 ----
+// end::subqueries_in_transactions_batching[]
 
 .Result
 [role="queryresult",options="footer",cols="1*<m"]
@@ -216,7 +221,7 @@ For larger data sets, you might want to use larger batch sizes, such as `10000 R
 [[composite-databases]]
 == Composite databases
 
-As of Neo4j 5.18, `CALL { ... } IN TRANSACTIONS` can be used with link:{neo4j-docs-base-uri}/operations-manual/{page-version}/composite-databases[composite databases].
+As of Neo4j 5.18, `CALL { ... } IN TRANSACTIONS` can be used with link:{neo4j-docs-base-uri}/operations-manual/current/composite-databases[composite databases].
 
 Even though composite databases allow accessing multiple graphs in a single query, only one graph can be modified in a single transaction.
 `CALL { ... } IN TRANSACTIONS` offers a way of constructing queries which modify multiple graphs.
@@ -314,30 +319,31 @@ CALL (g) {
 [[error-behavior]]
 == Error behavior
 
-Users can choose one of three different option flags to control the behavior
-in case of an error occurring in any of the inner transactions of `CALL { ... } IN TRANSACTIONS`:
-
-* `ON ERROR CONTINUE` to ignore a recoverable error and continue the execution of subsequent inner transactions.
-The outer transaction succeeds.
-It will cause the expected variables from the failed inner query to be bound as null for that specific transaction.
-* `ON ERROR BREAK` to ignore a recoverable error and stop the execution of subsequent inner transactions. The outer transaction succeeds.
-It will cause expected variables from the failed inner query to be bound as null for all onward transactions (including the failed one).
-* `ON ERROR FAIL` to acknowledge a recoverable error and stop the execution of subsequent inner transactions. The outer transaction fails. This is the default behavior if no flag is explicitly specified.
+`CALL { ... } IN TRANSACTIONS` has four different behavioral options in case an error occurs in any of the inner transactions: xref:subqueries/subqueries-in-transactions.adoc#on-error-continue[`ON ERROR CONTINUE`], xref:subqueries/subqueries-in-transactions.adoc#on-error-break[`ON ERROR BREAK`], xref:subqueries/subqueries-in-transactions.adoc#on-error-fail[`ON ERROR FAIL`], and xref:subqueries/subqueries-in-transactions.adoc#on-error-retry[`ON ERROR RETRY`].
 
 [IMPORTANT]
-====
-On error, any previously committed inner transactions remain committed, and are not rolled back. Any failed inner transactions are rolled back.
-====
+If an error occurs, any inner transactions that were successfully committed remain unchanged and are not rolled back. However, any inner transactions that failed are fully rolled back. This behavior applies regardless of which `ON ERROR` option is used.
 
-In the following example, the last subquery execution in the second inner transaction fails
-due to division by zero.
 
-.Query
+[[on-error-continue]]
+=== `ON ERROR CONTINUE`
+
+`ON ERROR CONTINUE` ignores recoverable errors and continues the execution of subsequent inner transactions.
+The outer transaction succeeds.
+When an inner query fails, `ON ERROR CONTINUE` ensures the outer transaction continues, returning `null` for the failed inner query.
+
+.`ON ERROR CONTINUE`
+=====
+
+In the below query, the last subquery execution in the second inner transaction fails
+due to division by zero:
+
+.Subquery with failing transaction
 [source, cypher, role=test-fail]
 ----
 UNWIND [4, 2, 1, 0] AS i
 CALL (i) {
-  CREATE (:Person {num: 100/i})
+  CREATE (:Person {num: 100/i}) // Note, fails when i = 0
 } IN TRANSACTIONS OF 2 ROWS
 RETURN i
 ----
@@ -348,9 +354,9 @@ RETURN i
 / by zero (Transactions committed: 1)
 ----
 
-When the failure occurred, the first transaction had already been committed, so the database contains two example nodes.
+Since the failure occurred after the first transaction was committed, the database retains the successfully created nodes.
 
-.Query
+.Return nodes created prior to failed transaction
 [source, cypher]
 ----
 MATCH (e:Person)
@@ -361,14 +367,17 @@ RETURN e.num
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | e.num
+
 | 25
 | 50
+
 1+d|Rows: 2
 |===
 
 In the following example, `ON ERROR CONTINUE` is used after a failed inner transaction to execute the remaining inner transactions and not fail the outer transaction:
 
-.Query
+.Transactions batched in 1 row with `ON ERROR CONTINUE`
+// tag::subqueries_in_transactions_error_behavior[]
 [source, cypher]
 ----
 UNWIND [1, 0, 2, 4] AS i
@@ -378,55 +387,72 @@ CALL (i) {
 } IN TRANSACTIONS
   OF 1 ROW
   ON ERROR CONTINUE
-RETURN n.num;
+RETURN n.num
 ----
+// end::subqueries_in_transactions_error_behavior[]
+
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | n.num
+
 | 100
 | null
 | 50
 | 25
+
 1+d|Rows: 4
 |===
 
 Note the difference in results when batching in transactions of 2 rows:
 
-.Query
-[source, cypher, indent=0]
+.Transactions batched in 2 rows with `ON ERROR CONTINUE`
+[source, cypher]
 ----
 UNWIND [1, 0, 2, 4] AS i
 CALL (i) {
-  CREATE (n:Person {num: 100/i}) // Note, fails when i = 0
+  CREATE (n:Person {num: 100/i})
   RETURN n
 } IN TRANSACTIONS
   OF 2 ROWS
   ON ERROR CONTINUE
-RETURN n.num;
+RETURN n.num
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | n.num
+
 | null
 | null
 | 50
 | 25
+
 1+d|Rows: 4
 |===
 
-This happens because an inner transaction with the two first `i` elements (1 and 0)
-was created, and it fails for 0.
-This causes it to be rolled back and the return
-variable is filled with nulls for those two elements.
+In this case, the first inner transaction includes `i = 1` and `i = 0`. 
+Since `i = 0` causes an error, the entire transaction is rolled back, resulting in `null` for both elements.
 
-In the following example, `ON ERROR BREAK` is used after a failed inner transaction to not execute the remaining inner transaction and not fail the outer transaction:
+=====
 
-.Query
-[source, cypher, indent=0]
+[[on-error-break]]
+=== `ON ERROR BREAK`
+
+`ON ERROR BREAK` ignores recoverable errors and stops the execution of subsequent inner transactions.
+The outer transaction succeeds.
+When an inner query fails, `ON ERROR BREAK` ensures the outer transaction continues but stops executing any further inner transactions.
+Expected variables from the failed inner query are bound as `null` for all subsequent transactions, including the failed one.
+
+.`ON ERROR BREAK`
+=====
+
+In this example, `ON ERROR BREAK` ensures that once an inner transaction fails `(i = 0)`, no further inner transactions execute, while the outer transaction remains successful.
+
+.Transactions batched in 1 row with `ON ERROR BREAK`
+[source, cypher]
 ----
 UNWIND [1, 0, 2, 4] AS i
 CALL (i) {
@@ -435,50 +461,68 @@ CALL (i) {
 } IN TRANSACTIONS
   OF 1 ROW
   ON ERROR BREAK
-RETURN n.num;
+RETURN n.num
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | n.num
+
 | 100
 | null
 | null
 | null
+
 1+d|Rows: 4
 |===
 
-Note the difference in results when batching in transactions of 2 rows:
+When batching in transactions of 2 rows, the first transaction (`i = 1, 0`) encounters an error at `i = 0`, causing execution to stop immediately.
+As a result, all remaining transactions also return null.
 
-.Query
-[source, cypher, indent=0]
+.Transactions batched in 2 rows with `ON ERROR BREAK`
+[source, cypher]
 ----
 UNWIND [1, 0, 2, 4] AS i
 CALL (i) {
-  CREATE (n:Person {num: 100/i}) // Note, fails when i = 0
+  CREATE (n:Person {num: 100/i})
   RETURN n
 } IN TRANSACTIONS
   OF 2 ROWS
   ON ERROR BREAK
-RETURN n.num;
+RETURN n.num
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
 | n.num
+
 | null
 | null
 | null
 | null
+
 1+d|Rows: 4
 |===
 
-In the following example, `ON ERROR FAIL` is used after the failed inner transaction, to not execute the remaining inner transactions and to fail the outer transaction:
+=====
 
-.Query
-[source, cypher, indent=0, role=test-fail]
+[[on-error-fail]]
+=== `ON ERROR FAIL`
+
+`ON ERROR FAIL` acknowledges a recoverable error and stops the execution of subsequent inner transactions, causing the outer transaction to fail.
+
+[NOTE]
+`ON ERROR FAIL` is the default behavior if no error-handling flag is explicitly specified.
+
+.`ON ERROR FAIL`
+=====
+
+In the following example, `ON ERROR FAIL` is used after the failed inner transaction to prevent the remaining inner transactions from executing and to cause the outer transaction to fail as well.
+
+.Transactions batched in 1 row with `ON ERROR FAIL`  
+[source, cypher, role=test-fail]
 ----
 UNWIND [1, 0, 2, 4] AS i
 CALL (i) {
@@ -487,14 +531,159 @@ CALL (i) {
 } IN TRANSACTIONS
   OF 1 ROW
   ON ERROR FAIL
-RETURN n.num;
+RETURN n.num
 ----
 
 .Error message
-[source, error, role=test-fail]
+[source, error]
 ----
 / by zero (Transactions committed: 1)
 ----
+
+=====
+
+
+[role=label--new-2025.03]
+[[on-error-retry]]
+=== `ON ERROR RETRY`
+
+`ON ERROR RETRY` uses an exponential delay between retry attempts for transaction batches that fail due to transient errors (i.e. errors where retrying a transaction can be expected to give a different result), with an optional xref:subqueries/subqueries-in-transactions.adoc#specify-retry-duration[maximum retry duration].
+If the transaction still fails after the maximum duration, the failure is handled according to an optionally specified xref:subqueries/subqueries-in-transactions.adoc#fallback-error-handling[fallback error handling mode] (`THEN CONTINUE`, `THEN BREAK`, `THEN FAIL` (default)).
+
+`ON ERROR RETRY` increases query robustness by handling transient errors without manual intervention.
+It is particularly suitable for xref:subqueries/subqueries-in-transactions.adoc#concurrent-transactions[concurrent transactions], reducing the likelihood of a query failing due to xref:subqueries/subqueries-in-transactions.adoc#deadlocks[deadlocks].
+
+
+[NOTE]
+Queries using `ON ERROR RETRY` can currently only use the xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-slotted-runtime[slotted runtime].
+
+.Basic retry with default duration
+=====
+
+The below example demonstrates a basic retry scenario.
+If a transient error occurs during the creation of a `User` node, the transaction will be retried for the default maximum retry duration (`30` seconds).
+If the retry succeeds, the query continues.
+
+If the retry fails after the default duration, the query fails because it behaves like xref:subqueries/subqueries-in-transactions#on-error-fail[`ON ERROR FAIL`] (the default fallback).
+
+.`ON ERROR RETRY`
+[source, cypher]
+----
+UNWIND range(1, 100) AS i
+CALL (i) {
+    MERGE (u:User {id: i})
+    ON CREATE SET u.created = timestamp()
+} IN TRANSACTIONS ON ERROR RETRY
+----
+
+=====
+
+[[specify-retry-duration]]
+==== Specify a maximum retry duration
+
+The default maximum retry duration is `30` seconds.
+A new default can be set using link:{neo4j-docs-base-uri}/operations-manual/current/configuration/configuration-settings/#config_dbms.cypher.transactions.default_subquery_retry_timeout[`dbms.cypher.transactions.default_subquery_retry_timeout`].
+
+A maximum retry duration can be specified for individual queries as follows: `ON ERROR RETRY [FOR] <duration> SEC[OND[S]]`, where <duration> is an `INTEGER` or `FLOAT` value representing seconds that is greater than or equal to `0`.
+Decimal values are allowed, and the `<duration>` can be set with a parameter.
+Note that this `<duration>` overrides the default value.
+
+The duration timer starts when the first retry is scheduled.
+As a result, regardless of the specified duration, a minimum of one retry will be attempted.
+If the transaction still fails with a transient error, a new attempt with made unless the duration has expired.
+For example, a value of `0` (or close to `0`) will result in a retry, but guarantees that only a single retry will be attempted.
+
+.Set a maximum time limit for retries
+=====
+
+In this example, the retry duration is explicitly set to `2.5` seconds.
+This means that the transaction will be retried until it succeeds or until `2.5` seconds have elapsed.
+
+.`ON ERROR RETRY` with a set duration
+[source, cypher]
+----
+UNWIND range(1, 100) AS i
+CALL (i) {
+    MERGE (u:User {id: i})
+    ON CREATE SET u.created = timestamp()
+} IN TRANSACTIONS ON ERROR RETRY FOR 2.5 SECONDS
+----
+
+.Parameter
+[source, parameters]
+----
+{
+  "duration": 10
+}
+----
+
+.`ON ERROR RETRY` using a parameter for the duration
+[source, cypher]
+----
+UNWIND range(1, 100) AS i
+CALL (i) {
+    MERGE (u:User {id: i})
+    ON CREATE SET u.created = timestamp()
+} IN TRANSACTIONS ON ERROR RETRY FOR $duration SECONDS
+----
+=====
+
+
+[[fallback-error-handling]]
+==== Fallback error handling options
+
+`ON ERROR RETRY` can be combined with the other xref:subqueries/subqueries-in-transactions.adoc#error-behavior[`ON ERROR` options] via the `THEN` clause to specify a fallback behavior.
+The fallback behavior specifies what will happen if a transaction has not succeeded within the time limit.
+Specifically:
+
+* `ON ERROR RETRY ... THEN CONTINUE`: the query will ignore recoverable errors and continue with the execution of subsequent inner transactions.
+The outer transaction succeeds, and `null` will be returned for any failed inner transactions.
+See xref:subqueries/subqueries-in-transactions.adoc#on-error-continue[`ON ERROR CONTINUE`] for more information about this behavior.
+
+* `ON ERROR RETRY ... THEN BREAK`: the query will ignore recoverable errors and stop the execution of subsequent inner transactions.
+The outer transaction succeeds, and `null` will be returned for the failed inner transaction and all subsequent ones.
+See xref:subqueries/subqueries-in-transactions.adoc#on-error-break[`ON ERROR BREAK`] for more information about this behavior.
+
+* `ON ERROR RETRY ... THEN FAIL` (default): the query will acknowledge a recoverable error and stop the execution of subsequent inner transactions, causing the outer transaction to fail.
+See xref:subqueries/subqueries-in-transactions.adoc#on-error-fail[`ON ERROR FAIL`] for more information about this behavior.
+
+[NOTE]
+Because `THEN FAIL` is the default fallback option it does not have to be specified.
+
+// tag::tabs[]
+[.tabs]
+
+.ON ERROR RETRY THEN CONTINUE
+[source,cypher]
+----
+UNWIND range(1, 100) AS i
+CALL (i) {
+    MERGE (u:User {id: i})
+    ON CREATE SET u.created = timestamp()
+} IN TRANSACTIONS ON ERROR RETRY FOR 1 SECOND THEN CONTINUE
+----
+
+.ON ERROR RETRY THEN BREAK
+[source,cypher]
+----
+UNWIND range(1, 100) AS i
+CALL (i) {
+    MERGE (u:User {id: i})
+    ON CREATE SET u.created = timestamp()
+} IN TRANSACTIONS ON ERROR RETRY FOR 1 SECOND THEN BREAK
+----
+
+.ON ERROR RETRY THEN FAIL
+[source,cypher]
+----
+UNWIND range(1, 100) AS i
+CALL (i) {
+    MERGE (u:User {id: i})
+    ON CREATE SET u.created = timestamp()
+} IN TRANSACTIONS ON ERROR RETRY FOR 1 SECOND THEN FAIL
+----
+
+// end::tabs[]
 
 [[status-report]]
 == Status report
@@ -517,7 +706,7 @@ The status value is a map value with the following fields:
 Example of reporting status with `ON ERROR CONTINUE`:
 
 .Query
-[source, cypher, indent=0, role=test-result-skip]
+[source, cypher, role=test-result-skip]
 ----
 UNWIND [1, 0, 2, 4] AS i
 CALL (i) {
@@ -527,7 +716,7 @@ CALL (i) {
   OF 1 ROW
   ON ERROR CONTINUE
   REPORT STATUS AS s
-RETURN n.num, s;
+RETURN n.num, s
 ----
 
 .Result
@@ -544,7 +733,7 @@ RETURN n.num, s;
 Example of reporting status with `ON ERROR BREAK`:
 
 .Query
-[source, cypher, indent=0]
+[source, cypher]
 ----
 UNWIND [1, 0, 2, 4] AS i
 CALL (i) {
@@ -554,7 +743,7 @@ CALL (i) {
   OF 1 ROW
   ON ERROR BREAK
   REPORT STATUS AS s
-RETURN n.num, s.started, s.committed, s.errorMessage;
+RETURN n.num, s.started, s.committed, s.errorMessage
 ----
 
 .Result
@@ -581,7 +770,7 @@ CALL (i) {
   OF 1 ROW
   ON ERROR FAIL
   REPORT STATUS AS s
-RETURN n.num, s.errorMessage;
+RETURN n.num, s.errorMessage
 ----
 
 .Error
@@ -602,7 +791,7 @@ This allows `CALL` subqueries to utilize multiple CPU cores simultaneously, whic
 [NOTE]
 The concurrency value is optional.
 If not specified, a default value based on the amount of available CPU cores will be chosen.
-If a negative number is specified, the concurrency will be the number of available CPU cores reduced by the absolute value of that number.
+If a negative number is specified (which can only be done through a parameter), the concurrency will be the number of available CPU cores reduced by the absolute value of that number.
 
 .Load a CSV file in concurrent transactions
 ====
@@ -610,6 +799,8 @@ If a negative number is specified, the concurrency will be the number of availab
 `CALL { ... } IN CONCURRENT TRANSACTIONS` is particularly suitable for importing data without dependencies.
 This example creates `Person` nodes from a unique `tmdbId` value assigned to each person row in the CSV file (444 in total) in 3 concurrent transactions.
 
+.`CALL` subquery run in `CONCURRENT TRANSACTIONS`
+// tag::subqueries_in_transactions_concurrent_transactions[]
 [source, cypher]
 ----
 LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/persons.csv' AS row
@@ -619,6 +810,7 @@ CALL (row) {
 } IN 3 CONCURRENT TRANSACTIONS OF 10 ROWS
 RETURN count(*) AS personNodes
 ----
+// end::subqueries_in_transactions_concurrent_transactions[]
 
 .Result
 [role="queryresult",options="header,footer",cols="m"]
@@ -656,16 +848,27 @@ Use the xref:subqueries/subqueries-in-transactions.adoc#status-report[status rep
 When a write transaction occurs, Neo4j takes locks to preserve data consistency while updating.
 For example, when creating or deleting a relationship, a write lock is taken on both the specific relationship and its connected nodes.
 
-A deadlock happens when two transactions are blocked by each other because they are attempting to concurrently modify a node or a relationship that is locked by the other transaction (for more information about locks and deadlocks in Neo4j, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/database-internals/concurrent-data-access/#_locks[Operations Manual -> Concurrent data access].
+A deadlock happens when two transactions are blocked by each other because they are attempting to concurrently modify a node or a relationship that is locked by the other transaction (for more information about locks and deadlocks in Neo4j, see link:{neo4j-docs-base-uri}/operations-manual/current/database-internals/concurrent-data-access/#_locks[Operations Manual -> Concurrent data access]).
 
 A deadlock may occur when using `CALL { ... } IN CONCURRENT TRANSACTIONS` if the transactions for two or more batches try to take the same locks in an order that results in a circular dependency between them.
-If so, the impacted transactions are always rolled back, and an error is thrown unless the query is appended with `ON ERROR CONTINUE` or `ON ERROR BREAK`.
+If so, the impacted transactions are always rolled back, and an error is thrown unless the query is appended with one of the following error options:
+
+* xref:subqueries/subqueries-in-transactions.adoc#on-error-continue[`ON ERROR CONTINUE`]
+* xref:subqueries/subqueries-in-transactions.adoc#on-error-break[`ON ERROR BREAK`]
+* xref:subqueries/subqueries-in-transactions.adoc#on-error-retry[`ON ERROR RETRY`] label:new[Introduced in Neo4j 2025.03]
+
+The latter is particularly suited for concurrent transactions, because it retries recoverable transient errors with exponential backoff between retries until the xref:subqueries/subqueries-in-transactions.adoc#specify-retry-duration[maximum retry duration] has been reached.
+
+[NOTE]
+Deadlock detection and transaction retries can be time-consuming.
+When importing data that includes a significant number of relationships to be merged between the same nodes but processed in different batches, increasing the concurrency may not enhance performance.
+On the contrary, it could slow down the import process.
 
 .Dealing with deadlocks
-====
+=====
 
 The following query tries to create `Movie` and `Year` nodes connected by a `RELEASED_IN` relationship.
-Note that there are only three different years in the CSV file, meaning hat only three `Year` nodes should be created.
+Note that there are only three different years in the CSV file, meaning that only three `Year` nodes should be created.
 
 .Query with concurrent transaction causing a deadlock
 [source, cypher, role=test-fail]
@@ -688,9 +891,6 @@ ForsetiClient[transactionId=64, clientId=12] can't acquire ExclusiveLock{owner=F
 Client[63] waits for [ForsetiClient[transactionId=64, clientId=12]]]
 ----
 
-The following query uses `ON ERROR CONTINUE` to bypass any deadlocks and continue with the execution of subsequent inner transactions.
-It returns the `transactionID`, `commitStatus` and `errorMessage` of the failed transactions.
-
 .Query using `ON ERROR CONTINUE` to ignore deadlocks and complete outer transaction
 [source, cypher]
 ----
@@ -708,66 +908,189 @@ RETURN status.transactionId AS transaction, status.committed AS commitStatus, st
 .Result
 [source, "queryresult"]
 ----
-+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| transaction             | commitStatus     | errorMessage                                                                                                                                                                                                                                                                                                                                                       |
-+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| "neo4j-transaction-169" | FALSE            | "ForsetiClient[transactionId=169, clientId=11] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=168, clientId=9]} on NODE_RELATIONSHIP_GROUP_DELETE(46) because holders of that lock are waiting for ForsetiClient[transactionId=169, clientId=11].                                                                                                   |
-|                         |                  \  Wait list:ExclusiveLock[                                                                                                                                                                                                                                                                                                                                          |
-|                         |                  \ Client[168] waits for [ForsetiClient[transactionId=169, clientId=11]]]"                                                                                                                                                                                                                                                                                            |
-| "neo4j-transaction-169" | FALSE            | "ForsetiClient[transactionId=169, clientId=11] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=168, clientId=9]} on NODE_RELATIONSHIP_GROUP_DELETE(46) because holders of that lock are waiting for ForsetiClient[transactionId=169, clientId=11].                                                                                                   |
-|                         |                  \  Wait list:ExclusiveLock[                                                                                                                                                                                                                                                                                                                                          |
-|                         |                  \ Client[168] waits for [ForsetiClient[transactionId=169, clientId=11]]]"                                                                                                                                                                                                                                                                                            |
-| "neo4j-transaction-169" | FALSE            | "ForsetiClient[transactionId=169, clientId=11] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=168, clientId=9]} on NODE_RELATIONSHIP_GROUP_DELETE(46) because holders of that lock are waiting for ForsetiClient[transactionId=169, clientId=11].                                                                                                   |
-|                         |                  \  Wait list:ExclusiveLock[                                                                                                                                                                                                                                                                                                                                          |
-|                         |                  \ Client[168] waits for [ForsetiClient[transactionId=169, clientId=11]]]"                                                                                                                                                                                                                                                                                            |
-| "neo4j-transaction-169" | FALSE            | "ForsetiClient[transactionId=169, clientId=11] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=168, clientId=9]} on NODE_RELATIONSHIP_GROUP_DELETE(46) because holders of that lock are waiting for ForsetiClient[transactionId=169, clientId=11].                                                                                                   |
-|                         |                  \  Wait list:ExclusiveLock[                                                                                                                                                                                                                                                                                                                                          |
-|                         |                  \ Client[168] waits for [ForsetiClient[transactionId=169, clientId=11]]]"                                                                                                                                                                                                                                                                                            |
-| "neo4j-transaction-169" | FALSE            | "ForsetiClient[transactionId=169, clientId=11] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=168, clientId=9]} on NODE_RELATIONSHIP_GROUP_DELETE(46) because holders of that lock are waiting for ForsetiClient[transactionId=169, clientId=11].                                                                                                   |
-|                         |                  \  Wait list:ExclusiveLock[                                                                                                                                                                                                                                                                                                                                          |
-|                         |                  \ Client[168] waits for [ForsetiClient[transactionId=169, clientId=11]]]"                                                                                                                                                                                                                                                                                            |
-| "neo4j-transaction-169" | FALSE            | "ForsetiClient[transactionId=169, clientId=11] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=168, clientId=9]} on NODE_RELATIONSHIP_GROUP_DELETE(46) because holders of that lock are waiting for ForsetiClient[transactionId=169, clientId=11].                                                                                                   |
-|                         |                  \  Wait list:ExclusiveLock[                                                                                                                                                                                                                                                                                                                                          |
-|                         |                  \ Client[168] waits for [ForsetiClient[transactionId=169, clientId=11]]]"                                                                                                                                                                                                                                                                                            |
-| "neo4j-transaction-169" | FALSE            | "ForsetiClient[transactionId=169, clientId=11] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=168, clientId=9]} on NODE_RELATIONSHIP_GROUP_DELETE(46) because holders of that lock are waiting for ForsetiClient[transactionId=169, clientId=11].                                                                                                   |
-|                         |                  \  Wait list:ExclusiveLock[                                                                                                                                                                                                                                                                                                                                          |
-|                         |                  \ Client[168] waits for [ForsetiClient[transactionId=169, clientId=11]]]"                                                                                                                                                                                                                                                                                            |
-| "neo4j-transaction-169" | FALSE            | "ForsetiClient[transactionId=169, clientId=11] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=168, clientId=9]} on NODE_RELATIONSHIP_GROUP_DELETE(46) because holders of that lock are waiting for ForsetiClient[transactionId=169, clientId=11].                                                                                                   |
-|                         |                  \  Wait list:ExclusiveLock[                                                                                                                                                                                                                                                                                                                                          |
-|                         |                  \ Client[168] waits for [ForsetiClient[transactionId=169, clientId=11]]]"                                                                                                                                                                                                                                                                                            |
-| "neo4j-transaction-169" | FALSE            | "ForsetiClient[transactionId=169, clientId=11] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=168, clientId=9]} on NODE_RELATIONSHIP_GROUP_DELETE(46) because holders of that lock are waiting for ForsetiClient[transactionId=169, clientId=11].                                                                                                   |
-|                         |                  \  Wait list:ExclusiveLock[                                                                                                                                                                                                                                                                                                                                          |
-|                         |                  \ Client[168] waits for [ForsetiClient[transactionId=169, clientId=11]]]"                                                                                                                                                                                                                                                                                            |
-| "neo4j-transaction-169" | FALSE            | "ForsetiClient[transactionId=169, clientId=11] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=168, clientId=9]} on NODE_RELATIONSHIP_GROUP_DELETE(46) because holders of that lock are waiting for ForsetiClient[transactionId=169, clientId=11].                                                                                                   |
-|                         |                  \  Wait list:ExclusiveLock[                                                                                                                                                                                                                                                                                                                                          |
-|                         |                  \ Client[168] waits for [ForsetiClient[transactionId=169, clientId=11]]]"                                                                                                                                                                                                                                                                                            |
-+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| transaction             | commitStatus | errorMessage                                                                                                                                                                                                                                                                                                                                                     |
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "neo4j-transaction-486" | false        | "ForsetiClient[transactionId=486, clientId=8] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=485, clientId=13]} on NODE_RELATIONSHIP_GROUP_DELETE(18) because holders of that lock are waiting for ForsetiClient[transactionId=486, clientId=8].                                                                                                  |
+|                         |              \  Wait list:ExclusiveLock[                                                                                                                                                                                                                                                                                                                                        |
+|                         |              \ Client[485] waits for [ForsetiClient[transactionId=486, clientId=8]]]"                                                                                                                                                                                                                                                                                           |
+| "neo4j-transaction-486" | false        | "ForsetiClient[transactionId=486, clientId=8] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=485, clientId=13]} on NODE_RELATIONSHIP_GROUP_DELETE(18) because holders of that lock are waiting for ForsetiClient[transactionId=486, clientId=8].                                                                                                  |
+|                         |              \  Wait list:ExclusiveLock[                                                                                                                                                                                                                                                                                                                                        |
+|                         |              \ Client[485] waits for [ForsetiClient[transactionId=486, clientId=8]]]"                                                                                                                                                                                                                                                                                           |
+| "neo4j-transaction-486" | false        | "ForsetiClient[transactionId=486, clientId=8] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=485, clientId=13]} on NODE_RELATIONSHIP_GROUP_DELETE(18) because holders of that lock are waiting for ForsetiClient[transactionId=486, clientId=8].                                                                                                  |
+|                         |              \  Wait list:ExclusiveLock[                                                                                                                                                                                                                                                                                                                                        |
+|                         |              \ Client[485] waits for [ForsetiClient[transactionId=486, clientId=8]]]"                                                                                                                                                                                                                                                                                           |
+| "neo4j-transaction-486" | false        | "ForsetiClient[transactionId=486, clientId=8] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=485, clientId=13]} on NODE_RELATIONSHIP_GROUP_DELETE(18) because holders of that lock are waiting for ForsetiClient[transactionId=486, clientId=8].                                                                                                  |
+|                         |              \  Wait list:ExclusiveLock[                                                                                                                                                                                                                                                                                                                                        |
+|                         |              \ Client[485] waits for [ForsetiClient[transactionId=486, clientId=8]]]"                                                                                                                                                                                                                                                                                           |
+| "neo4j-transaction-486" | false        | "ForsetiClient[transactionId=486, clientId=8] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=485, clientId=13]} on NODE_RELATIONSHIP_GROUP_DELETE(18) because holders of that lock are waiting for ForsetiClient[transactionId=486, clientId=8].                                                                                                  |
+|                         |              \  Wait list:ExclusiveLock[                                                                                                                                                                                                                                                                                                                                        |
+|                         |              \ Client[485] waits for [ForsetiClient[transactionId=486, clientId=8]]]"                                                                                                                                                                                                                                                                                           |
+| "neo4j-transaction-486" | false        | "ForsetiClient[transactionId=486, clientId=8] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=485, clientId=13]} on NODE_RELATIONSHIP_GROUP_DELETE(18) because holders of that lock are waiting for ForsetiClient[transactionId=486, clientId=8].                                                                                                  |
+|                         |              \  Wait list:ExclusiveLock[                                                                                                                                                                                                                                                                                                                                        |
+|                         |              \ Client[485] waits for [ForsetiClient[transactionId=486, clientId=8]]]"                                                                                                                                                                                                                                                                                           |
+| "neo4j-transaction-486" | false        | "ForsetiClient[transactionId=486, clientId=8] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=485, clientId=13]} on NODE_RELATIONSHIP_GROUP_DELETE(18) because holders of that lock are waiting for ForsetiClient[transactionId=486, clientId=8].                                                                                                  |
+|                         |              \  Wait list:ExclusiveLock[                                                                                                                                                                                                                                                                                                                                        |
+|                         |              \ Client[485] waits for [ForsetiClient[transactionId=486, clientId=8]]]"                                                                                                                                                                                                                                                                                           |
+| "neo4j-transaction-486" | false        | "ForsetiClient[transactionId=486, clientId=8] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=485, clientId=13]} on NODE_RELATIONSHIP_GROUP_DELETE(18) because holders of that lock are waiting for ForsetiClient[transactionId=486, clientId=8].                                                                                                  |
+|                         |              \  Wait list:ExclusiveLock[                                                                                                                                                                                                                                                                                                                                        |
+|                         |              \ Client[485] waits for [ForsetiClient[transactionId=486, clientId=8]]]"                                                                                                                                                                                                                                                                                           |
+| "neo4j-transaction-486" | false        | "ForsetiClient[transactionId=486, clientId=8] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=485, clientId=13]} on NODE_RELATIONSHIP_GROUP_DELETE(18) because holders of that lock are waiting for ForsetiClient[transactionId=486, clientId=8].                                                                                                  |
+|                         |              \  Wait list:ExclusiveLock[                                                                                                                                                                                                                                                                                                                                        |
+|                         |              \ Client[485] waits for [ForsetiClient[transactionId=486, clientId=8]]]"                                                                                                                                                                                                                                                                                           |
+| "neo4j-transaction-486" | false        | "ForsetiClient[transactionId=486, clientId=8] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=485, clientId=13]} on NODE_RELATIONSHIP_GROUP_DELETE(18) because holders of that lock are waiting for ForsetiClient[transactionId=486, clientId=8].                                                                                                  |
+|                         |              \  Wait list:ExclusiveLock[                                                                                                                                                                                                                                                                                                                                        |
+|                         |              \ Client[485] waits for [ForsetiClient[transactionId=486, clientId=8]]]"                                                                                                                                                                                                                                                                                           |
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 
-.Click to see an example of failed transactions being retried using Cypher
+These are transient errors, meaning that re-running the transactions may be successful.
+To retry the any failed inner transactions, use the error option `ON ERROR RETRY`, which retries any failing transactions until the maximum retry duration has been reached.
+
+The following query uses `ON ERROR RETRY ... THEN CONTINUE` to retry the above query for a maximum of `3` seconds and then continue the execution of subsequent inner transactions by ignoring any recoverable errors.
+
+.Query using `ON ERROR RETRY ... THEN CONTINUE` to retry deadlocked inner transactions and complete outer transaction
+// tag::subqueries_in_transactions_deadlock_example[]
+[source, cypher]
+----
+LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/movies.csv' AS row
+CALL (row) {
+   MERGE (m:Movie {movieId: row.movieId})
+   MERGE (y:Year {year: row.year})
+   MERGE (m)-[r:RELEASED_IN]->(y)
+} IN 2 CONCURRENT TRANSACTIONS OF 10 ROWS ON ERROR RETRY FOR 3 SECONDS THEN CONTINUE REPORT STATUS AS status
+RETURN status.transactionID as transaction, status.committed AS successfulTransaction
+----
+// end::subqueries_in_transactions_deadlock_example[]
+
+The result shows that all transactions are now successful:
+
+.Result
+[source, "queryresult"]
+----
++-------------------------------------------------+
+| transaction             | successfulTransaction |
++-------------------------------------------------+
+| "neo4j-transaction-500" | true                  |
+| "neo4j-transaction-500" | true                  |
+| "neo4j-transaction-500" | true                  |
+| "neo4j-transaction-500" | true                  |
+| "neo4j-transaction-500" | true                  |
+| "neo4j-transaction-500" | true                  |
+| "neo4j-transaction-500" | true                  |
+| "neo4j-transaction-500" | true                  |
+| "neo4j-transaction-500" | true                  |
+| "neo4j-transaction-500" | true                  |
+| "neo4j-transaction-501" | true                  |
+| "neo4j-transaction-501" | true                  |
+| "neo4j-transaction-501" | true                  |
+| "neo4j-transaction-501" | true                  |
+| "neo4j-transaction-501" | true                  |
+| "neo4j-transaction-501" | true                  |
+| "neo4j-transaction-501" | true                  |
+| "neo4j-transaction-501" | true                  |
+| "neo4j-transaction-501" | true                  |
+| "neo4j-transaction-501" | true                  |
+| "neo4j-transaction-502" | true                  |
+| "neo4j-transaction-502" | true                  |
+| "neo4j-transaction-502" | true                  |
+| "neo4j-transaction-502" | true                  |
+| "neo4j-transaction-502" | true                  |
+| "neo4j-transaction-502" | true                  |
+| "neo4j-transaction-502" | true                  |
+| "neo4j-transaction-502" | true                  |
+| "neo4j-transaction-502" | true                  |
+| "neo4j-transaction-502" | true                  |
+| "neo4j-transaction-504" | true                  |
+| "neo4j-transaction-504" | true                  |
+| "neo4j-transaction-504" | true                  |
+| "neo4j-transaction-504" | true                  |
+| "neo4j-transaction-504" | true                  |
+| "neo4j-transaction-504" | true                  |
+| "neo4j-transaction-504" | true                  |
+| "neo4j-transaction-504" | true                  |
+| "neo4j-transaction-504" | true                  |
+| "neo4j-transaction-504" | true                  |
+| "neo4j-transaction-503" | true                  |
+| "neo4j-transaction-503" | true                  |
+| "neo4j-transaction-503" | true                  |
+| "neo4j-transaction-503" | true                  |
+| "neo4j-transaction-503" | true                  |
+| "neo4j-transaction-503" | true                  |
+| "neo4j-transaction-503" | true                  |
+| "neo4j-transaction-503" | true                  |
+| "neo4j-transaction-503" | true                  |
+| "neo4j-transaction-503" | true                  |
+| "neo4j-transaction-505" | true                  |
+| "neo4j-transaction-505" | true                  |
+| "neo4j-transaction-505" | true                  |
+| "neo4j-transaction-505" | true                  |
+| "neo4j-transaction-505" | true                  |
+| "neo4j-transaction-505" | true                  |
+| "neo4j-transaction-505" | true                  |
+| "neo4j-transaction-505" | true                  |
+| "neo4j-transaction-505" | true                  |
+| "neo4j-transaction-505" | true                  |
+| "neo4j-transaction-506" | true                  |
+| "neo4j-transaction-506" | true                  |
+| "neo4j-transaction-506" | true                  |
+| "neo4j-transaction-506" | true                  |
+| "neo4j-transaction-506" | true                  |
+| "neo4j-transaction-506" | true                  |
+| "neo4j-transaction-506" | true                  |
+| "neo4j-transaction-506" | true                  |
+| "neo4j-transaction-506" | true                  |
+| "neo4j-transaction-506" | true                  |
+| "neo4j-transaction-507" | true                  |
+| "neo4j-transaction-507" | true                  |
+| "neo4j-transaction-507" | true                  |
+| "neo4j-transaction-507" | true                  |
+| "neo4j-transaction-507" | true                  |
+| "neo4j-transaction-507" | true                  |
+| "neo4j-transaction-507" | true                  |
+| "neo4j-transaction-507" | true                  |
+| "neo4j-transaction-507" | true                  |
+| "neo4j-transaction-507" | true                  |
+| "neo4j-transaction-508" | true                  |
+| "neo4j-transaction-508" | true                  |
+| "neo4j-transaction-508" | true                  |
+| "neo4j-transaction-508" | true                  |
+| "neo4j-transaction-508" | true                  |
+| "neo4j-transaction-508" | true                  |
+| "neo4j-transaction-508" | true                  |
+| "neo4j-transaction-508" | true                  |
+| "neo4j-transaction-508" | true                  |
+| "neo4j-transaction-508" | true                  |
+| "neo4j-transaction-509" | true                  |
+| "neo4j-transaction-509" | true                  |
+| "neo4j-transaction-509" | true                  |
++-------------------------------------------------+
+----
+
+
+.Click to see an example of failed transactions being retried without using `ON ERROR RETRY`
 [%collapsible]
-=====
-While failed transactions may be more efficiently retried using a link:{neo4j-docs-base-uri}/create-applications[driver], below is an example how failed transactions can be retried within the same Cypher query:
+====
 
 .Query retrying failed transactions
 [source, cypher]
 ----
 LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/movies.csv' AS row
 CALL (row) {
-    MERGE (m:Movie {movieId: row.movieId})
-    MERGE (y:Year {year: row.year})
-    MERGE (m)-[r:RELEASED_IN]->(y)
+   MERGE (m:Movie {movieId: row.movieId})
+   MERGE (y:Year {year: row.year})
+   MERGE (m)-[r:RELEASED_IN]->(y)
 } IN 2 CONCURRENT TRANSACTIONS OF 10 ROWS ON ERROR CONTINUE REPORT STATUS as status
 WITH *
 WHERE status.committed = false
 CALL (row) {
-    MERGE (m:Movie {movieId: row.movieId})
-    MERGE (y:Year {year: row.year})
-    MERGE (m)-[r:RELEASED_IN]->(y)
+   MERGE (m:Movie {movieId: row.movieId})
+   MERGE (y:Year {year: row.year})
+   MERGE (m)-[r:RELEASED_IN]->(y)
 } IN 2 CONCURRENT TRANSACTIONS OF 10 ROWS ON ERROR FAIL
 ----
-=====
 ====
+=====
 
 [[restrictions]]
 == Restrictions

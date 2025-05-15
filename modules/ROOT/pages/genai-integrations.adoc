@@ -23,7 +23,7 @@ The GenAI plugin is enabled by default in Neo4j Aura.
 
 The plugin needs to be installed on self-managed instances.
 This is done by moving the `neo4j-genai.jar` file from `/products` to `/plugins` in the Neo4j home directory, or, if you are using Docker, by starting the Docker container with the extra parameter `--env NEO4J_PLUGINS='["genai"]'`.
-For more information, see link:{neo4j-docs-base-uri}/operations-manual/{page-version}/configuration/plugins/[Operations Manual -> Configure plugins].
+For more information, see link:{neo4j-docs-base-uri}/operations-manual/current/configuration/plugins/[Operations Manual -> Configure plugins].
 
 [NOTE]
 Prior to Neo4j 5.23, the GenAI plugin was only available on Neo4j Enterprise Edition.
@@ -38,8 +38,8 @@ image::genai_graph.svg[width="600",role="middle"]
 The graph contains 28863 nodes and 332522 relationships.
 There are 9083 `Movie` nodes with a `plot` and `title` property.
 
-To recreate the graph, download and import this link:https://github.com/neo4j-graph-examples/recommendations/blob/main/data/recommendations-embeddings-50.dump[dump file] to an empty Neo4j database (running version 5.17 or later).
-Dump files can be imported for both link:{neo4j-docs-base-uri}/aura/auradb/importing/import-database/[Aura] and link:{neo4j-docs-base-uri}/operations-manual/{page-version}/backup-restore/restore-dump/[on-prem] instances.
+To recreate the graph, download and import this link:https://github.com/neo4j-graph-examples/recommendations/raw/main/data/recommendations-embeddings-50.dump[dump file] to an empty Neo4j database (running version 5.17 or later).
+Dump files can be imported for both link:{neo4j-docs-base-uri}/aura/auradb/importing/import-database/[Aura] and link:{neo4j-docs-base-uri}/operations-manual/current/backup-restore/restore-dump/[on-prem] instances.
 
 [NOTE]
 The embeddings on this are generated using link:https://platform.openai.com/docs/guides/embeddings[OpenAI] (model `text-embedding-ada-002`), producing 1536-dimensional vectors.
@@ -171,7 +171,7 @@ CALL db.create.setNodeVectorProperty(moviesList[index], 'embedding', vector) // 
 ----
 
 <1> xref:functions/aggregating.adoc#functions-collect[Collect] all  20 `Movie` nodes into a `LIST<NODE>`.
-<2> Use a xref:values-and-types/lists.adoc#cypher-list-comprehension[list comprehension] (`[]`) to extract the `title` and `plot` properties of the movies in `moviesList` into a new `LIST<STRING>`.
+<2> Use a xref:expressions/list-expressions.adoc#list-comprehension[list comprehension] (`[]`) to extract the `title` and `plot` properties of the movies in `moviesList` into a new `LIST<STRING>`.
 <3> `db.create.setNodeVectorProperty` is run for each `vector` returned by `genai.vector.encodeBatch`, and stores that vector as a property named `embedding` on the corresponding node.
 ====
 
@@ -180,15 +180,15 @@ CALL db.create.setNodeVectorProperty(moviesList[index], 'embedding', vector) // 
 [source, cypher, role=test-skip]
 ----
 MATCH (m:Movie WHERE m.plot IS NOT NULL)
-WITH collect(m) AS moviesList // <1>
+WITH collect(m) AS moviesList, // <1>
      count(*) AS total,
      100 AS batchSize // <2>
-UNWIND range(0, total, batchSize) AS batchStart // <3>
+UNWIND range(0, total-1, batchSize) AS batchStart // <3>
 CALL (moviesList, batchStart, batchSize) { // <4>
-    WITH [movie IN moviesList[batchStart .. batchStart + batchSize] | movie.title || ': ' || movie.plot] AS resources // <5>
+    WITH [movie IN moviesList[batchStart .. batchStart + batchSize] | movie.title || ': ' || movie.plot] AS batch // <5>
     CALL genai.vector.encodeBatch(batch, 'OpenAI', { token: $token }) YIELD index, vector
     CALL db.create.setNodeVectorProperty(moviesList[batchStart + index], 'embedding', vector) // <6>
-} IN TRANSACTIONS OF 1 ROW <7>
+} IN CONCURRENT TRANSACTIONS OF 1 ROW <7>
 ----
 
 <1> xref:functions/aggregating.adoc#functions-collect[Collect] all returned `Movie` nodes into a `LIST<NODE>`.
@@ -196,12 +196,14 @@ CALL (moviesList, batchStart, batchSize) { // <4>
 Because vector embeddings can be very large, a larger batch size may require significantly more memory on the Neo4j server.
 Too large a batch size may also exceed the provider's threshold.
 <3> Process `Movie` nodes in increments of `batchSize`.
+The end range `total-1` is due to `range` being inclusive on both ends.
 <4> A xref:subqueries/subqueries-in-transactions.adoc[`CALL` subquery] executes a separate transaction for each batch.
 Note that this `CALL` subquery uses a xref:subqueries/call-subquery.adoc#variable-scope-clause[variable scope clause] (introduced in Neo4j 5.23) to import variables.
 If you are using an older version of Neo4j, use an  xref:subqueries/call-subquery.adoc#importing-with[importing `WITH` clause] instead.
-<5> `resources` is a list of strings, each being the concatenation of `title` and `plot` of one movie.
+<5> `batch` is a list of strings, each being the concatenation of `title` and `plot` of one movie.
 <6> The procedure sets `vector` as value for the property named `embedding` for the node at position `batchStart + index` in the `moviesList`.
 <7> Set to `1` the amount of batches to be processed at once.
+Concurrency in transactions was introduced in Cypher 5.21 (see xref:subqueries/subqueries-in-transactions.adoc#concurrent-transactions[`CALL` subqueries -> Concurrent transactions]).
 
 [NOTE]
 This example may not scale to larger datasets, as `collect(m)` requires the whole result set to be loaded in memory.
@@ -221,9 +223,6 @@ Each provider has its own configuration map that can be passed to `genai.vector.
 * Identifier (`provider` argument): `"VertexAI"`
 * https://cloud.google.com/vertex-ai/docs/generative-ai/embeddings/get-text-embeddings[Official Vertex AI documentation]
 
-.Vertex AI provider details
-[%collapsible]
-====
 .Configuration map
 [%header,cols="1m,1m,3a,2"]
 |===
@@ -298,15 +297,14 @@ Supported values: +
 
 | taskType
 | STRING
-| The intended downstream application (see link:https://cloud.google.com/vertex-ai/generative-ai/docs/embeddings/get-text-embeddings#api_changes_to_models_released_on_or_after_august_2023[provider documentation]). The specified `taskType` will apply to all resources in a batch. label:new[Introduced in 5.19]
+| The intended downstream application (see link:https://cloud.google.com/vertex-ai/generative-ai/docs/embeddings/get-text-embeddings/[provider documentation]). The specified `taskType` will apply to all resources in a batch. label:new[Introduced in 5.19]
 |
 
 | title
 | STRING
-| The title of the document that is being encoded (see link:https://cloud.google.com/vertex-ai/generative-ai/docs/embeddings/get-text-embeddings#api_changes_to_models_released_on_or_after_august_2023[provider documentation]). The specified `title` will apply to all resources in a batch. label:new[Introduced in 5.19]
+| The title of the document that is being encoded (see link:https://cloud.google.com/vertex-ai/generative-ai/docs/embeddings/get-text-embeddings/[provider documentation]). The specified `title` will apply to all resources in a batch. label:new[Introduced in 5.19]
 |
 |===
-====
 
 [[openai]]
 === OpenAI
@@ -314,9 +312,6 @@ Supported values: +
 * Identifier (`provider` argument): `"OpenAI"`
 * https://platform.openai.com/docs/guides/embeddings[Official OpenAI documentation]
 
-.OpenAI provider details
-[%collapsible]
-====
 .Configuration map
 [%header,cols="1m,1m,3a,2"]
 |===
@@ -337,7 +332,6 @@ Supported values: +
 | The number of dimensions you want to reduce the vector to. Only supported for certain models.
 | Model-dependent.
 |===
-====
 
 [[azure-openai]]
 [role=label--new-5.18]
@@ -349,9 +343,6 @@ Supported values: +
 [NOTE]
 Unlike the other providers, the model is configured when creating the deployment on Azure, and is thus not part of the configuration map.
 
-.Azure OpenAI provider details
-[%collapsible]
-====
 .Configuration map
 [%header,cols="1m,1m,3a,2"]
 |===
@@ -377,7 +368,6 @@ Unlike the other providers, the model is configured when creating the deployment
 | The number of dimensions you want to reduce the vector to. Only supported for certain models.
 | Model-dependent.
 |===
-====
 
 [[amazon-bedrock]]
 === Amazon Bedrock
@@ -385,9 +375,6 @@ Unlike the other providers, the model is configured when creating the deployment
 * Identifier (`provider` argument): `"Bedrock"`
 * https://docs.aws.amazon.com/bedrock/latest/APIReference/welcome.html[Official Bedrock documentation]
 
-.Amazon Bedrock provider details
-[%collapsible]
-====
 .Configuration map
 [%header,cols="1m,1m,3a,2"]
 |===
@@ -428,4 +415,4 @@ Supported values: +
 | `"us-east-1"`
 
 |===
-====
+
