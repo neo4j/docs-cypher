@@ -249,6 +249,49 @@ The third query aggregates the personality types.
 Finally, the fourth query is another conditional query which subsumes multiple base personality types, if present, to a new personality.
 
 
+=== Using `NEXT` inside a conditional query using `{}`
+
+In a conditional query that that has a `NEXT` in any of its `THEN` blocks or the `ELSE` block, wrap the part after `THEN` or `ELSE` with `{}`.
+
+.`NEXT` inside a conditional query
+[source, cypher]
+----
+MATCH (c:Customer)-[:BUYS]->(p:Product)
+RETURN c AS customer, sum(p.price) AS sum
+
+NEXT
+
+WHEN sum >= 1000 THEN {
+  RETURN customer.firstName AS customer, "club 1000 plus" AS customerType, sum AS sum
+}
+ELSE {
+  RETURN customer AS customer, sum * (1 - customer.discount) AS finalSum
+
+  NEXT
+
+  RETURN customer.firstName AS customer, "club below 1000" AS customerType, finalSum AS sum
+}
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| customer | customerType      | sum
+
+| "Amir"   | "club 1000 plus"  | 1005
+| "Mateo"  | "club 1000 plus"  | 1015
+| "Leila"  | "club 1000 plus"  | 1000
+| "Yusuf"  | "club 1000 plus"  | 1005
+| "Keisha" | "club below 1000" | 200.0
+| "Hannah" | "club below 1000" | 221.0
+| "Niko"   | "club below 1000" | 570.0
+
+3+d|Rows: 3
+|===
+
+The query above calculates the total price of products purchased per customer and then only applies the customer discount to sums below 1000.
+
+
 == Interactions with `UNION` queries
 
 .`NEXT` in a query using `UNION`
@@ -285,3 +328,39 @@ In this example, the list of customer names from the first query has a duplicate
 The use of `UNION ALL` added him to the list twice.
 The second query can access the list, because both parts of the `UNION` return a part of the list, aliased as `customer`.
 By using xref:functions/aggregating.adoc#functions-count[`count()`], the list aggregates the duplicate in the `RETURN` part of the query.
+
+
+=== Using `NEXT` inside a `UNION` using `{}`
+
+In a `UNION` query that that has a `NEXT` in any of its blocks, wrap that block with `{}`.
+
+.`NEXT` inside `UNION`
+[source, cypher]
+----
+{
+  RETURN 1 AS a
+
+  NEXT
+
+  RETURN a + 1 AS b
+}
+UNION ALL
+{
+  RETURN 1 AS a
+
+  NEXT
+
+  RETURN a + 1 AS b
+}
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| b
+
+| 2
+| 2
+
+1+d|Rows: 2
+|===
