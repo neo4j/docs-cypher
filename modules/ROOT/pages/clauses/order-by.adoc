@@ -1,118 +1,154 @@
-:description: `ORDER BY` is a sub-clause following `RETURN` or `WITH`, and it specifies that the output should be sorted and how.
-
-[[query-order]]
 = ORDER BY
+:description: Information about Cypher's `ORDER BY` subclause.
+:table-caption!:
 
-`ORDER BY` specifies how the output of a clause should be sorted.
-It be used as a sub-clause following `RETURN` or `WITH`.
+`ORDER BY` is a subclause that determines how the results of a xref:clauses/return.adoc[`RETURN`] or xref:clauses/with.adoc[`WITH`] clause are ordered.
+It can also be used as a standalone clause, either on its own or in combination with `SKIP`/`OFFSET` or `LIMIT`.
 
-`ORDER BY` relies on comparisons to sort the output, see xref:values-and-types/ordering-equality-comparison.adoc[Ordering and comparison of values].
-You can sort on many different values, e.g. node/relationship properties, the node/relationship ids, or on most expressions.
+`ORDER BY` defaults to sorting results in an ascending order, though it can be modified to sort results in a xref:clauses/order-by.adoc#ascending-descending-order[descending order].
 
-[NOTE]
-====
+`ORDER BY` relies on comparisons to sort the output (see xref:values-and-types/ordering-equality-comparison.adoc[] for more details).
+You can sort on different values, such as node or relationship properties, IDs, or the result of expressions.
+
+[IMPORTANT]
 Unless `ORDER BY` is used, Neo4j does not guarantee the row order of a query result.
-====
+
 
 [[example-graph]]
 == Example graph
 
-The following graph is used for the examples below:
+A graph with the following schema is used for the examples below:
 
-image::graph_order_by_clause.svg[width="600", role="middle"]
+image::graph_order_by_clause.svg[width="400", role="middle"]
 
 To recreate it, run the following query against an empty Neo4j database:
 
 [source, cypher, role=test-setup]
 ----
-CREATE
-  (andy: Person {name: 'Andy', age: 34, length: 170}),
-  (bernard: Person {name: 'Bernard', age: 36}),
-  (charlotte: Person {name: 'Charlotte', age: 32, length: 185}),
-  (andy)-[:KNOWS]->(bernard),
-  (bernard)-[:KNOWS]->(charlotte)
+CREATE (o1:Order {id: 'ORD-001', orderDate: datetime('2024-05-01T10:00:00'), total: 550, status: 'shipped'}),
+       (o2:Order {id: 'ORD-002', orderDate: datetime('2024-05-02T14:30:00'), total: 1000, status: 'pending'}),
+       (o3:Order {id: 'ORD-003', orderDate: datetime('2024-05-03T09:15:00'), total: 550, status: 'pending'}),
+       (o4:Order {id: 'ORD-004', orderDate: datetime('2024-05-04T12:45:00'), total: 200}),
+       (o5:Order {id: 'ORD-005', orderDate: datetime('2024-05-05T15:00:00'), total: 800, status: 'shipped'}),
+
+       (i1:Item {name: 'Phone', price: 500}),
+       (i2:Item {name: 'Laptop', price: 1000}),
+       (i3:Item {name: 'Headphones', price: 250}),
+       (i4:Item {name: 'Charger', price: 50}),
+       (i5:Item {name: 'Keyboard', price: 200}),
+
+       (o1)-[:CONTAINS]->(i1),
+       (o1)-[:CONTAINS]->(i4),
+       (o2)-[:CONTAINS]->(i2),
+       (o3)-[:CONTAINS]->(i1),
+       (o3)-[:CONTAINS]->(i4),
+       (o4)-[:CONTAINS]->(i5),
+       (o5)-[:CONTAINS]->(i1),
+       (o5)-[:CONTAINS]->(i3),
+       (o5)-[:CONTAINS]->(i4)
 ----
 
-[[order-nodes-by-property]]
-== Order nodes by property
 
-`ORDER BY` is used to sort the output.
+[[basic-examples]]
+== Basic examples
 
-.Query
+.Order by property values
+=====
+
+`ORDER BY` can be used to sort the result by property values.
+
+.Order by node property
 // tag::clauses_order_by[]
 [source, cypher]
 ----
-MATCH (n)
-RETURN n.name, n.age
-ORDER BY n.name
+MATCH (o:Order)
+RETURN o.id AS order,
+       o.total AS total
+  ORDER BY total
 ----
 // end::clauses_order_by[]
 
-The nodes are returned, sorted by their name.
+The nodes are returned, sorted by the value of the `total` properties in an ascending order.
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| n.name | n.age
-| "Andy" | 34
-| "Bernard" | 36
-| "Charlotte" | 32
-2+d|Rows: 3
+| order | total
+
+| "ORD-004" | 200
+| "ORD-001" | 550
+| "ORD-003" | 550
+| "ORD-005" | 800
+| "ORD-002" | 1000 
+
+2+d|Rows: 5
 |===
 
+=====
 
-[[order-nodes-by-multiple-properties]]
-== Order nodes by multiple properties
+.Order by multiple property values
+=====
 
-You can order by multiple properties by stating each variable in the `ORDER BY` clause.
-Cypher will sort the result by the first variable listed, and for equals values, go to the next property in the `ORDER BY` clause, and so on.
+Order by multiple property values by listing two or more properties in the `ORDER BY` subclause.
+Cypher sorts by the first property, and if values are equal, it moves to the next property, and so on.
 
-.Query
+.Order by multiple properties
 // tag::clauses_order_by_multiple[]
 [source, cypher]
 ----
-MATCH (n)
-RETURN n.name, n.age
-ORDER BY n.age, n.name
+MATCH (o:Order)
+RETURN o.id AS order,
+       o.total AS total,
+       o.orderDate AS orderDate
+  ORDER BY total,
+           orderDate
 ----
 // end::clauses_order_by_multiple[]
 
-This returns the nodes, sorted first by their age, and then by their name.
+This returns the nodes, sorted first by their `total` property, and then, for equal values, by their `orderDate` property.
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| order | total | orderDate
+
+| "ORD-004" | 200   | 2024-05-04T12:45Z
+| "ORD-001" | 550   | 2024-05-01T10:00Z
+| "ORD-003" | 550   | 2024-05-03T09:15Z
+| "ORD-005" | 800   | 2024-05-05T15:00Z
+| "ORD-002" | 1000  | 2024-05-02T14:30Z
+
+3+d|Rows: 5
+|===
+
+=====
+
+.Order by ID
+=====
+
+`ORDER BY` can be used to sort nodes or relationships by their ID (retrieved by either the xref:functions/scalar.adoc#functions-elementid[`elementId()`] or xref:functions/scalar.adoc#functions-id[`id()`] functions).
+
+.Order by element ID
+[source, cypher, role=test-result-skip]
+----
+MATCH (o:Order)
+RETURN o.id AS order,
+       elementId(o) AS elementId
+  ORDER BY elementId
+----
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| n.name | n.age
-| "Charlotte" | 32
-| "Andy" | 34
-| "Bernard" | 36
-2+d|Rows: 3
-|===
+| order | elementId
 
+| "ORD-001" | "4:9350eddd-5a35-413d-8684-708b1da35d23:0"
+| "ORD-002" | "4:9350eddd-5a35-413d-8684-708b1da35d23:1"
+| "ORD-003" | "4:9350eddd-5a35-413d-8684-708b1da35d23:2"
+| "ORD-004" | "4:9350eddd-5a35-413d-8684-708b1da35d23:3"
+| "ORD-005" | "4:9350eddd-5a35-413d-8684-708b1da35d23:4"
 
-[[order-nodes-by-id]]
-== Order nodes by ID
-
-`ORDER BY` is used to sort the output.
-
-.Query
-[source, cypher]
-----
-MATCH (n)
-RETURN n.name, n.age
-ORDER BY elementId(n)
-----
-
-The nodes are returned, sorted by their internal ID.
-
-.Result
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| n.name | n.age
-| "Andy" | 34
-| "Bernard" | 36
-| "Charlotte" | 32
-2+d|Rows: 3
+2+d|Rows: 5
 |===
 
 [NOTE]
@@ -120,121 +156,305 @@ Neo4j reuses its internal IDs when nodes and relationships are deleted.
 Applications relying on internal Neo4j IDs are, as a result, brittle and can be inaccurate.
 It is recommended to use application-generated IDs instead.
 
-[[order-nodes-by-expression]]
-== Order nodes by expression
+=====
 
-`ORDER BY` is used to sort the output.
+.Order by expressions
+=====
 
-.Query
+`ORDER BY` can be used to sort according to the results of an xref:expressions/index.adoc[expression].
+The below query calculates a 10% discount on each order's `total` property value, and then orders the results by the discounted total.
+
+.Order by an expression result
 [source, cypher]
 ----
-MATCH (n)
-RETURN n.name, n.age, n.length
-ORDER BY keys(n)
+MATCH (o:Order)
+RETURN o.id AS order,
+       o.total * 0.9 AS discountedTotal
+  ORDER BY discountedTotal
 ----
-
-The nodes are returned, sorted by their properties.
-
-.Result
-[role="queryresult",options="header,footer",cols="3*<m"]
-|===
-| n.name | n.age | n.length
-| "Bernard" | 36 | <null>
-| "Andy" | 34 | 170
-| "Charlotte" | 32 | 185
-3+d|Rows: 3
-|===
-
-
-[[order-nodes-in-descending-order]]
-== Order nodes in descending order
-
-By adding `DESC[ENDING]` after the variable to sort on, the sort will be done in reverse order.
-
-.Query
-[source, cypher]
-----
-MATCH (n)
-RETURN n.name, n.age
-ORDER BY n.name DESC
-----
-
-The example returns the nodes, sorted by their name in reverse order.
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| n.name | n.age
-| "Charlotte" | 32
-| "Bernard" | 36
-| "Andy" | 34
-2+d|Rows: 3
+| order | discountedTotal
+
+| "ORD-004" | 180.0
+| "ORD-001" | 495.0
+| "ORD-003" | 495.0
+| "ORD-005" | 720.0
+| "ORD-002" | 900.0
+
+2+d|Rows: 5
 |===
 
+This next query xref:subqueries/count.adoc[counts] the number of items contained in each order and then orders the results by the item count.
 
-[[order-null]]
-== Ordering `null`
-
-When sorting the result set, `null` will always come at the end of the result set for ascending sorting, and first when doing descending sort.
-
-.Query
+.Order by an expression result
 [source, cypher]
 ----
-MATCH (n)
-RETURN n.length, n.name, n.age
-ORDER BY n.length
+MATCH (o:Order)
+RETURN o.id AS order,
+      COUNT { (o)-[:CONTAINS]->(:Item) } AS itemCount
+  ORDER BY itemCount
 ----
-
-The nodes are returned sorted by the length property, with a node without that property last.
 
 .Result
-[role="queryresult",options="header,footer",cols="3*<m"]
+[role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| n.length | n.name | n.age
-| 170 | "Andy" | 34
-| 185 | "Charlotte" | 32
-| <null> | "Bernard" | 36
-3+d|Rows: 3
+| order | itemCount
+
+| "ORD-002" | 1
+| "ORD-004" | 1
+| "ORD-001" | 2
+| "ORD-003" | 2
+| "ORD-005" | 3 
+
+2+d|Rows: 5
 |===
 
+=====
 
-[[order-with]]
-== Ordering in a `WITH` clause
+[[order-by-values-not-in-result]]
+== Order by values not in the result
 
-When `ORDER BY` is present on a `WITH` clause , the immediately following clause will receive records in the specified order.
-The order is not guaranteed to be retained after the following clause, unless that also has an `ORDER BY` subclause.
-The ordering guarantee can be useful to exploit by operations which depend on the order in which they consume values.
-For example, this can be used to control the order of items in the list produced by the `collect()` aggregating function.
-The `MERGE` and `SET` clauses also have ordering dependencies which can be controlled this way.
+`ORDER BY` can sort by values that are not included in the result set.
+That is, the sort key does not need to be part of the preceding `RETURN` or `WITH` clause.
+For example, the query below sorts orders based on how many items they contain, even though that count is not returned.
 
-.Query
+.Order by values not in the returned results
 [source, cypher]
 ----
-MATCH (n)
-WITH n ORDER BY n.age
-RETURN collect(n.name) AS names
+MATCH (o:Order)
+RETURN o.id AS order
+  ORDER BY COUNT { (o)-[:CONTAINS]->(:Item) }
 ----
-
-The list of names built from the `collect` aggregating function contains the names in order of the `age` property.
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
-| names
-| ["Charlotte","Andy","Bernard"]
-1+d|Rows: 1
+| order
+
+| "ORD-002"
+| "ORD-004"
+| "ORD-001"
+| "ORD-003"
+| "ORD-005"
+
+1+d|Rows: 5
 |===
 
+[[ascending-descending-order]]
+== Ascending and descending order
+
+`ORDER BY` sorts results in an ascending order by default.
+To explicitly sort results in an ascending order, append `ASC[ENDING]`.
+
+.Explicitly sort results in an ascending order
+[source, cypher]
+----
+MATCH (o:Order)
+RETURN o.id AS order,
+       o.total AS total
+  ORDER BY total ASC
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| order | total
+
+| "ORD-004" | 200
+| "ORD-001" | 550
+| "ORD-003" | 550
+| "ORD-005" | 800
+| "ORD-002" | 1000
+
+2+d|Rows: 5
+|===
+
+To sort results in a descending order, append `DESC[ENDING]`.
+
+.Sort results in a descending order
+[source, cypher]
+----
+MATCH (o:Order)
+RETURN o.id AS order,
+       o.total AS total
+  ORDER BY total DESC
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| order | total
+
+| "ORD-002" | 1000
+| "ORD-005" | 800
+| "ORD-001" | 550
+| "ORD-003" | 550
+| "ORD-004" | 200
+
+2+d|Rows: 5
+|===
+
+`ORDER BY` can combine ascending and descending ordering.
+In the example below, results are sorted first by `total` values in descending order and then by `orderDate` values in ascending order.
+
+.Combine ascending and descending result ordering
+[source, cypher]
+----
+MATCH (o:Order)
+RETURN o.id AS order,
+       o.total AS total,
+       o.orderDate AS orderDate
+  ORDER BY total DESC,
+           orderDate ASC
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| order | total | orderDate
+
+| "ORD-002" | 1000  | 2024-05-02T14:30Z
+| "ORD-005" | 800   | 2024-05-05T15:00Z
+| "ORD-001" | 550   | 2024-05-01T10:00Z
+| "ORD-003" | 550   | 2024-05-03T09:15Z
+| "ORD-004" | 200   | 2024-05-04T12:45Z
+
+3+d|Rows: 5
+|===
+
+
+[[limit-pattern-matching]]
+== ORDER BY and pattern matching
+
+`ORDER BY` can be used to sort results before continuing with additional pattern matching.
+In the example below, it is combined with the xref:clauses/limit.adoc[`LIMIT`] to first sort `Order` nodes by their `orderDate` property values, limit the result to the most recent `Order`, and then match any connected `Item` nodes.
+Also note that `ORDER BY` and `LIMIT` are used as xref:clauses/order-by.adoc#order-standalone-clause[standalone clauses] and not as subclauses in this example.
+
+.Find the items contained in the most recently placed order
+[source, cypher]
+----
+MATCH (o:Order)
+ORDER BY o.orderDate DESC
+LIMIT 1
+MATCH (o)-[:CONTAINS]->(i:Item)
+RETURN o.id AS order,
+       o.total,
+       collect(i.name) AS items
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| order | total | items
+
+| "ORD-005" | 800 | ["Phone", "Headphones", "Charger"]
+
+3+d|Rows: 1
+|===
+
+[[null]]
+== Null values
+
+When sorting, `null` values appear last in ascending order and first in descending order.
+
+.Sort on null property
+[source, cypher]
+----
+MATCH (o:Order)
+RETURN o.id AS order,
+       o.status AS status
+  ORDER BY status DESC
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| order | status
+
+| "ORD-004" | null
+| "ORD-001" | "shipped"
+| "ORD-005" | "shipped"
+| "ORD-002" | "pending"
+| "ORD-003" | "pending"
+
+2+d|Rows: 5
+|===
+
+
+[[order-with]]
+== ORDER BY and the WITH clause
+
+When `ORDER BY` is present on a `WITH` clause, the immediately following clause will receive records in the specified order.
+This guaranteed order is useful for operations that rely on the sequence in which values are processed.
+For example, appending `ORDER BY` to a `WITH` clause can be used to control the order of items in the list produced by the xref:functions/aggregating.adoc#functions-collect[`collect()`] aggregating function.
+The xref:clauses/merge.adoc[`MERGE`] and xref:clauses/set.adoc[`SET`] clauses also have ordering dependencies which can be controlled this way.
+
+The below example uses `WITH` and `ORDER BY` to sort `Item` nodes by their `price` property, then the `collect()` in the subsequent `RETURN` clause builds an ordered list per order based on that sort.
+
+.`WITH`, `ORDER BY`, and `collect()`
+[source, cypher]
+----
+MATCH (o:Order)-[:CONTAINS]->(i:Item)
+WITH o, i
+  ORDER BY i.price DESC
+RETURN o.id AS order,
+       collect(i.name || " ($" || toString(i.price) || ")") AS orderedListOfItems
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| order | orderedListOfItems
+
+| "ORD-002" | ["Laptop ($1000)"]
+| "ORD-001" | ["Phone ($500)", "Charger ($50)"]
+| "ORD-003" | ["Phone ($500)", "Charger ($50)"]
+| "ORD-005" | ["Phone ($500)", "Headphones ($250)", "Charger ($50)"]
+| "ORD-004" | ["Keyboard ($200)"]
+
+2+d|Rows: 5
+|===
+
+[[aggregation-distinct]]
 == Ordering aggregated or DISTINCT results
 
-In terms of scope of variables, `ORDER BY` follows special rules, depending on if the projecting `RETURN` or `WITH` clause is either aggregating or `DISTINCT`.
-If it is an aggregating or `DISTINCT` projection, only the variables available in the projection are available.
-If the projection does not alter the output cardinality (which aggregation and `DISTINCT` do), variables available from before the projecting clause are also available.
-When the projection clause shadows already existing variables, only the new variables are available.
+The variables available to `ORDER BY` depend on whether or not the preceding `RETURN` or `WITH` clause performs an aggregation to combine results or uses `DISTINCT` to remove duplicates.
 
-It is also not allowed to use aggregating expressions in the `ORDER BY` sub-clause if they are not also listed in the projecting clause.
-This rule is to make sure that `ORDER BY` does not change the results, only the order of them.
+* If the `RETURN` or `WITH` is not aggregating values or using `DISTINCT`, then `ORDER BY` can reference any variables referenced in the preceding `RETURN` or `WITH` clause.
 
+.`ORDER BY` following a `WITH` clause excluding aggregation or `DISTINCT`
+[source, cypher]
+----
+MATCH (o:Order)-[:CONTAINS]->(i:Item)
+WITH o.id AS order,
+     i.name AS item
+  ORDER BY o.orderDate
+RETURN order, item
+----
+
+* If the `RETURN` or `WITH` performs an aggregation or uses `DISTINCT` only the projected variables from either operation are available to `ORDER BY`.
+This is because these operations alter the number of rows produced by the clause and any variables not explicitly projected are discarded.
+
+.`ORDER BY` following a `WITH` clause projecting an aggregated value
+[source, cypher, role=test-fail]
+----
+MATCH (o:Order)-[:CONTAINS]->(i:Item)
+WITH collect(o.id) AS orders,
+     i.name AS items
+  ORDER BY o.orderDate
+RETURN orders, items
+----
+
+.Error message
+[source, error]
+----
+In a WITH/RETURN with DISTINCT or an aggregation, it is not possible to access variables declared before the WITH/RETURN: o
+----
+
+[[indexes]]
 == ORDER BY and indexes
 
 The performance of Cypher queries using `ORDER BY` on node properties can be influenced by the existence and use of an index for finding the nodes.
@@ -247,43 +467,45 @@ Read more about this capability in xref::indexes/search-performance-indexes/usin
 
 `ORDER BY` can be used as a standalone clause, or in conjunction with `SKIP`/`OFFSET` or `LIMIT`.
 
-
 .Standalone use of `ORDER BY`
 // tag::clauses_order_by_standalone[]
 [source, cypher]
 ----
-MATCH (n)
-ORDER BY n.name
-RETURN collect(n.name) AS names
+MATCH (i:Item)
+ORDER BY i.price
+RETURN collect(i.name || " ($" || toString(i.price) || ")") AS orderedPriceList
 ----
 // end::clauses_order_by_standalone[]
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
-| names
-| ["Andy", "Bernard", "Charlotte"]
-|Rows: 1
-|===
+| orderedPriceList
 
-The following query orders all nodes by `name` descending, skips the first row and limits the results to one row.
+| ["Charger ($50)", "Keyboard ($200)", "Headphones ($250)", "Phone ($500)", "Laptop ($1000)"]
+
+1+d|Rows: 1
+|===
 
 .`ORDER BY` used in conjunction with `SKIP` and `LIMIT`
 // tag::clauses_order_by_descending[]
 [source, cypher]
 ----
-MATCH (n)
-ORDER BY n.name DESC
+MATCH (i:Item)
+ORDER BY i.price DESC
 SKIP 1
 LIMIT 1
-RETURN n.name AS name
+RETURN i.name AS secondMostExpensiveItem,
+       i.price AS price
 ----
 // end::clauses_order_by_descending[]
 
 .Result
-[role="queryresult",options="header,footer",cols="1*<m"]
+[role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| name
-| "Bernard"
-|Rows: 1
+| secondMostExpensiveItem | price
+
+| "Phone" | 500
+
+2+d|Rows: 1
 |===
