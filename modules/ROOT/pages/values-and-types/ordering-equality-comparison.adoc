@@ -35,7 +35,7 @@ For example, `1 > b` and `1 < b` are both `false` when `b` is NaN.
 * String values are compared for ordering using lexicographic order (e.g. `"x" < "xy"`).
 * Boolean values are compared for ordering such that `false < true`.
 * When comparing values for ordering, if one of the arguments is `null`, the result is always `null`.
-* xref:values-and-types/spatial.adoc[Spatial values] cannot be compared using the operators `\<=`, `<`,`>=`, `>`.
+* xref:values-and-types/spatial.adoc[Spatial values] and xref:values-and-types/vector.adoc[`VECTOR`] values cannot be compared using the operators `\<=`, `<`,`>=`, `>`.
 To compare spatial values within a specific range, use either the xref:functions/spatial.adoc#functions-withinBBox[`point.withinBBox()`] or the xref:functions/spatial.adoc#functions-point-wgs84-2d[`point()`] function.
  
 [[value-hierarchy]]
@@ -146,11 +146,61 @@ If they have the same time and offset but different named time zones, they are s
 Since the length of a day, month, or year varies, Cypher does not define a strict ordering for durations.
 As a result, comparing two durations `(e.g, duration1 < duration2)` will always return `null`.
 
+[role=label--new-2025.xx]
 [[ordering-vector]]
-=== Ordering vector values
+=== Vector values
 
-Similar to spatial values, vectors cannot be compared using the operators (<, >, >= and <=)
+`VECTOR` values with a defined coordinate type and no dimension are ordered before values with only a defined dimension.
+Values with both a defined coordinate type and dimension are ordered according to the ordering of the vector coordinate types, listed in ascending order below:
 
-Vectors of different coordinate type values are ordered by the coordinate type, this means the current order is: INTEGER8, INTEGER16, INTEGER32, INTEGER64, FLOAT32, FLOAT64
-Within the same coordinate type, vectors are then ordered by their dimension, with smaller first (e.g Vector(1024) before Vector(2048)).
-Vectors of the same coordinate type and dimension are then ordered pairwise (similar to how lists are ordered e.g Vector([1, 2]) is ordered before a Vector([2, 1])).
+* `INTEGER8`
+* `INTEGER16`
+* `INTEGER32`
+* `INTEGER64`
+* `FLOAT32`
+* `FLOAT64`
+
+Within the same coordinate type, `VECTOR` values are ordered by their dimension, with smaller values first.
+`VECTOR` values of the same coordinate type and dimension are then ordered pairwise, similar to how `LIST` values are ordered.
+
+.Ordering rules for `VECTOR` values
+[cols="3,3,2,6", options="header"]
+|===
+| A | B | Ordered As | Reason
+
+| `VECTOR<FLOAT32>(12345)`
+| `VECTOR<FLOAT32>(123456)`
+| A < B
+| Same coordinate type, compare by dimension ascending.
+
+| `VECTOR<INTEGER32>(1234)`
+| `VECTOR<FLOAT32>(1234)`
+| A < B
+| Coordinate type order: `INTEGER32` < `FLOAT32`
+
+| `VECTOR<INTEGER8>`
+| `VECTOR(3)`
+| A < B
+| Coordinate type defined and no dimension < dimension defined and no coordinate type
+
+| `VECTOR<INTEGER64>(123456)`
+| `VECTOR<FLOAT32>(3)`
+| A < B
+| Coordinate type order: `INTEGER64` < `FLOAT32`, compare coordinate type first.
+
+| `VECTOR<FLOAT64>(1234)`
+| `VECTOR<FLOAT32>(1234)`
+| B < A
+| Coordinate type order: `FLOAT32` < `FLOAT64`
+
+| `VECTOR<FLOAT32>([1, 2])`
+| `VECTOR<FLOAT32>([2, 1])`
+| A < B
+| Same coordinate type and dimension, pairwise value comparison.
+
+| `VECTOR<INTEGER16>(1234)`
+| `LIST<INTEGER>`
+| A < B
+| `VECTOR` values are ordered before `LIST` values
+
+|===
