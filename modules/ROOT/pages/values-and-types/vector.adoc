@@ -5,7 +5,7 @@
 Cypher's supports a `VECTOR` type that can be stored as properties on nodes and relationships.
 `VECTOR` properties can be utilized for efficient semantic retrieval with the Neo4j's xref:indexes/semantic-indexes/vector-indexes.adoc[vector indexes] and xref:genai-integrations.adoc[GenAI plugin].
 
-
+[[construct-vector-values]]
 == Construct vector type values
 
 To construct a `VECTOR` type value, use the xref:functions/vector.adoc#functions-vector[`vector()`] function.
@@ -24,34 +24,219 @@ The `vectorValue` must be of the same length as the given `dimension` and contai
 For example a `VECTOR` with a dimension of `3` has three values, which might represent vector embeddings.
 * `coordinateType`: a vector-only coordinate `INTEGER` or `FLOAT` type, determining the data type for each of the values in `vectorValue`.
 If `vectorValue` contain elements that are not of the specified coordinate type, they will be coerced to that coordinate type if possible.
-This includes the potential of lossy conversion in cases where a larger type, e.g. `INTEGER64` does not fit into the specified type, e.g. `FLOAT32`. 
+This includes the potential of lossy conversion in cases where a larger type, e.g. `INTEGER64` does not fit into the specified type, e.g. `FLOAT32`.
+For details of all available coordinate types, see xref:values-and-types/vector.adoc#vector-super-and-coordinate-types[vector coordinate types] below.
 
-The following expression constructs a three-dimensional vector with integer values:
+The following query constructs a three-dimensional vector with `INTEGER` values.
+It returns the `VECTOR` itself, and the xref:functions/scalar.adoc#functions-valuetype[`valueType()`] function is used to information about its type.
 
 .Construct a `VECTOR` value
 [source, cypher]
 ----
 WITH vector([1,2,3], 3, INTEGER) AS vector
-RETURN vector, valueType(vector)
+RETURN vector, valueType(vector) AS vectorType
 ----
 
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| vector | vectorType
 
-[role=label-enterprise-edition]
+| [1, 2, 3] | "VECTOR<FLOAT32 NOT NULL>(3) NOT NULL"
+
+2+d|Rows: 1
+|===
+
+.Construct a `VECTOR` value with a `STRING` `vectorValue`
+[source, cypher]
+----
+WITH vector("[1.05000e+00, 0.123, 5]", 3, FLOAT32) as vector
+RETURN vector, valueType(vector) AS vectorType
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| vector | vectorType
+
+| | "VECTOR<FLOAT32 NOT NULL>(3) NOT NULL"
+
+2+d|Rows: 1
+|===
+
+The following example uses a parameter containing a `LIST<INTEGER>` as input to `vectorValue`.
+
+.Parameters
+[source, parameters]
+----
+{
+  "integerList": [1, 2, 3, 4, 5]
+}
+----
+
+.Construct a `VECTOR` value with using a parameter for `vectorValue`
+[source, cypher]
+----
+WITH vector($integerList, 5, INTEGER8) as vector
+RETURN vector, valueType(vector) AS vectorType
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| vector | vectorType
+
+| [1, 2, 3, 4, 5] | "VECTOR<INTEGER8 NOT NULL>(5) NOT NULL"
+
+2+d|Rows: 1
+|===
+
+Both `dimension` and `coordinateType` are optional when using the `vector()` function.
+
+* If `coordinateType` is omitted, the type will be determined by Cypher.
+If the `LIST` used as `vectorValue` is mixed containing exclusively `INTEGER` values, then the largest of those types will be set as the `coordinateType`.
+For example, `LIST<INTEGER64 | INTEGER32` generates a `VECTOR` value with a `coordinateType` of `INTEGER64`.
+If the `vectorValue` contains both `FLOAT` and `INTEGER` values, then the `coordinateType` will be that of the largest `FLOAT` present in `vectorValue`.
+For example, `LIST<INTEGER64 | FLOAT64` generates a `VECTOR` value with a `coordinateType` of `FLOAT64`.
+
+* If `dimension` is omitted, it is calculated by taking the size of the `vectorValue`.
+For example a `LIST` with 1024 elements generates a `VECTOR` value with the `dimension` `1024`.
+
+.Construct a `VECTOR` value omitting both `dimension` and `coordinateType`
+[source, cypher]
+----
+WITH vector([1, 2.5, 3]) AS vector
+RETURN vector, valueType(vector) AS vectorType
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| vector | vectorType
+
+| [1, 2, 3] | "VECTOR<FLOAT64 NOT NULL>(3) NOT NULL"
+
+2+d|Rows: 1
+|===
+
+When constructing a `VECTOR` value with the `vector()` function, a `null` `vectorValue`, `dimension`, or `coordinateType` will return `null`.
+
+.`null` values
+[source, cypher]
+----
+RETURN vector(null, 3, FLOAT32) AS nullVectorValue,
+       vector([1, 2, 3], null, INTEGER8) AS nullDimension,
+       vector([1, 2, 3], 3, null) AS nullCoordinateType
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| nullVectorValue | nullDimension | nullCoordinateType
+
+| null | null | null
+
+3+d|Rows: 1
+|===
+
+
+== Calculate vector size
+
+To calculate the size of a `VECTOR` value, use either the xref:functions/scalar.adoc#functions-size[`size()`] function or the xref:functions/vector.adoc#functions-vector_dimension_count[`vector_dimension_count()`] function
+(Unlike `size()`, `vector_dimension_count` will return `null` for any non-`VECTOR` values`).
+
+.Calculate `VECTOR` size with `size()`
+[source, cypher]
+----
+RETURN size(vector([1, 2, 3], 3, INTEGER)) AS size
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| size
+
+| 3
+
+1+d|Rows: 1
+|===
+
+.Calculate `VECTOR` size with `vector_dimension_count()`
+[source, cypher]
+----
+RETURN vector_dimension_count(vector([1, 2, 3], 3, INTEGER)) AS size
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| size
+
+| 3
+
+1+d|Rows: 1
+|===
+
+[role=label--enterprise-edition]
 == Store vector values as properties
 
+To store a `VECTOR` value as a node or relationship property, use the `vector()` function together with a write clause.
+
+.Create a node and assign a `VECTOR` property
+[source, cypher]
+----
+CREATE (n:Label)
+SET n.vectorProp = vector([1,2,3], 3, INTEGER))
+RETURN n.vectorProp AS vectorProp
+----
+
+.Parameters
+[source, parameters]
+----
+{
+  "floatList": [1.3, 2.4, 3.1, 4.4, 5.9]
+}
+----
+
+.Store a `VECTOR` property using a parameter
+[source, cypher]
+----
+CREATE (n:Label)
+SET n.vectorProp = vector($floatList, 5, FLOAT)
+RETURN n.vectorProp AS vectorProp
+----
+
+[[genai-plugin-vector-indexes]]
+== Vector values, the GenAI plugin, and vector indexes
+
+The `VECTOR` type can be used for more efficient handling of 
 
 
-== Vector types, the GenAI plugin, and vector indexes
+
+[[vector-super-and-coordinate-types]]
+== Vector supertypes and vector coordinate types
+
+Though the `dimension` and `coordinateType` can be omitted when creating a `VECTOR` value with the `vector()` function, it is not possible to construct a `VECTOR` value without a dimension or a coordinate type.
+As such, `VECTOR` should be considered a supertype (which can be checked for in a xref:expressions/predicates/type-predicate-expressions.adoc#type-predicate-vector[type predicate expressions]) to which all combinations of `VECTOR<TYPE>(DIMENSION)` are a part.
+
+This logic continues for `VECTOR` values that define only a coordinate type or a dimension; a `VECTOR` with only a defined dimension represents all vectors of that dimension regardless of the type (e.g. `VECTOR<INTEGER8>` is a supertype of `VECTOR<INTEGER8>(3)` and `VECTOR<INTEGER8>(1024)`, and a `VECTOR` with only a defined coordinate type represents all vectors of that coordinate type regardless of the dimension (e.g. `VECTOR(3)` is a supertype of `VECTOR<FLOAT>(3)` and `VECTOR<INTEGER8>(3)`).
+
+.Vector coordinate types
+[options="header",cols="2*<m"]
+|===
+| Default name | Alias
+
+| `FLOAT` | `FLOAT64`
+| `FLOAT32` | 
+| `INTEGER` | `INT`, `INT64`, `SIGNED INTEGER`, `INTEGER64`
+| `INTEGER8` | `INT8`
+| `INTEGER16`| `INT16`
+| `INTEGER32` | `INT8`
+
+|===
 
 
 == Vectors and lists
 
 
 Since Vectors are described as having multiple dimensions, they look a bit like the constructed value type LIST<...>. However, all vector operations operate on the entire vector. Operations on individual components of a vector instance are not defined. We therefore conclude that vectors are predefined value types.
-
-
-
-
-== Vector supertype and vector coordinate types
-
-Whilst it is not possible to store a typeless, dimensionless vector, it is possible to use that type in a type predicate expression for example; RETURN x IS :: VECTOR which should evaluate to true as long as x is a vector, regardless of its coordinate type or dimension. Due to this, we consider VECTOR to be a supertype of all VECTOR types. This logic continues for vectors that define only a type or a dimension, a VECTOR with only a dimension represents all vectors of that dimension regardless of the type, and a VECTOR with only a type represents all vectors of that type regardless of the dimension.
