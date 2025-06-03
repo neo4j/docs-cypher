@@ -42,7 +42,7 @@ Dump files can be imported for both link:{neo4j-docs-base-uri}/aura/auradb/impor
 The embeddings on this are generated using link:https://platform.openai.com/docs/guides/embeddings[OpenAI] (model `text-embedding-ada-002`), producing 1536-dimensional vectors.
 
 [[single-embedding]]
-== Generate a single embedding and store it
+== Generate a single embedding
 
 Use the `genai.vector.encode()` function to generate a vector embedding for a single value.
 
@@ -66,45 +66,36 @@ This function sends one API request every time it is called, which may result in
 If you want to generate many embeddings at once, use xref:genai-integrations.adoc#multiple-embeddings[].
 ====
 
-Use the `db.create.setNodeVectorProperty` procedure to store an embedding to a node property.
+[role=label--new-2025.xx label--enterprise-edition]
+[[store-single-embedding-vector]]
+=== Store a single embedding as a vector property
 
-.Signature for `db.create.setNodeVectorProperty` label:procedure[]
-[source,syntax]
-----
-db.create.setNodeVectorProperty(node :: NODE, key :: STRING, vector :: ANY)
-----
+`genai.vector.encode()` returns a `LIST<FLOAT>`.
+To convert this value to a xref:values-and-types/vector.adoc[`VECTOR` value], use the xref:functions/vector.adoc#functions-vector[`vector()`] function.
 
-Use the `db.create.setRelationshipVectorProperty` procedure to store an embedding to a relationship property.
-
-.Signature for `db.create.setRelationshipVectorProperty` label:procedure[] 
-[source,syntax]
+.Signature for `vector()` label:function[]
+[source]
 ----
-db.create.setRelationshipVectorProperty(relationship :: RELATIONSHIP, key :: STRING, vector :: ANY)
+vector(vectorValue :: STRING | LIST<INTEGER | FLOAT>, dimension :: INTEGER, coordinateType :: [INTEGER64, INTEGER32, INTEGER16, INTEGER8, FLOAT64, FLOAT32]) :: VECTOR
 ----
 
-* `node` or `relationship` is the entity in which the new property will be stored.
-* `key` (a `STRING`) is the name of the new property containing the embedding.
-* `vector` is the object containing the embedding.
-
-The embeddings are stored as properties on nodes or relationships with the type `LIST<INTEGER | FLOAT>`.
-
-.Create an embedding from a single property and store it
+.Create an embedding from a single property and store it as a `VECTOR` property value
 ====
 
-.Create an embedding property for the Godfather
+.Create an `VECTOR` embedding property for the Godfather
 [source,cypher,role=test-skip]
 ----
 MATCH (m:Movie {title:'Godfather, The'})
 WHERE m.plot IS NOT NULL AND m.title IS NOT NULL
 WITH m, m.title || ' ' || m.plot AS titleAndPlot // <1>
 WITH m, genai.vector.encode(titleAndPlot, 'OpenAI', { token: $token }) AS propertyVector // <2>
-CALL db.create.setNodeVectorProperty(m, 'embedding', propertyVector) // <3>
+SET m.embedding = vector(propertyVector, 1536, FLOAT32) // <3>
 RETURN m.embedding AS embedding
 ----
 
 <1> Concatenate the `title` and `plot` of the `Movie` into a single `STRING`.
 <2> Create a 1536 dimensional embedding from the `titleAndPlot`.
-<3> Store the `propertyVector` as a new `embedding` property on The Godfather node.
+<3> Store the `propertyVector` as a new `VECTOR` `embedding` property on The Godfather node.
 
 .Result
 [source, "queryresult"]
@@ -118,12 +109,71 @@ RETURN m.embedding AS embedding
 
 [NOTE]
 This result only shows the first 4 of the 1536 numbers in the embedding.
+
+====
+
+[[store-single-embedding-list-float]]
+=== Store a single embedding as a list of floats property
+
+Use the `db.create.setNodeVectorProperty` procedure to store an embedding as `LIST<FLOAT>` value to a node property.
+
+.Signature for `db.create.setNodeVectorProperty` label:procedure[]
+[source,syntax]
+----
+db.create.setNodeVectorProperty(node :: NODE, key :: STRING, vector :: ANY)
+----
+
+Use the `db.create.setRelationshipVectorProperty` procedure to store an embedding as a `LIST<FLOAT>` value to a relationship property.
+
+.Signature for `db.create.setRelationshipVectorProperty` label:procedure[] 
+[source,syntax]
+----
+db.create.setRelationshipVectorProperty(relationship :: RELATIONSHIP, key :: STRING, vector :: ANY)
+----
+
+* `node` or `relationship` is the entity in which the new property will be stored.
+* `key` (a `STRING`) is the name of the new property containing the embedding.
+* `vector` is the object containing the embedding.
+
+The embeddings are stored as properties on nodes or relationships with the type `LIST<INTEGER | FLOAT>`.
+
+.Create an embedding from a single property and store it as a `LIST<FLOAT>` property value
+====
+
+.Create a `LIST<FLOAT>` embedding property for the Godfather
+[source,cypher,role=test-skip]
+----
+MATCH (m:Movie {title:'Godfather, The'})
+WHERE m.plot IS NOT NULL AND m.title IS NOT NULL
+WITH m, m.title || ' ' || m.plot AS titleAndPlot // <1>
+WITH m, genai.vector.encode(titleAndPlot, 'OpenAI', { token: $token }) AS propertyVector // <2>
+CALL db.create.setNodeVectorProperty(m, 'embedding', propertyVector) // <3>
+RETURN m.embedding AS embedding
+----
+
+<1> Concatenate the `title` and `plot` of the `Movie` into a single `STRING`.
+<2> Create a 1536 dimensional embedding from the `titleAndPlot`.
+<3> Store the `propertyVector` as a new `LIST<FLOAT> `embedding` property on The Godfather node.
+
+.Result
+[source, "queryresult"]
+----
++----------------------------------------------------------------------------------------------------+
+| embedding                                                                                          |
++----------------------------------------------------------------------------------------------------+
+| [0.005239539314061403, -0.039358530193567276, -0.0005175105179660022, -0.038706034421920776, ... ] |
++----------------------------------------------------------------------------------------------------+
+----
+
+[NOTE]
+This result only shows the first 4 of the 1536 numbers in the embedding.
+
 ====
 
 [[multiple-embeddings]]
-== Generating a batch of embeddings and store them
+== Generate a batch of embeddings
 
-Use the `genai.vector.encodeBatch` procedure to generate many vector embeddings with a single API request.
+Use the `genai.vector.encodeBatch()` procedure to generate many vector embeddings with a single API request.
 This procedure takes a list of resources as an input, and returns the same number of result rows, instead of a single one.
 
 [IMPORTANT]
@@ -132,7 +182,7 @@ This procedure attempts to generate embeddings for all supplied resources in a s
 Therefore, it is recommended to see the respective provider's documentation for details on, for example, the maximum number of embeddings that can be generated per request.
 ====
 
-.Signature for `genai.vector.encodeBatch` label:procedure[]
+.Signature for `genai.vector.encodeBatch()` label:procedure[]
 [source,syntax]
 ----
 genai.vector.encodeBatch(resources :: LIST<STRING>, provider :: STRING, configuration :: MAP = {}) :: (index :: INTEGER, resource :: STRING, vector :: LIST<FLOAT>)
@@ -152,7 +202,15 @@ Each returned row contains the following columns:
 * The `resource` (a `STRING`) is the name of the input resource.
 * The `vector` (a `LIST<FLOAT>`) is the generated vector embedding for this resource.
 
-.Create embeddings from a limited number of properties and store them
+[[store-multiple-embedding-vector]]
+[role=label--new-2025.xx label--enterprise-edition]
+=== Store multiple embeddings as vector properties
+
+`genai.vector.encodeBatch()` returns a `LIST<FLOAT>` `vector` value.
+To convert this value to a xref:values-and-types/vector.adoc[`VECTOR` value], use the xref:functions/vector.adoc#functions-vector[`vector()`] function.
+The full function signature can be seen xref:genai-integrations.adoc#store-single-embedding-vector[above].
+
+.Create embeddings from a limited number of properties and store them as `VECTOR` properties
 ====
 
 [source, cypher, role=test-skip]
@@ -169,10 +227,72 @@ CALL db.create.setNodeVectorProperty(moviesList[index], 'embedding', vector) // 
 
 <1> xref:functions/aggregating.adoc#functions-collect[Collect] all  20 `Movie` nodes into a `LIST<NODE>`.
 <2> Use a xref:expressions/list-expressions.adoc#list-comprehension[list comprehension] (`[]`) to extract the `title` and `plot` properties of the movies in `moviesList` into a new `LIST<STRING>`.
-<3> `db.create.setNodeVectorProperty` is run for each `vector` returned by `genai.vector.encodeBatch`, and stores that vector as a property named `embedding` on the corresponding node.
+<3> `db.create.setNodeVectorProperty` is run for each `vector` returned by `genai.vector.encodeBatch()`, and stores that vector as a property named `embedding` on the corresponding node.
 ====
 
-.Create embeddings from a large number of properties and store them
+.Create embeddings from a large number properties and store them as `VECTOR` properties
+====
+[source, cypher, role=test-skip]
+----
+MATCH (m:Movie WHERE m.plot IS NOT NULL)
+WITH collect(m) AS moviesList, // <1>
+     count(*) AS total,
+     100 AS batchSize // <2>
+UNWIND range(0, total-1, batchSize) AS batchStart // <3>
+CALL (moviesList, batchStart, batchSize) { // <4>
+    WITH [movie IN moviesList[batchStart .. batchStart + batchSize] | movie.title || ': ' || movie.plot] AS batch // <5>
+    CALL genai.vector.encodeBatch(batch, 'OpenAI', { token: $token }) YIELD index, vector
+    CALL db.create.setNodeVectorProperty(moviesList[batchStart + index], 'embedding', vector) // <6>
+} IN CONCURRENT TRANSACTIONS OF 1 ROW <7>
+----
+
+<1> xref:functions/aggregating.adoc#functions-collect[Collect] all returned `Movie` nodes into a `LIST<NODE>`.
+<2> `batchSize` defines the number of nodes in `moviesList` to be processed at once.
+Because vector embeddings can be very large, a larger batch size may require significantly more memory on the Neo4j server.
+Too large a batch size may also exceed the provider's threshold.
+<3> Process `Movie` nodes in increments of `batchSize`.
+The end range `total-1` is due to `range` being inclusive on both ends.
+<4> A xref:subqueries/subqueries-in-transactions.adoc[`CALL` subquery] executes a separate transaction for each batch.
+Note that this `CALL` subquery uses a xref:subqueries/call-subquery.adoc#variable-scope-clause[variable scope clause].
+<5> `batch` is a list of strings, each being the concatenation of `title` and `plot` of one movie.
+<6> The procedure sets `vector` as value for the property named `embedding` for the node at position `batchStart + index` in the `moviesList`.
+<7> Set to `1` the amount of batches to be processed at once.
+For more information on concurrency in transactions, see xref:subqueries/subqueries-in-transactions.adoc#concurrent-transactions[`CALL` subqueries -> Concurrent transactions]).
+
+[NOTE]
+This example may not scale to larger datasets, as `collect(m)` requires the whole result set to be loaded in memory.
+For an alternative method more suitable to processing large amounts of data, see link:https://neo4j.com/docs/genai/tutorials/embeddings-vector-indexes/[GenAI documentation - Embeddings & Vector Indexes Tutorial -> Create embeddings with cloud AI providers].
+
+====
+
+[[store-multiple-embeddings-list-float]]
+=== Store multiple embeddings as list of floats properties
+
+Use the `db.create.setNodeVectorProperty` procedure to store an embedding as `LIST<FLOAT>` value to a node property.
+Use the `db.create.setRelationshipVectorProperty` procedure to store an embedding as a `LIST<FLOAT>` value to a relationship property.
+The full procedure signatures can be seen xref:genai-integrations.adoc#store-single-embedding-list-float[above].
+
+.Create embeddings from a limited number of properties and store them as `LIST<FLOAT>` properties
+====
+
+[source, cypher, role=test-skip]
+----
+MATCH (m:Movie WHERE m.plot IS NOT NULL)
+WITH m
+LIMIT 20
+WITH collect(m) AS moviesList // <1>
+WITH moviesList, [movie IN moviesList | movie.title || ': ' || movie.plot] AS batch // <2>
+CALL genai.vector.encodeBatch(batch, 'OpenAI', { token: $token }) YIELD index, vector
+WITH moviesList, index, vector
+CALL db.create.setNodeVectorProperty(moviesList[index], 'embedding', vector) // <3>
+----
+
+<1> xref:functions/aggregating.adoc#functions-collect[Collect] all  20 `Movie` nodes into a `LIST<NODE>`.
+<2> Use a xref:expressions/list-expressions.adoc#list-comprehension[list comprehension] (`[]`) to extract the `title` and `plot` properties of the movies in `moviesList` into a new `LIST<STRING>`.
+<3> `db.create.setNodeVectorProperty` is run for each `vector` returned by `genai.vector.encodeBatch()`, and stores that vector as a property named `embedding` on the corresponding node.
+====
+
+.Create embeddings from a large number properties and store them as `LIST<FLOAT>` values
 ====
 [source, cypher, role=test-skip]
 ----
@@ -211,7 +331,7 @@ For an alternative method more suitable to processing large amounts of data, see
 == GenAI providers
 
 The following GenAI providers are supported for generating vector embeddings.
-Each provider has its own configuration map that can be passed to `genai.vector.encode` or `genai.vector.encodeBatch`.
+Each provider has its own configuration map that can be passed to `genai.vector.encode` or `genai.vector.encodeBatch()`.
 
 [[vertex-ai]]
 === Vertex AI
