@@ -44,8 +44,74 @@ The following coordinate types are supported:
 
 |===
 
-It is not possible to construct a `VECTOR` value without a dimension or a coordinate type.
+A `VECTOR` value must have a dimension and a coordinate type.
 As such, `VECTOR` should be considered a supertype (which can be checked for in a xref:expressions/predicates/type-predicate-expressions.adoc#type-predicate-vector[type predicate expressions]) of which all combinations of `VECTOR<TYPE>(DIMENSION)` are a part.
+
+This logic continues for `VECTOR` values that define only a coordinate type or a dimension.
+A `VECTOR` with only a dimension represents all vectors of that dimension regardless of the coordinate type, and a `VECTOR` with only a coordinate type represents all vectors of that coordinate type regardless of the `dimension`.
+
+[[ordering-vector]]
+== Ordering vector values
+
+`VECTOR` values with a defined coordinate type and no dimension are ordered before values with only a defined dimension.
+Values with both a defined coordinate type and dimension are ordered according to the ordering of the vector coordinate types, listed in ascending order below:
+
+* `INTEGER8`
+* `INTEGER16`
+* `INTEGER32`
+* `INTEGER64`
+* `FLOAT32`
+* `FLOAT64`
+
+Within the same coordinate type, `VECTOR` values are ordered by their dimension, with smaller values first.
+`VECTOR` values of the same coordinate type and dimension are then ordered pairwise, similar to how `LIST` values are ordered.
+
+.Ordering rules for `VECTOR` values
+[cols="3,3,2,6", options="header"]
+|===
+| A | B | Ordered As | Reason
+
+| `VECTOR<FLOAT32>(12345)`
+| `VECTOR<FLOAT32>(123456)`
+| A < B
+| Same coordinate type, compare by dimension ascending.
+
+| `VECTOR<INTEGER32>(1234)`
+| `VECTOR<FLOAT32>(1234)`
+| A < B
+| Coordinate type order: `INTEGER32` < `FLOAT32`
+
+| `VECTOR<INTEGER8>`
+| `VECTOR(3)`
+| A < B
+| Coordinate type defined and no dimension < dimension defined and no coordinate type
+
+| `VECTOR<INTEGER64>(123456)`
+| `VECTOR<FLOAT32>(3)`
+| A < B
+| Coordinate type order: `INTEGER64` < `FLOAT32`, compare coordinate type first.
+
+| `VECTOR<FLOAT64>(1234)`
+| `VECTOR<FLOAT32>(1234)`
+| B < A
+| Coordinate type order: `FLOAT32` < `FLOAT64`
+
+| `VECTOR<FLOAT32>([1, 2])`
+| `VECTOR<FLOAT32>([2, 1])`
+| A < B
+| Same coordinate type and dimension, pairwise value comparison.
+
+| `VECTOR<INTEGER16>(1234)`
+| `LIST<INTEGER>`
+| A < B
+| `VECTOR` values are ordered before `LIST` values
+
+|===
+
+== Vector normalization 
+
+A `VECTOR` without a coordinate type or dimension encompasses any other `VECTOR`.
+A `VECTOR` with a coordinate type but no dimension encompasses a vector with the same coordinate type and a defined dimension. A VECTOR with a dimension but no coordinate type encompasses a vector with the same dimension and any coordinate type. Vectors cannot be normalized together if their coordinate types differ, or if their dimensions differ.
 
 [[construct-vector-values]]
 == Construct vector values
@@ -58,7 +124,7 @@ It returns the `VECTOR` itself, and the xref:functions/scalar.adoc#functions-val
 .Construct a `VECTOR` value
 [source, cypher]
 ----
-WITH vector([1,2,3], 3, INTEGER) AS vector
+WITH vector([1, 2, 3], 3, INTEGER) AS vector
 RETURN vector, valueType(vector) AS vectorType
 ----
 
@@ -67,40 +133,7 @@ RETURN vector, valueType(vector) AS vectorType
 |===
 | vector | vectorType
 
-| [1, 2, 3] | "VECTOR<FLOAT32 NOT NULL>(3) NOT NULL"
-
-2+d|Rows: 1
-|===
-
-.`vector()` function signature
-[source]
-----
-vector(vectorValue :: STRING | LIST<INTEGER | FLOAT>, dimension :: INTEGER, coordinateType :: [INTEGER64, INTEGER32, INTEGER16, INTEGER8, FLOAT64, FLOAT32]) :: VECTOR
-----
-
-* `vectorValue`: a `LIST` of either `INTEGER` or `FLOAT` values, or a `STRING` (the `STRING` must start and end with square brackets (`[]`).
-The values inside the brackets must be a number represented in either decimal or scientific notation and must be comma separated).
-The `vectorValue` must be of the same length as the given `dimension` and contain values of the corresponding `coordinateType`.
-`null`, NaN, and infinity values are not allowed.
-* `dimension`: an `INTEGER` (with a value greater than `0` and less than or equal to `4096`) specifying the number of coordinates the `VECTOR` value contains.
-For example a `VECTOR` with a dimension of `3` has three values, which might represent vector embeddings.
-* `coordinateType`: a vector-only coordinate `INTEGER` or `FLOAT` type, determining the data type for each of the values in `vectorValue`.
-If `vectorValue` contain elements that are not of the specified coordinate type, they will be coerced to that coordinate type if possible.
-This includes the potential of lossy conversion in cases where a larger type, e.g. `INTEGER64` does not fit into the specified type, e.g. `FLOAT32`.
-
-.Construct a `VECTOR` value with a `STRING` `vectorValue`
-[source, cypher]
-----
-WITH vector("[1.05000e+00, 0.123, 5]", 3, FLOAT32) as vector
-RETURN vector, valueType(vector) AS vectorType
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| vector | vectorType
-
-| | "VECTOR<FLOAT32 NOT NULL>(3) NOT NULL"
+| [1, 2, 3] | "VECTOR<INTEGER64 NOT NULL>(3) NOT NULL"
 
 2+d|Rows: 1
 |===
@@ -130,54 +163,6 @@ RETURN vector, valueType(vector) AS vectorType
 | [1, 2, 3, 4, 5] | "VECTOR<INTEGER8 NOT NULL>(5) NOT NULL"
 
 2+d|Rows: 1
-|===
-
-Both `dimension` and `coordinateType` are optional when using the `vector()` function.
-
-* If `coordinateType` is omitted, the type will be determined by Cypher.
-If the `LIST` used as `vectorValue` is mixed containing exclusively `INTEGER` values, then the largest of those types will be set as the `coordinateType`.
-For example, `LIST<INTEGER64 | INTEGER32`> generates a `VECTOR` value with a `coordinateType` of `INTEGER64`.
-If the `vectorValue` contains both `FLOAT` and `INTEGER` values, then the `coordinateType` will be that of the largest `FLOAT` present in `vectorValue`.
-For example, `LIST<INTEGER64 | FLOAT64`> generates a `VECTOR` value with a `coordinateType` of `FLOAT64`.
-
-* If `dimension` is omitted, it is calculated by taking the size of the `vectorValue`.
-For example a `LIST` with 1024 elements generates a `VECTOR` value with the dimension `1024`.
-
-.Construct a `VECTOR` value omitting both `dimension` and `coordinateType`
-[source, cypher]
-----
-WITH vector([1, 2.5, 3]) AS vector
-RETURN vector, valueType(vector) AS vectorType
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| vector | vectorType
-
-| [1, 2, 3] | "VECTOR<FLOAT64 NOT NULL>(3) NOT NULL"
-
-2+d|Rows: 1
-|===
-
-When constructing a `VECTOR` value with the `vector()` function, a `null` `vectorValue`, `dimension`, or `coordinateType` will return `null`.
-
-.`null` values
-[source, cypher]
-----
-RETURN vector(null, 3, FLOAT32) AS nullVectorValue,
-       vector([1, 2, 3], null, INTEGER8) AS nullDimension,
-       vector([1, 2, 3], 3, null) AS nullCoordinateType
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="3*<m"]
-|===
-| nullVectorValue | nullDimension | nullCoordinateType
-
-| null | null | null
-
-3+d|Rows: 1
 |===
 
 [[calculate-vector-size]]
@@ -218,6 +203,7 @@ RETURN vector_dimension_count(vector([1, 2, 3], 3, INTEGER)) AS size
 |===
 
 [role=label--enterprise-edition]
+[[store-vector-properties]]
 == Store vector values as properties
 
 To store a `VECTOR` value as a node or relationship property, use the `vector()` function together with a write clause.
@@ -268,67 +254,16 @@ RETURN n.vectorProp AS vectorProp
 [[genai-plugin-vector-indexes]]
 == Vector values, the GenAI plugin, and vector indexes
 
-Neo4j previously could only store vector embeddings as `LIST<FLOAT64>` values.
-Storing vectors embeddings as `VECTOR` values with specified coordinate types allows for a more efficient storage of embeddings.
+Neo4j previously stored vector embeddings as `LIST<FLOAT64>` property values.
+Storing vectors embeddings as `VECTOR` property values with a specified dimension and coordinate type allows for a more efficient storage of embeddings.
 
-Neo4j's xref:genai-integrations.adoc[GenAI plugin] offer the following functions and procedures to generate vector embeddings:
+For information about how to store embeddings generated by Neo4j xref:genai-integrations.adoc[GenAI plugin] see:
 
-* xref:genai-integrations.adoc#single-embedding[`genai.vector.encode()`]: generates a single embedding.
-* xref:genai-integrations.adoc#multiple-embeddings[`genai.vector.encodeBatch()`]: generates a batch of embeddings.
-
-However, the embeddings generated by the GenAI plugin are `LIST<FLOAT>` values and not `VECTOR` values.
-To store them as `VECTOR` values, use the `vector()` function.
-
-.Generate a single embedding and store it as a `VECTOR` value.
-[source, cypher, role=test-skip]
-----
-MATCH (n:Label {id: $id})
-WHERE n.textProperty IS NOT NULL
-WITH n, genai.vector.encode(n.textProperty, 'OpenAI', { token: $token }) AS propertyVector
-SET n.embedding = vector(propertyVector, 1536, FLOAT32)
-RETURN n.embedding AS embedding
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| embedding
-
-| 
-
-1+d|Rows: 1
-|===
-
-
-.Generate a batch of embeddings and store them as a `VECTOR` values.
-[source, cypher, role=test-skip]
-----
-MATCH (n:YourLabel)
-WHERE n.textProperty IS NOT NULL
-WITH n
-LIMIT 20
-WITH collect(n) AS nodesList, [node IN nodesList | node.textProperty] AS batch
-CALL genai.vector.encodeBatch(batch, 'OpenAI', { token: $token }) YIELD index, vector AS propertyVector
-WITH nodesList[index] AS n, propertyVector
-SET n.embedding = vector(propertyVector, 1536, FLOAT32)
-RETURN n.embedding AS embedding
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| embedding
-
-| 
-
-1+d|Rows: 1
-|===
-
+* xref:genai-integrations.adoc#store-single-embedding-vector[Store a single embedding as a `VECTOR` property]
+* xref:genai-integrations.adoc#store-multiple-embeddings-vector[Store multiple embeddings as a `VECTOR` properties]
 
 [NOTE]
 The GenAI plugin requires an account and API credentials from a supported GenAI provider.
 For more information, see xref:genai-integrations.adoc#ai-providers[AI providers].
 
-Once the embeddings have been stored as `VECTOR` property values, they can be indexed and searched semantically using a xref:indexes/semantic-indexes/vector-indexes.adoc[vector index].
-
-
+Embeddings stored as `VECTOR` property values can be indexed and searched semantically using a xref:indexes/semantic-indexes/vector-indexes.adoc[vector index].
