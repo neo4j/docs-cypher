@@ -3,22 +3,24 @@
 :page-role: new-2025.xx
 
 Cypher's supports the construction of a `VECTOR` type that can be stored as xref:indexes/semantic-indexes/vector-indexes.adoc#embeddings[embedding] properties on nodes and relationships and utilized for efficient semantic retrieval using Neo4j's xref:indexes/semantic-indexes/vector-indexes.adoc[vector indexes] and xref:genai-integrations.adoc[GenAI plugin].
+`VECTOR` values can also be measured and compared (in terms of similarity, distance, and norm) using Cypher's xref:functions/vector.adoc[Vector functions].
 
 [[vector-type]]
-== The vector type
+== The VECTOR type
 
 The `VECTOR` type is a fixed-length list of numeric coordinate values (`INTEGER` or `FLOAT`) stored as a single unit.
 It is defined by its dimension, which sets how many numeric values it holds, and its coordinate type, which specifies the specific numeric data type for those numbers.
 Each numeric value in the list represents a coordinate along one of the vector’s defined dimensions.
-The coordinate type controls the kind of number stored at each position, influencing precision and storage size.
-
-In the below example, `[1.05, 0.123, 5]` is the list of numeric values (or coordinates), defining a three dimensional `VECTOR` with the coordinate type `FLOAT32`. 
+The coordinate type controls the type of each coordinate in the `VECTOR`, influencing precision and storage size.
+A `VECTOR` value must have a dimension and a coordinate type.
 
 .Example `VECTOR` type
 [source]
 ----
 VECTOR([1.05, 0.123, 5], 3, FLOAT32 NOT NULL)
 ----
+
+In this example `VECTOR` type value, `[1.05, 0.123, 5]` is the coordinates of the `VECTOR`, `3` defines its dimensionality, and `FLOAT32` specifies the data type for each coordinate value.
 
 .`VECTOR` and `LIST` values
 [NOTE]
@@ -44,77 +46,16 @@ The following coordinate types are supported:
 
 |===
 
-A `VECTOR` value must have a dimension and a coordinate type.
-As such, `VECTOR` should be considered a supertype (which can be checked for in a xref:expressions/predicates/type-predicate-expressions.adoc#type-predicate-vector[type predicate expressions]) of which all combinations of `VECTOR<TYPE>(DIMENSION)` are a part.
-
-This logic continues for `VECTOR` values that define only a coordinate type or a dimension.
-A `VECTOR` with only a dimension represents all vectors of that dimension regardless of the coordinate type, and a `VECTOR` with only a coordinate type represents all vectors of that coordinate type regardless of the `dimension`.
-
-[[ordering-vector]]
-== Ordering vector values
-
-`VECTOR` values with a defined coordinate type and no dimension are ordered before values with only a defined dimension.
-Values with both a defined coordinate type and dimension are ordered according to the ordering of the vector coordinate types, listed in ascending order below:
-
-* `INTEGER8`
-* `INTEGER16`
-* `INTEGER32`
-* `INTEGER64`
-* `FLOAT32`
-* `FLOAT64`
-
-Within the same coordinate type, `VECTOR` values are ordered by their dimension, with smaller values first.
-`VECTOR` values of the same coordinate type and dimension are then ordered pairwise, similar to how `LIST` values are ordered.
-
-.Ordering rules for `VECTOR` values
-[cols="3,3,2,6", options="header"]
-|===
-| A | B | Ordered As | Reason
-
-| `VECTOR<FLOAT32>(12345)`
-| `VECTOR<FLOAT32>(123456)`
-| A < B
-| Same coordinate type, compare by dimension ascending.
-
-| `VECTOR<INTEGER32>(1234)`
-| `VECTOR<FLOAT32>(1234)`
-| A < B
-| Coordinate type order: `INTEGER32` < `FLOAT32`
-
-| `VECTOR<INTEGER8>`
-| `VECTOR(3)`
-| A < B
-| Coordinate type defined and no dimension < dimension defined and no coordinate type
-
-| `VECTOR<INTEGER64>(123456)`
-| `VECTOR<FLOAT32>(3)`
-| A < B
-| Coordinate type order: `INTEGER64` < `FLOAT32`, compare coordinate type first.
-
-| `VECTOR<FLOAT64>(1234)`
-| `VECTOR<FLOAT32>(1234)`
-| B < A
-| Coordinate type order: `FLOAT32` < `FLOAT64`
-
-| `VECTOR<FLOAT32>([1, 2])`
-| `VECTOR<FLOAT32>([2, 1])`
-| A < B
-| Same coordinate type and dimension, pairwise value comparison.
-
-| `VECTOR<INTEGER16>(1234)`
-| `LIST<INTEGER>`
-| A < B
-| `VECTOR` values are ordered before `LIST` values
-
-|===
-
-== Vector normalization 
-
-A `VECTOR` without a coordinate type or dimension encompasses any other `VECTOR`.
-A `VECTOR` with a coordinate type but no dimension encompasses a vector with the same coordinate type and a defined dimension. A VECTOR with a dimension but no coordinate type encompasses a vector with the same dimension and any coordinate type. Vectors cannot be normalized together if their coordinate types differ, or if their dimensions differ.
+`VECTOR` is a considered a supertype of which all combinations of `VECTOR<TYPE>(DIMENSION)` are a part.
+This logic continues for `VECTOR` types that define only a coordinate type or a dimension.
+A  `VECTOR` with only a defined dimension is a supertype of all `VECTOR` values of that dimension regardless of the coordinate type.
+For example, `VECTOR(4)` is a supertype of `VECTOR<FLOAT>(4)` and `VECTOR<INT8>(4)`.
+Similarly, a `VECTOR` with only a defined coordinate type is a supertype of all `VECTOR` values with that coordinate type regardless of the dimension.
+For example, `VECTOR<INT>` is a supertype of `VECTOR<INT>(3)` and `VECTOR<INT>(1024)`.
+All of these supertypes can be used in xref:expressions/predicates/type-predicate-expressions.adoc#type-predicate-vector[type predicate expressions] to verify `VECTOR` type values.
 
 [[construct-vector-values]]
-== Construct vector values
+== Construct VECTOR values
 
 To construct a `VECTOR` value, use the xref:functions/vector.adoc#functions-vector[`vector()`] function.
 
@@ -165,53 +106,16 @@ RETURN vector, valueType(vector) AS vectorType
 2+d|Rows: 1
 |===
 
-[[calculate-vector-size]]
-== Calculate vector size
-
-To calculate the size (i.e. the number of dimensions) of a `VECTOR` value, use either the xref:functions/scalar.adoc#functions-size[`size()`] function or the xref:functions/vector.adoc#functions-vector_dimension_count[`vector_dimension_count()`] function.footnote:[`size()` can calculate the sizes of non-`VECTOR` values. `vector_dimension_count()` will throw an error for any non-`VECTOR` values.]
-
-.Calculate `VECTOR` size with `size()`
-[source, cypher]
-----
-RETURN size(vector([1, 2, 3], 3, INTEGER)) AS size
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| size
-
-| 3
-
-1+d|Rows: 1
-|===
-
-.Calculate `VECTOR` size with `vector_dimension_count()`
-[source, cypher]
-----
-RETURN vector_dimension_count(vector([1, 2, 3], 3, INTEGER)) AS size
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| size
-
-| 3
-
-1+d|Rows: 1
-|===
-
 [role=label--enterprise-edition]
 [[store-vector-properties]]
-== Store vector values as properties
+== Store VECTOR values as properties
 
 To store a `VECTOR` value as a node or relationship property, use the `vector()` function together with a write clause.
 
 .Create a node and assign a `VECTOR` property
 [source, cypher]
 ----
-CREATE (n:Label {vectorProp = vector([1,2,3], 3, INTEGER))
+CREATE (n:Label {vectorProp = vector([1,2,3], 3, INTEGER)})
 RETURN n.vectorProp AS vectorProp
 ----
 
@@ -252,12 +156,13 @@ RETURN n.vectorProp AS vectorProp
 |===
 
 [[genai-plugin-vector-indexes]]
-== Vector values, the GenAI plugin, and vector indexes
+== VECTOR values, the GenAI plugin, and vector indexes
 
 Neo4j previously stored vector embeddings as `LIST<FLOAT64>` property values.
-Storing vectors embeddings as `VECTOR` property values with a specified dimension and coordinate type allows for a more efficient storage of embeddings.
+Storing vectors embeddings as `VECTOR` property values with a defined coordinate type enables more efficient storage.
+For example, using a `FLOAT32` coordinate type for a `VECTOR` can reduce storage requirements by half compared to `FLOAT64`.
 
-For information about how to store embeddings generated by Neo4j xref:genai-integrations.adoc[GenAI plugin] see:
+For information about how to store embeddings generated by Neo4j as `VECTOR` values xref:genai-integrations.adoc[GenAI plugin] see:
 
 * xref:genai-integrations.adoc#store-single-embedding-vector[Store a single embedding as a `VECTOR` property]
 * xref:genai-integrations.adoc#store-multiple-embeddings-vector[Store multiple embeddings as a `VECTOR` properties]
@@ -267,3 +172,116 @@ The GenAI plugin requires an account and API credentials from a supported GenAI 
 For more information, see xref:genai-integrations.adoc#ai-providers[AI providers].
 
 Embeddings stored as `VECTOR` property values can be indexed and searched semantically using a xref:indexes/semantic-indexes/vector-indexes.adoc[vector index].
+
+
+[[vector-type-normalization]]
+== VECTOR type normalization 
+
+Cypher runs a normalization algorithm on all `VECTOR` types, converting them into a consistent, deterministic form for equivalent types.
+The following rules apply to `VECTOR` normalization:
+
+* A `VECTOR` type without a defined coordinate type or dimension encompasses all others.
+* A `VECTOR` type with a defined coordinate type but no dimension encompasses `VECTOR` types with the same coordinate type and any dimension.
+* A `VECTOR` with a defined dimension but no coordinate type encompasses `VECTOR` types with the same dimension and any coordinate type.
+* `VECTOR` types with different coordinate types or dimensions cannot be normalized.
+
+.`VECTOR` type normalization
+[cols="3,3,5", options="header"]
+|===
+| Compared types |Normalized Result |Reason
+
+|`VECTOR \| VECTOR<FLOAT32>(12345)`
+|`VECTOR`
+|`VECTOR` is the supertype and encompasses all others.
+
+|`VECTOR<FLOAT32> \| VECTOR(12345)`
+|`VECTOR<FLOAT32> \| VECTOR(12345)`
+|Cannot be normalized — one lacks a dimension, the other lacks a type.
+
+|`VECTOR<FLOAT32> \| VECTOR<FLOAT32>(12345)`
+|`VECTOR<FLOAT32>`
+|Same type, one without dimension encompasses the other.
+
+|`VECTOR(12345) \| VECTOR<FLOAT32>(12345)`
+|`VECTOR(12345)`
+|Same dimension, one without type encompasses the other.
+
+|`VECTOR<FLOAT32> \| VECTOR<INTEGER64>`
+|`VECTOR<FLOAT32> \| VECTOR<INTEGER64>`
+|Cannot be normalized — coordinate types differ.
+
+|`VECTOR(1234) \| VECTOR(12345)`
+|`VECTOR(1234) \| VECTOR(12345)`
+|Cannot be normalized — dimensions differ.
+
+|`VECTOR<FLOAT32>(1234) \| VECTOR<FLOAT64>(1234)`
+|`VECTOR<FLOAT32>(1234) \| VECTOR<FLOAT64>(1234)`
+|Cannot be normalized — types differ, even if dimensions match.
+|===
+
+For normalization of other types, see xref:values-and-types/property-structural-constructed.adoc#type-normalization[Property, structural, and constructed values -> Type normalization].
+
+[[ordering-vector-types]]
+== Ordering VECTOR types
+
+The `VECTOR` supertypes are ordered ascendingly from the most general to the more specific forms:
+
+* `VECTOR`
+* `VECTOR<TYPE>`
+* `VECTOR(DIMENSION)`
+
+`VECTOR` types with both a defined coordinate type and dimension are ordered according to the ordering of the vector coordinate types, listed in ascending order below:
+
+* `INTEGER8`
+* `INTEGER16`
+* `INTEGER32`
+* `INTEGER64`
+* `FLOAT32`
+* `FLOAT64`
+
+Within the same coordinate type, `VECTOR` types are ordered by their dimension, with smaller values first.
+`VECTOR` types of the same coordinate type and dimension are then ordered pairwise.
+
+.Ordering rules for `VECTOR` values
+[cols="3,3,2,6", options="header"]
+|===
+| A | B | Ordered As | Reason
+
+| `VECTOR<FLOAT32>(12345)`
+| `VECTOR<FLOAT32>(123456)`
+| A < B
+| Same coordinate type, compare by dimension ascending.
+
+| `VECTOR<INTEGER32>(1234)`
+| `VECTOR<FLOAT32>(1234)`
+| A < B
+| Coordinate type order: `INTEGER32` < `FLOAT32`
+
+| `VECTOR<INTEGER8>`
+| `VECTOR(3)`
+| A < B
+| Coordinate type defined and no dimension < dimension defined and no coordinate type
+
+| `VECTOR<INTEGER64>(123456)`
+| `VECTOR<FLOAT32>(3)`
+| A < B
+| Coordinate type order: `INTEGER64` < `FLOAT32`, compare coordinate type first.
+
+| `VECTOR<FLOAT64>(1234)`
+| `VECTOR<FLOAT32>(1234)`
+| B < A
+| Coordinate type order: `FLOAT32` < `FLOAT64`
+
+| `VECTOR<FLOAT32>([1, 2])`
+| `VECTOR<FLOAT32>([2, 1])`
+| A < B
+| Same coordinate type and dimension, pairwise value comparison.
+
+| `VECTOR<INTEGER16>(1234)`
+| `LIST<INTEGER>`
+| A < B
+| `VECTOR` values are ordered before `LIST` values
+
+|===
+
+For the ordering of other types, see xref:values-and-types/ordering-equality-comparison.adoc#ordering-and-comparison[Equality, ordering, and comparison of value types -> Ordering and comparison of values].
