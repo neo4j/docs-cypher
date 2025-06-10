@@ -1067,6 +1067,29 @@ The result shows that all transactions are now successful:
 +-------------------------------------------------+
 ----
 
+However, deadlock resolution and retrying of transactions takes time, so the best practice is to avoid deadlocks in the first place.
+This can be done by splitting up the subquery into a data-independent subquery that can be run in parallel with maximum concurrency,
+and a data-dependent subquery that is run serially to avoid deadlocks.
+In this example nodes and properties are created in a concurrent subquery, while the relationships are then created in a serial subquery.
+This way we can benefit from the performance of concurrent transactions while avoiding the deadlocks that slow down the overall performance.
+
+.Query splitting up the transactional subquery in a data-independent concurrent subquery followed by a data-dependent serial subquery to avoid deadlocks
+// tag::subqueries_in_transactions_deadlock_example_2[]
+[source, cypher]
+----
+LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/movies.csv' AS row
+CALL (row) {
+   MERGE (m:Movie {movieId: row.movieId})
+   MERGE (y:Year {year: row.year})
+   RETURN m, y
+} IN CONCURRENT TRANSACTIONS OF 10 ROWS ON ERROR RETRY FOR 3 SECONDS THEN CONTINUE REPORT STATUS AS nodeStatus
+CALL (m, y) {
+   MERGE (m)-[r:RELEASED_IN]->(y)
+} IN TRANSACTIONS OF 10 ROWS ON ERROR RETRY FOR 3 SECONDS THEN CONTINUE REPORT STATUS AS relationshipStatus
+RETURN nodeStatus.transactionID as nodeTransaction, nodeStatus.committed AS successfulNodeTransaction,
+       relationshipStatus.transactionID as relationshipTransaction, relationshipStatus.committed AS successfulRelationshipTransaction
+----
+// end::subqueries_in_transactions_deadlock_example_2[]
 
 .Click to see an example of failed transactions being retried without using `ON ERROR RETRY`
 [%collapsible]
