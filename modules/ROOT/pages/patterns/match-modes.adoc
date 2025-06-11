@@ -1,0 +1,244 @@
+:description: Information about Cypher's different match modes, which determine whether relationships can appear more than once in a graph pattern match.
+:table-caption!:
+= Match modes
+
+Match modes determine whether relationships can appear more than once in a graph pattern match.
+Cypher offers two match modes:
+
+* xref:patterns/match-modes.adoc#different-relationships[`DIFFERENT RELATIONSHIPS`]: a relationship can only be traversed once in a given match for a graph pattern.
+The same restriction does not hold for nodes, which may be re-traversed any number of times in a matched path.
+This is Cypher’s default match mode, applicable to most use cases.
+* xref:patterns/match-modes.adoc#repeatable-elements[`REPEATABLE ELEMENTS`]: no restrictions on how often nodes and relationships can be traversed in a match for a graph pattern.
+This match mode is required in order for paths to be able to traverse a relationship more than once. label:new[Introduced in Neo4j 2025.xx]
+
+[[example-graph]]
+== Example graph
+
+To explain match modes, this page will use the scenario of the link:https://en.wikipedia.org/wiki/Seven_Bridges_of_K%C3%B6nigsberg[seven bridges of Königsberg], a problem studied by link:https://en.wikipedia.org/wiki/Leonhard_Euler[Leonhard Euler] in 1736 to determine if one could cross all seven bridges of Königsberg exactly once and return to the same starting location.
+
+To recreate the graph, run the following query against an empty Neo4j database:
+
+[source, cypher, role=test-setup]
+----
+CREATE (kneiphof:Location {name: "Kneiphof"}),
+       (northBank:Location {name: "North Bank"}),
+       (southBank:Location {name: "South Bank"}),
+       (lomse:Location {name: "Lomse"}),
+
+       (kneiphof)-[:BRIDGE {id: 1}]->(northBank),
+       (kneiphof)-[:BRIDGE {id: 6}]->(southBank),
+       (kneiphof)-[:BRIDGE {id: 7}]->(lomse),
+       (northBank)-[:BRIDGE {id: 5}]->(kneiphof),
+       (northBank)-[:BRIDGE {id: 2}]->(lomse),
+       (southBank)-[:BRIDGE {id: 4}]->(kneiphof),
+       (southBank)-[:BRIDGE {id: 3}]->(lomse)
+----
+
+[[different-relationships]]
+== DIFFERENT RELATIONSHIPS
+
+The `DIFFERENT RELATIONSHIPS` match mode ensures that a relationship can only occur once for a given xref:clauses/match.adoc[`MATCH`] result, regardless of the direction it is traversed in.
+The same restriction does not apply to nodes, which may be re-traversed any number of times in a match.
+As such, `DIFFERENT RELATIONSHIPS` is ideal to showcase the Königsberg bridges problem: in the graph model, not traversing a relationship means not traversing a bridge, the problem’s key constraint.
+
+`DIFFERENT RELATIONSHIPS` is the default match mode Cypher.
+That is, if no match mode is selected, Cypher will default to solve graph patterns according to the restrictions imposed by `DIFFERENT RELATIONSHIPS`.
+
+[NOTE]
+The `DIFFERENT RELATIONSHIPS` keyword was released in Neo4j 2025.xx and can be used to explicitly specify Cypher's default match mode after `MATCH`.
+For example, `MATCH DIFFERENT RELATIONSHIPS p = (start)--{,2}(end)`.
+This is functionally equivalent to not specifying a match mode.
+
+To show the behavior of `DIFFERENT RELATIONSHIPS`, consider the following query, which uses a xref:patterns/variable-length-patterns.adoc#quantified-relationships[quantified relationship] to search for paths exactly `5` hops away from the start `Location` node, `Kneiphof`.
+The relationships used in this query are directional, meaning paths are traversed following specific directions for each bridge (`-\->`). 
+
+.Find paths with a length of 5 relationships from a start node
+[source, cypher]
+----
+MATCH p = (:Location {name: 'Kneiphof'})-[:BRIDGE]->{5}()
+RETURN [n IN nodes(p) | n.name] AS locations, 
+       [r IN relationships(p) | r.id] AS crossedBridges // <1>
+----
+
+<1>  xref:expressions/list-expressions.adoc#list-comprehension[list comprehensions] iterating over nodes and relationships in a path and returning specific properties (the `name` property from nodes, and `id` from relationships).
+
+As the results show, a node may be traversed several times in the same path, but a relationship (bridge) is never re-traversed.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| locations | crossedBridges 
+
+| ["Kneiphof", "North Bank", "Kneiphof", "South Bank", "Kneiphof", "Lomse"]
+| [1, 5, 6, 4, 7]
+
+| ["Kneiphof", "South Bank", "Kneiphof", "North Bank", "Kneiphof", "Lomse"] 
+| [6, 4, 1, 5, 7]
+
+2+d|Rows: 2
+|===
+
+In the next example, the direction is removed from the pattern, and the path length is increased to `6`.
+It shows that there are 48 valid paths with this length, where no relationships (bridges) are re-traversed, and the query returns one of those paths as a `samplePath`, showing both the nodes and relationships traversed therein.
+
+.Find paths with a length of 6 relationships from a start node
+[source, cypher]
+----
+MATCH p = (:Location {name: 'Kneiphof'})-[:BRIDGE]-{6}()
+WITH count(p) AS pathCount, collect(p)[0] AS samplePath // <1>
+ORDER BY pathCount
+RETURN pathCount, 
+       [n IN nodes(samplePath) | n.name] AS samplePathLocations,
+       [r IN relationships(samplePath) | r.id] AS samplePathBridges
+----
+
+<1> The xref:functions/list.adoc#functions-collect[`collect()`] function collects all paths and `[0]` takes the first entry as the `samplePath`.
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| pathCount | samplePathLocations | samplePathBridges
+
+| 48
+| ["Kneiphof", "North Bank", "Kneiphof", "South Bank", "Kneiphof", "Lomse", "North Bank"]
+| [1, 5, 6, 4, 7, 2]
+
+3+d|Rows: 1
+|===
+
+
+However, if the relationship count is increased to `7`, `0` paths are returned.
+
+.Find paths with a length of 7 relationships from a start node
+[source, cypher]
+----
+MATCH p = (:Location {name: 'Kneiphof'})--{7}()
+RETURN count(p) AS pathCount
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| pathCount
+
+| 0
+
+1+d|Rows: 1
+|===
+
+In the `DIFFERENT RELATIONSHIPS` match mode, each step must use a unique bridge.
+After the first step, one bridge is used, leaving 6 remaining bridges to be used in the subsequent steps.
+Once all 6 remaining bridges are traversed, a 7th step would require re-traversing a bridge, which is not allowed. 
+
+This reflects the conclusion of Euler’s seven bridges of Königsberg problem: the impossibility of crossing each bridge exactly once and returning to the same starting point.
+The below query demonstrates this impossibility.
+More specifically, it tries to find a path where each bridge is crossed exactly once with a length of `7` relationships, starting and ending at the same `Location`, `Kneiphof`.
+
+.Find a path traversing all 7 bridges once before returning to the starting `Location`
+[source, cypher]
+----
+MATCH p = (start:Location {name: 'Kneiphof'})-[:BRIDGE]-{7}(start)
+WHERE all(bridge IN range(1,7) WHERE bridge IN [r IN relationships(p) | r.id]) //<1>
+WITH p ORDER BY length(p) LIMIT 1
+RETURN [n IN nodes(p) | n.name] AS visitedLocations,
+       [r IN relationships(p) | r.id] AS crossedBridges
+----
+
+<1> The xref:functions/predicate.adoc#functions-all[`all()`] function ensures that each bridge must be traversed once in the path.
+
+.Result
+[source]
+----
+(no results)
+----
+
+No results are returned because, when using the DIFFERENT RELATIONSHIPS match mode, it is impossible to traverse all 7 relationships once without any re-traversals, which is not allowed.
+
+For more information about this match mode, see xref:patterns/reference.adoc#match-modes-rules-different-relationships[Syntax & semantics -> `DIFFERENT RELATIONSHIPS`].
+
+[role=label--new-2025.xx]
+[[repeatable-elements]]
+== REPEATABLE ELEMENTS
+
+The `REPEATABLE ELEMENTS` match mode ensures that there are no restrictions on how many times a node or relationship can occur for a given `MATCH` result.
+In so doing, the `REPEATABLE ELEMENTS` match mode does not solve the impossibility of crossing every bridge in Köningsberg exactly once and returning to the starting location.
+However, the ability to re-traverse relationships does allow Cypher to return paths when testing Euler’s hypothesis.
+
+[NOTE]
+Queries utilizing this match mode must specify the `REPEATABLE ELEMENTS` keyword after the MATCH.
+
+The following example re-runs the above query, matching paths where each Königsberg bridge is crossed before returning the starting location
+However, this time the query uses the match mode `REPEATABLE ELEMENTS`.
+
+.Find a path traversing all 7 bridges at least once before returning to the starting `Location` using `REPEATABLE ELEMENTS`
+[source, cypher]
+----
+MATCH REPEATABLE ELEMENTS p = (start:Location {name: 'Kneiphof'})-[:BRIDGE]-{,9}(start) // <1>
+WHERE all(bridge IN range(1,7) WHERE bridge IN [r IN relationships(p) | r.id]) 
+WITH p ORDER BY length(p) LIMIT 1
+RETURN [n IN nodes(p) | n.name] AS visitedLocations,
+     [r IN relationships(p) | r.id] AS crossedBridges
+----
+
+<1> Paths with a length of less than 9 relationships return no results because they do not allow enough moves to traverse all seven bridges at least once while forming a cycle back to Kneiphof.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| visitedLocations | crossedBridges
+
+| ["Kneiphof", "South Bank", "Kneiphof", "South Bank", "Lomse", "Kneiphof", "North Bank", "Lomse", "North Bank", "Kneiphof"]
+| [4, 6, 4, 3, 7, 5, 2, 2, 1]
+
+2+d|Rows: 1
+|===
+
+The query now returns solutions, and the order of the bridges traversed in the path returned demonstrates that bridges `2` and `4` were crossed twice in order to return to `Kneiphof`. 
+
+For more information about this match mode, see xref:patterns/reference.adoc#match-modes-rules-repeatable-elements[Syntax and semantics -> `REPEATABLE ELEMENTS`].
+
+[[bounded-path-length]]
+=== Bounded path length
+
+When using `DIFFERENT RELATIONSHIPS`, the number of returned paths is limited because relationships cannot be re-traversed.
+However, because `REPEATABLE ELEMENTS` allows for re-traversing relationships, it enables full cycle re-traversals and paths that can double back on relationships.
+As a result, `REPEATABLE ELEMENTS` can generate a very large, or even infinite, number of valid paths.
+
+Modifying the query testing Euler’s hypothesis using `REPEATABLE ELEMENTS` to instead count the total number of paths satisfying the condition of crossing every bridge at least once before returning to `Kneiphof` within `9` hops reveals a total of `1152` such paths.
+
+.Count the paths traversing all 7 bridges at least once using `REPEATABLE ELEMENTS`
+[source, cypher]
+----
+MATCH REPEATABLE ELEMENTS p = (start:Location {name: 'Kneiphof'})-[:BRIDGE]-{,9}(start)
+WHERE all(bridge IN range(1,7) WHERE bridge IN [r IN relationships(p) | r.id]) 
+RETURN count(p) AS pathCount
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| pathCount
+
+| 1152
+
+1+d|Rows: 1
+|===
+
+If the path length is increased to exactly `10`, a total of `5580` paths are returned, `11` returns `54144`, `12` returns `229824`, and so on, without limit.
+
+To ensure that a `MATCH` will return a finite number of solutions in a finite amount of time, xref:patterns/reference.adoc#quantifiers-rules#quantifiers-rules[unbounded quantifiers] that do not impose an upper bound on a pattern, such as `*`, `+`, or `{1,}` are not allowed in combination with `REPEATABLE ELEMENTS`.
+Also, users should take into account that the number of results returned for a high number of repetitions can significantly impact both memory usage and the speed of the query.
+
+.Not allowed: Find paths of an unbounded length using  REPEATABLE ELEMENTS
+[source, cypher, role=test-fail]
+----
+MATCH REPEATABLE ELEMENTS p = (start:Location {name: 'Kneiphof'})-[:BRIDGE]-+(start)
+WHERE all(bridge IN range(1,7) WHERE bridge IN [r IN relationships(p) | r.id]) 
+RETURN count(p) AS pathCount
+----
+
+.Error message
+[source, error]
+----
+The quantified path pattern may yield an infinite number of rows under match mode 'REPEATABLE ELEMENTS'. Add an upper bound to the quantified path pattern.
+----
