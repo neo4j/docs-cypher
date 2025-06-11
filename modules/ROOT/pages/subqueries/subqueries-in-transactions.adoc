@@ -959,7 +959,7 @@ CALL (row) {
    MERGE (y:Year {year: row.year})
    MERGE (m)-[r:RELEASED_IN]->(y)
 } IN 2 CONCURRENT TRANSACTIONS OF 10 ROWS ON ERROR RETRY FOR 3 SECONDS THEN CONTINUE REPORT STATUS AS status
-RETURN status.transactionID as transaction, status.committed AS successfulTransaction
+RETURN status.transactionId as transaction, status.committed AS successfulTransaction
 ----
 // end::subqueries_in_transactions_deadlock_example[]
 
@@ -1067,6 +1067,30 @@ The result shows that all transactions are now successful:
 +-------------------------------------------------+
 ----
 
+Deadlock resolution and transaction retries are time-consuming, making deadlock avoidance a preferred strategy.
+This can be achieved by dividing a task into two distinct subqueries: a data-independent subquery run in parallel with maximum concurrency, and a data-dependent subquery executed serially (i.e.  one transaction at a time) to avoid deadlocks.
+In the below example, nodes and properties are created in a concurrent subquery, while the relationships connecting those nodes are created in a serial subquery.
+This method benefits from the performance of concurrent transactions while avoiding deadlocks.
+
+.Avoiding deadlocks by dividing an import task into a data-independent concurrent subquery followed by a data-dependent serial subquery
+// tag::subqueries_in_transactions_deadlock_example_2[]
+[source, cypher]
+----
+LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/movies.csv' AS row
+CALL (row) {
+   MERGE (m:Movie {movieId: row.movieId})
+   MERGE (y:Year {year: row.year})
+   RETURN m, y
+} IN CONCURRENT TRANSACTIONS OF 10 ROWS ON ERROR RETRY THEN CONTINUE REPORT STATUS AS nodeStatus
+CALL (m, y) {
+   MERGE (m)-[r:RELEASED_IN]->(y)
+} IN TRANSACTIONS OF 10 ROWS ON ERROR RETRY THEN CONTINUE REPORT STATUS AS relationshipStatus
+RETURN nodeStatus.transactionId as nodeTransaction,
+       nodeStatus.committed AS successfulNodeTransaction,
+       relationshipStatus.transactionId as relationshipTransaction,
+       relationshipStatus.committed AS successfulRelationshipTransaction
+----
+// end::subqueries_in_transactions_deadlock_example_2[]
 
 .Click to see an example of failed transactions being retried without using `ON ERROR RETRY`
 [%collapsible]
