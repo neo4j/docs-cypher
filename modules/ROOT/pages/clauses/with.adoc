@@ -10,14 +10,17 @@ The `WITH` clause serves multiple purposes in Cypher:
 * xref:clauses/with.adoc#bind-values-to-variables[Bind the results of expressions to new variables]
 * xref:clauses/with.adoc#aggregations[Perform aggregations]
 * xref:clauses/with.adoc#remove-duplicate-values[Remove duplicate values]
-* xref:clauses/with.adoc#ordering-and-pagination[Order and paginate results]
+* xref:clauses/with.adoc#ordering-pagination[Order and paginate results]
 * xref:clauses/with.adoc#filter-results[Filter results]
+
+[IMPORTANT]
+As of Cypher 25, `WITH` is no longer required as a separator between a write and a read clause.
 
 [[example-graph]]
 == Example graph
 A graph with the following schema is used for the examples below:
 
-image::with_clause.svg[width="600",role="middle"]
+image::with-graph.svg[Example graph connecting suppliers, products, and customers,width=600,role=popup]
 
 To recreate the graph, run the following query against an empty Neo4j database.
 
@@ -84,21 +87,23 @@ RETURN list
 1+d|Rows: 1
 |===
 
-In the below example, the `WITH` clause binds all matched `Customer` nodes to a new variable, `chocolateCustomers`.
+In the below example, the `WITH` clause binds all matched `Customer` nodes to a new variable, `customers`.
 The bound nodes are `MAP` values which can then be referenced from the new variable.
 
 .Create a new variable bound to matched nodes
+// tag::clauses_with_new_variable[]
 [source, cypher]
 ----
 MATCH (c:Customer)-[:BUYS]->(:Product {name: 'Chocolate'})
-WITH c AS customer
-RETURN customer.firstName AS chocolateCustomer
+WITH c AS customers
+RETURN customers.firstName AS chocolateCustomers
 ----
+// end::clauses_with_new_variable[]
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
-| chocolateCustomer
+| chocolateCustomers
 
 | "Amir"
 | "Mateo"
@@ -136,6 +141,7 @@ Variable `p` not defined
 ----
 
 .Retain all variables with `WITH *`
+// tag::clauses_with_all_variables[]
 [source, cypher]
 ----
 MATCH (supplier:Supplier)-[r]->(product:Product)
@@ -144,6 +150,7 @@ RETURN supplier.name AS company,
        type(r) AS relType,
        product.name AS product
 ----
+// end::clauses_with_all_variables[]
 
 .Result
 [role="queryresult",options="header,footer",cols="3*<m"]
@@ -165,6 +172,7 @@ More specifically, a variable imported into a `CALL` subquery will be available 
 In the below example, the `x` variable is imported to the inside scope of a `CALL` subquery, and is successfully referenced  by the `RETURN` clause even though the preceding `WITH` neglects to list it.
 
 .Variables cannot be de-scoped in the inner scope of a subquery
+// tag::clauses_with_subquery[]
 [source, cypher]
 ----
 WITH 11 AS x
@@ -175,6 +183,7 @@ CALL (x) {
 }
 RETURN x, a
 ----
+// end::clauses_with_subquery[]
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -196,6 +205,7 @@ For more information, see xref:subqueries/call-subquery.adoc#import-variables[`C
 In the below query, the value of the xref:expressions/string-operators.adoc[`STRING` concatenation] expression is bound to a new variable `customerFullName`, and the value from the expression `chocolate.price * (1 - customer.discount)` is bound to `chocolateNetPrice`, both of which are then available in the `RETURN` clause.
 
 .Bind values to variables
+// tag::clauses_with_bind_values[]
 [source, cypher]
 ----
 MATCH (customer:Customer)-[:BUYS]->(chocolate:Product {name: 'Chocolate'})
@@ -204,6 +214,7 @@ WITH customer.firstName || ' ' || customer.lastName AS customerFullName,
 RETURN customerFullName,
        chocolateNetPrice
 ----
+// end::clauses_with_bind_values[]
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -220,6 +231,7 @@ RETURN customerFullName,
 Because `WITH` can be used to assign variables to the values of expressions, it can be used to chain expressions.
 
 .Chain expressions using `WITH`
+// tag::clauses_with_chain_expressions[]
 [source, cypher]
 ----
 MATCH (p:Product)
@@ -236,17 +248,18 @@ RETURN p.name AS product,
        discountCategory
 ORDER BY price
 ----
+// end::clauses_with_chain_expressions[]
 
 .Result
 [role="queryresult",options="header,footer", cols="4*<m"]
 |===
 | product | price | isAffordable | discountCategory
 
-| "Chocolate" | 5 | TRUE | 'Budget'
-| "Coffee" | 10 | TRUE | 'Budget'
-| "Headphones" | 250 | TRUE | 'Budget'
-| "Phone" | 500   | FALSE | 'High-end'
-| "Laptop" | 1000  | FALSE | 'High-end'
+| "Chocolate" | 5 | true | 'Budget'
+| "Coffee" | 10 | true | 'Budget'
+| "Headphones" | 250 | true | 'Budget'
+| "Phone" | 500   | false | 'High-end'
+| "Laptop" | 1000  | false | 'High-end'
 
 4+d|Rows: 5
 |===
@@ -263,6 +276,7 @@ In this example, the xref:functions/aggregating.adoc#functions-sum[`sum()`] func
 The xref:functions/aggregating.adoc#functions-collect[`collect()`] function is used to collect each product into  `LIST` values bound to the `productsBought` variable.
 
 .`WITH` performing aggregations
+// tag::clauses_with_aggregations[]
 [source, cypher]
 ----
 MATCH (c:Customer)-[:BUYS]->(p:Product)
@@ -274,6 +288,8 @@ RETURN customer,
        productsBought
 ORDER BY totalSpent DESC
 ----
+// end::clauses_with_aggregations[]
+
 
 .Result
 [role="queryresult",options="header,footer", cols="3*<m"]
@@ -299,6 +315,7 @@ ORDER BY totalSpent DESC
 In the below query, `WITH DISTINCT` is used to remove any duplicate `discount` property values from `Customer` nodes.
 
 .`WITH DISTINCT` to remove duplicate values
+// tag::clauses_with_remove_duplicates[]
 [source, cypher]
 ----
 MATCH (c:Customer)
@@ -306,6 +323,7 @@ WITH DISTINCT c.discount AS discountRates
 RETURN discountRates
 ORDER BY discountRates
 ----
+// end::clauses_with_remove_duplicates[]
 
 .Result
 [role="queryresult",options="header,footer", cols="1*<m"]
@@ -391,6 +409,7 @@ In the next example, `LIMIT` is used to only retain the top 3 customers with the
 Then, the xref:clauses/set.adoc[`SET`] assigns a new property (`topSpender = true`) to those customers who have spent the most.
 
 .Limit results with `LIMIT`
+// tag::clauses_with_ordering_pagination[]
 [source, cypher]
 ----
 MATCH (c:Customer)-[:BUYS]->(p:Product)
@@ -403,14 +422,15 @@ RETURN c.firstName AS customer,
        totalSpent,
        c.topSpender AS topSpender
 ----
+// end::clauses_with_ordering_pagination[]
 
 [role="queryresult",options="header,footer", cols="3*<m"]
 |===
 | customer | totalSpent | topSpender
 
-| "Mateo" | 1015 | TRUE
-| "Amir"  | 1005 | TRUE
-| "Yusuf" | 1005 | TRUE
+| "Mateo" | 1015 | true
+| "Amir"  | 1005 | true
+| "Yusuf" | 1005 | true
 
 3+d|Rows: 3
 |===
@@ -436,10 +456,10 @@ RETURN c.firstName AS customer,
 |===
 | customer | totalSpent | topSpender
 
-| "Leila" | 1000 | FALSE
-| "Niko" | 760 | FALSE
-| "Hannah" | 260 | FALSE
-| "Keisha" | 250 | FALSE
+| "Leila" | 1000 | false
+| "Niko" | 760 | false
+| "Hannah" | 260 | false
+| "Keisha" | 250 | false
 
 3+d|Rows: 4
 |===
@@ -505,6 +525,7 @@ In the below query, `WITH` and `WHERE` are used to filter out any `Supplier` nod
 Note the use of `DISTINCT` inside `collect()` to remove any duplicate `Customer` nodes.
 
 .Filter property values using `WITH` and `WHERE`
+// tag::clauses_with_filtering[]
 [source, cypher]
 ----
 MATCH (s:Supplier)-[:SUPPLIES]->(p:Product)<-[:BUYS]-(c:Customer)
@@ -516,6 +537,7 @@ RETURN s.name AS supplier,
        totalSales,
        uniqueCustomers
 ----
+// end::clauses_with_filtering[]
 
 [role="queryresult",options="header,footer", cols="3*<m"]
 |===

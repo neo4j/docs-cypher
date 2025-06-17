@@ -1,5 +1,5 @@
 :description: Information about creating, querying, and deleting vector indexes with Cypher.
-:test-setup-dump: https://github.com/neo4j-graph-examples/recommendations/raw/main/data/recommendations-embeddings-50.dump
+:test-setup-dump: https://github.com/neo4j-graph-examples/recommendations/raw/main/data/recommendations-embeddings-25.dump
 :l2-norm: image:l2.svg["l2"]-norm
 include::https://raw.githubusercontent.com/neo4j-graphacademy/courses/main/asciidoc/courses/llm-vectors-unstructured/ad.adoc[]
 
@@ -22,7 +22,7 @@ For more information, see link:http://dx.doi.org/10.1109/TPAMI.2018.2889473[Effi
 The examples on this page use the link:https://github.com/neo4j-graph-examples/recommendations[Neo4j movie recommendations] dataset, focusing on the `plot` and `embedding` properties of `Movie` nodes.
 The `embedding` property consists of a 1536-dimension vector embedding of the `plot` and `title` property combined.
 
-image::vector_index_graph.svg[width="600",role="middle"]
+image::vector-index-graph.svg[Graph example connecting movie to person nodes via acted in and directed relationships,width=500,role=popup]
 
 The graph contains 28863 nodes and 332522 relationships.
 
@@ -68,10 +68,8 @@ A vector index allows you to retrieve a neighborhood of nodes or relationships b
 
 A vector index is a single-label, single-property index for nodes or a single-relationship-type, single-property index for relationships.
 It can be used to index nodes or relationships by `LIST<INTEGER | FLOAT>` properties valid to the dimensions and vector similarity function of the index.
-Note that the available vector index providers (`vector-2.0` (default) and `vector-1.0` (deprecated)) support different index schemas, property value types, and vector dimensions.
-For more information, see xref:indexes/semantic-indexes/vector-indexes.adoc#vector-index-providers[].
 
-A vector index is created by using the `CREATE VECTOR INDEX` command.
+A vector index is created by using the `CREATE VECTOR INDEX [index_name]` command.
 It is recommended to give the index a name when it is created.
 If no name is given when created, a random name will be assigned.
 The index name can also be given as a parameter: `CREATE VECTOR INDEX $name ...`.
@@ -182,7 +180,7 @@ Default value::: `100`
 [[query-vector-index]]
 == Query vector indexes
 
-To query a node vector index, use the link:{neo4j-docs-base-uri}/operations-manual/current/reference/procedures/#procedure_db_index_vector_queryNodes[`db.index.vector.queryNodes`] procedure.
+To query a node vector index, use the link:{neo4j-docs-base-uri}/operations-manual/current/procedures/#procedure_db_index_vector_querynodes[`db.index.vector.queryNodes`] procedure.
 
 [NOTE]
 An index cannot be used while its `state` is `POPULATING`, which occurs immediately after it is created.
@@ -228,7 +226,7 @@ Note that all movies returned have a plot centred around criminal family organiz
 The `score` results are  returned in _descending order_, where the best matching result entry is put first (in this case, `The Godfather` has a similarity score of `1.0`, which is to be expected as the index was queried with this specific property).
 If the query vector itself is not wanted, adding the predicate `WHERE score < 1` removes identical vectors.
 
-To query a relationship vector index, use the link:{neo4j-docs-base-uri}/operations-manual/current/reference/procedures/#procedure_db_index_vector_queryRelationships[`db.index.vector.queryRelationships`] procedure.
+To query a relationship vector index, use the link:{neo4j-docs-base-uri}/operations-manual/current/procedures/#procedure_db_index_vector_queryrelationships[`db.index.vector.queryRelationships`] procedure.
 
 .Signature for `db.index.vector.queryRelationships` 
 [source,syntax]
@@ -347,10 +345,8 @@ DROP INDEX moviePlots
 [[vector-index-providers]]
 == Vector index providers for compatibility
 
-As of Neo4j 5.18, the default index provider is `vector-2.0`.
-As of Neo4j 5.26, it is no longer possible to specify an index provider when creating indexes.
-Instead, Neo4j selects the most performant provider (currently `vector-2.0`).
-
+It is not possible to specify an index provider when creating indexes in Cypher 25.
+Instead, Neo4j selects the most performant provider (currently `vector-2.0` for vector indexes).
 Previously created `vector-1.0` indexes will continue to function.
 
 .Learn more about vector index provider differences
@@ -380,6 +376,10 @@ Single-type, single-property index for relationships.
 | Indexed vector dimension
 | `INTEGER` between `1` and `2048` _inclusive_.
 | `INTEGER` between `1` and `4096` _inclusive_.
+
+| Indexed vector quantization and hnsw settings
+| No support.
+| Supported.
 
 | xref:indexes/semantic-indexes/vector-indexes.adoc#similarity-functions[Cosine similarity vector validity]
 | All vector components can be represented finitely in IEEE 754 *_single_* precision.
@@ -444,7 +444,7 @@ However, an angle can be described in many units, sign conventions, and periods.
 The trigonometric cosine of this angle is both agnostic to the aforementioned angle conventions and bounded.
 Cosine similarity rebounds the trigonometric cosine.
 
-image::cosine_similarity_equation.svg["The cosine of vector v and vector u is defined as half of the quanity 1 plus the scalar product of v hat u hat, which equals half of the quantity 1 plus the scalar product of vector v vector u over the product of the l2-norm of vector v and the l2 norm ov vector u, which exists in the bounded set of real numbers between 0 inclusive and 1 inclusive."]
+image::cosine-similarity-equation.svg["The cosine of vector v and vector u is defined as half of the quanity 1 plus the scalar product of v hat u hat, which equals half of the quantity 1 plus the scalar product of vector v vector u over the product of the l2-norm of vector v and the l2 norm ov vector u, which exists in the bounded set of real numbers between 0 inclusive and 1 inclusive."]
 In the above equation the trigonometric cosine is given by the scalar product of the two unit vectors.
 ====
 
@@ -460,7 +460,7 @@ The measure is related to the Euclidean distance, i.e., how far two points are f
 However, that distance is unbounded and less useful as a similarity score.
 Euclidean similarity bounds the square of the Euclidean distance.
 
-image::euclidean_similarity_equation.svg["The Euclidean of vector v and vector u is defined as 1 over the quantity 1 plus the square of the l2-norm of vector v subtract vector u, which exists in the bounded set of real numbers between 0 exclusive and 1 inclusive."]
+image::euclidean-similarity-equation.svg["The Euclidean of vector v and vector u is defined as 1 over the quantity 1 plus the square of the l2-norm of vector v subtract vector u, which exists in the bounded set of real numbers between 0 exclusive and 1 inclusive."]
 ====
 
 [[procedures]]
@@ -470,32 +470,23 @@ image::euclidean_similarity_equation.svg["The Euclidean of vector v and vector u
 |===
 | Usage | Procedure | Description
 
-| Create node vector index.
-| link:{neo4j-docs-base-uri}/operations-manual/current/reference/procedures/#procedure_db_index_vector_createnodeindex[`db.index.vector.createNodeIndex`]
-| Create a vector index for the specified label and property with the given vector dimension using the given similarity function.
-Replaced by the `CREATE VECTOR INDEX` command.
-
 | Use node vector index.
-| link:{neo4j-docs-base-uri}/operations-manual/current/reference/procedures/#procedure_db_index_vector_queryNodes[`db.index.vector.queryNodes`]
+| link:{neo4j-docs-base-uri}/operations-manual/current/procedures/#procedure_db_index_vector_querynodes[`db.index.vector.queryNodes`]
 | Query the given node vector index.
 Returns the requested number of approximate nearest neighbor nodes and their similarity score, ordered by score.
 
 | Use relationship vector index.
-| link:{neo4j-docs-base-uri}/operations-manual/current/reference/procedures/#procedure_db_index_vector_queryRelationships[`db.index.vector.queryRelationships`]
+| link:{neo4j-docs-base-uri}/operations-manual/current/procedures/#procedure_db_index_vector_queryrelationships[`db.index.vector.queryRelationships`]
 | Query the given relationship vector index.
 Returns the requested number of approximate nearest neighbor relationships and their similarity score, ordered by score. 
 
 | Set node vector property.
-| link:{neo4j-docs-base-uri}/operations-manual/current/reference/procedures/#procedure_db_create_setNodeVectorProperty[`db.create.setNodeVectorProperty`]
-| Update a given node property with the given vector in a more space-efficient way than directly using xref:clauses/set.adoc#set-set-a-property[`SET`]. Replaces link:{neo4j-docs-base-uri}/operations-manual/current/reference/procedures/#procedure_db_create_setVectorProperty[`db.create.setVectorProperty`]. label:beta[] 
-
-| Set node vector property.
-| link:{neo4j-docs-base-uri}/operations-manual/current/reference/procedures/#procedure_db_create_setVectorProperty[`db.create.setVectorProperty`]
-| Replaced by link:{neo4j-docs-base-uri}/operations-manual/current/reference/procedures/#procedure_db_create_setNodeVectorProperty[`db.create.setNodeVectorProperty`]. label:deprecated[] label:beta[]
+| link:{neo4j-docs-base-uri}/operations-manual/current/procedures/#procedure_db_create_setnodevectorproperty[`db.create.setNodeVectorProperty`]
+| Update a given node property with the given vector in a more space-efficient way than directly using xref:clauses/set.adoc#set-set-a-property[`SET`].
 
 | Set relationship vector property.
-| link:{neo4j-docs-base-uri}/operations-manual/current/reference/procedures/#procedure_db_create_setRelationshipVectorProperty[`db.create.setRelationshipVectorProperty`]
-| Update a given relationship property with the given vector in a more space-efficient way than directly using xref:clauses/set.adoc#set-set-a-property[`SET`]. label:beta[] 
+| link:{neo4j-docs-base-uri}/operations-manual/current/procedures/#procedure_db_create_setrelationshipvectorproperty[`db.create.setRelationshipVectorProperty`]
+| Update a given relationship property with the given vector in a more space-efficient way than directly using xref:clauses/set.adoc#set-set-a-property[`SET`].
 
 |===
 
@@ -503,11 +494,8 @@ Returns the requested number of approximate nearest neighbor relationships and t
 == Limitations and known issues
 
 The vector index is no longer a beta feature.
-It does, however, still contain some limitations and known issues.
+It does, however, still contain some limitations:
 
-.*Limitations*
-[%collapsible]
-====
 * The query is an _approximate_ nearest neighbor search.
 The requested _k_ nearest neighbors may not be the exact _k_ nearest, but close within the same wider neighborhood.
 
@@ -517,18 +505,16 @@ The requested _k_ nearest neighbors may not be the exact _k_ nearest, but close 
 For example, you cannot have one xref:indexes/semantic-indexes/vector-indexes.adoc#similarity-functions[Euclidean] and one xref:indexes/semantic-indexes/vector-indexes.adoc#similarity-functions[cosine] vector index on the same label-property key pair.
 
 * Changes made within the same transaction are not visible to the index.
-====
 
-.*Known issues*
-[%collapsible]
-====
-The following table lists the known issues and, if fixed, the version in which they were fixed:
+Vector indexes also contain some known issues.
+The following table lists the issues and, if fixed, the version in which they were fixed:
 
+.Known issues
 [%header,cols="5a,d"]
 |===
 | Known issues | Fixed in
 
-| The creation of a vector index using the legacy procedure link:{neo4j-docs-base-uri}/operations-manual/current/reference/procedures/#procedure_db_index_vector_createnodeindex[`db.index.vector.createNodeIndex`] may fail with an error in Neo4j 5.18 and later if the database was last written to with a version prior to Neo4j 5.11, and the legacy procedure is the first write operation used on the newer version.
+| The creation of a vector index using the legacy procedure link:{neo4j-docs-base-uri}/operations-manual/current/procedures/#procedure_db_index_vector_createnodeindex[`db.index.vector.createNodeIndex`] may fail with an error in Neo4j 5.18 and later if the database was last written to with a version prior to Neo4j 5.11, and the legacy procedure is the first write operation used on the newer version.
 In Neo4j 5.20, the error was clarified.
 [TIP]
 --
@@ -546,4 +532,3 @@ The types are still enforced as `LIST<INTEGER \| FLOAT>`.
 
 |===
 
-====
