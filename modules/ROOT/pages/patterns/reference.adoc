@@ -1061,7 +1061,9 @@ RETURN a = c, b = d, size(r)
 
 |===
 
-Because Cypher only allows paths to traverse a relationship once (see xref:patterns/reference.adoc#graph-patterns-rules-relationship-uniqueness[relationship uniqueness]), repeating a variable-length relationship in the same graph pattern will yield no results.
+Because Cypher's default match mode, `DIFFERENT RELATIONSHIPS`, only allows paths to traverse a relationship once, repeating a variable-length relationship in the same graph pattern will yield no results.
+(The same is not true for the `REPEATABLE ELEMENTS` match mode.
+For more information, see xref::patterns/match-modes.adoc[Match modes]).
 For example, this `MATCH` clause will never pass on any intermediate results to subsequent clauses:
 
 [source, role=noheader]
@@ -1494,6 +1496,7 @@ MATCH allShortestPaths((:A)-[:R*0..10]->(:B))
 
 A graph pattern is a comma separated list of one or more path patterns.
 It is the top level construct provided to `MATCH`.
+Whether or not a graph pattern can match a relationship more than once is governed by the selected xref:patterns/reference.adoc#match-modes[match mode].
 
 image::patterns-graph-pattern-reference.svg[Cypher example of a graph pattern including path patterns,width=600,role=popup]
 
@@ -1536,12 +1539,6 @@ Outside of that quantified path pattern, it must be treated as a group variable.
 ----
 (n)-[r]->+(m WHERE r.p = m.q)
 ----
-
-[[graph-patterns-rules-relationship-uniqueness]]
-==== Relationship uniqueness
-
-A relationship can only be traversed once in a given match for a graph pattern.
-The same restriction doesn't hold for nodes, which may be re-traversed any number of times in a match.
 
 [[graph-patterns-rules-equijoin]]
 ==== Equijoin
@@ -1620,6 +1617,257 @@ The repetition of a relationship variable in the following yields no solutions d
 ----
 MATCH ()-[r]->()-->(), ()-[r]-()
 ----
+
+[[match-modes]]
+== Match modes
+
+A match mode specifies whether or not a relationship can be matched more than once when matching graph patterns. Cypher contains two match modes:
+
+* xref:patterns/reference.adoc#match-modes-rules-different-relationships[`DIFFERENT RELATIONSHIPS`] (default)
+* xref:patterns/reference.adoc#match-modes-rules-repeatable-elements[`REPEATABLE ELEMENTS`] label:new[Introduced in Neo4j 2025.06]
+
+[[match-modes-syntax]]
+=== Syntax
+
+[source, role=noheader]
+----
+graphPattern ::=
+  [ matchMode ] pathPattern [ "," pathPattern ]* [ graphPatternWhereClause ]
+
+matchMode ::= 
+  { REPEATABLE ELEMENT[S] | DIFFERENT RELATIONSHIPS }
+----
+
+[[match-modes-rules]]
+=== Rules
+
+[[match-modes-rules-different-relationships]]
+==== DIFFERENT RELATIONSHIPS
+
+`DIFFERENT RELATIONSHIPS` is a restrictive match mode.
+It requires that all relationships matched across all constituent path patterns in a graph pattern be unique.
+More specifically:
+
+* A relationship may only occur once for a given `MATCH` result.
+* A given relationship can only be bound to at most one relationship variable (e.g. `-[r]-`) or an anonymous relationship pattern (`-[]-`).
+* A relationship can only be bound once within a relationship xref:patterns/reference.adoc#quantified-path-patterns-rules-group-variables[group variable].
+
+No solutions can be returned if a relationship variable occurs more than once across a graph pattern.
+For example, the following patterns, where the `r` variable acts as an xref:patterns/reference.adoc#graph-patterns-rules-equijoin[equijoin] requiring all occurrences to match the same relationship, cannot return paths:
+
+[source, role=noheader]
+----
+MATCH (a)-[r]-(b)-[f]-(c)-[r]-(d)  // r repeated twice
+MATCH (a)-[r]-(b), (c)-[r]-(d)     // r repeated twice
+----
+
+The `DIFFERENT RELATIONSHIPS` keyword was released in Neo4j 2025.06 and can be used to explicitly specify Cypher's default match mode after `MATCH`.
+Specifying the `DIFFERENT RELATIONSHIPS` keyword is functionally equivalent to not specifying a match mode.
+For example, the following two `MATCH` clauses are equivalent:
+
+[source, role=noheader]
+----
+MATCH (a)--{2}(b)
+MATCH DIFFERENT RELATIONSHIPS (a)--{2}(b)
+----
+
+[[match-modes-rules-repeatable-elements]]
+==== REPEATABLE ELEMENTS
+
+`REPEATABLE ELEMENTS` is a non-restrictive match mode.
+It allows for relationships matched across all constituent path patterns in a graph pattern to be repeatedly traversed.
+More specifically:
+
+* A relationship may occur more than once for a given `MATCH` result.
+* A given relationship can be bound to more than one relationship variable or anonymous relationship pattern.
+* A relationship can be bound more than once within a relationship group variable.
+
+Queries utilizing this match mode must add the keyword `REPEATABLE ELEMENTS` between the `MATCH` clause and the graph pattern.
+
+Solutions can be returned if a relationship variable occurs more than once across a graph pattern.
+For example, the following two graph patterns, where the `r` variable acts as an xref:patterns/reference.adoc#graph-patterns-rules-equijoin[equijoin] requiring all occurrences to match the same relationship, can return paths:
+
+[source, role=noheader]
+----
+MATCH REPEATABLE ELEMENTS (a)-[r]-(b)-[f]-(c)-[r]-(d)  // r repeated twice
+MATCH REPEATABLE ELEMENTS (a)-[r]-(b), (c)-[r]-(d)     // r repeated twice
+----
+
+[[match-modes-rules-quantifier-bounds]]
+==== Quantifier bounds
+
+The following applies to the use of variable-length patterns xref:patterns/reference.adoc#quantifiers-rules[quantifiers] in different match modes:
+
+* `DIFFERENT RELATIONSHIPS` does not require an upper bound on a quantifier.
+The following are valid:  `+`, `{n, }`, `{ , }`,  `*`.
+* `REPEATABLE ELEMENTS` requires all quantifiers to have an upper bound.
+The following are not valid: `+`, `{n, }`, `{ , }`, `*`, but these are valid: `\{n}`, `{n, m}`, `{,m}`.
+This restriction is required to prevent a a potentially infinite number of returned paths.
+
+[[match-modes-rules-clauses-subqueries]]
+==== Clauses and subqueries
+
+Match modes can only be specified after `MATCH`.
+They cannot be applied to a xref:clauses/merge.adoc[`MERGE`] clause.
+
+Match modes are allowed in the xref:subqueries/collect.adoc[`COLLECT`], xref:subqueries/count.adoc[`COUNT`], and xref:subqueries/existential.adoc[`EXISTS`] subqueries after a `MATCH` clause.
+If so, the match mode applies to patterns matched within the subquery and is separate from that applied to the top level graph pattern.
+In the following example, `REPEATABLE ELEMENTS` only applies to the pattern matched within the `COUNT` subquery:
+
+[source, role=noheader]
+----
+MATCH (a)-[:R]->(b) 
+WHERE COUNT { 
+    MATCH REPEATABLE ELEMENTS (a)-[:S]-{,10}(b) 
+    RETURN * 
+} > 5 
+RETURN *
+----
+
+[[match-modes-rules-selective-path-selectors]]
+==== Selective path selectors
+
+The following applies to match modes and the number of path patterns with xref:patterns/reference.adoc#shortest-paths-rules-selective[selective path selectors] (`SHORTEST k`, `SHORTEST k GROUPS`, `ALL SHORTEST`, and `ANY k`).
+
+* If the match mode is `DIFFERENT RELATIONSHIPS`, there can only be one path pattern if it has a selective path selector.
+* If the match mode is `REPEATABLE ELEMENTS`, there can be multiple path patterns even if one or more have a selective path selector.
+
+.Allowed: `DIFFERENT RELATIONSHIPS` with selective path selector and one path pattern
+[source]
+----
+MATCH SHORTEST 2 ((a)--(b) WHERE a.p < b.p)+ 
+----
+
+
+.Allowed: `REPEATABLE ELEMENTS` with multiple path patterns and selective path selectors
+[source]
+----
+MATCH REPEATABLE ELEMENTS SHORTEST 2 (x) ((a)--(b) WHERE a.p < b.p){,10},
+      ANY (x)-->{,10}(:X)
+----
+
+.Not allowed: `DIFFERENT RELATIONSHIPS` with more than one path pattern and a selective path selector
+[source]
+----
+MATCH ALL SHORTEST (x) ((a)--(b) WHERE a.p < b.p){,10}, 
+      ANY (x)-->{,10}(:X)
+----
+
+
+[[match-modes-examples]]
+=== Examples
+
+////
+[source, cypher, role=test-setup]
+----
+MATCH (n)
+DETACH DELETE n
+----
+////
+
+This section uses the following graph:
+
+image::match-modes-reference.svg[width=400, role=popup]
+
+To recreate it, run the following query against an empty Neo4j database:
+
+[source, cypher, role=test-setup]
+----
+CREATE (n1:A {q: 1}),
+       (n2:B {q: 2}),
+       (n3:A {q: 3}),
+       (n4:A {q: 4}),
+
+       (n1)-[:R]->(n2),
+       (n2)-[:R]->(n3),
+       (n3)-[:R]->(n2),
+       (n2)-[:R]->(n4),
+       (n4)-[:R]->(n1)
+----
+
+To demonstrate the basic concept behind `REPEATABLE ELEMENTS`, and how it differs from the `DIFFERENT RELATIONSHIPS` match mode, consider the following pattern, which attempts to form a relationship equijoin: `(a)-[r]-(b)-[r]-(c)`.
+For this pattern to return any results, the same relationship must be re-traversed.
+That is, the same relationship connecting `a` to `b` must be the same as that connecting `b` to `c`.
+
+If tested using `DIFFERENT RELATIONSHIPS`, no results are returned due to the restrictions of the match mode.
+
+.Find paths re-traversing the same relationship using `DIFFERENT RELATIONSHIPS`
+[source, cypher]
+----
+MATCH  p = (:A)-[r]-(:B)-[r]-(:A)
+RETURN [n IN nodes(p) | n.q] AS nodes
+----
+
+.Result
+[source]
+----
+(no results)
+----
+
+However, if the same query uses the `REPEATABLE ELEMENTS` match mode, four paths are returned in which the same relationship is traversed more than once.
+
+.Find paths re-traversing the same relationship using `REPEATABLE ELEMENTS`
+[source, cypher]
+----
+MATCH  REPEATABLE ELEMENTS p = (:A)-[r]-(:B)-[r]-(:A)
+RETURN [n IN nodes(p) | n.q] AS nodes
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| nodes
+
+| [3, 2, 3] 
+| [4, 2, 4]
+| [3, 2, 3] 
+| [1, 2, 1] 
+
+1+d|Rows: 4
+|===
+
+The `DIFFERENT RELATIONSHIPS` match mode allows only nodes to recur in a path.
+
+.Match a pattern with a length of `5` relationships using the `DIFFERENT RELATIONSHIPS` match mode
+[source, cypher]
+----
+MATCH p = (:B)-->{5}()
+RETURN [n IN nodes(p) | n.q] AS nodes
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| nodes
+
+| [2, 3, 2, 4, 1, 2]
+| [2, 4, 1, 2, 3, 2]
+
+1+d|Rows: 2
+|===
+
+The `REPEATABLE ELEMENTS` match mode allows both nodes and relationships to be repeatedly traversed in paths.
+
+.Match a pattern with a length of `5` relationships using the `REPEATABLE ELEMENTS` match mode
+[source, cypher]
+----
+MATCH REPEATABLE ELEMENTS p = (:B)-->{5}()
+RETURN [n IN nodes(p) | n.q] AS nodes
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| nodes
+
+| [2, 3, 2, 3, 2, 3]
+| [2, 3, 2, 3, 2, 4]
+| [2, 3, 2, 4, 1, 2]
+| [2, 4, 1, 2, 3, 2]
+| [2, 4, 1, 2, 4, 1]
+
+1+d|Rows: 2
+|===
 
 [[node-pattern-pairs]]
 == Node pattern pairs
