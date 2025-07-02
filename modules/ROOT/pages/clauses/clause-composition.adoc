@@ -129,7 +129,7 @@ In a Cypher query, read and write clauses can take turns.
 The most important aspect of read-write queries is that the state of the graph also changes between clauses.
 
 [IMPORTANT]
-A clause can never observe writes made by a later clause.
+A clause can never observe writes made by a later clause, and will observe all writes done by the previous clauses.
 
 As of Cypher 25, read and write clauses can be combined in any order.
 That is, a write clause followed by a read clause no longer requires a separating xref:clauses/with.adoc[`WITH`] clause in order for the read clause to observe the changes made by a preceding write clause.
@@ -152,7 +152,7 @@ RETURN f.name AS friendName,
 .Table of intermediate results and state of the graph between read and write clauses
 ======
 
-Using the same example graph as above, this example shows the table of intermediate results and the state of the graph after each clause for the following query:
+Using the same example graph as above, this example shows the table of intermediate results and the state of the graph after each clause for a query with a read clause before a write clause:
 
 [source,cypher, indent=0]
 ----
@@ -163,7 +163,7 @@ The query finds all nodes where the `name` property starts with "J"
 and for each such node it creates another node with  the `name` property set to "Jay-jay".
 
 
-.+The table of intermediate results and the state of the graph after each clause+
+.Read-write: The table of intermediate results and the state of the graph after each clause+
 [options="header", width="100%", cols="3a, 4a, 4a"]
 |===
 
@@ -307,6 +307,102 @@ It is important to note that the `MATCH` clause does not find the `Person` nodes
 even though the name "Jay-jay" starts with "J".
 This is because the `CREATE` clause comes after the `MATCH` clause and thus the `MATCH` can not observe any changes to
 the graph made by the `CREATE`.
+
+======
+
+.Table of intermediate results and state of the graph between write and read clauses
+======
+On an empty graph, this example shows the table of intermediate results and the state of the graph after each clause for a query with a write clause before a read clause:
+
+[source,cypher, indent=0]
+----
+UNWIND ["Max", "Lune"] AS dogName
+CREATE (n:Dog {name: dogName})
+WITH n
+MATCH (d:Dog)
+RETURN COUNT(*)
+----
+This query creates two `Dog` nodes and returns the value `4`.
+
+.+Write-read: The table of intermediate results and the state of the graph after each clause+
+[options="header", width="100%", cols="3a, 4a, 4a"]
+|===
+
+| Clause
+| Table of intermediate results after the clause
+| State of the graph after the clause, changes in red
+
+| ----
+UNWIND ["Max", "Luna"] AS dogName
+----
+|
+[options="header",cols="1m"]
+!===
+! dogName
+! "Max"
+! "Luna"
+!===
+|
+
+| ----
+CREATE (n:Dog {name: dogName})
+----
+|
+[options="header",cols="1m, 1m"]
+!===
+! dogName         ! n
+! "Max"           ! (:Dog {name: 'Max'})
+! "Luna"          ! (:Dog {name: 'Luna'})
+!===
+|
+
+[graphviz]
+----
+digraph L { node [shape=record style=rounded];
+N5 [
+color = "red"
+fontcolor = "red"
+label = "{Dog\|name = \'Max\'\l}"
+]
+N6 [
+color = "red"
+fontcolor = "red"
+label = "{Dog\|name = \'Luna\'\l}"
+]
+}
+----
+
+| ----
+MATCH (d:Dog)
+----
+|
+[options="header",cols="1m, 1m, 1m"]
+!===
+! dogName  ! n                     ! d
+! "Max"    ! (:Dog {name: 'Max'})  ! (:Dog {name: 'Max'})
+! "Max"    ! (:Dog {name: 'Max'})  ! (:Dog {name: 'Luna'})
+! "Luna"   ! (:Dog {name: 'Luna'}) ! (:Dog {name: 'Max'})
+! "Luna"   ! (:Dog {name: 'Luna'}) ! (:Dog {name: 'Luna'})
+!===
+|
+
+[graphviz]
+----
+digraph L { node [shape=record style=rounded];
+N5 [
+label = "{Dog\|name = \'Max\'\l}"
+]
+N6 [
+label = "{Dog\|name = \'Luna\'\l}"
+]
+}
+----
+|===
+
+It is important to note that the `MATCH` clause reads all the `Dog` nodes that are created by the `CREATE` clause.
+This is because the `CREATE` clause comes before the `MATCH` clause and thus the `MATCH` observes all changes to
+the graph made by the `CREATE`.
+The `MATCH` clause is performed for every intermediate result, this leads to finding two nodes for both intermediate results.
 
 ======
 
