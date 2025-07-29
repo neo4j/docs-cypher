@@ -8,8 +8,9 @@
 `NEXT` has the following benefits:
 
 * `NEXT` can improve the modularity and readability of complex queries.
-* `NEXT` can be used instead of xref:subqueries/call-subquery.adoc[] and the xref:clauses/with.adoc[] clause to construct complex queries.
-* `NEXT` can improve the usability of xref:queries/composed-queries/conditional-queries.adoc[conditional `WHEN`] and xref:queries/composed-queries/combined-queries.adoc[combined `UNION`] queries.
+* `NEXT` can be used instead of xref:clauses/with.adoc[] clause to construct complex queries.
+* `NEXT` can improve the usability of xref:queries/composed-queries/conditional-queries.adoc[conditional `WHEN`]
+* `NEXT` allows for passing the full working table into xref:queries/composed-queries/combined-queries.adoc[combined `UNION`] queries.
 
 [[example-graph]]
 == Example graph
@@ -383,12 +384,45 @@ RETURN customer.firstName AS plantCustomer
 1+d|Rows: 6
 |===
 
+=== Leveraging by-table semantics using `UNION` after `NEXT`
+If a `UNION` query follows a `NEXT` in any of its blocks, it will pass the full working table into all arms of the `UNION` query.
 
-[[next-unsupported-behavior]]
-== Known limitations
+.By-table semantics using `NEXT`
+[source, cypher]
+----
+ MATCH (c:Customer)-[:BUYS]->(p:Product)
+ RETURN c, p
 
-`NEXT` currently does not support the following when they are used in a `UNION` query, wrapped in braces or after a `USE` clause:
+ NEXT
 
-* updating queries such as `CREATE` or `MERGE`,
-* `DISTINCT`,
-* aggregations.
+ RETURN c.firstName AS name, COLLECT(p.price * c.discount) AS purchases, "discounted price" AS type
+ UNION
+ RETURN c.firstName AS name, COLLECT(p.price) AS purchases, "real price" AS type
+
+ NEXT
+
+ RETURN * ORDER BY name, type
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| name   | purchases          | type
+
+| Amir   | [100.0, 0.5]       | discounted price
+| Amir   | [1000, 5]          | real price
+| Hannah | [37.5, 1.5]        | discounted price
+| Hannah | [250, 10]          | real price
+| Keisha | [50.0]             | discounted price
+| Keisha | [250]              | real price
+| Leila  | [100.0]            | discounted price
+| Leila  | [1000]             | real price
+| Mateo  | [50.0, 0.25, 0.5]  | discounted price
+| Mateo  | [1000, 5, 10]      | real price
+| Niko   | [125.0, 62.5, 2.5] | discounted price
+| Niko   | [500, 250, 10]     | real price
+| Yusuf  | [100.0, 0.5]       | discounted price
+| Yusuf  | [1000, 5]          | real price
+
+3+d|Rows: 14
+|===
