@@ -3,25 +3,25 @@
 :table-caption!:
 :page-role: new-2025.06
 
-`NEXT` allows for linear composition of queries into a sequence of smaller, self-contained segments, passing the return values from one segment to the next.
+`NEXT` allows for linear composition of queries into a sequence of smaller, self-contained segments, passing the whole table of intermediate results from one segment to the next.
 
 `NEXT` has the following benefits:
 
 * `NEXT` can improve the modularity and readability of complex queries.
 * `NEXT` can be used instead of xref:clauses/with.adoc[] clause to construct complex queries.
 * `NEXT` can improve the usability of xref:queries/composed-queries/conditional-queries.adoc[conditional `WHEN`].
-* `NEXT` allows for passing the full table of intermediate results into xref:queries/composed-queries/combined-queries.adoc[combined `UNION`] queries.
+* `NEXT` allows for passing the full table of intermediate results into the arms of xref:queries/composed-queries/combined-queries.adoc[combined `UNION`] queries.
 
 [[example-graph]]
 == Example graph
 
 The following graph is used for the examples on this page:
 
-image::sequential-queries-graph.svg[Example graph connecting suppliers, products, and customers,width=600,role=popup]
+image::sequential-queries-graph.svg[Example graph connecting suppliers,products,and customers,width=600,role=popup]
 
 To recreate the graph, run the following query against an empty Neo4j database.
 
-[source, cypher, role=test-setup]
+[source,cypher,role=test-setup]
 ----
 CREATE (techCorp:Supplier {name: 'TechCorp', email: 'contact@techcorp.com'}),
        (foodies:Supplier {name: 'Foodies Inc.', email: 'info@foodies.com'}),
@@ -66,7 +66,7 @@ CREATE (techCorp:Supplier {name: 'TechCorp', email: 'contact@techcorp.com'}),
 == Syntax
 
 .`NEXT` syntax
-[source, syntax]
+[source,syntax]
 ----
 <Query1>
 
@@ -82,10 +82,13 @@ NEXT
 [[passing-values]]
 == Passing values to subsequent queries
 
+`NEXT` passes the full whole table of intermediate results to the subsequent query.
+This is referred to by-table semantics, which is different from `CALL` subqueries which passes values using by-row semantics e.g., one row at the time.
+By-table semantics are particularly useful when aggregating values.
 In the following example, `NEXT` passes the variable `customer` to the second query:
 
 .Passing a variable to another query via `NEXT`
-[source, cypher]
+[source,cypher]
 ----
 MATCH (c:Customer)  
 RETURN c AS customer  
@@ -108,10 +111,9 @@ RETURN customer.firstName AS chocolateCustomer
 1+d|Rows: 3
 |===
 
-
 .Passing multiple variables to another query via `NEXT`
 // tag::sequential_queries_basic_example[]
-[source, cypher]
+[source,cypher]
 ----
 MATCH (c:Customer)-[:BUYS]->(p:Product {name: 'Chocolate'})
 RETURN c AS customer, p AS product
@@ -142,64 +144,175 @@ Literals or unaliased expressions are not allowed.
 For example, `RETURN 1` and `RETURN 1 + 1` cannot precede `NEXT`, but `RETURN 1 AS one` and `RETURN 1 + 1 AS two` can.
 ====
 
-Variables which are local to a query and which are not explicitly returned are not accessible by subsequent queries in the context of `NEXT`. This allows you to control variable scope similarly to what you can do with `WITH`, see xref:clauses/with.adoc#variable-scope[Control variables in scope].
+Variables which are local to a query and which are not explicitly returned are not accessible by subsequent queries in the context of `NEXT`.
+This allows you to control variable scope similarly to what you can do with `WITH`, see xref:clauses/with.adoc#variable-scope[Control variables in scope].
+
+[[next-and-union]]
+== Interactions with `UNION` queries
+
+.`NEXT` in a query using `UNION`
+[source,cypher]
+----
+MATCH (c:Customer)-[:BUYS]->(:Product{name: "Laptop"})
+RETURN c.firstName AS customer
+UNION ALL
+MATCH (c:Customer)-[:BUYS]-> (:Product{name: "Coffee"})
+RETURN c.firstName AS customer
+
+NEXT
+
+RETURN customer AS customer, count(customer) as numberOfProducts
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| customer | numberOfProducts
+
+| "Amir"   | 1
+| "Mateo"  | 2
+| "Leila"  | 1
+| "Yusuf"  | 1
+| "Hannah" | 1
+| "Niko"   | 1
+
+
+2+d|Rows: 6
+|===
+
+In this example, the list of customer names from the first segment has a duplicate entry for "Mateo" who bought both a laptop and coffee.
+The use of `UNION ALL` added him to the list twice.
+The second segment can access the list, because both parts of the `UNION` return a part of the list, aliased as `customer`.
+By using xref:functions/aggregating.adoc#functions-count[`count()`], the list aggregates the duplicate in the `RETURN` part of the query.
+
+=== Leveraging by-table semantics using `UNION` after `NEXT`
+
+When a `UNION` query follows a `NEXT` the full table of intermediate results are passed into all arms of the `UNION` query.
+
+.By-table semantics using `NEXT`
+[source,cypher]
+----
+ MATCH (c:Customer)-[:BUYS]->(p:Product)
+ RETURN c, p
+
+ NEXT
+
+ RETURN c.firstName AS name, COLLECT(p.price * c.discount) AS purchases, "discounted price" AS type
+ UNION
+ RETURN c.firstName AS name, COLLECT(p.price) AS purchases, "real price" AS type
+
+ NEXT
+
+ RETURN * ORDER BY name, type
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| name   | purchases          | type
+
+| "Amir"   | [100.0, 0.5]       | discounted price
+| "Amir"   | [1000, 5]          | real price
+| "Hannah" | [37.5, 1.5]        | discounted price
+| "Hannah" | [250, 10]          | real price
+| "Keisha" | [50.0]             | discounted price
+| "Keisha" | [250]              | real price
+| "Leila"  | [100.0]            | discounted price
+| "Leila"  | [1000]             | real price
+| "Mateo"  | [50.0, 0.25, 0.5]  | discounted price
+| "Mateo"  | [1000, 5, 10]      | real price
+| "Niko"   | [125.0, 62.5, 2.5] | discounted price
+| "Niko"   | [500, 250, 10]     | real price
+| "Yusuf"  | [100.0, 0.5]       | discounted price
+| "Yusuf"  | [1000, 5]          | real price
+
+3+d|Rows: 14
+|===
+
+=== `NEXT` inside a `UNION` using `{}`
+
+If a `UNION` query has a `NEXT` in any of its blocks, it is necessary to wrap that block with `{}`.
+
+.`NEXT` inside `UNION`
+[source,cypher]
+----
+{
+MATCH (c:Customer)-[:BUYS]->(:Product {name: 'Chocolate'})
+RETURN c AS customer
+
+NEXT
+
+RETURN customer.firstName AS plantCustomer
+}
+
+UNION ALL
+
+{
+MATCH (c:Customer)-[:BUYS]->(:Product {name: 'Coffee'})
+RETURN c AS customer
+
+NEXT
+
+RETURN customer.firstName AS plantCustomer
+}
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| plantCustomer
+
+| "Amir"
+| "Mateo"
+| "Yusuf"
+| "Mateo"
+| "Hannah"
+| "Niko"
+
+1+d|Rows: 6
+|===
 
 [[next-and-call]]
 == Interactions with `CALL` subqueries
 
-`NEXT` can serve as a more readable alternative to `CALL` subqueries.
+When `NEXT` is wrapped within a `CALL` subquery it is possible to go from by-row semantics to by-table semantics.
 
 [.tabbed-example]
-====
 [.include-with-CALL-subquery]
-======
-[source, cypher]
+[source,cypher]
 ----
 MATCH (p:Product)
 CALL (p) {
     MATCH (c:Customer)-[:BUYS]->(p)
+
+    NEXT
+
     RETURN collect(c.firstName) AS customers
+    UNION
+    RETURN collect(c.lastName) AS customers
 }
 RETURN p.name as product, customers
 ----
-======
+
 [.include-with-NEXT]
-======
-
-// tag::sequential_queries_call[]
-[source, cypher]
-----
-MATCH (p:Product)
-RETURN p
-
-NEXT
-
-MATCH (c:Customer)-[:BUYS]->(p)
-RETURN collect(c.firstName) AS customers, p
-
-NEXT
-
-RETURN p.name as product, customers
-----
-// end::sequential_queries_call[]
-======
-====
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
 | product      | customers
 
-| "Laptop"     | ["Amir", "Mateo", "Leila", "Yusuf"]
+| "Laptop"     | ["Amir","Mateo","Leila","Yusuf"]
 | "Phone"      | ["Niko"]
 | "Headphones" | ["Keisha", "Hannah", "Niko"]
 | "Chocolate"  | ["Amir", "Mateo", "Yusuf"]
 | "Coffee"     | ["Mateo", "Hannah", "Niko"]
+| "Laptop"     | ["Rahman","Ortega","Haddad","Abdi"]
+| "Phone"      | ["Petrov"]
+| "Headphones" | ["Nguyen","Connor","Petrov"]
+| "Chocolate"  | ["Rahman","Ortega","Abdi"]
+| "Coffee"     | ["Ortega","Connor","Petrov"]
 2+d|Rows: 5
 |===
-
-Even though the query which uses `NEXT` has more lines, it is divided into three segments which are easy to read.
-It also avoids the parentheses and indentation of the `CALL` subquery.
 
 [NOTE]
 ====
@@ -208,10 +321,12 @@ It also avoids the parentheses and indentation of the `CALL` subquery.
 
 [[next-and-conditional-queries]]
 == Interactions with conditional queries
+Conditional queries act similar to `CALL` by processing incoming rows using by-row semantics.
+A conditional query following a `NEXT` acts equivalent to a conditional query wrapped in a `CALL` subquery.
 
 .Conditional queries in `NEXT`
 // tag::sequential_queries_chaining_conditional_queries[]
-[source, cypher]
+[source,cypher]
 ----
 MATCH (c:Customer)-[:BUYS]->(:Product)<-[:SUPPLIES]-(s:Supplier)
 RETURN c.firstName AS customer, s.name AS supplier
@@ -264,7 +379,7 @@ If a conditional query has a `NEXT` in any of its `THEN` or `ELSE` blocks, it is
 
 .`NEXT` inside a conditional query
 // tag::sequential_queries_in_conditional_queries[]
-[source, cypher]
+[source,cypher]
 ----
 MATCH (c:Customer)-[:BUYS]->(p:Product)
 RETURN c AS customer, sum(p.price) AS sum
@@ -302,127 +417,3 @@ ELSE {
 
 The query above calculates the total price of products purchased per customer and then only applies the customer discount to sums below 1000.
 
-[[next-and-union]]
-== Interactions with `UNION` queries
-
-.`NEXT` in a query using `UNION`
-[source, cypher]
-----
-MATCH (c:Customer)-[:BUYS]->(:Product{name: "Laptop"})
-RETURN c.firstName AS customer
-UNION ALL
-MATCH (c:Customer)-[:BUYS]-> (:Product{name: "Coffee"})
-RETURN c.firstName AS customer
-
-NEXT
-
-RETURN customer AS customer, count(customer) as numberOfProducts
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| customer | numberOfProducts
-
-| "Amir"   | 1
-| "Mateo"  | 2
-| "Leila"  | 1
-| "Yusuf"  | 1
-| "Hannah" | 1
-| "Niko"   | 1
-
-
-2+d|Rows: 6
-|===
-
-In this example, the list of customer names from the first segment has a duplicate entry for "Mateo" who bought both a laptop and coffee.
-The use of `UNION ALL` added him to the list twice.
-The second segment can access the list, because both parts of the `UNION` return a part of the list, aliased as `customer`.
-By using xref:functions/aggregating.adoc#functions-count[`count()`], the list aggregates the duplicate in the `RETURN` part of the query.
-
-
-=== `NEXT` inside a `UNION` using `{}`
-
-If a `UNION` query has a `NEXT` in any of its blocks, it is necessary to wrap that block with `{}`.
-
-.`NEXT` inside `UNION`
-[source, cypher]
-----
-{
-MATCH (c:Customer)-[:BUYS]->(:Product {name: 'Chocolate'})
-RETURN c AS customer
-
-NEXT
-
-RETURN customer.firstName AS plantCustomer
-}
-
-UNION ALL
-
-{
-MATCH (c:Customer)-[:BUYS]->(:Product {name: 'Coffee'})
-RETURN c AS customer
-
-NEXT
-
-RETURN customer.firstName AS plantCustomer
-}
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| plantCustomer
-
-| "Amir"
-| "Mateo"
-| "Yusuf"
-| "Mateo"
-| "Hannah"
-| "Niko"
-
-1+d|Rows: 6
-|===
-
-=== Leveraging by-table semantics using `UNION` after `NEXT`
-If a `UNION` query follows a `NEXT` in any of its blocks, it passer the full table of intermediate results into all arms of the `UNION` query.
-
-.By-table semantics using `NEXT`
-[source, cypher]
-----
- MATCH (c:Customer)-[:BUYS]->(p:Product)
- RETURN c, p
-
- NEXT
-
- RETURN c.firstName AS name, COLLECT(p.price * c.discount) AS purchases, "discounted price" AS type
- UNION
- RETURN c.firstName AS name, COLLECT(p.price) AS purchases, "real price" AS type
-
- NEXT
-
- RETURN * ORDER BY name, type
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="3*<m"]
-|===
-| name   | purchases          | type
-
-| Amir   | [100.0, 0.5]       | discounted price
-| Amir   | [1000, 5]          | real price
-| Hannah | [37.5, 1.5]        | discounted price
-| Hannah | [250, 10]          | real price
-| Keisha | [50.0]             | discounted price
-| Keisha | [250]              | real price
-| Leila  | [100.0]            | discounted price
-| Leila  | [1000]             | real price
-| Mateo  | [50.0, 0.25, 0.5]  | discounted price
-| Mateo  | [1000, 5, 10]      | real price
-| Niko   | [125.0, 62.5, 2.5] | discounted price
-| Niko   | [500, 250, 10]     | real price
-| Yusuf  | [100.0, 0.5]       | discounted price
-| Yusuf  | [1000, 5]          | real price
-
-3+d|Rows: 14
-|===
