@@ -19,22 +19,21 @@ To recreate it, run the following query against an empty Neo4j database:
 
 [source, cypher, role=test-setup]
 ----
-CREATE
-  (keanu:Person {name:'Keanu Reeves', age:58, nationality:'Canadian'}),
-  (carrie:Person {name:'Carrie Anne Moss', age:55, nationality:'American'}),
-  (liam:Person {name:'Liam Neeson', age:70, nationality:'Northern Irish'}),
-  (guy:Person {name:'Guy Pearce', age:55, nationality:'Australian'}),
-  (kathryn:Person {name:'Kathryn Bigelow', age:71, nationality:'American'}),
-  (jessica:Person {name:'Jessica Chastain', age:45, address:''}),
-  (theMatrix:Movie {title:'The Matrix'}),
-  (keanu)-[:KNOWS]->(carrie),
-  (keanu)-[:KNOWS]->(liam),
-  (keanu)-[:KNOWS]->(kathryn),
-  (kathryn)-[:KNOWS]->(jessica),
-  (carrie)-[:KNOWS]->(guy),
-  (liam)-[:KNOWS]->(guy),
-  (keanu)-[:ACTED_IN]->(theMatrix),
-  (carrie)-[:ACTED_IN]->(theMatrix)
+CREATE (keanu:Person {name:'Keanu Reeves', age:58, nationality:'Canadian'}), 
+       (carrie:Person {name:'Carrie Anne Moss', age:55, nationality:'American'}), 
+       (liam:Person {name:'Liam Neeson', age:70, nationality:'Northern Irish'}), 
+       (guy:Person {name:'Guy Pearce', age:55, nationality:'Australian'}), 
+       (kathryn:Person {name:'Kathryn Bigelow', age:71, nationality:'American'}), 
+       (jessica:Person {name:'Jessica Chastain', age:45, address:''}), 
+       (theMatrix:Movie {title:'The Matrix'}), 
+       (keanu)-[:KNOWS {since:1999}]->(carrie), 
+       (keanu)-[:KNOWS {since:2005}]->(liam), 
+       (keanu)-[:KNOWS {since:2010}]->(kathryn), 
+       (kathryn)-[:KNOWS {since:2012}]->(jessica), 
+       (carrie)-[:KNOWS {since:2008}]->(guy), 
+       (liam)-[:KNOWS {since:2009}]->(guy), 
+       (keanu)-[:ACTED_IN]->(theMatrix), 
+       (carrie)-[:ACTED_IN]->(theMatrix);
 ----
 
 [[functions-all]]
@@ -107,7 +106,105 @@ RETURN all(i in emptyList WHERE true) as allTrue, all(i in emptyList WHERE false
 
 ======
 
+[[functions-allreduce]]
+[role=label--new-2025.08]
+== allReduce()
 
+.Details
+|===
+| *Syntax* 3+| `allReduce(accumulator = initial, stepVariable IN list \| reductionFunction, predicate)`
+| *Description* 3+| Returns true if, during the stepwise evaluation of a value across the elements in a given LIST<ANY>, the accumulated result satisfies a specified predicate at every step, allowing for the early pruning of paths that do not meet the predicate.
+.7+| *Arguments* | *Name* | *Type* | *Description*
+| `accumulator` | `ANY` | A variable that holds the result of the `reductionFunction` as the `list` is iterated.
+It is initialized with the value of `initial`.
+| `initial` | `ANY` | The value of the `accumulator` for the first evaluation of `reductionFunction`.
+| `stepVariable` | `ANY` | A variable that holds the value of each element of `list` during iteration.
+| `list` | `LIST<ANY>` | The list that is being iterated over.
+| `reductionFunction` | `ANY` | An expression whose return value becomes the next value of the `accumulator`.
+The return type must match the return type of `initial`.
+| `predicate` | `BOOLEAN` | A predicate that is evaluated for each iteration.
+It has access to the variable `accumulator`, but not `stepVariable`. 
+| *Returns* 3+| `BOOLEAN`
+|===
+
+.Considerations
+|===
+| `allReduce()` differs from most Cypher functions because it iterates over a list, evaluating an expression for each element, rather than returning a result from a single evaluation.
+| `allReduce()` combines the functionality of the xref:functions/predicate.adoc#functions-all[`all()`] and xref:functions/list.adoc#functions-reduce[`reduce()`] functions.
+| If all evaluations of `predicate` are `true`, `allReduce()` will return `true`.
+| If any evaluations of `predicate` are `false`, `allReduce()` will return `false`.
+| `allReduce()` returns `true` if `list` is empty because there are no elements to falsify the `predicate`.
+|===
+
+.allReduce()
+======
+
+`allReduce()` is designed to optimize path expansions.
+
+The below query finds `KNOWS` paths with a length of `3` where the cumulative age stays between `60` and `180`.
+Paths exceeding this range at any step are pruned.
+For example, a path starting with a node whose `age` value is less than `60` is automatically excluded, as is a path with a sequence such as `["Liam Neeson (70)", "Keanu Reeves (58)", "Kathryn Bigelow (71)"]` because its aggregated `age` value exceeds `180`.
+
+.Find aggregated ages within a boundary
+// tag::functions_predicate_allreduce_boundary[]
+[source, cypher]
+----
+MATCH (()-[:KNOWS]-(n)){3}
+WHERE allReduce(
+  acc = 0,
+  node IN n | acc + node.age,
+  60 < acc < 180)
+RETURN [i IN n | i.name || " (" + toString(i.age) || ")"] AS ageSequence,
+      reduce(acc = 0, node IN n | acc + node.age) AS aggregatedAges
+ORDER BY head(n).age
+----
+// end::functions_predicate_allreduce_boundary[]
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| ageSequence | aggregatedAges
+
+| ["Liam Neeson (70)", "Guy Pearce (55)", "Jessica Chastain (45)"] | 170
+| ["Kathryn Bigelow (71)", "Jessica Chastain (45)", "Guy Pearce (55)"] | 171
+
+2+d|Rows: 2
+|===
+
+The next query uses `alReduce()` to compare neighboring relationships.
+It finds KNOWS paths with a length of at least `3` where each relationship’s `since` value is greater than the previous one and above `2000`.
+Paths are pruned if any since value fails these conditions.
+
+.Find paths where a relationship property must be above a value and increase along a path
+// tag::functions_predicate_allreduce_relationship_values[]
+[source, cypher]
+----
+MATCH path = ()-[r:KNOWS]-{3,}()
+WHERE allReduce(
+  span = {},
+  rel IN r | { previous: span.current, current: rel.since },
+  (span.previous IS NULL OR span.previous < span.current) AND span.current > 2000
+)
+LET people = nodes(path)
+RETURN [actor IN people | actor.name] AS connectedActors,
+       [rel IN r | rel.since] AS sinceYears
+----
+// end::functions_predicate_allreduce_relationship_values[]
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| connectedActors | sinceYears
+
+| ["Keanu Reeves", "Liam Neeson", "Guy Pearce", "Jessica Chastain"] | [2005, 2009, 2015]
+| ["Keanu Reeves", "Kathryn Bigelow", "Jessica Chastain", "Guy Pearce"] | [2010, 2012, 2015]
+| ["Liam Neeson", "Keanu Reeves", "Kathryn Bigelow", "Jessica Chastain"] | [2005, 2010, 2012]
+| ["Liam Neeson", "Keanu Reeves", "Kathryn Bigelow", "Jessica Chastain", "Guy Pearce"] | [2005, 2010, 2012, 2015]
+
+2+d|Rows: 4
+|===
+
+======
 [[functions-any]]
 == any()
 
