@@ -2576,6 +2576,142 @@ Total database accesses: 106
 
 ======
 
+[role=label--new-2025.08]
+[[query-plan-dynamic-node-label-lookup]]
+=== Dynamic Node Label Lookup
+
+Allows Cypher to use xref:indexes/search-performance-indexes/using-indexes.adoc#token-lookup-indexes[token lookup indexes] when planning queries using xref:clauses/match.adoc#dynamic-match[dynamic node labels].
+
+.DynamicNodeLabelLookup
+======
+
+.Query
+[source, cypher]
+----
+PROFILE 
+WITH "Person" AS label
+MATCH (people:$(label))
+RETURN people.name
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version}
+
+Batch size 128
+
+
++---------------------------+----+------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                  | Id | Details                      | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++---------------------------+----+------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults           |  0 | `people.name`                |             26 |   14 |       0 |              0 |                        |           |                     |
+| |                         +----+------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Projection               |  1 | people.name AS `people.name` |             26 |   14 |      28 |                |                        |           |                     |
+| |                         +----+------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Apply                    |  2 |                              |             26 |   14 |       0 |                |                        |           |                     |
+| |\                        +----+------------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +DynamicLabelNodeLookup |  3 | people:$all(label)           |             26 |   14 |      15 |           1832 |                    2/0 |     0.366 | Fused in Pipeline 1 |
+| |                         +----+------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Projection               |  4 | $autostring_0 AS label       |              1 |    1 |       0 |                |                        |           | Fused in Pipeline 0 |
++---------------------------+----+------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+----
+======
+
+[role=label--new-2025.08]
+[[query-plan-dynamic-directed-relationship-type-lookup]]
+=== Dynamic Directed Relationship Type Lookup
+
+Allows Cypher to use xref:indexes/search-performance-indexes/using-indexes.adoc#token-lookup-indexes[token lookup indexes] when planning queries using xref:clauses/match.adoc#dynamic-match[dynamic relationship types] in directed relationship patterns.
+
+.DynamicDirectedRelationshipTypeLookup
+======
+
+.Query
+[source, cypher]
+----
+PROFILE 
+WITH "FRIENDS_WITH" AS relType
+MATCH ()-[r:$(relType)]->()
+RETURN count(r) as relCount
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version}
+
+Batch size 128
+
++------------------------------------------+----+--------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                                 | Id | Details                  | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++------------------------------------------+----+--------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults                          |  0 | relCount                 |              1 |    1 |       0 |              0 |                    0/0 |     0.022 | In Pipeline 2       |
+| |                                        +----+--------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +EagerAggregation                        |  1 | count(r) AS relCount     |              1 |    1 |       0 |             40 |                        |           |                     |
+| |                                        +----+--------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Apply                                   |  2 |                          |             21 |   12 |       0 |                |                        |           |                     |
+| |\                                       +----+--------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +DynamicDirectedRelationshipTypeLookup |  3 | ()-[r:$all(relType)]->() |             21 |   12 |      13 |           1968 |                    2/0 |     0.359 | Fused in Pipeline 1 |
+| |                                        +----+--------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Projection                              |  4 | $autostring_0 AS relType |              1 |    1 |       0 |                |                        |           | Fused in Pipeline 0 |
++------------------------------------------+----+--------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+----
+======
+
+
+[role=label--new-2025.08]
+[[query-plan-dynamic-undirected-relationship-type-lookup]]
+=== Dynamic Undirected Relationship Type Lookup
+
+Allows Cypher to use xref:indexes/search-performance-indexes/using-indexes.adoc#token-lookup-indexes[token lookup indexes] when planning queries using dynamic relationship types in undirected relationship patterns.
+
+.DynamicUndirectedRelationshipTypeLookup
+======
+
+.Query
+[source, cypher]
+----
+PROFILE 
+WITH "FRIENDS_WITH" AS relType
+MATCH ()-[r:$(relType)]-()
+RETURN count(r) as relCount
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version}
+
+Batch size 128
+
++--------------------------------------------+----+--------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                                   | Id | Details                  | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++--------------------------------------------+----+--------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults                            |  0 | relCount                 |              1 |    1 |       0 |              0 |                    0/0 |     0.011 | In Pipeline 2       |
+| |                                          +----+--------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +EagerAggregation                          |  1 | count(r) AS relCount     |              1 |    1 |       0 |             40 |                        |           |                     |
+| |                                          +----+--------------------------+----------------+------+---------+----------------+                        |           |                     |
+| +Apply                                     |  2 |                          |             42 |   24 |       0 |                |                        |           |                     |
+| |\                                         +----+--------------------------+----------------+------+---------+----------------+                        |           |                     |
+| | +DynamicUndirectedRelationshipTypeLookup |  3 | ()-[r:$all(relType)]-()  |             42 |   24 |      13 |           1968 |                    2/0 |     0.121 | Fused in Pipeline 1 |
+| |                                          +----+--------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Projection                                |  4 | $autostring_0 AS relType |              1 |    1 |       0 |                |                        |           | Fused in Pipeline 0 |
++--------------------------------------------+----+--------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+----
+======
 
 [[nested-loops-join-operators]]
 == Nested loops and join operators
