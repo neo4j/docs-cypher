@@ -109,7 +109,8 @@ RETURN all(i in emptyList WHERE true) as allTrue, all(i in emptyList WHERE false
 .Details
 |===
 | *Syntax* 3+| `allReduce(accumulator = initial, stepVariable IN list \| reductionFunction, predicate)`
-| *Description* 3+| Returns true if, during the stepwise evaluation of a value across the elements in a given LIST<ANY>, the accumulated result satisfies a specified predicate at every step, allowing for the early pruning of paths that do not meet the predicate.
+| *Description* 3+| Returns true if, during the stepwise evaluation of a value across the elements in a given `LIST<ANY>`, the accumulated result satisfies a specified predicate at every step.
+Where that list is a xref:patterns/variable-length-patterns.adoc#group-variables[group variable] defined in a xref:patterns/variable-length-patterns.adoc#quantified-path-patterns[quantified path pattern], it allows for the early pruning of paths that do not satisfy the predicate.
 .7+| *Arguments* | *Name* | *Type* | *Description*
 | `accumulator` | `ANY` | A variable that holds the result of the `reductionFunction` as the `list` is iterated.
 It is initialized with the value of `initial`.
@@ -135,24 +136,21 @@ It has access to the variable `accumulator`, but not `stepVariable`.
 .allReduce()
 ======
 
-`allReduce()` is designed to optimize path expansions.
-
-The below query finds `KNOWS` paths with a length of `3` where the cumulative age stays between `60` and `190`.
-Paths exceeding this range at any step are pruned.
-For example, a path starting with a node whose `age` value is less than `60` is automatically excluded, as is a path with a sequence such as `["Liam Neeson (70)", "Keanu Reeves (58)", "Kathryn Bigelow (71)"]` because its aggregated `age` value exceeds `190`.
+The below query finds `KNOWS` paths with a length of `3` where the `accumulator` begins with first node's `age` and the accumulated `age` values of all nodes in the path never exceeds `230`.
+Paths that do not meet this requirement are excluded, such as the path with the sequence `["Keanu Reeves (58)", "Carrie Anne Moss (55)", "Guy Pearce (55)", "Liam Neeson (70)"]` which has an aggregated `age` value of `238`.
 
 .Find aggregated ages within a boundary
 // tag::functions_predicate_allreduce_boundary[]
 [source, cypher]
 ----
-MATCH (()-[:KNOWS]-(n)){3}
+MATCH (s) (()-[:KNOWS]-(n)){3}
 WHERE allReduce(
-  acc = 0,
+  acc = s.age,
   node IN n | acc + node.age,
-  60 < acc < 190
+  acc < 230
 )
-RETURN [i IN n | i.name || " (" + toString(i.age) || ")"] AS ageSequence,
-       reduce(acc = 0, node IN n | acc + node.age) AS aggregatedAges
+RETURN [i IN [s] + n | i.name || " (" + toString(i.age) || ")"] AS ageSequence,
+      reduce(acc = 0, node IN [s] + n | acc + node.age) AS aggregatedAges
 ORDER BY aggregatedAges
 ----
 // end::functions_predicate_allreduce_boundary[]
@@ -162,15 +160,14 @@ ORDER BY aggregatedAges
 |===
 | ageSequence | aggregatedAges
 
-| ["Liam Neeson (70)", "Guy Pearce (55)", "Carrie Anne Moss (55)"] | 180
-| ["Liam Neeson (70)", "Keanu Reeves (58)", "Carrie Anne Moss (55)"] | 183
-| ["Kathryn Bigelow (71)", "Keanu Reeves (58)", "Carrie Anne Moss (55)"] | 184    
+| ["Carrie Anne Moss (55)", "Keanu Reeves (58)", "Kathryn Bigelow (71)", "Jessica Chastain (45)"] | 229
+| ["Jessica Chastain (45)", "Kathryn Bigelow (71)", "Keanu Reeves (58)", "Carrie Anne Moss (55)"] | 229 
 
-2+d|Rows: 3
+2+d|Rows: 2
 |===
 
-The next query uses `alReduce()` to compare neighboring relationships.
-It finds KNOWS paths with a length of at least `3` where each relationship’s `since` value is greater than the previous one and above `2000`.
+The next query uses `allReduce()` to compare neighboring relationships.
+It finds `KNOWS` paths with a length of at least `3` where each relationship’s `since` value is greater than the previous one and above `2000`.
 
 .Find paths where a relationship property must be above a value and increase along a path
 // tag::functions_predicate_allreduce_relationship_values[]
