@@ -27,12 +27,12 @@ CREATE
   (kathryn:Person {name:'Kathryn Bigelow', age:71, nationality:'American'}),
   (jessica:Person {name:'Jessica Chastain', age:45, address:''}),
   (theMatrix:Movie {title:'The Matrix'}),
-  (keanu)-[:KNOWS]->(carrie),
-  (keanu)-[:KNOWS]->(liam),
-  (keanu)-[:KNOWS]->(kathryn),
-  (kathryn)-[:KNOWS]->(jessica),
-  (carrie)-[:KNOWS]->(guy),
-  (liam)-[:KNOWS]->(guy),
+  (keanu)-[:KNOWS {since: 1999}]->(carrie),
+  (keanu)-[:KNOWS {since: 2005}]->(liam),
+  (keanu)-[:KNOWS {since: 2010}]->(kathryn),
+  (kathryn)-[:KNOWS {since: 2012}]->(jessica),
+  (carrie)-[:KNOWS {since: 2008}]->(guy),
+  (liam)-[:KNOWS {since: 2009}]->(guy),
   (keanu)-[:ACTED_IN]->(theMatrix),
   (carrie)-[:ACTED_IN]->(theMatrix)
 ----
@@ -58,34 +58,29 @@ CREATE
 | `all()` returns `true` if `list` is empty because there are no elements to falsify the `predicate`.
 |===
 
-.+all()+
+.all()
 ======
 
-.Query
+.Find paths where all nodes meet a given property value
 // tag::functions_predicate_all[]
 [source, cypher, indent=0]
 ----
-MATCH p = (a)-[*]->(b)
-WHERE
-  a.name = 'Keanu Reeves'
-  AND b.name = 'Guy Pearce'
-  AND all(x IN nodes(p) WHERE x.age < 60)
-RETURN p
+MATCH p = (a:Person {name: 'Keanu Reeves'})-[]-{2,}()
+WHERE all(x IN nodes(p) WHERE x.age < 60)
+RETURN [n IN nodes(p) | n.name] AS actorsList
 ----
 // end::functions_predicate_all[]
 
-All nodes in the returned paths will have a property `age` with a value lower than `60`:
-
-image::predicate-function-example.svg[Actor nodes connected via knows relationships,width=300,role=popup]
+All nodes in the returned paths have an `age`property below `60`:
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
+| actorsList
 
-| +p+
-| +(:Person {nationality: "Canadian",name: "Keanu Reeves",age: 58})-[:KNOWS]->(:Person {nationality: "American",name: "Carrie Anne Moss",age: 55})-[:KNOWS]->(:Person {nationality: "Australian",name: "Guy Pearce",age: 55})+
-1+d|Rows: 1
+| ["Keanu Reeves", "Carrie Anne Moss", "Guy Pearce"]
 
+1+d|Rows: 2
 |===
 
 .`all()` on an empty `LIST`
@@ -107,7 +102,102 @@ RETURN all(i in emptyList WHERE true) as allTrue, all(i in emptyList WHERE false
 
 ======
 
+[[functions-allreduce]]
+[role=label--new-2025.08]
+== allReduce()
 
+.Details
+|===
+| *Syntax* 3+| `allReduce(accumulator = initial, stepVariable IN list \| reductionFunction, predicate)`
+| *Description* 3+| Returns true if, during the stepwise evaluation of a value across the elements in a given `LIST<ANY>`, the accumulated result satisfies a specified predicate at every step.
+Where that list is a xref:patterns/variable-length-patterns.adoc#group-variables[group variable] defined in a xref:patterns/variable-length-patterns.adoc#quantified-path-patterns[quantified path pattern], it allows for the early pruning of paths that do not satisfy the predicate.
+.7+| *Arguments* | *Name* | *Type* | *Description*
+| `accumulator` | `ANY` | A variable that holds the result of the `reductionFunction` as the `list` is iterated.
+It is initialized with the value of `initial`.
+| `initial` | `ANY` | The value of the `accumulator` for the first evaluation of `reductionFunction`.
+| `stepVariable` | `ANY` | A variable that holds the value of each element of `list` during iteration.
+| `list` | `LIST<ANY>` | The list that is being iterated over.
+| `reductionFunction` | `ANY` | An expression whose return value becomes the next value of the `accumulator`.
+The return type must match the return type of `initial`.
+| `predicate` | `BOOLEAN` | A predicate that is evaluated for each iteration.
+It has access to the variable `accumulator`, but not `stepVariable`. 
+| *Returns* 3+| `BOOLEAN`
+|===
+
+.Considerations
+|===
+| `allReduce()` differs from most Cypher functions because it iterates over a list, evaluating an expression for each element, rather than returning a result from a single evaluation.
+| `allReduce()` combines the functionality of the xref:functions/predicate.adoc#functions-all[`all()`] and xref:functions/list.adoc#functions-reduce[`reduce()`] functions.
+| If all evaluations of `predicate` are `true`, `allReduce()` will return `true`.
+| If any evaluations of `predicate` are `false`, `allReduce()` will return `false`.
+| `allReduce()` returns `true` if `list` is empty because there are no elements to falsify the `predicate`.
+| `null` is returned if the `list` is `null` or if the `predicate` evaluates to `null` for at least one element and does not evaluate to `false` for any other element.
+|===
+
+.allReduce()
+======
+
+The below query finds `KNOWS` paths with a length of `3` where the `accumulator` begins with first node's `age` and the accumulated `age` values of all nodes in the path never exceeds `230`.
+Paths that do not meet this requirement are excluded, such as the path with the sequence `["Keanu Reeves (58)", "Carrie Anne Moss (55)", "Guy Pearce (55)", "Liam Neeson (70)"]` which has an aggregated `age` value of `238`.
+
+.Find aggregated ages within a boundary
+// tag::functions_predicate_allreduce_boundary[]
+[source, cypher]
+----
+MATCH (s) (()-[:KNOWS]-(n)){3}
+WHERE allReduce(
+  acc = s.age,
+  node IN n | acc + node.age,
+  acc < 230
+)
+RETURN [i IN [s] + n | i.name || " (" + toString(i.age) || ")"] AS ageSequence,
+      reduce(acc = 0, node IN [s] + n | acc + node.age) AS aggregatedAges
+ORDER BY aggregatedAges
+----
+// end::functions_predicate_allreduce_boundary[]
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| ageSequence | aggregatedAges
+
+| ["Carrie Anne Moss (55)", "Keanu Reeves (58)", "Kathryn Bigelow (71)", "Jessica Chastain (45)"] | 229
+| ["Jessica Chastain (45)", "Kathryn Bigelow (71)", "Keanu Reeves (58)", "Carrie Anne Moss (55)"] | 229 
+
+2+d|Rows: 2
+|===
+
+The next query uses `allReduce()` to compare neighboring relationships.
+It finds `KNOWS` paths with a length of at least `3` where each relationship’s `since` value is greater than the previous one and above `2000`.
+
+.Find paths where a relationship property must be above a value and increase along a path
+// tag::functions_predicate_allreduce_relationship_values[]
+[source, cypher]
+----
+MATCH path = ()-[r:KNOWS]-{3,}()
+WHERE allReduce(
+  span = {},
+  rel IN r | { previous: span.current, current: rel.since },
+  (span.previous IS NULL OR span.previous < span.current) AND span.current > 2000
+)
+LET people = nodes(path)
+RETURN [actor IN people | actor.name] AS connectedActors,
+       [rel IN r | rel.since] AS sinceYears
+ORDER BY sinceYears
+----
+// end::functions_predicate_allreduce_relationship_values[]
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| connectedActors | sinceYears
+
+| ["Liam Neeson", "Keanu Reeves", "Kathryn Bigelow", "Jessica Chastain"] | [2005, 2010, 2012]
+
+2+d|Rows: 1
+|===
+
+======
 [[functions-any]]
 == any()
 
@@ -132,28 +222,25 @@ RETURN all(i in emptyList WHERE true) as allTrue, all(i in emptyList WHERE false
 .+any()+
 ======
 
-.Query
+.Find paths where at least one relationship property is above a given threshold
 // tag::functions_predicate_any[]
 [source, cypher, indent=0]
 ----
-MATCH (p:Person)
-WHERE any(nationality IN p.nationality WHERE nationality = 'American')
-RETURN p
+MATCH p = (n:Person {name: 'Keanu Reeves'})-[:KNOWS]-{3}()
+WHERE any(rel IN relationships(p) WHERE rel.since < 2000)
+RETURN [person IN nodes(p) | person.name] AS connectedActors,
+       [rel IN relationships(p) | rel.since] AS sinceYears
 ----
 // end::functions_predicate_any[]
 
-The query returns the `Person` nodes with the `nationality` property value `American`:
-
 .Result
-[role="queryresult",options="header,footer",cols="1*<m"]
+[role="queryresult",options="header,footer",cols="2*<m"]
 |===
+| connectedActors | sinceYears
 
-| +p+
-| +{"nationality":"American","name":"Carrie Anne Moss","age":55}+
-| +{"nationality":"American","name":"Kathryn Bigelow","age":71}+
+| ["Keanu Reeves", "Carrie Anne Moss", "Guy Pearce", "Liam Neeson"] | [1999, 2008, 2009]
 
-1+d|Rows: 2
-
+2+d|Rows: 1
 |===
 
 
@@ -207,9 +294,8 @@ To check if a property is not `null` use the xref:expressions/predicates/compari
 [source, cypher, indent=0]
 ----
 MATCH (p:Person)
-RETURN
-  p.name AS name,
-  exists((p)-[:ACTED_IN]->()) AS has_acted_in_rel
+RETURN p.name AS name,
+       exists((p)-[:ACTED_IN]->()) AS has_acted_in_rel
 ----
 // end::functions_predicate_exists[]
 
@@ -316,11 +402,11 @@ The `name` property of each node that has an empty `STRING` `address` property i
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
-
 | name
-| "Jessica Chastain"
-1+d|Rows: 1
 
+| "Jessica Chastain"
+
+1+d|Rows: 1
 |===
 
 ======
@@ -358,31 +444,26 @@ xref:expressions/predicates/comparison-operators.adoc[`IS NULL` or `IS NOT NULL`
 .+none()+
 ======
 
-.Query
+.Find paths where no node exceeds a given property value
 // tag::functions_predicate_none[]
 [source, cypher, indent=0]
 ----
-MATCH p = (n)-[*]->(b)
-WHERE
-  n.name = 'Keanu Reeves'
-  AND none(x IN nodes(p) WHERE x.age > 60)
-RETURN p
+MATCH p = (n:Person {name: 'Keanu Reeves'})-[]-{2}()
+WHERE none(x IN nodes(p) WHERE x.age > 60)
+RETURN [x IN nodes(p) | x.name] AS connectedActors
 ----
 // end::functions_predicate_none[]
 
-No node in the returned path has an `age` property with a greater value than `60`:
-
-image::predicate-function-example.svg[Actor nodes connected via knows relationships,width=300,role=popup]
+No nodes in the returned paths have an `age` property with a greater value than `60`:
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
+| connectedActors
 
-| p
-| (:Person {nationality: "Canadian",name: "Keanu Reeves",age: 58})-[:KNOWS]->(:Person {nationality: "American",name: "Carrie Anne Moss",age: 55})
-| (:Person {nationality: "Canadian",name: "Keanu Reeves",age: 58})-[:KNOWS]->(:Person {nationality: "American",name: "Carrie Anne Moss",age: 55})-[:KNOWS]->(:Person {nationality: "Australian",name: "Guy Pearce",age: 55})
-1+d|Rows: 2
+| ["Keanu Reeves", "Carrie Anne Moss", "Guy Pearce"]
 
+1+d|Rows: 1
 |===
 
 .`none()` on an empty `LIST`
@@ -429,28 +510,26 @@ RETURN none(i IN emptyList WHERE true) as noneTrue, none(i IN emptyList WHERE fa
 .+single()+
 ======
 
-.Query
+.Find paths where exactly one node has a given property value
 // tag::functions_predicate_single[]
 [source, cypher, indent=0]
 ----
-MATCH p = (n)-->(b)
-WHERE
-  n.name = 'Keanu Reeves'
-  AND single(x IN nodes(p) WHERE x.nationality = 'Northern Irish')
-RETURN p
+MATCH p = (n:Person {name: 'Keanu Reeves'})-[:KNOWS]-+(b)
+WHERE single(x IN [b] WHERE x.nationality = 'Northern Irish')
+RETURN [person IN nodes(p) | person.name + " (" + person.nationality + ")"] AS northernIrishPaths
+ORDER BY length(p)
 ----
 // end::functions_predicate_single[]
-
-In every returned path there is exactly one node which has the `nationality` property value `Northern Irish`:
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
 |===
+| northernIrishPaths
 
-| p
-| (:Person {nationality: "Canadian",name: "Keanu Reeves",age: 58})-[:KNOWS]->(:Person {nationality: "Northern Irish",name: "Liam Neeson",age: 70})
-1+d|Rows: 1
+| ["Keanu Reeves (Canadian)", "Liam Neeson (Northern Irish)"]
+| ["Keanu Reeves (Canadian)", "Carrie Anne Moss (American)", "Guy Pearce (Australian)", "Liam Neeson (Northern Irish)"]
 
+1+d|Rows: 2
 |===
 
 .`single()` on an empty `LIST`
