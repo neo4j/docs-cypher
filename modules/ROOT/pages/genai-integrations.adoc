@@ -95,12 +95,12 @@ The embeddings are stored as properties on nodes or relationships with the type 
 ====
 
 .Create an embedding property for the Godfather
-[source,cypher,role=test-skip]
+[source,cypher]
 ----
 MATCH (m:Movie {title:'Godfather, The'})
 WHERE m.plot IS NOT NULL AND m.title IS NOT NULL
 WITH m, m.title || ' ' || m.plot AS titleAndPlot // <1>
-WITH m, genai.vector.encode(titleAndPlot, 'OpenAI', { token: $token }) AS propertyVector // <2>
+WITH m, genai.vector.encode(titleAndPlot, 'OpenAI', { token: $openaiToken }) AS propertyVector // <2>
 CALL db.create.setNodeVectorProperty(m, 'embedding', propertyVector) // <3>
 RETURN m.embedding AS embedding
 ----
@@ -158,14 +158,14 @@ Each returned row contains the following columns:
 .Create embeddings from a limited number of properties and store them
 ====
 
-[source, cypher, role=test-skip]
+[source, cypher]
 ----
 MATCH (m:Movie WHERE m.plot IS NOT NULL)
 WITH m
 LIMIT 20
 WITH collect(m) AS moviesList // <1>
 WITH moviesList, [movie IN moviesList | movie.title || ': ' || movie.plot] AS batch // <2>
-CALL genai.vector.encodeBatch(batch, 'OpenAI', { token: $token }) YIELD index, vector
+CALL genai.vector.encodeBatch(batch, 'OpenAI', { token: $openaiToken }) YIELD index, vector
 WITH moviesList, index, vector
 CALL db.create.setNodeVectorProperty(moviesList[index], 'embedding', vector) // <3>
 ----
@@ -177,7 +177,7 @@ CALL db.create.setNodeVectorProperty(moviesList[index], 'embedding', vector) // 
 
 .Create embeddings from a large number of properties and store them
 ====
-[source, cypher, role=test-skip]
+[source, cypher]
 ----
 MATCH (m:Movie WHERE m.plot IS NOT NULL)
 WITH collect(m) AS moviesList, // <1>
@@ -186,9 +186,9 @@ WITH collect(m) AS moviesList, // <1>
 UNWIND range(0, total-1, batchSize) AS batchStart // <3>
 CALL (moviesList, batchStart, batchSize) { // <4>
     WITH [movie IN moviesList[batchStart .. batchStart + batchSize] | movie.title || ': ' || movie.plot] AS batch // <5>
-    CALL genai.vector.encodeBatch(batch, 'OpenAI', { token: $token }) YIELD index, vector
+    CALL genai.vector.encodeBatch(batch, 'OpenAI', { token: $openaiToken }) YIELD index, vector
     CALL db.create.setNodeVectorProperty(moviesList[batchStart + index], 'embedding', vector) // <6>
-} IN CONCURRENT TRANSACTIONS OF 1 ROW <7>
+} IN CONCURRENT TRANSACTIONS OF 1 ROW // <7>
 ----
 
 <1> xref:functions/aggregating.adoc#functions-collect[Collect] all returned `Movie` nodes into a `LIST<NODE>`.
