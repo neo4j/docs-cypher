@@ -37,17 +37,26 @@ label:functionality[]
 label:updated[]
 [source, cypher]
 ----
-MATCH (c:Customer)-[:BUYS]->(p:Product)
-RETURN c AS customer, p AS product
-
-NEXT
-
-RETURN product.name AS product,
-       COUNT(customer) AS numberOfCustomers
+MATCH (p:Product) WHERE p.name <> "Coffee"
+CALL (p) {
+    MATCH (p)<-[:BUYS]-(c:Customer)-[:BUYS]->(otherProduct)
+    RETURN c, otherProduct
+    NEXT
+    RETURN count(DISTINCT c) AS customers, 0 AS customersAlsoBuyingCoffee
+    UNION
+    FILTER otherProduct.name = "Coffee"
+    RETURN 0 as customers, count(DISTINCT c) AS customersAlsoBuyingCoffee
+    NEXT
+    RETURN max(customers) AS customers, max(customersAlsoBuyingCoffee) AS customersAlsoBuyingCoffee
+}
+RETURN p.name AS product,
+       round(toFloat(customersAlsoBuyingCoffee) * 100 / customers, 1) AS percentageOfCustomersAlsoBuyingCoffee
+  ORDER BY product
 ----
 
-| `NEXT` now correctly supports aggregations, updating queries and `DISTINCT` in the context `UNION`, `USE` and wrapped in braces.
-In Neo4j 2025.06 and Cypher 25, such queries yielded incorrect results while they created an error in Neo4j 2025.07 and Cypher 25. 
+| `NEXT` now correctly supports aggregations in the context of `UNION` and `CALL`.
+In Neo4j 2025.06, such queries yielded incorrect results while they created an error in Neo4j 2025.07.
+For more information on `NEXT`, see xref:queries/composed-queries/sequential-queries.adoc[].
 
 a|
 label:functionality[]
