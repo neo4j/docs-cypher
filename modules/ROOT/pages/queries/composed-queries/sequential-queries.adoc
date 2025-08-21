@@ -370,12 +370,6 @@ The second `NEXT` passes these two rows as a whole to a query that aggregates th
 
 [NOTE]
 ====
-The example above produced a different result in Neo4j 2025.06 and an error in 2025.07.
-Neo4j 2025.08 correctly supports aggregations in the context of `UNION` and `CALL`.
-====
-
-[NOTE]
-====
 `NEXT` cannot be used inside a `CALL` subquery that uses the (deprecated) xref:subqueries/call-subquery.adoc#importing-with[importing `WITH`] syntax.
 ====
 
@@ -478,3 +472,62 @@ ELSE {
 |===
 
 The query above calculates the total price of products purchased per customer and then only applies the customer discount to sums below 1000.
+
+
+[[next-aggregations-in-union-and-call]]
+== `NEXT` and aggregations in the context of `UNION` and `CALL`
+
+As of Neo4j 2025.08, `NEXT` correctly supports aggregations in the context of `UNION` and `CALL`.
+In Neo4j 2025.06, such queries yielded incorrect results while they created an error in Neo4j 2025.07.
+
+For example, the query from xref:#next-and-call[] produced a different result in Neo4j 2025.06, not calculating the percentages correcly:
+
+.`NEXT` inside `CALL`, Cypher 2025.06
+[source,cypher,role=test-skip]
+----
+MATCH (p:Product) WHERE p.name <> "Coffee"
+CALL (p) {
+    MATCH (p)<-[:BUYS]-(c:Customer)-[:BUYS]->(otherProduct)
+    RETURN c, otherProduct
+
+    NEXT
+
+    RETURN count(DISTINCT c) AS customers, 0 AS customersAlsoBuyingCoffee
+    UNION
+    FILTER otherProduct.name = "Coffee"
+    RETURN 0 as customers, count(DISTINCT c) AS customersAlsoBuyingCoffee
+
+    NEXT
+
+    RETURN max(customers) AS customers, max(customersAlsoBuyingCoffee) AS customersAlsoBuyingCoffee
+}
+RETURN p.name AS product,
+       round(toFloat(customersAlsoBuyingCoffee) * 100 / customers, 1) AS percentageOfCustomersAlsoBuyingCoffee
+  ORDER BY product
+----
+
+.Result, Cypher 2025.06
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| product      | percentageOfCustomersAlsoBuyingCoffee
+
+| "Chocolate"  | 100.0
+| "Headphones" | 100.0
+| "Laptop"     | 100.0
+| "Phone"      | 100.0
+2+d|Rows: 5
+|===
+
+In Neo4j 2025.08, mid-query aggregations produce the desired result when nested in a `UNION` or `CALL`:
+
+.Result, Cypher 2025.08
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| product      | percentageOfCustomersAlsoBuyingCoffee
+
+| "Chocolate"  | 33.3
+| "Headphones" | 100.0
+| "Laptop"     | 33.3
+| "Phone"      | 100.0
+2+d|Rows: 5
+|===
