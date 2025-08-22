@@ -518,7 +518,7 @@ This is because it allows the planner to use a bidirectional search from the sou
 However, while there are strategies to enforce this optimization, forcing Cypher to use them does not always improve performance.
 
 If the planner estimates a single source-target node pair, Cypher uses either the `ShortestPath` or the `StatefulShortestPath(Into)` operators; otherwise it uses `StatefulShortestPath(All)`.
-Each of these operators, and the criteria for their use, is outlined in the xref:patterns/shortest-paths.adoc#operators[final section of this page].
+Each of these operators, and the criteria for their use, is outlined xref:patterns/shortest-paths.adoc#operators[below].
 
 For readers not familiar with Cypher execution plans and operators, it is recommended to first read xref:planning-and-tuning/execution-plans.adoc[].
 
@@ -864,3 +864,43 @@ a| Used when the estimated cardinality of the source and target nodes in a short
 [NOTE]
 `StatefulShortestPath(Into)` and `StatefulShortestPath(All)` can match more complex shortest paths than `ShortestPath`. As a result, queries using these operators may be slower and more costly.
 
+[[shortest-path-fast-exhaustive]]
+=== `ShortestPath` operator: fast vs. exhaustive search
+
+Queries planned with the `ShortestPath` operator (see the xref:patterns/shortest-paths.adoc#operators[table above] for when this operator is used), use two different search algorithms depending on the predicates in the query.
+
+If the predicate can be checked as the search progresses (for example, requiring every relationship in the path to have a specific property), the planner can exclude invalid paths early.
+In such cases, a fast bidirectional breadth-first search (BFS) algorithm is used.
+
+.Fast search-algorithm
+[source, cypher]
+----
+MATCH (start:N {level: 1}), (end:N {level: 5})
+MATCH p = shortestPath((start)-[r*]-(end))
+WHERE all(rel IN r WHERE rel.flag IS NULL)
+RETURN p
+----
+
+If the predicate requires inspecting the entire path after it has been matched (such as checking whether the path length exceeds a certain value), the planner cannot exclude paths early.
+In such cases, a slower, exhaustive search-algorithm is used.
+
+.Exhaustive search-algorithm
+[source, cypher]
+----
+MATCH (start:N {level: 1}), (end:N {level: 5})
+MATCH p = shortestPath((start)-[*]-(end))
+WHERE length(p) > 3
+RETURN p
+----
+
+For queries that would otherwise trigger an exhaustive search, a practical workaround is to first bind the matched path and then filter it using a xref:clauses/filter.adoc[`FILTER`] clause (`FILTER` is a separate clause that performs a post-match filter, unlike xref:clauses/where.adoc[`WHERE`] which adds constraints to the pattern matched by the xref:clauses/match.adoc[`MATCH`] clause).
+This allows the planner to use a fast search-algorithm while finding the shortest path, and only afterwards apply the filter.
+
+.Query rewritten to use fast search-algorithm
+[source, cypher]
+----
+MATCH (start:N {level: 1}), (end:N {level: 5})
+MATCH p = shortestPath((start)-[*]-(end))
+FILTER length(p) > 1
+RETURN p
+----
