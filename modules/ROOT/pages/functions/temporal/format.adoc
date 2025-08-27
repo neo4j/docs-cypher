@@ -1,0 +1,142 @@
+:description: Cypher provides a function for creating dynamically formatted string representations of temporal instance and duration types.
+:table-caption!:
+
+[[query-functions-temporal-format]]
+= Temporal functions - format
+
+The format function creates dynamically formatted string representations of temporal instance and duration types.
+The output format can be customized via the `pattern` parameter.
+If no pattern is specified, the function returns an ISO-formatted string.
+
+== format()
+
+.Details
+|===
+| *Syntax*         3+| `format(value[, pattern])`
+| *Description*    3+| Returns the temporal value as an ISO-formatted string or as a string formatted by the provided pattern.
+.3+| *Arguments*     | *Name*    | *Type* | *Description*
+                     | `value`   | `DATE \| LOCAL TIME \| ZONED TIME \| LOCAL DATETIME \| ZONED DATETIME \| DURATION` | A temporal value to be formatted.
+                     | `pattern` | `STRING`                                                                           | A pattern used to format the temporal value. If the pattern is not provided the value will be formatted according to ISO 8601.
+| *Returns*        3+| `STRING`
+|===
+
+
+=== Instance types
+
+For instance types, the characters in table <<#character-table>> can be used to create a string pattern.
+n be repeated to change their output.
+
+[#character-table]
+.Allowed characters for an instance type string pattern
+[options="header"]
+|===
+| Character | Meaning                    | Presentation | Examples
+| `G`       | era                        | text         | AD; Anno Domini; A
+| `u`       | year                       | year         | 2004; 04
+| `y`       | year-of-era                | year         | 2004; 04
+| `D`       | day-of-year                | number       | 189
+| `M` / `L` | month-of-year              | number/text  | 7; 07; Jul; July; J
+| `d`       | day-of-month               | number       | 10
+| `g`       | modified-julian-day        | number       | 2451334
+| `Q` / `q` | quarter-of-year            | number/text  | 3; 03; Q3; 3rd quarter
+| `Y`       | week-based-year            | year         | 1996; 96
+| `w`       | week-of-week-based-year    | number       | 27
+| `W`       | week-of-month              | number       | 4
+| `E`       | day-of-week                | text         | Tue; Tuesday; T
+| `e` / `c` | localized day-of-week      | number/text  | 2; 02; Tue; Tuesday; T
+| `F`       | aligned-week-of-month      | number       | 3
+| `a`       | am-pm-of-day               | text         | PM
+| `B`       | period-of-day              | text         | in the morning
+| `h`       | clock-hour-of-am-pm (1-12) | number       | 12
+| `K`       | hour-of-am-pm (0-11)       | number       | 0
+| `k`       | clock-hour-of-day (1-24)   | number       | 24
+| `H`       | hour-of-day (0-23)         | number       | 0
+| `m`       | minute-of-hour             | number       | 30
+| `s`       | second-of-minute           | number       | 55
+| `S`       | fraction-of-second         | fraction     | 978
+| `A`       | milli-of-day               | number       | 1234
+| `n`       | nano-of-second             | number       | 987654321
+| `N`       | nano-of-day                | number       | 1234000000
+| `V`       | time-zone ID               | zone-id      | America/Los_Angeles; Z; -08:30
+| `v`       | generic time-zone name     | zone-name    | Pacific Time; PT
+| `z`       | time-zone name             | zone-name    | Pacific Standard Time; PST
+| `O`       | localized zone-offset      | offset-O     | GMT+8; GMT+08:00; UTC-08:00
+| `X`       | zone-offset 'Z' for zero   | offset-X     | Z; -08; -0830; -08:30; -083015; -08:30:15
+| `x`       | zone-offset                | offset-x     | +0000; -08; -0830; -08:30; -083015; -08:30:15
+| `Z`       | zone-offset                | offset-Z     | +0000; -0800; -08:00
+| `p`       | pad next                   | pad modifier | 1
+| `"`       | escape for text            | delimiter    | 
+| `'`       | single quote               | literal      | 
+| `[`       | optional section start     |              | 
+| `]`       | optional section end       |              | 
+|===
+
+.Considerations
+|===
+
+| Some characters cannot be applied to certain types, for instance, `u` cannot be used to construct a string for a `LOCAL TIME` because it represents a year which is not part of the temporal value.
+
+| The "text" style is determined by how often the pattern character is repeated: less than 4 characters result in the short form ("AD"). Exactly 4 characters result in the full form ("Anno Domini"). Exactly 5 characters result in the narrow form ("A").
+
+The characters 'L', 'q', and 'c' represent the standalone form of the text styles.
+
+| A single "number" character outputs the minimum number of digits without padding. With more "number" characters, the number of digits is used as the width of the output field, with the value zero-padded as necessary.
+
+The following characters have constraints on the count of letters:
+
+Only one letter of 'c' and 'F' can be specified.
+
+Up to two letters of 'd', 'H', 'h', 'K', 'k', 'm', and 's' can be specified.
+
+Up to three letters of 'D' can be specified.
+
+| If the number of characters in a "number/text" is 3 or greater, use the text rules, otherwise the number rules.
+
+| A "fraction" outputs the nano-of-second field as a fraction-of-second. The nano-of-second value has nine digits, thus the number of characters can be between 1 and 9 and is truncated if it is less than 9.
+
+| The "year" style is determined the minimum field width below which padding is used. If the count of letters is two, then a reduced two digit form is used. For printing, this outputs the rightmost two digits. For parsing, this will parse using the base value of 2000, resulting in a year within the range 2000 to 2099 inclusive. If the count of letters is less than four (but not two), then the sign is only output for negative years as per SignStyle.NORMAL. Otherwise, the sign is output if the pad width is exceeded, as per SignStyle.EXCEEDS_PAD.
+
+| A "zone-id" outputs the time-zone ID, such as 'Europe/Paris'. If the count of letters is two, then the time-zone ID is output. Any other count of letters throws IllegalArgumentException.
+
+| A "zone-name" outputs the display name of the timezone ID.
+
+If the pattern character is 'z', the output is the daylight saving time (DST) zone name. If there is insufficient information to determine whether DST applies, the name ignoring daylight saving time will be used.One, two or three characters output the short name, four characters output the full name, and five or more result in an error.
+
+If the character is 'v', the output provides the zone name ignoring daylight saving time.
+One 'v' outputs the short name, two three and five result in an error, and four 'v's output the full name.
+
+| Offset X and x: This formats the offset based on the number of pattern letters. One letter outputs just the hour, such as '+01', unless the minute is non-zero in which case the minute is also output, such as '+0130'. Two letters outputs the hour and minute, without a colon, such as '+0130'. Three letters outputs the hour and minute, with a colon, such as '+01:30'. Four letters outputs the hour and minute and optional second, without a colon, such as '+013015'. Five letters outputs the hour and minute and optional second, with a colon, such as '+01:30:15'. Six or more letters throws IllegalArgumentException. Pattern letter 'X' (upper case) will output 'Z' when the offset to be output would be zero, whereas pattern letter 'x' (lower case) will output '+00', '+0000', or '+00:00'.
+
+| Offset O: With a non-zero offset, this formats the localized offset based on the number of pattern letters. One letter outputs the short form of the localized offset, which is localized offset text, such as 'GMT', with hour without leading zero, optional 2-digit minute and second if non-zero, and colon, for example 'GMT+8'. Four letters outputs the full form, which is localized offset text, such as 'GMT, with 2-digit hour and minute field, optional second field if non-zero, and colon, for example 'GMT+08:00'. If the offset is zero, only localized text is output. Any other count of letters throws IllegalArgumentException.
+
+| Offset Z: This formats the offset based on the number of pattern letters. One, two or three letters outputs the hour and minute, without a colon, such as '+0130'. The output will be '+0000' when the offset is zero. Four letters outputs the full form of localized offset, equivalent to four letters of Offset-O. The output will be the corresponding localized offset text if the offset is zero. Five letters outputs the hour, minute, with optional second if non-zero, with colon. It outputs 'Z' if the offset is zero. Six or more letters throws IllegalArgumentException.
+
+| The "pad modifier" modifies the pattern that immediately follows to be padded with spaces. The pad width is determined by the number of pattern characters.
+
+| Any unrecognized letter results in an error. Any non-letter character, other than '[', ']', '{', '}', '#' and the single quote are output directly. Yet, it is recommended to wrap all characters that you want to output directly with single quotes to ensure compatibility in the future.
+
+|===
+
+.+duration()+ using duration components
+======
+
+.Query
+[source, cypher, indent=0]
+----
+WITH datetime('2024-06-27T14:30:45.123456789+02:00[Europe/Paris]') AS dt
+RETURN format(dt, "yyyy-MM-dd'T'HH:mm:ss.SSSZ") AS x
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+
+| x
+| "2024-06-27T14:30:45.123+0200"
+1+d|Rows: 1
+
+|===
+
+======
+
+=== Duration types
