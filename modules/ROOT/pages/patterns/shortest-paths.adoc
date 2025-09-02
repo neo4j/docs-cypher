@@ -510,99 +510,401 @@ ORDER BY pathLength, destination
 2+d|Rows: 8
 |===
 
-== Planning shortest path queries
+[[planning-performance]]
+== Performance and planning
 
-This section describes the operators used when planning shortest path queries.
-For readers not familiar with Cypher execution plans and operators, it is recommended to first read the section xref:planning-and-tuning/execution-plans.adoc[].
+Shortest path queries often perform better when the Cypher planner can identify a single source-target node pair for a shortest path.
+This is because it allows the planner to use a bidirectional search from the source and target nodes and terminate when the shortest path between them is found, rather than traversing the whole graph for potential target nodes.
+However, while there are strategies to enforce this optimization, forcing Cypher to use them does not always improve performance.
 
-There are two operators used to plan `SHORTEST` queries:
+If the planner estimates a single source-target node pair, Cypher uses either the `ShortestPath` or the `StatefulShortestPath(Into)` operators; otherwise it uses `StatefulShortestPath(All)`.
+Each of these operators, and the criteria for their use, is outlined xref:patterns/shortest-paths.adoc#operators[below].
 
-* xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-stateful-shortest-path-all[`StatefulShortestPath(All)`] - uses a unidirectional breadth-first search algorithm to find shortest paths from a previously matched start node to an end node that has not yet been matched.
+For readers not familiar with Cypher execution plans and operators, it is recommended to first read xref:planning-and-tuning/execution-plans.adoc[].
 
-* xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-stateful-shortest-path-into[`StatefulShortestPath(Into)`] - uses a bidirectional breadth-first search (BFS) algorithm, where two simultaneous BFS invocations are performed, one from the left boundary node and one from the right boundary node.
+[[example-graph]]
+=== Example graph
 
-`StatefulShortestPath(Into)` is used by the planner when both boundary nodes in the shortest path are estimated to match at most one node each.
-Otherwise, `StatefulShortestPath(All)` is used.
+////
+[source, cypher, role=test-setup]
+----
+MATCH (n)
+DETACH DELETE n;
+----
+////
 
-For example, the planner estimates that the left boundary node in the below query will match one node, and the right boundary node will match five nodes,
-and chooses to expand from the left boundary node. Using `StatefulShortestPath(Into)` would require five bidirectional breadth-first search (BFS) invocations,
-whereas `StatefulShortestPath(All)` would require only one unidirectional BFS invocation.
-As a result, the query will use `StatefulShortestPath(All)`.
+This section uses a graph structured as a tree with a branching factor of three and a depth of nine.
+This means the graph starts with a single root node, and each node creates three child nodes, continuing this pattern for nine levels.
+In total, the graph consists of almost 90 000 nodes.
 
-.Query planned with `StatefulShortestPath(All)`
-[source,cypher]
+Each node (`N`) has a `trail` property that acts as a "breadcrumb" list, tracing the path from the root of the tree to that node (the root node has an empty list for its `trail` property).
+The trail records the choice of `"A"`, `"B"`, or `"C"` taken to reach each node, building a sequence that increases in length with each level.
+This ensures that every `trail` value is unique in the graph.
+
+To recreate the graph, run the following query against an empty Neo4j database:
+
+[source, cypher, role=test-setup]
+----
+WITH 9 AS depth, 3 AS branching
+CREATE (:N {level: 0, trail: []})
+WITH *
+UNWIND range(0, depth) AS level
+CALL (branching, level) {
+   MATCH (n {level: level})
+   UNWIND ["A", "B", "C"] AS branch
+   CREATE (n)-[:R]->(:N {level: level + 1, trail: n.trail + [branch]})
+};
+CREATE RANGE INDEX level_index FOR (n:N) ON n.level
+----
+
+[[call-single-source-target-pair]]
+=== Enforcing a single source-target node pair with `CALL` subqueries
+
+One way for Cypher to enforce a single-source node pair for a shortest path is to rewrite the query to include a xref:subqueries/call-subquery.adoc[`CALL` subquery].
+This is because, with `CALL`, each incoming row already has the source and target nodes bound, so the cardinality (i.e. count) for each is known to be 1.
+Without `CALL`, the planner does not know how many targets there are per source node, even though it still runs the shortest-path search once per source, and this may generate less efficient queries.
+
+.`CALL` subqueries and shortest path query performance
+======
+
+.Find a shortest path between two nodes
+[source, cypher]
 ----
 PROFILE
-MATCH
-  p = SHORTEST 1 (a:Station {name: "Worcestershire Parkway"})(()-[]-()-[]-()){1,}(b:Station)
-RETURN p
+MATCH p = ANY SHORTEST
+  (source:N {trail: ["C", "C", "A", "C", "A", "B", "B", "B", "A"]})--+
+  (target:N {trail: ["A", "B", "C", "A", "B", "C", "A", "B", "C"]})
+RETURN length(p) AS pathLength
 ----
 
 .Result
-[role="queryplan", subs="attributes+"]
+[options="header,footer",cols="1*m"]
+|===
+| pathLength
+
+| 18
+
+1+d|Rows: 1
+|===
+
+The plan generated by this query shows that the planner cannot ascertain the existence of a single source-target node pair, even though the `trail` property is unique to each node in the graph (xref:patterns/shortest-paths.adoc#single-source-target-pair-index[no index has been created on this property yet]).
+It, therefore, must exhaust all possible target nodes before determining the shortest path from the source using the `StatefulShortestPath(All)` operator. 
+
+.Query Plan
+[source, role="queryplan"]
 ----
-+----------------------------+----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator                   | Id | Details                                                                          | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+----------------------------+----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults            |  0 | p                                                                                |              5 |    9 |     122 |              0 |                    0/0 |    10.967 |                     |
-| |                          +----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+                     |
-| +Projection                |  1 | (a) ((anon_12)-[anon_14]-(anon_13)-[anon_11]-())* (b) AS p                       |              5 |    9 |       0 |                |                    0/0 |     0.063 |                     |
-| |                          +----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+                     |
-| +StatefulShortestPath(All) |  2 | SHORTEST 1 (a) ((`anon_5`)-[`anon_6`]-(`anon_7`)-[`anon_8`]-(`anon_9`)){1, } (b) |              5 |    9 |      80 |          18927 |                    0/0 |     1.071 | In Pipeline 1       |
-| |                          |    |         expanding from: a                                                        |                |      |         |                |                        |           |                     |
-| |                          |    |     inlined predicates: b:Station                                                |                |      |         |                |                        |           |                     |
-| |                          +----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +Filter                    |  3 | a.name = $autostring_0                                                           |              1 |    1 |      18 |                |                        |           |                     |
-| |                          +----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +NodeByLabelScan           |  4 | a:Station                                                                        |             10 |    9 |      10 |            376 |                    3/0 |     0.811 | Fused in Pipeline 0 |
-+----------------------------+----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++-----------------------------------+----+----------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                          | Id | Details                                                              | Estimated Rows | Rows  | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++-----------------------------------+----+----------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults                   |  0 | `length(p)`                                                          |       19612941 |     1 |       0 |              0 |                    0/0 |     0.027 |                     |
+| |                                 +----+----------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+                     |
+| +Projection                       |  1 | length((source)-[anon_7*]-(target)) AS `length(p)`                   |       19612941 |     1 |      17 |                |                    9/0 |     0.036 |                     |
+| |                                 +----+----------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+                     |
+| +StatefulShortestPath(All, Trail) |  2 | SHORTEST 1 (source) ((`anon_3`)-[`anon_4`]-(`anon_5`)){1, } (target) |       19612941 |     1 |  354292 |       64720328 |                85358/0 |   139.138 | In Pipeline 1       |
+| |                                 |    |         expanding from: source                                       |                |       |         |                |                        |           |                     |
+| |                                 |    |     inlined predicates: target.trail = $autolist_1                   |                |       |         |                |                        |           |                     |
+| |                                 |    |                         target:N                                     |                |       |         |                |                        |           |                     |
+| |                                 +----+----------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------------+
+| +Filter                           |  3 | source.trail = $autolist_0                                           |           4429 |     1 |  177146 |                |                        |           |                     |
+| |                                 +----+----------------------------------------------------------------------+----------------+-------+---------+----------------+                        |           |                     |
+| +NodeByLabelScan                  |  4 | source:N                                                             |          88573 | 88573 |   88574 |            376 |                 2128/0 |    42.628 | Fused in Pipeline 0 |
++-----------------------------------+----+----------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 620029, total allocated memory: 64720664
+
+1 row
+ready to start consuming query after 59 ms, results consumed after another 183 ms
 ----
 
-However, the heuristic to favor `StatefulShortestPath(All)` can lead to worse query performance.
-To have the planner choose the `StatefulShortestPath(Into)` instead, rewrite the query using a xref:subqueries/call-subquery.adoc[`CALL` subquery], which will execute once for each incoming row.
+However, since each `trail` property is unique, rewriting the query to use a `CALL` subquery yields a more efficient plan.
+This is because it forces the planner to use the `StatefulShortestPath(Into)` operator, which expands from the source node until it finds its specific target node, and ensures that `ANY SHORTEST` is executed once per source-target pair.
 
-For example, in the below query, using a `CALL` subquery ensures that the planner binds `a` and `b` to exactly one `Station` node respectively for each executed row, and this forces it to use `StatefulShortestPath(Into)` for each invocation of the `CALL` subquery, since a precondition of using this operator is that both boundary nodes match exactly one node each.
+.Shortest path query rewritten with a `CALL` subquery
+[source, cypher]
+----
+PROFILE
+MATCH (start:N {trail: ["C", "C", "A", "C", "A", "B", "B", "B", "A"]}),
+      (end:N {trail: ["A", "B", "C", "A", "B", "C", "A", "B", "C"]})
+CALL (start, end) {
+   MATCH p = ANY SHORTEST (start)--+(end)
+   RETURN p
+}
+RETURN length(p) AS pathLength
+----
+
+The result is a significantly faster query (down from 59 to 9 milliseconds):
+
+.Query Plan
+[source, role="queryplan"]
+----
++------------------------------------+----+----------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                           | Id | Details                                                        | Estimated Rows | Rows  | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++------------------------------------+----+----------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults                    |  0 | `length(p)`                                                    |       19612941 |     1 |       0 |              0 |                    0/0 |     0.019 |                     |
+| |                                  +----+----------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+                     |
+| +Projection                        |  1 | length(p) AS `length(p)`                                       |       19612941 |     1 |       0 |                |                    0/0 |     0.007 |                     |
+| |                                  +----+----------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+                     |
+| +Projection                        |  2 | (start)-[anon_14*]-(end) AS p                                  |       19612941 |     1 |      17 |                |                    9/0 |     0.073 |                     |
+| |                                  +----+----------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+                     |
+| +StatefulShortestPath(Into, Trail) |  3 | ANY 1 (start) ((`anon_10`)-[`anon_11`]-(`anon_12`)){1, } (end) |       19612941 |     1 |    1936 |         990280 |                  205/0 |     1.135 | In Pipeline 3       |
+| |                                  +----+----------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------------+
+| +CartesianProduct                  |  4 |                                                                |       19612941 |     1 |       0 |           9040 |                        |     0.131 | In Pipeline 2       |
+| |\                                 +----+----------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------------+
+| | +Filter                          |  5 | end.trail = $autolist_1                                        |          22143 |     1 |  177146 |                |                        |           |                     |
+| | |                                +----+----------------------------------------------------------------+----------------+-------+---------+----------------+                        |           |                     |
+| | +NodeByLabelScan                 |  6 | end:N                                                          |         442865 | 88573 |   88574 |            392 |                 2128/0 |    29.822 | Fused in Pipeline 1 |
+| |                                  +----+----------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------------+
+| +Filter                            |  7 | start.trail = $autolist_0                                      |           4429 |     1 |  177146 |                |                        |           |                     |
+| |                                  +----+----------------------------------------------------------------+----------------+-------+---------+----------------+                        |           |                     |
+| +NodeByLabelScan                   |  8 | start:N                                                        |          88573 | 88573 |   88574 |            376 |                 2128/0 |    40.743 | Fused in Pipeline 0 |
++------------------------------------+----+----------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 533393, total allocated memory: 999592
+
+1 row
+ready to start consuming query after 9 ms, results consumed after another 73 ms
+----
+
+======
+
+[[single-source-target-pair-index]]
+=== Enforcing a single source-target node pair with indexes and constraints
+
+Another way to inform the planner of the uniqueness of the target node in a shortest path is to create an xref:indexes/search-performance-indexes/index.adoc[index] or xref:constraints/managing-constraints.adoc#create-property-uniqueness-constraints[property uniqueness]/xref:constraints/managing-constraints.adoc#create-key-constraints[key constraint] (both of which are xref:constraints/managing-constraints.adoc#constraints-and-backing-indexes[index-backed]) on a property belonging to the matched nodes in the shortest path.
+This will accurately inform the planner of node cardinality and thereby enable more efficient query planning (assuming the graph contains uniquely identifying node properties).
+
+.Impact of indexes and constraints
+======
+
+.Create a property uniqueness constraint on the `trail` property
+[source, cypher]
+----
+CREATE CONSTRAINT unique_trail FOR (n:N) REQUIRE n.trail IS UNIQUE
+----
+
+This constraint will inform the planner of the uniqueness of `trail` values up front.
+As a result, the simpler shortest path query (without a `CALL` subquery) will now generate a faster plan (using the `StatefulShortestPath(Into)`) operator with a cardinality of 1 for both the source and target nodes of the shortest path.
+
+.Find a shortest path between two nodes
+[source, cypher]
+----
+PROFILE
+MATCH p = ANY SHORTEST
+  (source:N {trail: ["C", "C", "A", "C", "A", "B", "B", "B", "A"]})--+
+  (target:N {trail: ["A", "B", "C", "A", "B", "C", "A", "B", "C"]})
+RETURN length(p) AS pathLength
+----
+
+.Query Plan
+[source, role="queryplan"]
+----
++------------------------------------+----+----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| Operator                           | Id | Details                                                                                            | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline      |
++------------------------------------+----+----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| +ProduceResults                    |  0 | `length(p)`                                                                                        |              1 |    1 |       0 |              0 |                    0/0 |     0.034 |               |
+| |                                  +----+----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+               |
+| +Projection                        |  1 | length((source)-[anon_19*]-(target)) AS `length(p)`                                                |              1 |    1 |      17 |                |                    9/0 |     0.057 |               |
+| |                                  +----+----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+               |
+| +StatefulShortestPath(Into, Trail) |  2 | SHORTEST 1 (source) ((`anon_15`)-[`anon_16`]-(`anon_17`)){1, } (target)                            |              1 |    1 |    1936 |         990288 |                  205/0 |     1.658 | In Pipeline 1 |
+| |                                  +----+----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| +MultiNodeIndexSeek                |  3 | UNIQUE source:N(trail) WHERE trail = $autolist_0, UNIQUE target:N(trail) WHERE trail = $autolist_1 |              1 |    1 |       4 |            376 |                    4/2 |     0.332 | In Pipeline 0 |
++------------------------------------+----+----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+
+Total database accesses: 1957, total allocated memory: 990608
+
+1 row
+ready to start consuming query after 48 ms, results consumed after another 3 ms
+----
+
+======
+
+[[single-source-target-pair-limitatins]]
+=== Limitations of enforcing a single source-target node pair
+
+Enforcing a single source-target node pair is not always preferable.
+With one source and many targets, rewriting a shortest path query using a `CALL` subquery forces the planner to use `StatefulShortestPath(Into)`, which runs once per target node.
+While this is efficient for a single pair, it can become slower as the number of targets increases because it forces the planner to traverse the graph for each individual pair of source-target nodes.
+In such cases, it may be more efficient to let the planner use `StatefulShortestPath(All)`, which expands across the graph once and returns all matches.
+
+.Efficient planning for multi-target shortest paths
+=====
+
+Consider the following query, which does not specify a unique target node and generates a total of 19682 shortest paths from the source nodes:
+
+.Find a shortest path to many target nodes
+[source, cypher]
+----
+PROFILE
+MATCH p = ANY SHORTEST 
+  (start:N {trail: ["C", "C", "A", "C", "A", "B", "B", "B", "A"]})--+
+  (end:N {level: 9})
+RETURN count(*) AS pathCount
+----
+
+.Result
+[options="header,footer",cols="1*m"]
+|===
+| pathLength
+
+| 19682
+
+1+d|Rows: 1
+|===
+
+Due to the existence of multiple target nodes without a specified, unique property value (there are 19683 nodes in the graph with a `level` property value of `9`), the planner will default to using the `StatefulShortestPath(All)` operator, which expands once from the source node until all valid shortest paths have been found.
+
+.Query Plan
+[source, role="queryplan"]
+----
++-----------------------------------+----+------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------+
+| Operator                          | Id | Details                                                          | Estimated Rows | Rows  | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline      |
++-----------------------------------+----+------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------+
+| +ProduceResults                   |  0 | `count(*)`                                                       |              1 |     1 |       0 |              0 |                    0/0 |     0.015 |               |
+| |                                 +----+------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+               |
+| +EagerAggregation                 |  1 | count(*) AS `count(*)`                                           |              1 |     1 |       0 |             40 |                    0/0 |     0.097 | In Pipeline 2 |
+| |                                 +----+------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------+
+| +StatefulShortestPath(All, Trail) |  2 | SHORTEST 1 (start) ((`anon_3`)-[`anon_4`]-(`anon_5`)){1, } (end) |           8052 | 19682 |  373974 |       81274328 |                65235/0 |   330.475 | In Pipeline 1 |
+| |                                 |    |         expanding from: start                                    |                |       |         |                |                        |           |               |
+| |                                 |    |     inlined predicates: end.level = $autoint_1                   |                |       |         |                |                        |           |               |
+| |                                 |    |                         end:N                                    |                |       |         |                |                        |           |               |
+| |                                 +----+------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------+
+| +NodeUniqueIndexSeek              |  3 | UNIQUE start:N(trail) WHERE trail = $autolist_0                  |              1 |     1 |       2 |            376 |                    3/0 |     0.106 | In Pipeline 0 |
++-----------------------------------+----+------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------+
+
+Total database accesses: 373976, total allocated memory: 81274688
+
+1 row
+ready to start consuming query after 40 ms, results consumed after another 331 ms
+----
+
+If the query is rewritten with a `CALL` subquery the planner will use `StatefulShortestPath(Into)` which performs separate traversals for each individual source-target node pairs.
+
+.Multi-target shortest path query rewritten with a `CALL` subquery
+[source, cypher]
+----
+PROFILE
+MATCH (start:N {trail: ["C", "C", "A", "C", "A", "B", "B", "B", "A"]}),
+      (end:N {level: 9})
+CALL (start, end) {
+   MATCH p = ANY SHORTEST (start)--+(end)
+   RETURN p
+}
+RETURN count(*) AS pathCount
+----
+
+.Query Plan
+[source, role="queryplan"]
+----
++------------------------------------+----+----------------------------------------------------------------------------------------------------+----------------+-------+----------+----------------+------------------------+-----------+---------------+
+| Operator                           | Id | Details                                                                                            | Estimated Rows | Rows  | DB Hits  | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline      |
++------------------------------------+----+----------------------------------------------------------------------------------------------------+----------------+-------+----------+----------------+------------------------+-----------+---------------+
+| +ProduceResults                    |  0 | `count(*)`                                                                                         |              1 |     1 |        0 |              0 |                    0/0 |     0.120 |               |
+| |                                  +----+----------------------------------------------------------------------------------------------------+----------------+-------+----------+----------------+------------------------+-----------+               |
+| +EagerAggregation                  |  1 | count(*) AS `count(*)`                                                                             |              1 |     1 |        0 |             40 |                    0/0 |     0.172 | In Pipeline 2 |
+| |                                  +----+----------------------------------------------------------------------------------------------------+----------------+-------+----------+----------------+------------------------+-----------+---------------+
+| +Projection                        |  2 | (start)-[anon_7*]-(end) AS p                                                                       |           8052 | 19682 |   314930 |                |               184197/0 |    35.430 |               |
+| |                                  +----+----------------------------------------------------------------------------------------------------+----------------+-------+----------+----------------+------------------------+-----------+               |
+| +StatefulShortestPath(Into, Trail) |  3 | SHORTEST 1 (start) ((`anon_3`)-[`anon_4`]-(`anon_5`)){1, } (end)                                   |           8052 | 19682 | 32672226 |      157866776 |              3588500/0 | 14200.424 | In Pipeline 1 |
+| |                                  +----+----------------------------------------------------------------------------------------------------+----------------+-------+----------+----------------+------------------------+-----------+---------------+
+| +MultiNodeIndexSeek                |  4 | UNIQUE start:N(trail) WHERE trail = $autolist_0, RANGE INDEX end:N(level) WHERE level = $autoint_1 |           8052 | 19683 |    19686 |            376 |                  108/0 |     4.014 | In Pipeline 0 |
++------------------------------------+----+----------------------------------------------------------------------------------------------------+----------------+-------+----------+----------------+------------------------+-----------+---------------+
+
+Total database accesses: 33006842, total allocated memory: 157867272
+
+1 row
+ready to start consuming query after 32 ms, results consumed after another 14244 ms
+----
+
+As the plan shows, in this scenario it is not more efficient to enforce a single source-target node pair.
+On the contrary, doing so ensures that `StatefulShortestPath(Into)` is executed `19682` times, once for each source-target node pair, thereby generating a more expensive query.
+
+=====
+
+
+[[operators]]
+=== Shortest path operators
+
+Cypher uses three different operators to plan shortest path queries.
+The criteria for when each is used is outlined in the table below.
+
+[options="header", cols="3a,2a,5a"]
+|===
+| Operator
+| Description
+| Criteria
+
+| `ShortestPath`
+| Performs bidirectional breadth-first searches (BFS) from target and source node.
+Terminates when a shortest path is found between them.
+a| Used when:
+
+* The xref:patterns/reference.adoc#shortest-functions[`shortestPath()` or `allShortestPaths()`] functions are used.
+
+Or, when the estimated cardinality of the source and target nodes in a shortest path are 1 or less and the following are all true:
+ 
+* Selector is one of: `SHORTEST 1`, `ANY`, `ANY SHORTEST`, `ALL SHORTEST`, `SHORTEST GROUP`, or `SHORTEST 1 GROUP`.
+* There is only one relationship pattern.
+* If the pattern is a xref:patterns/variable-length-patterns.adoc#quantified-path-patterns[quantified path pattern] in the form of `\(()-[]-())`, or is a  xref:patterns/variable-length-patterns.adoc#quantified-relationships[quantified-relationship], and it uses a filter that can be applied directly to the relationship.
+* If the pattern is a quantified path pattern or a quantified relationship and the relationship pattern is directed, the lower bound of the xref:patterns/reference.adoc#quantifiers[quantifier] is 0 or 1.
+If the relationship pattern is directed, the lower bound is 0.
+* In the case of a quantified path pattern, there are no node variables declared inside the quantified path pattern that are referenced elsewhere.
+
+| `StatefulShortestPath(Into)`
+| Performs bidirectional BFS from target and source node.
+Terminates when a shortest path is found between them.
+a| Used when the estimated cardinality of the source and target nodes in a shortest path are 1 or less and either of the following are true:
+
+* Selector is one of: `ANY/SHORTEST k` or `SHORTEST k GROUPS` and `k` is larger than `1`.
+* There is more than one relationship pattern.
+
+| `StatefulShortestPath(All)`
+| Performs unidirectional BFS to find shortest paths from a source node to all nodes matching the target node conditions.
+| Used when the planner estimates more than one source-target node pair in a shortest path.
+
+|===
 
 [NOTE]
-The below query uses a xref:subqueries/call-subquery.adoc#variable-scope-clause[variable scope clause] to import variables into the `CALL` subquery.
+`StatefulShortestPath(Into)` and `StatefulShortestPath(All)` can match more complex shortest paths than `ShortestPath`. As a result, queries using these operators may be slower and more costly.
 
-.Query rewritten to use `StatefulShortestPath(Into)`
-[source,cypher]
+[[shortest-path-fast-exhaustive]]
+=== `ShortestPath` operator: fast vs. exhaustive search
+
+Queries planned with the `ShortestPath` operator (see the xref:patterns/shortest-paths.adoc#operators[table above] for when this operator is used), use two different search algorithms depending on the predicates in the query.
+
+If the predicate can be checked as the search progresses (for example, requiring every relationship in the path to have a specific property), the planner can exclude invalid paths early.
+In such cases, a fast bidirectional breadth-first search (BFS) algorithm is used.
+
+.Fast search-algorithm
+[source, cypher]
 ----
-PROFILE
-MATCH
-  (a:Station {name: "Worcestershire Parkway"}),
-  (b:Station)
-CALL (a, b) {
-  MATCH
-    p = SHORTEST 1 (a)(()-[]-()-[]-()){1,}(b)
-  RETURN p
-}
+MATCH (start:N {level: 1}), (end:N {level: 5})
+MATCH p = shortestPath((start)-[r*]-(end))
+WHERE all(rel IN r WHERE rel.flag IS NULL)
 RETURN p
 ----
 
-.Result
-[role="queryplan", subs="attributes+"]
+If the predicate requires inspecting the entire path after it has been matched (such as checking whether the path length exceeds a certain value), the planner cannot exclude paths early.
+In such cases, a slower, exhaustive search-algorithm is used.
+Exhaustive searches may be very time consuming in certain cases, such as when there is no shortest path between two nodes (to disallow exhaustive searches, set link:{neo4j-docs-base-uri}/operations-manual/current/configuration/configuration-settings#config_dbms.cypher.forbid_exhaustive_shortestpath[`dbms.cypher.forbid_exhaustive_shortestpath`] to `true`).
+
+.Exhaustive search-algorithm
+[source, cypher]
 ----
-+-----------------------------+----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator                    | Id | Details                                                                          | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+-----------------------------+----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults             |  0 | p                                                                                |              5 |    9 |     122 |              0 |                    0/0 |     0.561 |                     |
-| |                           +----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+                     |
-| +Projection                 |  1 | (a) ((anon_12)-[anon_14]-(anon_13)-[anon_11]-())* (b) AS p                       |              5 |    9 |       0 |                |                    0/0 |     0.060 |                     |
-| |                           +----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+                     |
-| +StatefulShortestPath(Into) |  2 | SHORTEST 1 (a) ((`anon_5`)-[`anon_6`]-(`anon_7`)-[`anon_8`]-(`anon_9`)){1, } (b) |              5 |    9 |     176 |          17873 |                    0/0 |     2.273 | In Pipeline 3       |
-| |                           +----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +CartesianProduct           |  3 |                                                                                  |              5 |    9 |       0 |           2056 |                    0/0 |     0.048 | In Pipeline 2       |
-| |\                          +----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| | +NodeByLabelScan          |  4 | b:Station                                                                        |             10 |    9 |      10 |            392 |                    1/0 |     0.023 | In Pipeline 1       |
-| |                           +----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| +Filter                     |  5 | a.name = $autostring_0                                                           |              1 |    1 |      18 |                |                        |           |                     |
-| |                           +----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     |
-| +NodeByLabelScan            |  6 | a:Station                                                                        |             10 |    9 |      10 |            376 |                    3/0 |     0.089 | Fused in Pipeline 0 |
-+-----------------------------+----+----------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+MATCH (start:N {level: 1}), (end:N {level: 5})
+MATCH p = shortestPath((start)-[*]-(end))
+WHERE length(p) > 3
+RETURN p
 ----
 
-[TIP]
-Sometimes the planner cannot make reliable estimations about how many nodes a pattern node will match.
-Consider using a xref:constraints/managing-constraints.adoc#create-property-uniqueness-constraints[property uniqueness constraint] where applicable to help the planner get more reliable estimates.
+For queries that would otherwise trigger an exhaustive search, a practical workaround is to first bind the matched path and then filter it using a xref:clauses/filter.adoc[`FILTER`] clause (`FILTER` is a separate clause that performs a post-match filter, unlike xref:clauses/where.adoc[`WHERE`] which adds constraints to the pattern matched by the xref:clauses/match.adoc[`MATCH`] clause).
+This allows the planner to use a fast search-algorithm while finding the shortest path, and only afterwards apply the filter.
+Note that, because the filter is applied after the fast algorithm runs, it may eliminate all candidate paths and return no results.
+
+.Query rewritten to use fast search-algorithm
+[source, cypher]
+----
+MATCH (start:N {level: 1}), (end:N {level: 5})
+MATCH p = shortestPath((start)-[*]-(end))
+FILTER length(p) > 3
+RETURN p
+----
