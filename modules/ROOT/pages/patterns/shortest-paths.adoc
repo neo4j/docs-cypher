@@ -572,7 +572,7 @@ Without `CALL`, the planner does not know how many targets there are per source 
 ----
 PROFILE
 MATCH p = ANY SHORTEST
-  (source:N {trail: ["C", "C", "A", "C", "A", "B", "B", "B", "A"]})--+
+  (source:N {trail: ["C", "C", "A", "C", "A", "B", "B", "B", "A"]})--{2,}
   (target:N {trail: ["A", "B", "C", "A", "B", "C", "A", "B", "C"]})
 RETURN length(p) AS pathLength
 ----
@@ -596,24 +596,24 @@ It, therefore, must exhaust all possible target nodes before determining the sho
 +-----------------------------------+----+----------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------------+
 | Operator                          | Id | Details                                                              | Estimated Rows | Rows  | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
 +-----------------------------------+----+----------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults                   |  0 | `length(p)`                                                          |       19612941 |     1 |       0 |              0 |                    0/0 |     0.027 |                     |
+| +ProduceResults                   |  0 | pathLength                                                           |       19612941 |     1 |       0 |              0 |                    0/0 |     0.228 |                     |
 | |                                 +----+----------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+                     |
-| +Projection                       |  1 | length((source)-[anon_7*]-(target)) AS `length(p)`                   |       19612941 |     1 |      17 |                |                    9/0 |     0.036 |                     |
+| +Projection                       |  1 | length((source)-[anon_7*]-(target)) AS pathLength                    |       19612941 |     1 |      17 |                |                    9/0 |     1.405 |                     |
 | |                                 +----+----------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+                     |
-| +StatefulShortestPath(All, Trail) |  2 | SHORTEST 1 (source) ((`anon_3`)-[`anon_4`]-(`anon_5`)){1, } (target) |       19612941 |     1 |  354292 |       64720328 |                85358/0 |   139.138 | In Pipeline 1       |
+| +StatefulShortestPath(All, Trail) |  2 | SHORTEST 1 (source) ((`anon_3`)-[`anon_4`]-(`anon_5`)){2, } (target) |       19612941 |     1 |  354300 |       65608340 |                85662/0 |   290.001 | In Pipeline 1       |
 | |                                 |    |         expanding from: source                                       |                |       |         |                |                        |           |                     |
 | |                                 |    |     inlined predicates: target.trail = $autolist_1                   |                |       |         |                |                        |           |                     |
 | |                                 |    |                         target:N                                     |                |       |         |                |                        |           |                     |
 | |                                 +----+----------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------------+
 | +Filter                           |  3 | source.trail = $autolist_0                                           |           4429 |     1 |  177146 |                |                        |           |                     |
 | |                                 +----+----------------------------------------------------------------------+----------------+-------+---------+----------------+                        |           |                     |
-| +NodeByLabelScan                  |  4 | source:N                                                             |          88573 | 88573 |   88574 |            376 |                 2128/0 |    42.628 | Fused in Pipeline 0 |
+| +NodeByLabelScan                  |  4 | source:N                                                             |          88573 | 88573 |   88574 |            376 |                 1853/0 |    56.193 | Fused in Pipeline 0 |
 +-----------------------------------+----+----------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------------+
 
-Total database accesses: 620029, total allocated memory: 64720664
+Total database accesses: 620037, total allocated memory: 65608676
 
 1 row
-ready to start consuming query after 59 ms, results consumed after another 183 ms
+ready to start consuming query after 83 ms, results consumed after another 351 ms
 ----
 
 However, since each `trail` property is unique, rewriting the query to use a `CALL` subquery yields a more efficient plan.
@@ -626,43 +626,43 @@ PROFILE
 MATCH (start:N {trail: ["C", "C", "A", "C", "A", "B", "B", "B", "A"]}),
       (end:N {trail: ["A", "B", "C", "A", "B", "C", "A", "B", "C"]})
 CALL (start, end) {
-   MATCH p = ANY SHORTEST (start)--+(end)
+   MATCH p = ANY SHORTEST (start)--{2,}(end)
    RETURN p
 }
 RETURN length(p) AS pathLength
 ----
 
-The result is a significantly faster query (down from 59 to 9 milliseconds):
+The result is a less resource intensive query:
 
 .Query Plan
 [source, role="queryplan"]
 ----
-+------------------------------------+----+----------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------------+
-| Operator                           | Id | Details                                                        | Estimated Rows | Rows  | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+------------------------------------+----+----------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------------+
-| +ProduceResults                    |  0 | `length(p)`                                                    |       19612941 |     1 |       0 |              0 |                    0/0 |     0.019 |                     |
-| |                                  +----+----------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+                     |
-| +Projection                        |  1 | length(p) AS `length(p)`                                       |       19612941 |     1 |       0 |                |                    0/0 |     0.007 |                     |
-| |                                  +----+----------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+                     |
-| +Projection                        |  2 | (start)-[anon_14*]-(end) AS p                                  |       19612941 |     1 |      17 |                |                    9/0 |     0.073 |                     |
-| |                                  +----+----------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+                     |
-| +StatefulShortestPath(Into, Trail) |  3 | ANY 1 (start) ((`anon_10`)-[`anon_11`]-(`anon_12`)){1, } (end) |       19612941 |     1 |    1936 |         990280 |                  205/0 |     1.135 | In Pipeline 3       |
-| |                                  +----+----------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------------+
-| +CartesianProduct                  |  4 |                                                                |       19612941 |     1 |       0 |           9040 |                        |     0.131 | In Pipeline 2       |
-| |\                                 +----+----------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------------+
-| | +Filter                          |  5 | end.trail = $autolist_1                                        |          22143 |     1 |  177146 |                |                        |           |                     |
-| | |                                +----+----------------------------------------------------------------+----------------+-------+---------+----------------+                        |           |                     |
-| | +NodeByLabelScan                 |  6 | end:N                                                          |         442865 | 88573 |   88574 |            392 |                 2128/0 |    29.822 | Fused in Pipeline 1 |
-| |                                  +----+----------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------------+
-| +Filter                            |  7 | start.trail = $autolist_0                                      |           4429 |     1 |  177146 |                |                        |           |                     |
-| |                                  +----+----------------------------------------------------------------+----------------+-------+---------+----------------+                        |           |                     |
-| +NodeByLabelScan                   |  8 | start:N                                                        |          88573 | 88573 |   88574 |            376 |                 2128/0 |    40.743 | Fused in Pipeline 0 |
-+------------------------------------+----+----------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------------+
++------------------------------------+----+------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------------+
+| Operator                           | Id | Details                                                          | Estimated Rows | Rows  | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
++------------------------------------+----+------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults                    |  0 | pathLength                                                       |       19612941 |     1 |       0 |              0 |                    0/0 |     0.116 |                     |
+| |                                  +----+------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+                     |
+| +Projection                        |  1 | length(p) AS pathLength                                          |       19612941 |     1 |       0 |                |                    0/0 |     0.012 |                     |
+| |                                  +----+------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+                     |
+| +Projection                        |  2 | (start)-[anon_7*]-(end) AS p                                     |       19612941 |     1 |      17 |                |                    9/0 |     0.122 |                     |
+| |                                  +----+------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+                     |
+| +StatefulShortestPath(Into, Trail) |  3 | SHORTEST 1 (start) ((`anon_3`)-[`anon_4`]-(`anon_5`)){2, } (end) |       19612941 |     1 |    1952 |        1337600 |                  209/0 |     2.786 | In Pipeline 3       |
+| |                                  +----+------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------------+
+| +CartesianProduct                  |  4 |                                                                  |       19612941 |     1 |       0 |           9040 |                        |     0.053 | In Pipeline 2       |
+| |\                                 +----+------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------------+
+| | +Filter                          |  5 | end.trail = $autolist_1                                          |          22143 |     1 |  177146 |                |                        |           |                     |
+| | |                                +----+------------------------------------------------------------------+----------------+-------+---------+----------------+                        |           |                     |
+| | +NodeByLabelScan                 |  6 | end:N                                                            |         442865 | 88573 |   88574 |            392 |                 1853/0 |    37.853 | Fused in Pipeline 1 |
+| |                                  +----+------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------------+
+| +Filter                            |  7 | start.trail = $autolist_0                                        |           4429 |     1 |  177146 |                |                        |           |                     |
+| |                                  +----+------------------------------------------------------------------+----------------+-------+---------+----------------+                        |           |                     |
+| +NodeByLabelScan                   |  8 | start:N                                                          |          88573 | 88573 |   88574 |            376 |                 1853/0 |    67.672 | Fused in Pipeline 0 |
++------------------------------------+----+------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-----------+---------------------+
 
-Total database accesses: 533393, total allocated memory: 999592
+Total database accesses: 533409, total allocated memory: 1346912
 
 1 row
-ready to start consuming query after 9 ms, results consumed after another 73 ms
+ready to start consuming query after 78 ms, results consumed after another 120 ms
 ----
 
 ======
@@ -845,8 +845,7 @@ Or, when the estimated cardinality of the source and target nodes in a shortest 
 * Selector is one of: `SHORTEST 1`, `ANY`, `ANY SHORTEST`, `ALL SHORTEST`, `SHORTEST GROUP`, or `SHORTEST 1 GROUP`.
 * There is only one relationship pattern.
 * If the pattern is a xref:patterns/variable-length-patterns.adoc#quantified-path-patterns[quantified path pattern] in the form of `\(()-[]-())`, or is a  xref:patterns/variable-length-patterns.adoc#quantified-relationships[quantified-relationship], and it uses a filter that can be applied directly to the relationship.
-* If the pattern is a quantified path pattern or a quantified relationship and the relationship pattern is directed, the lower bound of the xref:patterns/reference.adoc#quantifiers[quantifier] is 0 or 1.
-If the relationship pattern is directed, the lower bound is 0.
+* If the pattern is a quantified path pattern or a quantified relationship, the lower bound of the xref:patterns/reference.adoc#quantifiers[quantifier] is 0 or 1.
 * In the case of a quantified path pattern, there are no node variables declared inside the quantified path pattern that are referenced elsewhere.
 
 | `StatefulShortestPath(Into)`
