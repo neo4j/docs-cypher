@@ -36,7 +36,7 @@ The graph contains 28863 nodes and 332522 relationships.
 There are 9083 `Movie` nodes with a `plot` and `title` property.
 
 To recreate the graph, download and import this link:https://github.com/neo4j-graph-examples/recommendations/raw/main/data/recommendations-embeddings-50.dump[dump file] to an empty Neo4j database.
-Dump files can be imported for both link:{neo4j-docs-base-uri}/aura/auradb/importing/import-database/[Aura] and link:{neo4j-docs-base-uri}/operations-manual/current/backup-restore/restore-dump/[on-prem] instances.
+Dump files can be imported for both link:{neo4j-docs-base-uri}/aura/classic/auradb/importing/import-database/[Aura] and link:{neo4j-docs-base-uri}/operations-manual/current/backup-restore/restore-dump/[on-prem] instances.
 
 [NOTE]
 The embeddings on this are generated using link:https://platform.openai.com/docs/guides/embeddings[OpenAI] (model `text-embedding-ada-002`), producing 1536-dimensional vectors.
@@ -60,11 +60,10 @@ See xref:genai-integrations.adoc#ai-providers[] for details of each supported pr
 Note that because this argument may contain sensitive data, it is obfuscated in the link:https://neo4j.com/docs/operations-manual/current/monitoring/logging/[query.log].
 However, if the function call is misspelled or the query is otherwise malformed, it may be logged without being obfuscated.
 
-[IMPORTANT]
-====
+[NOTE]
 This function sends one API request every time it is called, which may result in a lot of overhead in terms of both network traffic and latency.
 If you want to generate many embeddings at once, use xref:genai-integrations.adoc#multiple-embeddings[].
-====
+
 
 
 [.tabbed-example]
@@ -130,7 +129,7 @@ The embeddings are stored as properties on nodes or relationships with the type 
 MATCH (m:Movie {title:'Godfather, The'})
 WHERE m.plot IS NOT NULL AND m.title IS NOT NULL
 WITH m, m.title || ' ' || m.plot AS titleAndPlot // <1>
-WITH m, genai.vector.encode(titleAndPlot, 'OpenAI', { token: $token }) AS propertyVector // <2>
+WITH m, genai.vector.encode(titleAndPlot, 'OpenAI', { token: $openaiToken }) AS propertyVector // <2>
 CALL db.create.setNodeVectorProperty(m, 'embedding', propertyVector) // <3>
 RETURN m.embedding AS embedding
 ----
@@ -162,11 +161,9 @@ This result only shows the first 4 of the 1536 numbers in the embedding.
 Use the `genai.vector.encodeBatch()` procedure to generate many vector embeddings with a single API request.
 This procedure takes a list of resources as an input, and returns the same number of result rows, instead of a single one.
 
-[IMPORTANT]
-====
+[NOTE]
 This procedure attempts to generate embeddings for all supplied resources in a single API request.
 Therefore, it is recommended to see the respective provider's documentation for details on, for example, the maximum number of embeddings that can be generated per request.
-====
 
 .Signature for `genai.vector.encodeBatch()` label:procedure[]
 [source,syntax]
@@ -213,7 +210,7 @@ WITH m
 LIMIT 20
 WITH collect(m) AS moviesList // <1>
 WITH moviesList, [movie IN moviesList | movie.title || ': ' || movie.plot] AS batch // <2>
-CALL genai.vector.encodeBatch(batch, 'OpenAI', { token: $token }) YIELD index, vector
+CALL genai.vector.encodeBatch(batch, 'OpenAI', { token: $openaiToken }) YIELD index, vector
 WITH moviesList, index, vector
 CALL db.create.setNodeVectorProperty(moviesList[index], 'embedding', vector) // <3>
 ----
@@ -232,9 +229,9 @@ WITH collect(m) AS moviesList, // <1>
 UNWIND range(0, total-1, batchSize) AS batchStart // <3>
 CALL (moviesList, batchStart, batchSize) { // <4>
     WITH [movie IN moviesList[batchStart .. batchStart + batchSize] | movie.title || ': ' || movie.plot] AS batch // <5>
-    CALL genai.vector.encodeBatch(batch, 'OpenAI', { token: $token }) YIELD index, vector
+    CALL genai.vector.encodeBatch(batch, 'OpenAI', { token: $openaiToken }) YIELD index, vector
     CALL db.create.setNodeVectorProperty(moviesList[batchStart + index], 'embedding', vector) // <6>
-} IN CONCURRENT TRANSACTIONS OF 1 ROW <7>
+} IN CONCURRENT TRANSACTIONS OF 1 ROW // <7>
 ----
 
 <1> xref:functions/aggregating.adoc#functions-collect[Collect] all returned `Movie` nodes into a `LIST<NODE>`.
@@ -344,11 +341,8 @@ Each provider has its own configuration map that can be passed to `genai.vector.
 === Vertex AI
 
 * Identifier (`provider` argument): `"VertexAI"`
-* https://cloud.google.com/vertex-ai/docs/generative-ai/embeddings/get-text-embeddings[Official Vertex AI documentation]
+* https://cloud.google.com/vertex-ai/generative-ai/docs/embeddings/get-text-embeddings[Official Vertex AI documentation]
 
-.Vertex AI provider details
-[%collapsible]
-====
 .Configuration map
 [%header,cols="1m,1m,3a,2"]
 |===
@@ -431,7 +425,6 @@ Supported values: +
 | The title of the document that is being encoded (see link:https://cloud.google.com/vertex-ai/generative-ai/docs/embeddings/get-text-embeddings/[provider documentation]). The specified `title` will apply to all resources in a batch. 
 |
 |===
-====
 
 [[openai]]
 === OpenAI
@@ -439,9 +432,6 @@ Supported values: +
 * Identifier (`provider` argument): `"OpenAI"`
 * https://platform.openai.com/docs/guides/embeddings[Official OpenAI documentation]
 
-.OpenAI provider details
-[%collapsible]
-====
 .Configuration map
 [%header,cols="1m,1m,3a,2"]
 |===
@@ -462,21 +452,18 @@ Supported values: +
 | The number of dimensions you want to reduce the vector to. Only supported for certain models.
 | Model-dependent.
 |===
-====
+
 
 [[azure-openai]]
 
 === Azure OpenAI
 
 * Identifier (`provider` argument): `"AzureOpenAI"`
-* https://learn.microsoft.com/en-us/azure/ai-services/openai/[Official Azure OpenAI documentation]
+* https://learn.microsoft.com/en-us/azure/ai-foundry/[Official Azure OpenAI documentation]
 
 [NOTE]
 Unlike the other providers, the model is configured when creating the deployment on Azure, and is thus not part of the configuration map.
 
-.Azure OpenAI provider details
-[%collapsible]
-====
 .Configuration map
 [%header,cols="1m,1m,3a,2"]
 |===
@@ -502,7 +489,6 @@ Unlike the other providers, the model is configured when creating the deployment
 | The number of dimensions you want to reduce the vector to. Only supported for certain models.
 | Model-dependent.
 |===
-====
 
 [[amazon-bedrock]]
 === Amazon Bedrock
@@ -510,9 +496,6 @@ Unlike the other providers, the model is configured when creating the deployment
 * Identifier (`provider` argument): `"Bedrock"`
 * https://docs.aws.amazon.com/bedrock/latest/APIReference/welcome.html[Official Bedrock documentation]
 
-.Amazon Bedrock provider details
-[%collapsible]
-====
 .Configuration map
 [%header,cols="1m,1m,3a,2"]
 |===
@@ -553,4 +536,3 @@ Supported values: +
 | `"us-east-1"`
 
 |===
-====

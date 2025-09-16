@@ -1,5 +1,5 @@
 [[cypher-deprecations-additions-removals-compatibility]]
-= Deprecations, additions, and compatibility
+= Additions, deprecations, removals, and compatibility
 :description: all of the features that have been removed, deprecated, added, or extended in different Cypher versions.
 :test-skip: true  // all deprecations would fail.
 
@@ -20,6 +20,137 @@ Replacement syntax for deprecated and removed features are also indicated.
 [IMPORTANT]
 Cypher 25 was introduced in Neo4j 2025.06 and can only be used on Neo4j 2025.06+ databases.
 Features removed in Cypher 25 are still available on Neo4j 2025.06+ databases either by prepending a query with `CYPHER 5` or by having Cypher 5 as the default language for the database.
+For more information, see xref:queries/select-version.adoc[].
+
+[[cypher-deprecations-additions-removals-2025.09]]
+== Neo4j 2025.09
+
+=== New in Cypher 25
+
+[cols="2", options="header"]
+|===
+| Feature
+| Details
+
+a|
+label:functionality[]
+label:new[]
+[source, cypher, role="noheader"]
+----
+WITH datetime('1986-11-18T6:04:45.123456789+01:00[Europe/Berlin]') AS dt
+RETURN format(dt, "MM/dd/yyyy") AS US, format(dt, "dd/MM/yyyy") AS EU
+----
+
+| Cypher's new xref:functions/temporal/format.adoc[`format()`] function can create dynamically formatted string representations of temporal instance and duration types.
+
+a| 
+label:functionality[]
+label:new[]
+
+New operator: `LockNodes`
+
+
+a| Introduced xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-lock-nodes[`LockNodes`] operator, sometimes used in conjunction with the `LockingMerge` operator to lock nodes.
+
+|===
+
+[[cypher-deprecations-additions-removals-2025.08]]
+== Neo4j 2025.08
+
+=== Updated in Cypher 25
+
+[cols="2", options="header"]
+|===
+| Feature
+| Details
+
+a|
+label:functionality[]
+label:updated[]
+[source, cypher]
+----
+MATCH (p:Product) WHERE p.name <> "Coffee"
+CALL (p) {
+    MATCH (p)<-[:BUYS]-(c:Customer)-[:BUYS]->(otherProduct)
+    RETURN c, otherProduct
+    NEXT
+    RETURN count(DISTINCT c) AS customers, 0 AS customersAlsoBuyingCoffee
+    UNION
+    FILTER otherProduct.name = "Coffee"
+    RETURN 0 as customers, count(DISTINCT c) AS customersAlsoBuyingCoffee
+    NEXT
+    RETURN max(customers) AS customers, max(customersAlsoBuyingCoffee) AS customersAlsoBuyingCoffee
+}
+RETURN p.name AS product,
+       round(toFloat(customersAlsoBuyingCoffee) * 100 / customers, 1) AS percentageOfCustomersAlsoBuyingCoffee
+  ORDER BY product
+----
+
+| `NEXT` now correctly supports aggregations in the context of `UNION` and `CALL`.
+For more information, see xref:queries/composed-queries/sequential-queries.adoc#issues-fixes[Sequential queries (`NEXT`) > Known issues and fixes].
+
+a|
+label:functionality[]
+label:updated[]
+[source, cypher]
+----
+PROFILE 
+WITH "Person" AS label
+MATCH (people:$(label))
+RETURN people.name
+----
+
+| Cypher can now leverage xref:indexes/search-performance-indexes/using-indexes.adoc#token-lookup-indexes[token lookup indexes] when planning queries with xref:clauses/match.adoc#dynamic-match[dynamic labels and relationship types].
+This is enabled by the introduction of three new query plan operators: xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-dynamic-label-node-lookup[`DynamicLabelNodeLookup`], xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-dynamic-directed-relationship-type-lookup[`DynamicDirectedRelationshipTypeLookup`], and xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-dynamic-undirected-relationship-type-lookup[`DynamicUndirectedRelationshipTypeLookup`].
+|===
+
+=== New in Cypher 25
+
+[cols="2", options="header"]
+|===
+| Feature
+| Details
+
+a|
+label:functionality[]
+label:new[]
+[source, cypher, role="noheader"]
+----
+MATCH (()-->(n))+
+WHERE allReduce(acc = 0, node IN n \| acc + node.x, 6 < acc < 30)
+RETURN [i IN n \| i.x] AS sequence 
+ORDER BY head(n).x, size(n)
+----
+
+| New xref:functions/predicate.adoc#functions-allreduce[`allReduce()`] function.
+It enables the stepwise evaluation of a value accumulated over a path, allowing for early pruning of paths that do not satisfy a given predicate, and is optimized for path expansions.
+|===
+
+
+[[cypher-deprecations-additions-removals-2025.07]]
+== Neo4j 2025.07
+
+=== Updated in Cypher 25
+
+[cols="2", options="header"]
+|===
+| Feature
+| Details
+
+a|
+label:functionality[]
+label:updated[]
+[source, cypher, role="noheader"]
+----
+MATCH (n)-[r]->()
+WHERE n:$(<expr1>)
+WITH n, r:$(<expr2>) AS hasType
+RETURN n:$(<expr3>)
+----
+
+| Added the ability to dynamically reference node labels and relationship types in places where xref:patterns/reference.adoc#label-expressions[label expressions] are allowed.
+|===
+
 
 [[cypher-deprecations-additions-removals-2025.xx]]
 == Neo4j 2025.xx
@@ -120,13 +251,48 @@ label:functionality[]
 label:removed[]
 [source, cypher, role="noheader"]
 ----
+CREATE DATABASE db OPTIONS { seedCredentials: ... }
+----
+| The option `seedCredentials` is removed from the `CREATE DATABASE` `OPTIONS` map.
+For more information, see link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/standard-databases/create-databases/#manage-databases-create-database-options[Operations Manual -> Database administration -> Create databases].
+
+a|
+label:functionality[]
+label:removed[]
+[source, cypher, role="noheader"]
+----
+CREATE DATABASE db OPTIONS { existingDataSeedInstance: ... }
+----
+| The option `existingDataSeedInstance` is removed from the `CREATE DATABASE` `OPTIONS` map and replaced by `existingDataSeedServer`.
+For more information, see link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/standard-databases/create-databases/#manage-databases-create-database-options[Operations Manual -> Database administration -> Create databases].
+
+a|
+[#_graph_reference_removed_name_parts_quoting]
+label:functionality[]
+label:removed[]
+[source, cypher, role=noheader]
+----
+CREATE ALIAS composite.`1` FOR DATABASE neo4j
+----
+[source, cypher, role=noheader]
+----
+USE composite.`1`
+----
+| Graph references with separately backticked name parts have been removed. Use parameters or backtick the entire name, e.g. `USE `composite.1``
+
+
+a|
+label:functionality[]
+label:removed[]
+[source, cypher, role="noheader"]
+----
 RETURN 1 as my\u0085identifier
 ----
 a|
-The Unicode character \`\u0085` has been removed for unescaped identifiers and is now considered a whitespace character.
-To continue using it, escape the identifier by adding backticks around it.
+The Unicode character `\u0085` (`Next Line`) has been removed for unescaped identifiers and is now considered a whitespace character.
+To continue using it, escape the identifier by adding backticks (++``++) around it.
 This applies to all unescaped identifiers in Cypher, such as label expressions, properties, variable names, or parameters.
-In the given example, the quoted identifier would be \`my�identifier`.
+In the given example, the quoted identifier would be `my\u0085identifier`.
 
 a|
 label:functionality[]
@@ -136,23 +302,24 @@ label:removed[]
 RETURN 1 as my$Identifier
 ----
 a|
-The character with the Unicode representation \`\u0024` has been removed for unescaped identifiers. To continue using it, escape the identifier by adding backticks around the identifier.
-This applies to all unescaped identifiers in Cypher, such as label expressions, properties, variable names, or parameters. In the given example, the quoted identifier would be \`my$identifier`.
+The character with the Unicode representation `\u0024` (`$`) has been removed for unescaped identifiers.
+To continue using it, escape the identifier by adding backticks (++``++) around the identifier.
+This applies to all unescaped identifiers in Cypher, such as label expressions, properties, variable names, or parameters. In the given example, the quoted identifier would be `my\u0024identifier`.
 
 The following Unicode Characters are removed in identifiers:
-'\u0000', '\u0001', '\u0002', '\u0003', '\u0004', '\u0005', '\u0006', '\u0007',
-'\u0008', '\u000E', '\u000F', '\u0010', '\u0011', '\u0012', '\u0013', '\u0014',
-'\u0015', '\u0016', '\u0017', '\u0018', '\u0019', '\u001A', '\u001B', '\u007F',
-'\u0080', '\u0081', '\u0082', '\u0083', '\u0084', '\u0086', '\u0087', '\u0088',
-'\u0089', '\u008A', '\u008B', '\u008C', '\u008D', '\u008E', '\u008F', '\u0090',
-'\u0091', '\u0092', '\u0093', '\u0094', '\u0095', '\u0096', '\u0097', '\u0098',
-'\u0099', '\u009A', '\u009B', '\u009C', '\u009D', '\u009E', '\u009F', '\u0024',
-'\u00A2', '\u00A3', '\u00A4', '\u00A5', '\u00AD', '\u0600', '\u0601', '\u0602',
-'\u0603', '\u0604', '\u0605', '\u061C', '\u06DD', '\u070F', '\u08E2', '\u180E',
-'\u200B', '\u200C', '\u200D', '\u200E', '\u200F', '\u202A', '\u202B', '\u202C',
-'\u202D', '\u202E', '\u2060', '\u2061', '\u2062', '\u2063', '\u2064', '\u2066',
-'\u2067', '\u2068', '\u2069', '\u206A', '\u206B', '\u206C', '\u206D', '\u206E',
-'\u206F', '\u2E2F', '\uFEFF', '\uFFF9', '\uFFFA', '\uFFFB'
+`\u0000`, `\u0001`, `\u0002`, `\u0003`, `\u0004`, `\u0005`, `\u0006`, `\u0007`,
+`\u0008`, `\u000E`, `\u000F`, `\u0010`, `\u0011`, `\u0012`, `\u0013`, `\u0014`,
+`\u0015`, `\u0016`, `\u0017`, `\u0018`, `\u0019`, `\u001A`, `\u001B`, `\u007F`,
+`\u0080`, `\u0081`, `\u0082`, `\u0083`, `\u0084`, `\u0086`, `\u0087`, `\u0088`,
+`\u0089`, `\u008A`, `\u008B`, `\u008C`, `\u008D`, `\u008E`, `\u008F`, `\u0090`,
+`\u0091`, `\u0092`, `\u0093`, `\u0094`, `\u0095`, `\u0096`, `\u0097`, `\u0098`,
+`\u0099`, `\u009A`, `\u009B`, `\u009C`, `\u009D`, `\u009E`, `\u009F`, `\u0024`,
+`\u00A2`, `\u00A3`, `\u00A4`, `\u00A5`, `\u00AD`, `\u0600`, `\u0601`, `\u0602`,
+`\u0603`, `\u0604`, `\u0605`, `\u061C`, `\u06DD`, `\u070F`, `\u08E2`, `\u180E`,
+`\u200B`, `\u200C`, `\u200D`, `\u200E`, `\u200F`, `\u202A`, `\u202B`, `\u202C`,
+`\u202D`, `\u202E`, `\u2060`, `\u2061`, `\u2062`, `\u2063`, `\u2064`, `\u2066`,
+`\u2067`, `\u2068`, `\u2069`, `\u206A`, `\u206B`, `\u206C`, `\u206D`, `\u206E`,
+`\u206F`, `\u2E2F`, `\uFEFF`, `\uFFF9`, `\uFFFA`, `\uFFFB`
 
 a|
 label:functionality[]
@@ -223,6 +390,25 @@ For more information, see the link:{neo4j-docs-base-uri}/operations-manual/curre
 
 |===
 
+=== Deprecated in Cypher 25
+
+[cols="2", options="header"]
+|===
+| Feature
+| Details
+
+a|
+label:functionality[]
+label:deprecated[]
+[source, cypher, role="noheader"]
+----
+CREATE DATABASE db OPTIONS { existingData: ... }
+----
+| The option `existingData` is deprecated.
+For more information, see link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/standard-databases/create-databases/#manage-databases-create-database-options[Operations Manual -> Database administration -> Create databases].
+
+|===
+
 
 === Updated in Cypher 25
 
@@ -230,6 +416,35 @@ For more information, see the link:{neo4j-docs-base-uri}/operations-manual/curre
 |===
 | Feature
 | Details
+
+a|
+label:functionality[]
+label:updated[]
+[source, cypher, role="noheader"]
+----
+WITH 1 AS g
+RETURN COLLECT {
+        UNWIND [1,2,3] AS x
+        WITH * WHERE x < 0
+        WITH count(*) AS agg
+        RETURN agg + g
+} AS x
+----
+
+a| Imported variables are now correctly handled as constants inside xref:subqueries/collect.adoc[`COLLECT`], xref:subqueries/count.adoc[`COUNT`], and xref:subqueries/existential.adoc[`EXISTS`] subquery expressions.
+The example query previously returned no results (`[]`) because the imported variable was used incorrectly as an implicit grouping key.
+It now returns `[1]`, since the variable is not used as a grouping key, allowing `count(*)` to return `0` and `0 + g` to evaluate to `1`.
+
+a|
+label:functionality[]
+label:updated[]
+[source, cypher, role="noheader"]
+----
+RETURN $0hello
+----
+
+a| Parameters can start with extended identifier characters (such as numbers), in line with the xref:appendix/gql-conformance/index.adoc[GQL] standard.
+For more information, see xref:syntax/parameters.adoc[].
 
 a|
 label:functionality[]
@@ -260,7 +475,7 @@ CALL db.schema.nodeTypeProperties() YIELD propertyTypes RETURN propertyTypes;
 CALL db.schema.relTypeProperties() YIELD propertyTypes RETURN propertyTypes;
 ----
 a|
-The column `propertyTypes` returned by the procedures link:{neo4j-docs-base-uri}/operations-manual/current/procedures/#procedure_db_schema_nodetypeproperties[`db.schema.nodeTypeProperties()`] and link:{neo4j-docs-base-uri}/operations-manual/current/procedures/#procedure_db_schema_reltypeproperties[`db.schema.relTypeProperties()`] previously returned a list of strings representing the potential Java types for a given property.
+The column `propertyTypes` returned by the procedures link:{neo4j-docs-base-uri}/operations-manual/current/procedures/#procedure_db_schema_nodeTypeProperties[`db.schema.nodeTypeProperties()`] and link:{neo4j-docs-base-uri}/operations-manual/current/procedures/#procedure_db_schema_relTypeProperties[`db.schema.relTypeProperties()`] previously returned a list of strings representing the potential Java types for a given property.
 It now returns a list of strings representing the possible Cypher Types the given property has.
 For all available Cypher types, see the section on xref::values-and-types/property-structural-constructed.adoc#types-synonyms[types and their synonyms].
 
@@ -292,6 +507,7 @@ Several  xref:clauses/transaction-clauses.adoc#query-listing-transactions[`SHOW 
 * The current query-related columns — `currentQuery`, `currentQueryId`, `parameters`, `planner`, `runtime`, `indexes`, `currentQueryStartTime`, `currentQueryElapsedTime`, `currentQueryCpuTime`, `currentQueryIdleTime`, and `currentQueryStatus` — now return `null` when no query is executing.
 
 a|
+[#_graph_reference_updated_graph_by_name_quotes]
 label:functionality[]
 label:updated[]
 [source, cypher, role="noheader"]
@@ -335,6 +551,112 @@ RETURN replace("hello world", "l", "", 1)
 |===
 | Feature
 | Details
+
+a|
+label:functionality[]
+label:new[]
+
+[source, cypher, role="noheader"]
+----
+CREATE [COMPOSITE] DATABASE actors SET DEFAULT LANGUAGE CYPHER 25
+----
+
+a| Set the default Cypher version for a standard or composite database when creating it.
+The available versions are `CYPHER 25` and `CYPHER 5`.
+If not specified, the default language for the database is set to the default language of the DBMS.
+For more information, see the following sections in the Operations Manual:
+
+* link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/standard-databases/create-databases/#_set_a_default_cypher_version_for_a_standard_database[Set a default Cypher version for a standard database].
+* link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/composite-databases/create-composite-databases/#composite-databases-default-language[Set the default Cypher version for a composite database].
+
+a|
+label:functionality[]
+label:new[]
+
+[source, cypher, role="noheader"]
+----
+CREATE ALIAS `remote-with-default-language`
+FOR DATABASE `northwind-graph-2020`
+	AT "neo4j+s://location:7687"
+	USER alice
+	PASSWORD 'example_secret'
+	DEFAULT LANGUAGE CYPHER 25
+----
+
+a| Set the default Cypher version for a remote database alias when creating it.
+The available versions are `CYPHER 5` and `CYPHER 25`.
+Local database aliases and database aliases in composite databases cannot be assigned a default Cypher version.
+Local database aliases always have the Cypher version of their target database and database aliases in composite databases always have the Cypher version of the composite database they belong to.
+For more information, see the link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/aliases/manage-aliases-standard-databases/#set-default-language-for-remote-database-aliases[Operations Manual -> Set a default Cypher version for remote database aliases].
+
+a|
+label:functionality[]
+label:new[]
+[source, cypher, role="noheader"]
+----
+ALTER DATABASE movies SET DEFAULT LANGUAGE CYPHER 25
+----
+
+a| Alter the default Cypher version of an existing standard or composite database.
+The available versions are `CYPHER 25` and `CYPHER 5`.
+For more information, see the link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/standard-databases/alter-databases/#alter-database-default-language[Operations Manual -> Alter the default Cypher version of an existing database].
+
+a|
+label:functionality[]
+label:new[]
+
+[source, cypher, role="noheader"]
+----
+ALTER ALIAS `remote-with-default-language` SET DATABASE DEFAULT LANGUAGE CYPHER 25
+----
+
+a| Alter the default Cypher version of a remote database alias.
+The available versions are `CYPHER 25` and `CYPHER 5`.
+It is not possible to alter the default Cypher version of a local database alias or an alias belonging to a composite database.
+Local database aliases always have the Cypher version of their target database and aliases belonging to composite databases always have the Cypher version of the composite database.
+For more information, see the link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/aliases/manage-aliases-standard-databases/#alter-default-language-remote-database-alias[Operations Manual -> Alter the default Cypher version of a remote database alias].
+
+a|
+label:functionality[]
+label:new[]
+
+[source, cypher, role="noheader"]
+----
+SHOW DATABASES YIELD name, defaultLanguage
+----
+
+a| The new return column `defaultLanguage` for the `SHOW DATABASE` command returns the default language of a database.
+This column is not returned by default; it can only be returned using `YIELD`.
+For more information, see the link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/standard-databases/listing-databases/#_show_the_default_cypher_version_of_a_database[Operations Manual -> Show the default Cypher version of a database].
+
+a|
+label:functionality[]
+label:new[]
+
+[source, cypher, role="noheader"]
+----
+SHOW ALIAS `remote-with-default-language` FOR DATABASE YIELD name, defaultLanguage
+----
+
+a| The new return column `defaultLanguage` for the `SHOW ALIAS` command returns the default language of a database alias.
+This column is not returned by default; it can only be returned using `YIELD`.
+For more information, see the link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/aliases/manage-aliases-standard-databases/#manage-aliases-list[Operations Manual -> List database aliases].
+
+a|
+label:functionality[]
+label:new[]
+
+[source, cypher, role="noheader"]
+----
+CYPHER 25
+MATCH (n:Person)
+FILTER n.age < 35
+RETURN n.name AS name
+----
+
+a| New query option: `CYPHER 25`.
+Prepending a query with `CYPHER 25` ensures that a query is run with Cypher 25, regardless of the default language of a database.
+(The ability to select `CYPHER 5` was introduced in Neo4j 5.21).
 
 a|
 label:functionality[]
@@ -444,6 +766,16 @@ CREATE DATABASE db OPTIONS { seedRestoreUntil: ... }
 | The option `seedRestoreUntil` can now be specified in the `CREATE DATABASE` `OPTIONS` map.
 This allows a database to be seeded up to a specific date or transaction ID.
 For more information, see link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/standard-databases/seed-from-uri/[Operations Manual -> Database administration -> Create a database from a URI].
+
+a|
+label:functionality[]
+label:new[]
+[source, cypher, role="noheader"]
+----
+CREATE DATABASE db OPTIONS { seedSourceDatabase: ... }
+----
+| You can specify the name of a source database if the `seedURI` points to a folder containing backups for multiple databases.
+For more information, see link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/standard-databases/create-databases/#manage-databases-create-database-options[Operations Manual -> Database administration -> Create databases].
 
 a|
 label:functionality[]
@@ -699,7 +1031,7 @@ CALL db.schema.nodeTypeProperties() YIELD propertyTypes RETURN propertyTypes;
 CALL db.schema.relTypeProperties() YIELD propertyTypes RETURN propertyTypes;
 ----
 a|
-The column `propertyTypes` currently returned by the procedures link:{neo4j-docs-base-uri}/operations-manual/current/procedures/#procedure_db_schema_nodetypeproperties[`db.schema.nodeTypeProperties()`] and link:{neo4j-docs-base-uri}/operations-manual/current/procedures/#procedure_db_schema_reltypeproperties[`db.schema.relTypeProperties()`] produces a list of strings representing the potential Java types for a given property.
+The column `propertyTypes` currently returned by the procedures link:{neo4j-docs-base-uri}/operations-manual/current/procedures/#procedure_db_schema_nodeTypeProperties[`db.schema.nodeTypeProperties()`] and link:{neo4j-docs-base-uri}/operations-manual/current/procedures/#procedure_db_schema_relTypeProperties[`db.schema.relTypeProperties()`] produces a list of strings representing the potential Java types for a given property.
 In an upcoming major release of Neo4j, this will be updated to represent the possible Cypher types for that property instead.
 For all available Cypher types, see the section on xref::values-and-types/property-structural-constructed.adoc#types-synonyms[types and their synonyms].
 
@@ -736,9 +1068,16 @@ label:deprecated[]
 USE my.db ...
 
 ----
-| In xref:clauses/use.adoc[`USE`] clauses, databases and aliases with unquoted `.` are deprecated unless the `.` is used to indicate that the database or alias belongs to a composite database.
-Names containing `.` should be quoted using backticks. 
-For example, `USE `my.db`` is valid.
+a| The use of unquoted `.` characters in xref:clauses/use.adoc[`USE`] clauses when specifying databases and aliases was deprecated in 5.26, except when `.` indicated that the database or alias belonged to a composite database.
+However, this deprecation was withdrawn in Neo4j 2025.06, and replaced by the following updates in Cypher 25:
+
+* xref::deprecations-additions-removals-compatibility.adoc#_graph_reference_removed_name_parts_quoting[Removed support for quoted name parts in graph references]
+
+* xref::deprecations-additions-removals-compatibility.adoc#_graph_reference_updated_graph_by_name_quotes[Update to graph functions]
+
+This is because the previous quoting rules were inconsistent and ambiguous.
+The rules are clarified and improved in Cypher 25.
+For more information, see xref::values-and-types/graph-references.adoc#rules[Graph reference rules]
 
 |===
 
@@ -3357,12 +3696,16 @@ label:deprecated[]
 CREATE DATABASE databaseName.withDot ...
 ----
 a|
-Creating a database with dots in the name has been deprecated, instead quote the database name using backticks:
+Creating a database with . characters was deprecated in 5.0.
+However, this deprecation was withdrawn in 2025.06, and replaced by the following updates in Cypher 25:
 
-[source, cypher, role="noheader"]
-----
-CREATE DATABASE `databaseName.withDot` ...
-----
+* xref::deprecations-additions-removals-compatibility.adoc#_graph_reference_removed_name_parts_quoting[Removed support for quoted name parts in graph references]
+
+* xref::deprecations-additions-removals-compatibility.adoc#_graph_reference_updated_graph_by_name_quotes[Update to graph functions]
+
+This is because the previous quoting rules were inconsistent and ambiguous.
+The rules are clarified and improved in Cypher 25.
+For more information, see xref::values-and-types/graph-references.adoc#rules[Graph reference rules]
 
 a|
 [[cypher-5_0-d_4]]

@@ -9,7 +9,7 @@ Cypher supports two match modes:
 The same restriction does not hold for nodes, which may be re-traversed any number of times in a matched path.
 This is Cypher’s default match mode, applicable to most use cases.
 * xref:patterns/match-modes.adoc#repeatable-elements[`REPEATABLE ELEMENTS`]: no restrictions on how often nodes and relationships can be traversed in a match for a graph pattern.
-This match mode is required in order for paths to be able to traverse a relationship more than once. label:new[Introduced in Neo4j 2025.06]
+This match mode is required in order for paths to be able to traverse a relationship more than once. label:cypher[Cypher 25 only] label:new[Introduced in Neo4j 2025.06]
 
 [[example-graph]]
 == Example graph
@@ -47,7 +47,8 @@ As such, `DIFFERENT RELATIONSHIPS` is ideal to showcase the Königsberg bridges 
 That is, if no match mode is specified, Cypher will default to solving graph patterns according to the restrictions imposed by `DIFFERENT RELATIONSHIPS`.
 
 [NOTE]
-The `DIFFERENT RELATIONSHIPS` keyword was released in Neo4j 2025.06 and can be used to explicitly specify Cypher's default match mode after `MATCH`.
+The `DIFFERENT RELATIONSHIPS` keyword was released in Neo4j 2025.06.
+It is only available in Cypher 25 and can be used to explicitly specify Cypher's default match mode after `MATCH`.
 For example, `MATCH DIFFERENT RELATIONSHIPS p = (start)--{,2}(end)`.
 This is functionally equivalent to not specifying a match mode.
 
@@ -95,7 +96,7 @@ RETURN pathCount,
        [r IN relationships(samplePath) | r.id] AS samplePathBridges
 ----
 
-<1> The xref:functions/list.adoc#functions-collect[`collect()`] function collects all paths and `[0]` takes the first entry as the `samplePath`.
+<1> The xref:functions/aggregating.adoc#functions-collect[`collect()`] function collects all paths and `[0]` takes the first entry as the `samplePath`.
 
 .Result
 [role="queryresult",options="header,footer",cols="3*<m"]
@@ -115,11 +116,13 @@ _In the `samplePath` with a length of `6` returned by `DIFFERENT RELATIONSHIPS`,
 However, if the relationship count is increased to `7`, `0` paths are returned.
 
 .Find paths with a length of 7 relationships
+// tag::patterns_match_modes_different_relationships[]
 [source, cypher]
 ----
 MATCH p = (:Location {name: 'Kneiphof'})--{7}()
 RETURN count(p) AS pathCount
 ----
+// end::patterns_match_modes_different_relationships[]
 
 .Result
 [role="queryresult",options="header,footer",cols="1*<m"]
@@ -139,7 +142,7 @@ This reflects the conclusion of Euler’s Seven bridges of Königsberg problem: 
 
 For more information about this match mode, see xref:patterns/reference.adoc#match-modes-rules-different-relationships[Syntax & semantics -> `DIFFERENT RELATIONSHIPS`].
 
-[role=label--new-2025.06]
+[role=label--new-Neo4j-2025.06 label--cypher-25-only]
 [[repeatable-elements]]
 == REPEATABLE ELEMENTS
 
@@ -153,6 +156,7 @@ Queries utilizing this match mode must specify the `REPEATABLE ELEMENTS` keyword
 The following query matches the graph for paths with a length of `7` relationships using `REPEATABLE ELEMENTS` and returns a sample path.
 
 .Find a path with a length of 7 relationships using `REPEATABLE ELEMENTS`
+// tag::patterns_match_modes_repeatable_elements[]
 [source, cypher]
 ----
 MATCH REPEATABLE ELEMENTS p = (:Location {name: 'Kneiphof'})-[:BRIDGE]-{7}()
@@ -160,6 +164,7 @@ WITH collect(p)[0] AS samplePath
 RETURN [n IN nodes(samplePath) | n.name] AS samplePathLocations,
        [r IN relationships(samplePath) | r.id] AS samplePathBridges
 ----
+// end::patterns_match_modes_repeatable_elements[]
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -181,11 +186,10 @@ The next example matches paths starting and ending at the same `Location` (`Knei
 ----
 MATCH REPEATABLE ELEMENTS p = (start:Location {name: 'Kneiphof'})-[:BRIDGE]-{,9}(start) // <1>
 WHERE all(bridge IN range(1,7) WHERE bridge IN [r IN relationships(p) | r.id]) // <2>
-WITH p
-ORDER BY length(p)
-LIMIT 1
 RETURN [n IN nodes(p) | n.name] AS visitedLocations,
        [r IN relationships(p) | r.id] AS crossedBridges
+ORDER BY length(p), crossedBridges
+LIMIT 1
 ----
 
 <1> Paths with a length of less than 9 relationships return no results because they do not allow enough moves to traverse all seven bridges at least once while forming a cycle back to Kneiphof.
@@ -196,13 +200,13 @@ RETURN [n IN nodes(p) | n.name] AS visitedLocations,
 |===
 | visitedLocations | crossedBridges
 
-| ["Kneiphof", "South Bank", "Kneiphof", "South Bank", "Lomse", "Kneiphof", "North Bank", "Lomse", "North Bank", "Kneiphof"]
-| [4, 6, 4, 3, 7, 5, 2, 2, 1]
+| ["Kneiphof", "North Bank", "Kneiphof", "South Bank", "Lomse", "North Bank", "Kneiphof", "South Bank", "Lomse", "Kneiphof"]
+| [1, 1, 4, 3, 2, 5, 6, 3, 7]
 
 2+d|Rows: 1
 |===
 
-The order of the bridges traversed in the path returned demonstrates that bridges `2` and `4` were crossed twice in order to return to `Kneiphof`.
+The order of the bridges traversed in the path returned demonstrates that bridges `1` and `3` were crossed twice in order to return to `Kneiphof`.
 
 image::repeatable-elements-graph.svg[Several graphs showing order of traversals when using repeatable elements match mode, width=600, role=popup]
 _Sequence of bridge traversals when using `REPEATABLE ELEMENTS`._
@@ -253,3 +257,10 @@ RETURN count(p) AS pathCount
 ----
 The quantified path pattern may yield an infinite number of rows under match mode 'REPEATABLE ELEMENTS'. Add an upper bound to the quantified path pattern.
 ----
+
+
+[[further-reading]]
+== Further reading
+
+* link:https://neo4j.com/blog/developer/i-would-walk-500-miles/[Neo4j Developer Blog: I Would Walk 500 Miles]
+* link:https://neo4j.com/blog/developer/query-chomp-repeat/[Neo4j Developer Blog: Query, Chomp, Repeat]
