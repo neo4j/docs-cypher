@@ -22,6 +22,136 @@ Cypher 25 was introduced in Neo4j 2025.06 and can only be used on Neo4j 2025.06+
 Features removed in Cypher 25 are still available on Neo4j 2025.06+ databases either by prepending a query with `CYPHER 5` or by having Cypher 5 as the default language for the database.
 For more information, see xref:queries/select-version.adoc[].
 
+[[cypher-deprecations-additions-removals-2025.09]]
+== Neo4j 2025.09
+
+=== New in Cypher 25
+
+[cols="2", options="header"]
+|===
+| Feature
+| Details
+
+a|
+label:functionality[]
+label:new[]
+[source, cypher, role="noheader"]
+----
+WITH datetime('1986-11-18T6:04:45.123456789+01:00[Europe/Berlin]') AS dt
+RETURN format(dt, "MM/dd/yyyy") AS US, format(dt, "dd/MM/yyyy") AS EU
+----
+
+| Cypher's new xref:functions/temporal/format.adoc[`format()`] function can create dynamically formatted string representations of temporal instance and duration types.
+
+a| 
+label:functionality[]
+label:new[]
+
+New operator: `LockNodes`
+
+
+a| Introduced xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-lock-nodes[`LockNodes`] operator, sometimes used in conjunction with the `LockingMerge` operator to lock nodes.
+
+|===
+
+[[cypher-deprecations-additions-removals-2025.08]]
+== Neo4j 2025.08
+
+=== Updated in Cypher 25
+
+[cols="2", options="header"]
+|===
+| Feature
+| Details
+
+a|
+label:functionality[]
+label:updated[]
+[source, cypher]
+----
+MATCH (p:Product) WHERE p.name <> "Coffee"
+CALL (p) {
+    MATCH (p)<-[:BUYS]-(c:Customer)-[:BUYS]->(otherProduct)
+    RETURN c, otherProduct
+    NEXT
+    RETURN count(DISTINCT c) AS customers, 0 AS customersAlsoBuyingCoffee
+    UNION
+    FILTER otherProduct.name = "Coffee"
+    RETURN 0 as customers, count(DISTINCT c) AS customersAlsoBuyingCoffee
+    NEXT
+    RETURN max(customers) AS customers, max(customersAlsoBuyingCoffee) AS customersAlsoBuyingCoffee
+}
+RETURN p.name AS product,
+       round(toFloat(customersAlsoBuyingCoffee) * 100 / customers, 1) AS percentageOfCustomersAlsoBuyingCoffee
+  ORDER BY product
+----
+
+| `NEXT` now correctly supports aggregations in the context of `UNION` and `CALL`.
+For more information, see xref:queries/composed-queries/sequential-queries.adoc#issues-fixes[Sequential queries (`NEXT`) > Known issues and fixes].
+
+a|
+label:functionality[]
+label:updated[]
+[source, cypher]
+----
+PROFILE 
+WITH "Person" AS label
+MATCH (people:$(label))
+RETURN people.name
+----
+
+| Cypher can now leverage xref:indexes/search-performance-indexes/using-indexes.adoc#token-lookup-indexes[token lookup indexes] when planning queries with xref:clauses/match.adoc#dynamic-match[dynamic labels and relationship types].
+This is enabled by the introduction of three new query plan operators: xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-dynamic-label-node-lookup[`DynamicLabelNodeLookup`], xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-dynamic-directed-relationship-type-lookup[`DynamicDirectedRelationshipTypeLookup`], and xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-dynamic-undirected-relationship-type-lookup[`DynamicUndirectedRelationshipTypeLookup`].
+|===
+
+=== New in Cypher 25
+
+[cols="2", options="header"]
+|===
+| Feature
+| Details
+
+a|
+label:functionality[]
+label:new[]
+[source, cypher, role="noheader"]
+----
+MATCH (()-->(n))+
+WHERE allReduce(acc = 0, node IN n \| acc + node.x, 6 < acc < 30)
+RETURN [i IN n \| i.x] AS sequence 
+ORDER BY head(n).x, size(n)
+----
+
+| New xref:functions/predicate.adoc#functions-allreduce[`allReduce()`] function.
+It enables the stepwise evaluation of a value accumulated over a path, allowing for early pruning of paths that do not satisfy a given predicate, and is optimized for path expansions.
+|===
+
+
+[[cypher-deprecations-additions-removals-2025.07]]
+== Neo4j 2025.07
+
+=== Updated in Cypher 25
+
+[cols="2", options="header"]
+|===
+| Feature
+| Details
+
+a|
+label:functionality[]
+label:updated[]
+[source, cypher, role="noheader"]
+----
+MATCH (n)-[r]->()
+WHERE n:$(<expr1>)
+WITH n, r:$(<expr2>) AS hasType
+RETURN n:$(<expr3>)
+----
+
+| Added the ability to dynamically reference node labels and relationship types in places where xref:patterns/reference.adoc#label-expressions[label expressions] are allowed.
+|===
+
+
 [[cypher-deprecations-additions-removals-2025.06]]
 == Neo4j 2025.06
 
@@ -260,7 +390,7 @@ CALL db.schema.nodeTypeProperties() YIELD propertyTypes RETURN propertyTypes;
 CALL db.schema.relTypeProperties() YIELD propertyTypes RETURN propertyTypes;
 ----
 a|
-The column `propertyTypes` returned by the procedures link:{neo4j-docs-base-uri}/operations-manual/current/procedures/#procedure_db_schema_nodetypeproperties[`db.schema.nodeTypeProperties()`] and link:{neo4j-docs-base-uri}/operations-manual/current/procedures/#procedure_db_schema_reltypeproperties[`db.schema.relTypeProperties()`] previously returned a list of strings representing the potential Java types for a given property.
+The column `propertyTypes` returned by the procedures link:{neo4j-docs-base-uri}/operations-manual/current/procedures/#procedure_db_schema_nodeTypeProperties[`db.schema.nodeTypeProperties()`] and link:{neo4j-docs-base-uri}/operations-manual/current/procedures/#procedure_db_schema_relTypeProperties[`db.schema.relTypeProperties()`] previously returned a list of strings representing the potential Java types for a given property.
 It now returns a list of strings representing the possible Cypher Types the given property has.
 For all available Cypher types, see the section on xref::values-and-types/property-structural-constructed.adoc#types-synonyms[types and their synonyms].
 
@@ -336,6 +466,112 @@ RETURN replace("hello world", "l", "", 1)
 |===
 | Feature
 | Details
+
+a|
+label:functionality[]
+label:new[]
+
+[source, cypher, role="noheader"]
+----
+CREATE [COMPOSITE] DATABASE actors SET DEFAULT LANGUAGE CYPHER 25
+----
+
+a| Set the default Cypher version for a standard or composite database when creating it.
+The available versions are `CYPHER 25` and `CYPHER 5`.
+If not specified, the default language for the database is set to the default language of the DBMS.
+For more information, see the following sections in the Operations Manual:
+
+* link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/standard-databases/create-databases/#_set_a_default_cypher_version_for_a_standard_database[Set a default Cypher version for a standard database].
+* link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/composite-databases/create-composite-databases/#composite-databases-default-language[Set the default Cypher version for a composite database].
+
+a|
+label:functionality[]
+label:new[]
+
+[source, cypher, role="noheader"]
+----
+CREATE ALIAS `remote-with-default-language`
+FOR DATABASE `northwind-graph-2020`
+	AT "neo4j+s://location:7687"
+	USER alice
+	PASSWORD 'example_secret'
+	DEFAULT LANGUAGE CYPHER 25
+----
+
+a| Set the default Cypher version for a remote database alias when creating it.
+The available versions are `CYPHER 5` and `CYPHER 25`.
+Local database aliases and database aliases in composite databases cannot be assigned a default Cypher version.
+Local database aliases always have the Cypher version of their target database and database aliases in composite databases always have the Cypher version of the composite database they belong to.
+For more information, see the link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/aliases/manage-aliases-standard-databases/#set-default-language-for-remote-database-aliases[Operations Manual -> Set a default Cypher version for remote database aliases].
+
+a|
+label:functionality[]
+label:new[]
+[source, cypher, role="noheader"]
+----
+ALTER DATABASE movies SET DEFAULT LANGUAGE CYPHER 25
+----
+
+a| Alter the default Cypher version of an existing standard or composite database.
+The available versions are `CYPHER 25` and `CYPHER 5`.
+For more information, see the link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/standard-databases/alter-databases/#alter-database-default-language[Operations Manual -> Alter the default Cypher version of an existing database].
+
+a|
+label:functionality[]
+label:new[]
+
+[source, cypher, role="noheader"]
+----
+ALTER ALIAS `remote-with-default-language` SET DATABASE DEFAULT LANGUAGE CYPHER 25
+----
+
+a| Alter the default Cypher version of a remote database alias.
+The available versions are `CYPHER 25` and `CYPHER 5`.
+It is not possible to alter the default Cypher version of a local database alias or an alias belonging to a composite database.
+Local database aliases always have the Cypher version of their target database and aliases belonging to composite databases always have the Cypher version of the composite database.
+For more information, see the link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/aliases/manage-aliases-standard-databases/#alter-default-language-remote-database-alias[Operations Manual -> Alter the default Cypher version of a remote database alias].
+
+a|
+label:functionality[]
+label:new[]
+
+[source, cypher, role="noheader"]
+----
+SHOW DATABASES YIELD name, defaultLanguage
+----
+
+a| The new return column `defaultLanguage` for the `SHOW DATABASE` command returns the default language of a database.
+This column is not returned by default; it can only be returned using `YIELD`.
+For more information, see the link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/standard-databases/listing-databases/#_show_the_default_cypher_version_of_a_database[Operations Manual -> Show the default Cypher version of a database].
+
+a|
+label:functionality[]
+label:new[]
+
+[source, cypher, role="noheader"]
+----
+SHOW ALIAS `remote-with-default-language` FOR DATABASE YIELD name, defaultLanguage
+----
+
+a| The new return column `defaultLanguage` for the `SHOW ALIAS` command returns the default language of a database alias.
+This column is not returned by default; it can only be returned using `YIELD`.
+For more information, see the link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/aliases/manage-aliases-standard-databases/#manage-aliases-list[Operations Manual -> List database aliases].
+
+a|
+label:functionality[]
+label:new[]
+
+[source, cypher, role="noheader"]
+----
+CYPHER 25
+MATCH (n:Person)
+FILTER n.age < 35
+RETURN n.name AS name
+----
+
+a| New query option: `CYPHER 25`.
+Prepending a query with `CYPHER 25` ensures that a query is run with Cypher 25, regardless of the default language of a database.
+(The ability to select `CYPHER 5` was introduced in Neo4j 5.21).
 
 a|
 label:functionality[]
@@ -710,7 +946,7 @@ CALL db.schema.nodeTypeProperties() YIELD propertyTypes RETURN propertyTypes;
 CALL db.schema.relTypeProperties() YIELD propertyTypes RETURN propertyTypes;
 ----
 a|
-The column `propertyTypes` currently returned by the procedures link:{neo4j-docs-base-uri}/operations-manual/current/procedures/#procedure_db_schema_nodetypeproperties[`db.schema.nodeTypeProperties()`] and link:{neo4j-docs-base-uri}/operations-manual/current/procedures/#procedure_db_schema_reltypeproperties[`db.schema.relTypeProperties()`] produces a list of strings representing the potential Java types for a given property.
+The column `propertyTypes` currently returned by the procedures link:{neo4j-docs-base-uri}/operations-manual/current/procedures/#procedure_db_schema_nodeTypeProperties[`db.schema.nodeTypeProperties()`] and link:{neo4j-docs-base-uri}/operations-manual/current/procedures/#procedure_db_schema_relTypeProperties[`db.schema.relTypeProperties()`] produces a list of strings representing the potential Java types for a given property.
 In an upcoming major release of Neo4j, this will be updated to represent the possible Cypher types for that property instead.
 For all available Cypher types, see the section on xref::values-and-types/property-structural-constructed.adoc#types-synonyms[types and their synonyms].
 
