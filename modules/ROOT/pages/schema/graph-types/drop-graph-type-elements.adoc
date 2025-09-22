@@ -2,6 +2,157 @@
 :page-role: cypher-25-only new-neo4j-2025.xx enterprise-edition
 = Drop elements in a graph type
 
+The `ALTER CURRENT GRAPH TYPE DROP` command allows you to drop elements from a graph type.
+
+[NOTE]
+Dropping elements from a graph type the link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-constraints[`DROP CONSTRAINT` privilege].
+
+.Set graph type
+[source, cypher]
+----
+ALTER CURRENT GRAPH TYPE SET {
+   (p:Person => :Resident {name :: STRING, ssn :: INTEGER})
+     REQUIRE (p.name, p.ssn) IS KEY,
+   (:Pet => :Resident&Animal {insuranceNumber :: INTEGER IS KEY, healthCertificate :: STRING IS UNIQUE, name :: STRING}),
+   (:Robot => :Resident&Machine {application :: STRING NOT NULL, id :: INTEGER NOT NULL}),
+   (:City => {name :: STRING NOT NULL, population :: INTEGER}),
+   (:Resident)-[:LIVES_IN => {since:: ANY NOT NULL}]->(:City),
+   CONSTRAINT company_name FOR (c:Company) REQUIRE c.name IS KEY,
+   CONSTRAINT resident_address FOR (resident:Resident) REQUIRE resident.address :: STRING,
+   CONSTRAINT ownership_id FOR ()-[owner:OWNER_OF]->() REQUIRE owner.ownershipId IS UNIQUE,
+   (:Company => {name :: STRING, address :: STRING IS UNIQUE}),
+   (:Person)-[:WORKS_FOR => {role :: STRING})->(:Company)
+}
+----
+
+[[drop-element-types]]
+== Drop node and relationship element types
+
+To fully drop a node or relationship element type, it is only necessary to define its identifying node label/relationship type appended with `\=>`.
+
+.Drop node and relationship element types
+[source, cypher]
+----
+ALTER CURRENT GRAPH TYPE DROP {
+    (:Pet => ),
+    ()-[:LIVES_IN => ]->()
+}
+----
+
+You can also define the full element type when dropping an element type.
+Partial definitions, however, are not allowed.
+
+[cols="3*", options="header"]
+|===
+| Allowed -- identifying node label/relationship type only
+| Allowed -- full definition
+| Not allowed -- partial definition
+
+a|
+[source]
+----
+ALTER CURRENT GRAPH TYPE DROP {
+    (:Pet => )
+}
+----
+
+a|
+[source]
+----
+ALTER CURRENT GRAPH TYPE DROP {
+    (:Pet => :Resident&Animal {insuranceNumber :: INTEGER IS KEY, healthCertificate :: STRING IS UNIQUE, name :: STRING})
+}
+----
+
+a|
+[source]
+----
+ALTER CURRENT GRAPH TYPE DROP {
+    (:Pet => :Resident&Animal)
+}
+----
+
+|===
+
+Dropping a node or relationship element type in this way can remove the following constraints:
+
+* Node label existence constraints
+* Source and target node label constraints
+* Property type and property existence constraints defined against a node or relationship element type.
+
+These constraints cannot be removed separately from the node or relationship element type they support.
+
+Not allowed -- drop a dependent constraint from a node or relationship element type
+[source, cypher, role=test-fail]
+----
+ALTER CURRENT GRAPH TYPE DROP {
+   CONSTRAINT constraint_22a8753a // <1>
+}
+----
+
+<1> `constraint_22a8753a` is a property existence constraint defined on the `City` node element type (constraint names are returned by the xref:schema/graph-types/list-graph-types.adoc#graph-type-elements-in-show-constraints[`SHOW CONSTRAINTS`] command).
+
+*Removing a node or relationship element type does not, however, remove any property uniqueness or key constraints defined against a node or relationship element type.*
+*Rather, it leaves them as constraints on non-identifying node-labels and relationship types.*
+*These must therefore be removed separately, using their constraint name.*
+For more information, see xref:schema/graph-types/drop-graph-type-elements.adoc#drop-constraints-on-identifying-and-non-identifying-labels-and-types[Drop constraints on identifying and non-identifying node labels and relationship types] below.
+
+If the identifying label of a node element type is also constrained as a source/target node label in a relationship element type, then the node element type cannot be dropped without also dropping or first altering the relationship element type.
+
+.Not allowed -- drop a node element type whose identifying label is also the source/target node label in a relationship element type
+[source, cypher, role=test-fail]
+----
+ALTER CURRENT GRAPH TYPE DROP {
+    (:Person => )
+}
+----
+
+.Error message
+[source, error]
+----
+22NCE: data exception - node element type in use. The node element type identified by the label `Person` is referenced in the graph type element '()-[:`WORKS_FOR` =>]->()' and cannot be dropped.
+----
 
 [[drop-constraints-on-identifying-and-non-identifying-labels-and-types]]
 == Drop constraints on identifying and non-identifying node labels and relationship types
+
+Key and property uniqueness constraints can only be dropped by using the `CONSTRAINT [name]` syntax in the `ALTER CURRENT GRAPH TYPE DROP` command, regardless if they were defined on an identifying or non-identifying label.
+Property existence and property type constraints defined on non-identifying node labels and relationship types are also dropped in this way.
+The names of constraints are returned by the xref:schema/constraints/list-constraints.adoc[`SHOW CONSTRAINTS`] command.
+
+.Drop explicitly named and generated name key and property uniqueness constraint
+[source, cypher]
+----
+ALTER CURRENT GRAPH TYPE DROP {
+    CONSTRAINT ownership_id,
+    CONSTRAINT constraint_302a3693
+}
+----
+
+These constraints can also be dropped from the graph type using the xref:schema/constraints/drop-constraints.adoc[`DROP CONSTRAINT`] command.
+
+.Drop property type constraint on a non-identifying node label
+[source, cypher]
+----
+DROP CONSTRAINT resident_address
+----
+
+[[drop-full-graph-type]]
+== Drop a full graph type
+
+To drop a full graph type, use the `ALTER CURRENT GRAPH TYPE SET` command.
+This will replace the existing graph type with a new (possibly empty) graph type.
+
+.Drop full graph type and replace it with an empty graph type
+[source, cypher]
+----
+ALTER CURRENT GRAPH TYPE SET { }
+----
+
+.Drop full graph type and replace with a new graph type
+[source, cypher]
+----
+ALTER CURRENT GRAPH TYPE SET {
+    (n:Label => :LabelTwo {property :: STRING})
+}
+----
