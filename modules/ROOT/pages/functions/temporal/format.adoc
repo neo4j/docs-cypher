@@ -1,0 +1,339 @@
+:description: Information about Cypher's function to format temporal instance and duration values.
+:table-caption!:
+
+[[query-functions-temporal-format]]
+= Temporal functions - format
+
+[role=label--cypher-25-only label--new-Neo4j-2025.09]
+[[query-functions-temporal-format-function]]
+== format()
+
+The `format()` function creates dynamically formatted string representations of temporal instance and duration types.
+
+.Details
+|===
+| *Syntax*         3+| `format(value[, pattern])`
+| *Description*    3+| Returns the temporal value as an ISO-formatted `STRING` or as a `STRING` formatted by the provided pattern.
+.3+| *Arguments*     | *Name*    | *Type* | *Description*
+                     | `value`   | `DATE \| LOCAL TIME \| ZONED TIME \| LOCAL DATETIME \| ZONED DATETIME \| DURATION` | A temporal value to be formatted.
+                     | `pattern` | `STRING`                                                                           | A pattern used to format the temporal value. If the pattern is not provided the value will be formatted according to ISO 8601.
+| *Returns*        3+| `STRING`
+|===
+
+.Considerations
+|===
+| The output format can be customized via the `pattern` parameter.
+| The `pattern` parameter follows the link:https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/time/format/DateTimeFormatter.html[Java DateTimeFormatter].
+| If no pattern is specified, the function returns an ISO-formatted string.
+| Most characters yield a different output when they are repeated.
+| Some characters cannot be applied to certain types, for instance, `u` cannot be used to construct a string for a `LOCAL TIME` because it represents a year which is not part of the temporal value.
+| Any character that is not reserved, other than `[`, `]`, `{`, `}`, `#`, and `'`, are output directly. To ensure future compatibility it is recommended to wrap all characters that you want to output directly with single quotes.
+|===
+
+[[query-functions-temporal-format-instance-types]]
+== Instance types
+
+Cypher's instance types are `DATE`, `LOCAL TIME`, `ZONED TIME`, `LOCAL DATETIME` and `ZONED DATETIME`.
+For more information, see xref:/values-and-types/temporal.adoc#cypher-temporal-instants[Values and types -> temporal instants].
+
+Use the characters in xref:#query-functions-temporal-format-instance-types-characters[] to create a string pattern for instance types.
+
+
+[[query-functions-temporal-format-instance-types-examples]]
+=== Examples
+
+.Instance formatting, US American and European dates
+======
+
+.Query
+// tag::functions_format_instance_type[]
+[source, cypher, indent=0]
+----
+WITH datetime('1986-11-18T6:04:45.123456789+01:00[Europe/Berlin]') AS dt
+RETURN format(dt, "MM/dd/yyyy") AS US, format(dt, "dd/MM/yyyy") AS EU
+----
+// end::functions_format_instance_type[]
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+
+| US            | EU
+| "11/18/1986" | "18/11/1986"
+2+d|Rows: 1
+
+|===
+
+======
+
+.Instance formatting with day-of-week, month-of-year, day-of-month, era and year
+======
+
+.Query
+[source, cypher, indent=0]
+----
+WITH datetime('1986-11-18T6:04:45.123456789+01:00[Europe/Berlin]') AS dt
+RETURN format(dt, "EEEE, MMMM d, G uuuu") AS instanceString
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+
+| instanceString
+| "Tuesday, November 18, AD 1986"
+1+d|Rows: 1
+
+|===
+
+Four occurrences of `E` and `M` (text presentations) output the full form of the day and month.
+
+======
+
+.Instance formatting with day-of-year and localized day-of-week
+======
+
+.Query
+[source, cypher, indent=0]
+----
+WITH datetime('1986-11-18T6:04:45.123456789+01:00[Europe/Berlin]') AS dt
+RETURN format(dt, "DDD'nd day of the year,' c'rd day of the week'") AS instanceString
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+
+| instanceString
+| "322nd day of the year, 3rd day of the week"
+1+d|Rows: 1
+
+|===
+
+======
+
+.Instance formatting with clock-hour-of-day (1-24), minute-of-hour and time-zone name
+======
+
+.Query
+[source, cypher, indent=0]
+----
+WITH datetime('1986-11-18T6:04:45.123456789+01:00[Europe/Berlin]') AS dt
+RETURN format(dt, "k:mm z") AS CET, format(dt, "K:mm O") AS GMT
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+
+| CET          | GMT
+| "6:04 CET" | "6:04 GMT+1"
+2+d|Rows: 1
+
+|===
+
+======
+
+.Instance formatting with month-of-year, day-of-month, milli-of-day, minute-of-hour and second-of-minute
+======
+
+.Query
+[source, cypher, indent=0]
+----
+WITH datetime('1986-11-18T6:04:45.123456789+01:00[Europe/Berlin]') AS dt
+RETURN format(dt, "LLL d,' minute 'm', second 's', millisecond of the day 'A") AS instanceString
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+
+| instanceString
+| "Nov 18, minute 4, second 45, millisecond of the day 21885123"
+1+d|Rows: 1
+
+|===
+
+Three occurrences of `L` (number/text presentation) output the short form ("Nov").
+
+======
+
+.Instance formatting with pad next and week-based-year
+======
+
+.Query
+[source, cypher, indent=0]
+----
+WITH datetime('1986-11-18T6:04:45.123456789+01:00[Europe/Berlin]') AS dt
+RETURN format(dt, "pppYY") AS instanceString
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+
+| instanceString
+| " 86"
+1+d|Rows: 1
+
+|===
+
+The three occurrences of `p` add one space character of padding to the two digit form output by two occurrences of `Y`.
+
+======
+
+
+[[query-functions-temporal-format-instance-types-characters]]
+=== String pattern characters
+
+[#instance-character-table]
+.Allowed characters for instance type string patterns
+[options="header"]
+|===
+| Character | Meaning                    | Presentation | Examples
+| `G`       | era                        | text         | AD; Anno Domini; A
+| `u`       | year                       | year         | 2004; 04
+| `y`       | year-of-era                | year         | 2004; 04
+| `D`       | day-of-year                | number       | 189
+| `M` / `L` | month-of-year              | number/text  | 7; 07; Jul; July; J
+| `d`       | day-of-month               | number       | 10
+| `g`       | modified-julian-day        | number       | 2451334
+| `Q` / `q` | quarter-of-year            | number/text  | 3; 03; Q3; 3rd quarter
+| `Y`       | week-based-year            | year         | 1996; 96
+| `w`       | week-of-week-based-year    | number       | 27
+| `W`       | week-of-month              | number       | 4
+| `E`       | day-of-week                | text         | Tue; Tuesday; T
+| `e` / `c` | localized day-of-week      | number/text  | 2; 02; Tue; Tuesday; T
+| `F`       | aligned-week-of-month      | number       | 3
+| `a`       | am-pm-of-day               | text         | PM
+| `B`       | period-of-day              | text         | in the morning
+| `h`       | clock-hour-of-am-pm (1-12) | number       | 12
+| `K`       | hour-of-am-pm (0-11)       | number       | 0
+| `k`       | clock-hour-of-day (1-24)   | number       | 24
+| `H`       | hour-of-day (0-23)         | number       | 0
+| `m`       | minute-of-hour             | number       | 30
+| `s`       | second-of-minute           | number       | 55
+| `S`       | fraction-of-second         | fraction     | 978
+| `A`       | milli-of-day               | number       | 1234
+| `n`       | nano-of-second             | number       | 987654321
+| `N`       | nano-of-day                | number       | 1234000000
+| `V`       | time-zone ID               | zone-id      | America/Los_Angeles; Z; -08:30
+| `v`       | generic time-zone name     | zone-name    | Pacific Time; PT
+| `z`       | time-zone name             | zone-name    | Pacific Standard Time; PST
+| `O`       | localized zone-offset      | offset-O     | GMT+8; GMT+08:00; UTC-08:00
+| `X`       | zone-offset 'Z' for zero   | offset-X     | Z; -08; -0830; -08:30; -083015; -08:30:15
+| `x`       | zone-offset                | offset-x     | +0000; -08; -0830; -08:30; -083015; -08:30:15
+| `Z`       | zone-offset                | offset-Z     | +0000; -0800; -08:00
+| `p`       | pad next                   | pad modifier | 1
+| `"`       | escape for text            | delimiter    | 
+| `'`       | single quote               | literal      | 
+|===
+
+
+[[query-functions-temporal-format-duration-types]]
+== Duration types
+
+Use the characters in xref:#query-functions-temporal-format-duration-types-characters[] to create a string pattern for duration types.
+
+Cypher's duration type `DURATION` has components and component groups.
+For more information, see see xref:values-and-types/temporal.adoc#cypher-temporal-accessing-components-durations[Values and types -> components of durations].
+
+If the string pattern contains a character from a component group but does not contain a character denoting a longer duration from the same group, `format()` converts the longer duration to the equivalent duration with the character that is present.
+For example a missing `y` (year) will be converted to four quarters, if `q` is present in the string pattern.
+This is because without a reference point, there is no way to determine the specifics of a duration.
+
+
+[[query-functions-temporal-format-duration-types-examples]]
+=== Examples
+
+.Duration formatting, years converted to quarters
+======
+
+.Query
+// tag::functions_format_duration_type[]
+[source, cypher, indent=0]
+----
+WITH duration({years: 1, months: 4}) AS d
+RETURN format(d, "y 'years' q 'quarters' M 'months'") AS withYears, format(d, "q 'quarters' M 'months'") AS withoutYears
+----
+// end::functions_format_duration_type[]
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+
+| withYears                     | withoutYears
+| "1 years 1 quarters 1 months" | "5 quarters 1 months"
+2+d|Rows: 1
+
+|===
+======
+
+.Duration formatting, weeks converted to days
+======
+
+.Query
+[source, cypher, indent=0]
+----
+WITH duration({weeks: 3, days: 4}) AS d
+RETURN format(d, "w 'weeks' d 'days'") AS withWeeks, format(d, "d 'days'") AS withoutWeeks
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+
+| withWeeks                     | withoutWeeks
+| "3 weeks 4 days"              | "25 days"
+2+d|Rows: 1
+
+|===
+
+======
+
+.Duration formatting, hours converted to minutes
+======
+
+.Query
+[source, cypher, indent=0]
+----
+WITH duration({days: 4, hours: 5, minutes: 6, seconds: 7}) AS d
+RETURN format(d, "h 'hours' m 'minutes'") AS withHours, format(d, "m 'minutes'") AS withoutHours
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+
+| withHours             | withoutHours
+| "5 hours 6 minutes"   | "306 minutes"
+2+d|Rows: 1
+
+|===
+
+Note how the four days cannot be converted to hours or minutes and do not affect the query result.
+Days are in a different component group than hours and minutes, see xref:#duration-character-table[].
+
+======
+
+
+[[query-functions-temporal-format-duration-types-characters]]
+=== String pattern characters
+
+[#duration-character-table]
+.Allowed characters for a duration type string pattern
+[options="header"]
+|===
+| Component Group | Characters            | Presentation
+.3+| Months       | `y` / `Y`/ `u`        | years
+                  | `q` / `Q`             | quarters
+                  | `M` / `L`             | months
+.2+| Days         | `w` / `W`             | weeks
+                  | `d` / `D`             | days
+.6+| Seconds      | `h` / `H` / `k` / `K` | hours
+                  | `m`                   | minutes
+                  | `s`                   | seconds
+                  | `n` / `S`             | fraction-of-second
+                  | `A`                   | milliseconds
+                  | `N`                   | nanoseconds
+|===
