@@ -1,15 +1,323 @@
-:description: Syntax for how to manage constraints used for ensuring data integrity.
-
-[[constraints-syntax]]
+:description: Syntax for how to manage graph types and constraints in Neo4j.
+:table-caption!:
 = Syntax
-:check-mark: icon:check[]
 
-This page contains the syntax for creating, listing, and dropping the constraints available in Neo4j.
+This page contains the syntax for the graph types and constraints commands.
 
-More details about the syntax can be found in the link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/syntax/[Operations Manual -> Cypher syntax for administration commands].
+[role=label--cypher-25-only label--enterprise-edition label--new-Neo4j-2025.xx]
+[[graph-types]]
+== Graph types
 
-[[constraints-syntax-create]]
-== CREATE CONSTRAINT
+[[element-types]]
+=== Node and relationship element types
+
+.Syntax for node element types, <node element type>
+[source, syntax]
+----
+([alias] {IS | :} IdentifyingLabelName {=> | IMPLIES} [{IS | :} ImpliedLabelName[&...]] [“{“ propertyName [[IS] :: | IS TYPED] <TYPE> [IS [NODE] {KEY | UNIQUE}][, ...] “}”])
+[REQUIRE {alias.propertyName | (alias.propertyName[, ...])} IS [NODE] {KEY | UNIQUE}]
+----
+
+[NOTE]
+A node element type requires either one or more implied labels or a property map.
+
+For more information, see xref:schema/graph-types/set-graph-types.adoc#node-element-types[Set graph types -> Node element types].
+
+.Syntax for relationship element types, <relationship element type>
+[source, syntax]
+-----
+([nodeAlias | [nodeAlias] {IS | :} LabelName [=> | IMPLIES]])-”[“ [alias] {IS | :} IDENTIFYING_RELATIONSHIP_TYPE {=> | IMPLIES} [“{“ propertyName [[IS] :: | IS TYPED] <TYPE> [IS [REL | RELATIONSHIP] {KEY | UNIQUE}][, ...] “}”] “]”->([nodeAlias | [nodeAlias] {IS | :} LabelName [=> | IMPLIES]])
+[REQUIRE {alias.propertyName | (alias.propertyName[, ...])} IS [REL | RELATIONSHIP] {KEY | UNIQUE}]
+-----
+
+[NOTE]
+====
+A relationship element type requires either:
+
+* A source or a target node.
+* A property map.
+====
+
+For more information, see xref:schema/graph-types/set-graph-types.adoc#relationship-element-types[Set graph types -> Relationship element types].
+
+[[constraints-on-identifying-and-non-identifying-labels-and-types]]
+=== Constraints on identifying and non-identifying node labels and relationship types
+
+.Syntax for property uniqueness and key constraints on identifying node labels and relationship types, <constraint on identifying label/type>
+[cols="1a, 3a", options="noheader"]
+|===
+| Property uniqueness and key constraints on node element types
+a|
+[source, syntax]
+----
+CONSTRAINT [constraint_name]
+FOR (alias [{IS \| :} IdentifyingLabelName [\=> \| IMPLIES]])
+REQUIRE {alias.propertyName \| (alias.propertyName[, ...])} IS [NODE] {KEY \| UNIQUE}
+----
+
+| Property uniqueness and key constraints on relationship element types
+a|
+[source, syntax]
+----
+CONSTRAINT [constraint_name]
+FOR ()-”[“alias [{IS \| :} IDENTIFYING_RELATIONSHIP_TYPE [=> \| IMPLIES]] “]”\->()
+REQUIRE {alias.propertyName \| (alias.propertyName[, ...])} IS [REL \| RELATIONSHIP] {KEY \| UNIQUE}
+----
+|===
+
+For more information, see xref:schema/graph-types/set-graph-types.adoc#constraints-on-identifying-labels-and-types[Set graph types -> Property uniqueness and key constraints on identifying node labels and relationship types].
+
+.Syntax for property uniqueness, property existence, property type, and key constraints on non-identifying node labels and relationship types, <constraint on non-identifying label/type>
+[cols="1a, 3a", options="noheader"]
+|===
+| Node key and property uniqueness constraint
+a|
+[source, syntax]
+----
+CONSTRAINT [constraint_name]
+FOR (alias [{IS \| :} NonIdentifyingLabelName])
+REQUIRE {alias.propertyName \| (alias.propertyName[, ...])} IS [NODE] {KEY \| UNIQUE}
+----
+
+| Node property existence and property type constraint
+a|
+[source, syntax]
+----
+CONSTRAINT [constraint_name]
+FOR (alias [{IS \| :} NonIdentifyingLabelName])
+REQUIRE {alias.propertyName \| (alias.propertyName)} { IS NOT NULL \| {[IS] :: \| IS TYPED} <TYPE> }
+----
+
+| Relationship key and property uniqueness constraint
+a|
+[source, syntax]
+----
+CONSTRAINT [constraint_name]
+FOR ()-”[“alias [{IS \| :} NON_IDENTIFYING_RELATIONSHIP_TYPE] “]”\->()
+REQUIRE {alias.propertyName \| (alias.propertyName[, ...])} IS [REL \| RELATIONSHIP] {KEY \| UNIQUE}
+----
+
+| Relationship property existence and property type constraint
+a|
+[source, syntax]
+----
+CONSTRAINT [constraint_name]
+FOR ()-”[“alias [{IS \| :} NON_IDENTIFYING_RELATIONSHIP_TYPE] “]”\->()
+REQUIRE {alias.propertyName \| (alias.propertyName)} { IS NOT NULL \| {[IS] :: \| IS TYPED} <TYPE> }
+----
+|===
+
+For more information, see see xref:schema/graph-types/set-graph-types.adoc#constraints-on-non-identifying-labels-and-types[Set graph types -> Constraints on non-identifying labels and types].
+
+=== Constraints on non-identifying node labels and relationship types
+
+[[allowed-types]]
+=== Allowed types
+
+`<TYPE>` can be one of the following property types:
+
+* `BOOLEAN`
+* `STRING`
+* `INTEGER`
+* `FLOAT`
+* `DATE`
+* `LOCAL TIME`
+* `ZONED TIME`
+* `LOCAL DATETIME`
+* `ZONED DATETIME`
+* `DURATION`
+* `POINT`
+* `VECTOR<TYPE NOT NULL>(DIMENSION)` (where the inner `TYPE` is a valid coordinate type for vectors and `DIMENSION` is an `INTEGER` in (`[0, 4096]`))
+* `LIST<BOOLEAN NOT NULL>`
+* `LIST<STRING NOT NULL>`
+* `LIST<INTEGER NOT NULL>`
+* `LIST<FLOAT NOT NULL>`
+* `LIST<DATE NOT NULL>`
+* `LIST<LOCAL TIME NOT NULL>`
+* `LIST<ZONED TIME NOT NULL>`
+* `LIST<LOCAL DATETIME NOT NULL>`
+* `LIST<ZONED DATETIME NOT NULL>`
+* `LIST<DURATION NOT NULL>`
+* `LIST<POINT NOT NULL>`
+* Any closed dynamic union of the above types, e.g. `INTEGER | FLOAT | STRING`.
+
+Additionally, for properties that are part of element types:
+
+* The `NOT NULL` versions of the above types
+* `ANY NOT NULL`
+
+Allowed syntax variations of these types are listed in xref:values-and-types/property-structural-constructed.adoc#types-synonyms[Values and types -> Types and their synonyms].
+
+[[set-graph-types]]
+=== Set graph types
+
+[NOTE]
+====
+Setting a graph type requires the following privileges:
+
+*  link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-constraints[`CREATE CONSTRAINT`]
+* link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-constraints[`DROP CONSTRAINT`]
+* link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-tokens[`NAME MANAGEMENT`] (if graph type includes node labels, relationship types, or properties not already in the graph)
+====
+
+.Syntax for `ALTER CURRENT GRAPH TYPE SET`
+[source, syntax]
+----
+ALTER CURRENT GRAPH TYPE SET “{“
+  [<node element type> | <relationship element type> | <constraint on identifying label/type> | <constraint on non-identifying label/type>][, ...]
+“}”
+----
+
+For more information, see xref:schema/graph-types/set-graph-types.adoc[].
+
+[[extend-graph-types]]
+=== Extend graph types
+
+[NOTE]
+====
+Extending a graph type requires the following privileges:
+
+*  link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-constraints[`CREATE CONSTRAINT`]
+* link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-tokens[`NAME MANAGEMENT`] (if graph type includes node labels, relationship types, or properties not already in the graph)
+====
+
+.Syntax for `ALTER CURRENT GRAPH TYPE ADD`
+[source, syntax]
+----
+ALTER CURRENT GRAPH TYPE ADD “{“
+  [<node element type> | <relationship element type> | <constraint on identifying label/type> | <constraint on non-identifying label/type>][, ...]
+“}”
+----
+
+[NOTE]
+Any added element types, constraints on identifying node labels/relationship types, and constraints on non-identifying node labels/relationship types must, together with the existing ones, form a valid graph type.
+This means, for example, that `ADD` cannot modify existing element types but only add new ones.
+Independent constraints cannot be added to node labels/relationship types that serve as the identifying labels/types of element types.
+Nor can element types be added if their identifying labels/types already have independent constraints defined on them.
+
+For more information, see xref:schema/graph-types/extend-graph-types.adoc[].
+
+[[alter-graph-types]]
+=== Alter graph types
+
+[NOTE]
+====
+Altering a graph type requires the following privileges:
+
+*  link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-constraints[`CREATE CONSTRAINT`]
+* link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-constraints[`DROP CONSTRAINT`]
+* link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-tokens[`NAME MANAGEMENT`] (if graph type includes node labels, relationship types, or properties not already in the graph)
+====
+
+.Syntax for `ALTER CURRENT GRAPH TYPE ALTER`
+[source, syntax]
+----
+ALTER CURRENT GRAPH TYPE ALTER “{“
+  [<node element type> | <relationship element type>][, ...]
+“}”
+----
+
+[NOTE]
+====
+Note the following:
+
+* Key or property uniqueness constraints cannot be included when altering an element type.
+* `ALTER` cannot introduce new element types to the graph type, only modify existing ones.
+And it replaces the previous definition of that element type with the new definition.
+====
+
+For more information, see xref:schema/graph-types/alter-graph-types.adoc[].
+
+[[list-graph-types]]
+=== Show graph types
+
+[NOTE]
+Showing a graph type requires the link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-constraints[`SHOW CONSTRAINTS` privilege].
+
+.Syntax to list the current graph type with default return columns
+[source, syntax]
+----
+SHOW CURRENT GRAPH TYPE
+  [WHERE expression]
+----
+
+.Syntax to list the current graph type with full return columns
+[source, syntax]
+----
+SHOW CURRENT GRAPH TYPE 
+YIELD { * | field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]
+  [WHERE expression]
+  [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+----
+
+For more information, including full details of the return columns returned by this command, see xref:schema/graph-types/list-graph-types.adoc[].
+
+[[drop-graph-type-elements]]
+=== Drop elements from a graph type
+
+[NOTE]
+Dropping elements from a graph type the link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-constraints[`DROP CONSTRAINT` privilege].
+
+.Syntax for dropping node element type, <drop node element type>
+[cols="1a, 3a", options="noheader"]
+|===
+| Full definition
+a|
+[source, syntax]
+----
+([alias] {IS \| :} IdentifyingLabelName {=> \| IMPLIES} [{IS \| :} ImpliedLabelName[&...]] [“{“ propertyName [[IS] :: \| IS TYPED] <TYPE> “}”])
+----
+
+| Identifying label only
+a|
+[source, syntax]
+----
+([alias] {IS \| :} IdentifyingLabelName {=> \| IMPLIES})
+----
+|===
+
+.Syntax for dropping relationship element type, <drop node relationship type>
+[cols="1a, 3a", options="noheader"]
+|===
+| Full definition
+a|
+[source, syntax]
+----
+([nodeAlias \| [nodeAlias] {IS \| :} LabelName [\=> \| IMPLIES]])-”[“ [alias] {IS \| :} IDENTIFYING_RELATIONSHIP_TYPE {\=> \| IMPLIES} [“{“ propertyName [[IS] :: \| IS TYPED] <TYPE> “}”] “]”\->([nodeAlias \| [nodeAlias] {IS \| :} LabelName [=> \| IMPLIES]])
+----
+
+| Identifying type only
+a|
+[source, syntax]
+----
+()-”[“ [alias] {IS \| :} IDENTIFYING_RELATIONSHIP_TYPE {\=> \| IMPLIES} “]”->()
+----
+|===
+
+[NOTE]
+If the full definition is provided, then it needs to match exactly the node or relationship element type being dropped.
+
+.Syntax for dropping constraints on identifying or non-identifying labels/types, <drop constraint>
+[source, syntax]
+----
+CONSTRAINT constraint_name
+----
+
+.Syntax for `ALTER CURRENT GRAPH TYPE DROP`
+[source, syntax]
+----
+ALTER CURRENT GRAPH TYPE DROP “{“
+  [<drop node element type> | <drop relationship element type> | <drop constraint>][, ...]
+“}”
+----
+
+For more information, see xref:schema/graph-types/drop-graph-type-elements.adoc[].
+
+[[constraints]]
+== Constraints
+
+[[create-constraint]]
+=== Create constraints
 
 Constraints are created with the `CREATE CONSTRAINT` command.
 When creating a constraint, it is recommended to provide a constraint name.
@@ -27,7 +335,7 @@ Examples of this are nodes with missing properties, indexes with the same name, 
 An informational notification is returned in case nothing happens showing the existing constraint which blocks the creation.
 
 [[create-property-uniqueness-constraints]]
-=== Create property uniqueness constraints
+==== Create property uniqueness constraints
 
 .Syntax for creating a node property uniqueness constraint on a single property
 [source, syntax]
@@ -66,7 +374,7 @@ Property uniqueness constraints are xref:schema/constraints/create-constraints.a
 
 [role=label--enterprise-edition]
 [[create-property-existence-constraints]]
-=== Create property existence constraints
+==== Create property existence constraints
 
 .Syntax for creating a node property existence constraint
 [source, syntax]
@@ -88,7 +396,7 @@ For examples on how to create property existence constraints, see  xref:schema/c
 
 [role=label--enterprise-edition]
 [[create-property-type-constraints]]
-=== Create property type constraints
+==== Create property type constraints
 
 .Syntax for creating a node property type constraint
 [source, syntax]
@@ -142,7 +450,7 @@ For examples on how to create property type constraints, see  xref:schema/constr
 
 [role=label--enterprise-edition]
 [[create-key-constraints]]
-=== Create key constraints
+==== Create key constraints
 
 .Syntax for creating a node key constraint on a single property
 [source, syntax]
@@ -181,7 +489,7 @@ Key constraints are xref:schema/constraints/create-constraints.adoc#constraints-
 
 
 [[list-constraints]]
-== SHOW CONSTRAINTS
+=== Show constraints
 
 To list all constraints with the default output columns, use `SHOW CONSTRAINTS`.
 If all columns are required, use `SHOW CONSTRAINTS YIELD *`.
@@ -190,7 +498,6 @@ The `SHOW CONSTRAINTS` clause can also be filtered using the xref:clauses/where.
 
 [NOTE]
 Listing constraints requires the link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-constraints[`SHOW CONSTRAINTS` privilege].
-
 
 .Syntax to list constraints with default return columns
 [source, syntax]
@@ -230,9 +537,6 @@ SHOW [
      |NODE KEY
      |REL[ATIONSHIP] KEY
      |KEY
-     |NODE_LABEL_EXISTENCE
-     |RELATIONSHIP_SOURCE_LABEL
-     |RELATIONSHIP_TARGET_LABEL
 ] CONSTRAINT[S]
 YIELD { * | field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]
   [WHERE expression]
@@ -247,44 +551,50 @@ The type filtering keywords filters the returned constraints on constraint type:
 |===
 | Filter | Description
 
-|ALL
+| ALL
 | Returns all constraints, no filtering on constraint type.
 This is the default if none is given.
 
-|NODE [PROPERTY] UNIQUE[NESS]
-| Returns the node property uniqueness constraints.
+| NODE [PROPERTY] UNIQUE[NESS]
+| Returns node property uniqueness constraints.
 
-|REL[ATIONSHIP] [PROPERTY] UNIQUE[NESS]
-| Returns the relationship property uniqueness constraints.
+| REL[ATIONSHIP] [PROPERTY] UNIQUE[NESS]
+| Returns relationship property uniqueness constraints.
 
-|[PROPERTY] UNIQUE[NESS]
-| Returns all property uniqueness constraints, for both nodes and relationships.
+| [PROPERTY] UNIQUE[NESS]
+| Returns property uniqueness constraints, for both nodes and relationships.
 
-|NODE [PROPERTY] EXIST[ENCE]
-| Returns the node property existence constraints.
+| NODE [PROPERTY] EXIST[ENCE]
+| Returns node property existence constraints.
 
-|REL[ATIONSHIP] [PROPERTY] EXIST[ENCE]
-| Returns the relationship property existence constraints.
+| REL[ATIONSHIP] [PROPERTY] EXIST[ENCE]
+| Returns relationship property existence constraints.
 
-|[PROPERTY] EXIST[ENCE]
-| Returns all property existence constraints, for both nodes and relationships.
+| [PROPERTY] EXIST[ENCE]
+| Returns property existence constraints, for both nodes and relationships.
 
-|NODE PROPERTY TYPE
-| Returns the node property type constraints.
+| NODE EXIST[ENCE]
+| Returns node property existence and node label existence constraints.
 
-|REL[ATIONSHIP] PROPERTY TYPE
+| EXIST[ENCE]
+| Returns node and relationship property existence constraints, and node label existence constraints.
+
+| NODE PROPERTY TYPE
+| Returns node property type constraints.
+
+| REL[ATIONSHIP] PROPERTY TYPE
 | Returns the relationship property type constraints.
 
-|PROPERTY TYPE
+| PROPERTY TYPE
 | Returns all property type constraints, for both nodes and relationships.
 
-|NODE KEY
+| NODE KEY
 | Returns the node key constraints.
 
-|REL[ATIONSHIP] KEY
+| REL[ATIONSHIP] KEY
 | Returns the relationship key constraints.
 
-|KEY
+| KEY
 | Returns all node and relationship key constraints.
 
 |===
@@ -293,14 +603,13 @@ For examples on how to list constraints, see  xref:schema/constraints/list-const
 For full details of the result columns for the `SHOW CONSTRAINTS` command, see xref:schema/constraints/list-constraints.adoc#list-constraints-result-columns[Create, show, and drop constraints -> Result columns for listing constraints].
 
 [[drop-constraint]]
-== DROP CONSTRAINT
+=== Drop constraints
 
 Constraints are dropped using the `DROP` CONSTRAINT command.
 Dropping a constraint is done by specifying the name of the constraint.
 
 [NOTE]
 Dropping a constraint requires the link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-constraints[`DROP CONSTRAINT` privilege].
-
 
 .Syntax for dropping a constraint by name
 [source, syntax]
