@@ -7,14 +7,15 @@ A graph type defines the schema of a database and is set with the command `ALTER
 
 Graph types can include:
 
+Graph types can include:
+
 * xref:schema/graph-types/set-graph-types.adoc#node-element-types[Node element types]
 * xref:schema/graph-types/set-graph-types.adoc#relationship-element-types[Relationship element types]
 * xref:schema/graph-types/set-graph-types.adoc#constraints-on-identifying-labels-and-types[Property uniqueness and key constraints defined on identifying node labels or relationship types]
+* xref:schema/graph-types/set-graph-types.adoc#constraints-on-non-identifying-labels-and-types[property existence, property type, property uniqueness, and key constraints defined on non-identifying node labels or relationship types]
 
-These categories are discussed in the section xref:schema/graph-types/set-graph-types.adoc#set-graph-type-empty-database[Set a graph type on an empty database].
-
-Graph types can also include xref:schema/graph-types/set-graph-types.adoc#constraints-on-non-identifying-labels-and-types[property existence, property type, property uniqueness, and key constraints] defined on non-identifying node labels or relationship types.
-These are discussed in the section xref:schema/graph-types/set-graph-types.adoc#set-graph-type-populated-database[Set a graph type on a populated database].
+The three first categories are discussed in the section xref:schema/graph-types/set-graph-types.adoc#set-graph-type-empty-database[Set a graph type on an empty database].
+The last category is discussed in the section xref:schema/graph-types/set-graph-types.adoc#set-graph-type-populated-database[Set a graph type on a populated database].
 
 [NOTE]
 ====
@@ -63,7 +64,7 @@ ALTER CURRENT GRAPH TYPE SET {
 image::graph-types-node-element-type.svg[Image of an example node element type, width=600,role=popup]
 
 Node element types are defined by an *identifying label*.
-Node element types ensure that or more of the following is true for all nodes with an identifying label:
+Node element types ensure that one or more of the following is true for all nodes with an identifying label:
 
 * Certain additional labels must exist .
 The accompanying labels are referred to as *implied labels*.
@@ -87,10 +88,14 @@ The `Pet` label is the identifying label of this node element type while `Reside
 <3> Node element type ensuring nodes with a `City` label must have a `name` property of type `STRING`, and that any `population` properties are of type `INTEGER`.
 `City` is the identifying label of this node element type, and there are no implied labels.
 
+[NOTE]
+A shorthand syntax equivalent for `NOT NULL` is to use an exclamation mark `!`.
+For example, `(:Person \=> :Resident {name :: STRING!})`, is the syntactical equivalent of `(:Person \=> :Resident {name :: STRING NOT NULL})`.
+
 .Node element type syntax
 [source, syntax]
 ----
-(:IdentifyingLabel => [:ImpliedLabel1[&...]]  [“{“property1 :: <TYPE> [NOT NULL][, ...]”}”])
+(:IdentifyingLabel => [:ImpliedLabel1[&...]]  [“{“ {property1 :: <TYPE> [NOT NULL]}[, ...]”}”])
 ----
 
 If `ANY` is specified as the `<TYPE>`, the node element type will allow all valid property types to be assigned to the given property (`ANY` is only allowed if the property’s existence is enforced, that is if it is appended with `NOT NULL`).
@@ -122,8 +127,7 @@ For a list of accepted property types, see xref:values-and-types/property-struct
 .Relationship element type syntax
 [source, syntax]
 ----
-([:SourceNodeLabel])-”[“:IDENTIFYING_REL_TYPE => [ “{“property1 :: <TYPE> [NOT NULL][, ...]”}” ] “]”->([:TargetNodeLabel])
-----
+([:SourceNodeLabel])-"[":IDENTIFYING_REL_TYPE => [ "{" {property1 :: <TYPE> [NOT NULL]}[, ...]"}" ] "]"->([:TargetNodeLabel])----
 
 [NOTE]
 ====
@@ -151,18 +155,18 @@ For example, in a node element type definition like `(:Person \=> :Resident {\..
 (:Person)-[:BORN_IN => {dob :: DATE NOT NULL})]->(:City)
 ----
 
-.Not allowed -- identifying node labels among node element types must be unique
-[source]
-----
-(:Person => :Resident {name :: STRING}),
-(:Person => :Citizen {name :: STRING})
-----
-
 .Not allowed -- identifying relationship types among relationship element types must be unique
 [source]
 ----
 (:Person)-[:LIVES_IN => {since :: DATE NOT NULL}]->(:City),
 (:Pet)-[:LIVES_IN => {since :: DATE NOT NULL}]->(:City)
+----
+
+.Not allowed -- identifying node labels among node element types must be unique
+[source]
+----
+(:Person => :Resident {name :: STRING}),
+(:Person => :Citizen {name :: STRING})
 ----
 
 [[implied-node-labels-in-relationship-element-types]]
@@ -286,10 +290,9 @@ The `REQUIRE` keyword can also be used as an alternative syntax to define severa
 [[naming-property-uniqueness-and-key-constraints]]
 === Naming property uniqueness and key constraints
 
-
 Property uniqueness and key constraints can also be created using the `CONSTRAINT … FOR … REQUIRE` syntax.
-If so, they can be given a name which can be used in the `ALTER CURRENT GRAPH TYPE DROP` or `DROP CONSTRAINT` commands (if a name is not explicitly given, a name will be assigned).
-The given name must be unique among both indexes and constraints.
+If so, they can be given a name, which must be unique across both indexes and constraints (if a name is not explicitly given, one will be assigned automatically).
+The constraint name can be used in the `ALTER CURRENT GRAPH TYPE DROP` or `DROP CONSTRAINT` commands.
 For more information, see xref:schema/graph-types/drop-graph-type-elements.adoc#drop-constraints-on-identifying-and-non-identifying-labels-and-types[Drop constraints on identifying and non-identifying node labels and relationship types].
 
 The following two examples define the same key constraint on an identifying node label.
@@ -369,10 +372,10 @@ These omissions are allowed by the graph type, as neither node element type requ
 .Create data violating a node element type
 [source, cypher, role=test-fail]
 ----
-CREATE (:Person:Resident {name: 'Alice Carlyle', ssn: 987654321}); // <1>
-CREATE (:Person {name: 'Alice Carlyle', ssn: 123456789}); // <2>
-CREATE (:Person:Resident {name: 'Alice Carlyle'}); // <3>
-CREATE (:Person:Resident {name: 'Alice Carlyle', ssn: 'HNB48182'}); // <4>
+CREATE (:Person:Resident {name: 'Alice Carlyle', ssn: 987654321}) // <1>
+CREATE (:Person {name: 'Alice Carlyle', ssn: 123456789}) // <2>
+CREATE (:Person:Resident {name: 'Alice Carlyle'}) // <3>
+CREATE (:Person:Resident {name: 'Alice Carlyle', ssn: 'HNB48182'}) // <4>
 ----
 
 <1> This will fail because it would create a node with properties identical to an existing one, thereby violating the key constraint defined in the `Person` node element type.
@@ -383,17 +386,17 @@ CREATE (:Person:Resident {name: 'Alice Carlyle', ssn: 'HNB48182'}); // <4>
 .Create data violating a relationship element type
 [source, cypher, role=test-fail]
 ----
+CREATE (:Human {name: 'Carl Ericsson' ssn: 765498321})-[:LIVES_IN {since: date('1999-10-17')}]->(:City {name: 'Toronto'}) // <1>
 MATCH (alice:Person:Resident {name: 'Alice Carlyle'})
-CREATE (:Human {name: 'Carl Ericsson' ssn: 765498321})-[:LIVES_IN {since: date('1999-10-17’)}]->(:City {name: 'Toronto'}); // <1>
-CREATE (alice)-[:LIVES_IN {since: date('1999-10-17')}]->(:Country {name: 'Canada'}); // <2>
-CREATE (alice)-[:LIVES_IN]->(:City {name: 'Toronto'}); // <3>
+CREATE (alice)-[:LIVES_IN {since: date('1999-10-17')}]->(:Country {name: 'Canada'}) // <2>
+CREATE (alice)-[:LIVES_IN]->(:City {name: 'Toronto'}) // <3>
 CREATE (alice)-[:LIVES_IN {since: '1999-10-17'}]->(:City {name: 'Toronto'}) <4>
 ----
 
 <1> This will fail because the source node defined in the `LIVES_IN` relationship element type must have a `Resident` label.
 <2> This will fail because the target node defined in the `LIVES_IN` relationship element type must have a `City` label.
 <3> This will fail because an existence-constrained property (`since`) defined in the `LIVES_IN` relationship element type is missing.
-④ This will fail because a type-constrained property (`since`) is of a different type (`STRING`) than the one defined for the property in the `LIVES_IN` relationship element type (`DATE`).
+<4> This will fail because a type-constrained property (`since`) is of a different type (`STRING`) than the one defined for the property in the `LIVES_IN` relationship element type (`DATE`).
 
 [[open-graph-type-capabilities]]
 == Open graph type capabilities
@@ -406,7 +409,7 @@ The great benefit of working with open graph types is that they allow you to con
 CREATE (carl:Person:Resident {name: 'Carl Ericson', ssn: 162734679, born: date('1998-08-08')}), // <1>
        (molly:Pet:Resident:Animal {name: 'Molly', insuranceNumber: 672829172, healthCertificate: 'HT654987', breed: 'Alsatian'}), // <2>
        (atlanta:City {name: 'Atlanta', population: 2794356, country: 'USA'}), // <3>
-       (carl)-[:LIVES_IN {since: date('2020-09-15'), address: '101, Jasper Avenue'}]->(atlanta)<-[:LIVES_IN {since: date('2022-10-22')]-(molly) // <4>
+       (carl)-[:LIVES_IN {since: date('2020-09-15'), address: '101, Jasper Avenue'}]->(atlanta)<-[:LIVES_IN {since: date('2022-10-22')}]-(molly) // <4>
 ----
 
 <1> There is no `born` property defined in the `Person` node element type.
@@ -424,8 +427,7 @@ CREATE (:StrayAnimal:Animal:Resident {id: '24.09-172898'}),
 .Create nodes with node labels and relationship types not included in the graph type
 [source, cypher]
 ----
-MATCH (ben:Person {name: 'Benjamin Davis}), (zoey:Pet {name: 'Zoey'}), (gary: Robot {name: 'Gary})
-CREATE (ben)-[:OWNER_OF {ownershipId: 'GTHD-985'}]->(zoey),
+MATCH (ben:Person {name: 'Benjamin Davis'}), (zoey:Pet {name: 'Zoey'}), (gary:Robot {name: 'Gary'})CREATE (ben)-[:OWNER_OF {ownershipId: 'GTHD-985'}]->(zoey),
        (ben)-[:WORKS_FOR {role: 'Product Manager'}]->(healthyPets:Company {name: 'Healthy Pets Inc.', address: '4567 Wellness Drive, Los Angeles, CA 90001'}),
        (gary)-[:INSTALLED_AT]->(healthyPets)
 ----
@@ -446,13 +448,13 @@ The following graph type could not be set in a database containing the data crea
 [source, cypher, role=test-fail]
 ----
 ALTER CURRENT GRAPH TYPE SET {
-(p:Person => :Resident {name :: STRING, ssn :: INTEGER})
-   REQUIRE (p.name, p.ssn) IS KEY,
-(:Pet => :Resident&Animal {insuranceNumber :: INTEGER IS KEY, healthCertificate :: STRING IS UNIQUE, name :: STRING}),
-(:City => {name :: STRING NOT NULL, population :: INTEGER}),
-(:Robot => :Resident {name :: STRING, id :: INTEGER IS KEY}), // <1>
-(:Resident)-[:LIVES_IN => {since :: DATE NOT NULL}]->(:City),
-(:Person)-[r:OWNER_OF => {ownershipId :: INTEGER IS UNIQUE})->(:Pet) // <2>
+  (p:Person => :Resident {name :: STRING, ssn :: INTEGER})
+    REQUIRE (p.name, p.ssn) IS KEY,
+  (:Pet => :Resident&Animal {insuranceNumber :: INTEGER IS KEY, healthCertificate :: STRING IS UNIQUE, name :: STRING}),
+  (:City => {name :: STRING NOT NULL, population :: INTEGER}),
+  (:Robot => :Resident {name :: STRING, id :: INTEGER IS KEY}), // <1>
+  (:Resident)-[:LIVES_IN => {since :: DATE NOT NULL}]->(:City),
+  (:Person)-[r:OWNER_OF => {ownershipId :: INTEGER IS UNIQUE})->(:Pet) // <2>
 }
 ----
 
@@ -471,7 +473,7 @@ This can be a useful tool if the data model requires certain attributes for node
 
 [NOTE]
 Constraints on non-identifying node labels and relationship types can be explicitly named when defined.
-This can be useful when see xref:schema/graph-types/drop-graph-type-elements.adoc#drop-constraints-on-identifying-and-non-identifying-labels-and-types[Drop constraints on identifying and non-identifying node labels and relationship types] (if a name is not explicitly given, a name will be assigned).
+This can be useful when xref:schema/graph-types/drop-graph-type-elements.adoc#drop-constraints-on-identifying-and-non-identifying-labels-and-types[dropping constraints on identifying and non-identifying node labels and relationship types] (if a name is not explicitly given, a name will be assigned).
 The given name must be unique among both indexes and constraints.
 
 Property uniqueness and key constraints can be defined against any node label or relationship type in the graph, regardless of whether they serve as identifying node labels or relationship types (an example of a key constraint defined against the identifying node label of a node element type can be found xref:schema/graph-types/set-graph-types.adoc#naming-property-uniqueness-and-key-constraints[above]).
@@ -480,13 +482,13 @@ Property uniqueness and key constraints can be defined against any node label or
 [source, cypher]
 ----
 ALTER CURRENT GRAPH TYPE SET {
-(p:Person => :Resident {name :: STRING, ssn :: INTEGER})
-   REQUIRE (p.name, p.ssn) IS KEY,
-(:Pet => :Resident&Animal {insuranceNumber :: INTEGER IS KEY, healthCertificate :: STRING IS UNIQUE, name :: STRING}),
-(:City => {name :: STRING NOT NULL, population :: INTEGER}),
-(:Resident)-[:LIVES_IN => {since :: DATE NOT NULL}]->(:City),
-CONSTRAINT company_name FOR (c:Company) REQUIRE c.name IS KEY, // <1>
-CONSTRAINT animal_id FOR (a:Animal) REQUIRE a.id IS UNIQUE // <2>
+  (p:Person => :Resident {name :: STRING, ssn :: INTEGER})
+    REQUIRE (p.name, p.ssn) IS KEY,
+  (:Pet => :Resident&Animal {insuranceNumber :: INTEGER IS KEY, healthCertificate :: STRING IS UNIQUE, name :: STRING}),
+  (:City => {name :: STRING NOT NULL, population :: INTEGER}),
+  (:Resident)-[:LIVES_IN => {since :: DATE NOT NULL}]->(:City),
+  CONSTRAINT company_name FOR (c:Company) REQUIRE c.name IS KEY, // <1>
+  CONSTRAINT animal_id FOR (a:Animal) REQUIRE a.id IS UNIQUE // <2>
 }  
 ----
 
@@ -524,15 +526,15 @@ However, adding property existence and type constraints on non-identifying node 
 [source, cypher]
 ----
 ALTER CURRENT GRAPH TYPE SET {
-(p:Person => :Resident {name :: STRING, ssn :: INTEGER})
-   REQUIRE (p.name, p.ssn) IS KEY,
-(:Pet => :Resident&Animal {insuranceNumber :: INTEGER IS KEY, healthCertificate :: STRING IS UNIQUE, name :: STRING}),
-(:Robot => :Resident {application :: STRING NOT NULL}),
-(:City => {name :: STRING NOT NULL, population :: INTEGER}),
-(:Resident)-[:LIVES_IN => {since :: DATE NOT NULL}]->(:City),
-CONSTRAINT company_name FOR (c:Company) REQUIRE c.name IS KEY,
-CONSTRAINT animal_id FOR (a:Animal) REQUIRE a.id IS UNIQUE,
-CONSTRAINT resident_address FOR (resident:Resident) REQUIRE resident.address IS :: STRING // <1>
+  (p:Person => :Resident {name :: STRING, ssn :: INTEGER})
+    REQUIRE (p.name, p.ssn) IS KEY,
+  (:Pet => :Resident&Animal {insuranceNumber :: INTEGER IS KEY, healthCertificate :: STRING IS UNIQUE, name :: STRING}),
+  (:Robot => :Resident {application :: STRING NOT NULL}),
+  (:City => {name :: STRING NOT NULL, population :: INTEGER}),
+  (:Resident)-[:LIVES_IN => {since :: DATE NOT NULL}]->(:City),
+  CONSTRAINT company_name FOR (c:Company) REQUIRE c.name IS KEY,
+  CONSTRAINT animal_id FOR (a:Animal) REQUIRE a.id IS UNIQUE,
+  CONSTRAINT resident_address FOR (resident:Resident) REQUIRE resident.address IS :: STRING // <1>
 }
 ----
 
@@ -554,10 +556,9 @@ These constraints ensure that the creation and development of a graph conforms t
 The constraints that enforce a graph type are returned by the `SHOW CONSTRAINTS` command.
 For more information, see xref:schema/graph-types/list-graph-types.adoc#graph-type-elements-in-show-constraints[Show graph types -> Graph type elements in `SHOW CONSTRAINTS`].
 
-.Set graph type
+.Current graph type
 [source]
 ----
-Current graph type
 (p:Person => :Resident {name :: STRING, ssn :: INTEGER})
    REQUIRE (p.name, p.ssn) IS KEY,
 (:Pet => :Resident&Animal {insuranceNumber :: INTEGER IS KEY, healthCertificate :: STRING IS UNIQUE, name :: STRING}),
@@ -714,4 +715,4 @@ To learn more about property existence constraints and how to create them using 
 To learn more about property uniqueness constraints, and how to create them using the `CREATE CONSTRAINT` command, see xref:schema/constraints/create-constraints.adoc#create-property-uniqueness-constraints[Constraints -> Create property uniqueness constraints].
 
 *Key constraints* ensure that all properties exist and that the combined property values are unique for all nodes with a specific label or all relationships with a specific type.
-To learn more about key constraints, and how to create them using the `CREATE CONSTRAINT` command, xref:schema/constraints/create-constraints.adoc#create-key-constraints[Constraints -> Create key constraints].
+To learn more about key constraints, and how to create them using the `CREATE CONSTRAINT` command, see xref:schema/constraints/create-constraints.adoc#create-key-constraints[Constraints -> Create key constraints].
