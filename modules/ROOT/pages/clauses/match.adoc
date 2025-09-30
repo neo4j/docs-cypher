@@ -494,7 +494,7 @@ RETURN actors.name AS actor, movieCount, collect(movies.title) AS movies
 <1> The `Person` and `Movie` nodes matched in this step are stored in variables, which are then passed on to the second row of the query.
 <2> The `movies` variable is implicitly imported by its occurrence in the `count()` function.
 The `WITH` clause explicitly imports the `actors` variable.
-<3> An xref:clauses/order-by.adoc[`ORDER BY`] clause orders the results by `movieCount` in descending order, ensuring that the `Person` with the highest number of movies appears at the top, and xref:clauses/limit.adoc[`LIMIT] 1` ensures that all other `Person` nodes are discarded.
+<3> An xref:clauses/order-by.adoc[`ORDER BY`] clause orders the results by `movieCount` in descending order, ensuring that the `Person` with the highest number of movies appears at the top, and xref:clauses/limit.adoc[`LIMIT`] `1` ensures that all other `Person` nodes are discarded.
 <4> The second `MATCH` clause finds all `Movie` nodes associated with the `Person` nodes currently bound to the `actors` variable.
 
 [NOTE]
@@ -639,10 +639,26 @@ RETURN relationshipType, count(r) AS relationshipCount
 [[dynamic-match-caveats]]
 === Performance caveats
 
-`MATCH` queries using dynamic values may not be as performant as those using static values.
-This is because the xref:planning-and-tuning/execution-plans.adoc[Cypher planner] uses statically available information when planning queries to determine whether to use an xref:indexes/search-performance-indexes/overview.adoc[index] or not, and this is not possible when using dynamic values.
+`MATCH` queries that use dynamic values may not perform as well as those with static values.
+Neo4j is actively working to improve the performance of these queries.
+The table below outlines performance caveats for specific Neo4j versions.
 
-As a result, `MATCH` queries using dynamic values cannot leverage xref:planning-and-tuning/operators/operators-detail.adoc#leaf-operators[index scans or seeks] and must instead use the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-all-nodes-scan[`AllNodesScan`] operator, which reads all nodes from the node store and is therefore more costly.
+.Neo4j versions and performance caveats
+[%header,cols="a,5a"]
+|===
+| Neo4j versions | Performance caveat
+
+| 5.26 -- 2025.07
+| The xref:planning-and-tuning/execution-plans.adoc[Cypher planner] is not able to leverage xref:indexes/search-performance-indexes/index.adoc[indexes] with xref:planning-and-tuning/operators/operators-detail.adoc#leaf-operators[index scans or seeks] and must instead utilize the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-all-nodes-scan[`AllNodesScan`] operator, which reads all nodes from the node store and is therefore more costly. 
+
+| 2025.08 -- current
+| The Cypher planner is able to leverage xref:indexes/search-performance-indexes/using-indexes.adoc#token-lookup-indexes[token lookup indexes] when matching node labels and relationship types dynamically.
+This is enabled by the introduction of three new query plan operators: 
+xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-dynamic-label-node-lookup[`DynamicLabelNodeLookup`], xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-dynamic-directed-relationship-type-lookup[`DynamicDirectedRelationshipTypeLookup`], and xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-dynamic-undirected-relationship-type-lookup[`DynamicUndirectedRelationshipTypeLookup`].
+It is not, however, able to use indexes on property values.
+For example, `MATCH (n:$(Label) {foo: bar})` will not use any indexes on `n.foo` but can use a `DynamicLabelNodeLookup` on `$(label)`.
+
+|===
 
 [[further-reading]]
 === Further reading
