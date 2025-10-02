@@ -214,11 +214,12 @@ WITH collect(m) AS moviesList // <1>
 WITH moviesList, [movie IN moviesList | movie.title || ': ' || movie.plot] AS batch // <2>
 CALL genai.vector.encodeBatch(batch, 'OpenAI', { token: $openaiToken }) YIELD index, vector
 WITH moviesList, index, vector
-SET moviesList[index].embedding = vector(vector, 1536, FLOAT32)  // <3>
+MATCH (toUpdate:Movie {title: moviesList[index]['title']})
+SET toUpdate.embedding = vector(vector, 1536, FLOAT32)  // <3>
 ----
 
 <1> xref:functions/aggregating.adoc#functions-collect[Collect] all  20 `Movie` nodes into a `LIST<NODE>`.
-<2> Use a xref:expressions/list-expressions.adoc#list-comprehension[list comprehension] (`[]`) to extract the `title` and `plot` properties of the movies in `moviesList` into a new `LIST<STRING>`.
+<2> A xref:expressions/list-expressions.adoc#list-comprehension[list comprehension] (`[]`) extracts the `title` and `plot` properties of the movies in `moviesList` into a new `LIST<STRING>`.
 <3> `db.create.setNodeVectorProperty` is run for each `vector` returned by `genai.vector.encodeBatch()`, and stores that vector as a property named `embedding` on the corresponding node.
 
 .Create embeddings from a large number properties and store them as `VECTOR` properties
@@ -232,7 +233,8 @@ UNWIND range(0, total-1, batchSize) AS batchStart // <3>
 CALL (moviesList, batchStart, batchSize) { // <4>
     WITH [movie IN moviesList[batchStart .. batchStart + batchSize] | movie.title || ': ' || movie.plot] AS batch // <5>
     CALL genai.vector.encodeBatch(batch, 'OpenAI', { token: $openaiToken }) YIELD index, vector
-    SET moviesList[batchStart + index].embedding = vector(vector, 1536, FLOAT32) // <6>
+    MATCH (toUpdate:Movie {title: moviesList[batchStart + index]['title']})
+    SET toUpdate.embedding = vector(vector, 1536, FLOAT32) // <6>
 } IN CONCURRENT TRANSACTIONS OF 1 ROW // <7>
 ----
 
@@ -295,7 +297,7 @@ CALL db.create.setNodeVectorProperty(moviesList[index], 'embedding', vector) // 
 ----
 
 <1> xref:functions/aggregating.adoc#functions-collect[Collect] all  20 `Movie` nodes into a `LIST<NODE>`.
-<2> Use a xref:expressions/list-expressions.adoc#list-comprehension[list comprehension] (`[]`) to extract the `title` and `plot` properties of the movies in `moviesList` into a new `LIST<STRING>`.
+<2> A xref:expressions/list-expressions.adoc#list-comprehension[list comprehension] (`[]`) extracts the `title` and `plot` properties of the movies in `moviesList` into a new `LIST<STRING>`.
 <3> `db.create.setNodeVectorProperty` is run for each `vector` returned by `genai.vector.encodeBatch()`, and stores that vector as a property named `embedding` on the corresponding node.
 
 .Create embeddings from a large number properties and store them as `LIST<FLOAT>` values
