@@ -35,9 +35,12 @@ For example, `1 > b` and `1 < b` are both `false` when `b` is NaN.
 * String values are compared for ordering using lexicographic order (e.g. `"x" < "xy"`).
 * Boolean values are compared for ordering such that `false < true`.
 * When comparing values for ordering, if one of the arguments is `null`, the result is always `null`.
-* xref:values-and-types/spatial.adoc[Spatial values] cannot be compared using the operators `\<=`, `<`,`>=`, `>`.
-To compare spatial values within a specific range, use either the xref:functions/spatial.adoc#functions-withinBBox[`point.withinBBox()`] or the xref:functions/spatial.adoc#functions-point[`point()`] function.
- 
+* xref:values-and-types/spatial.adoc[Spatial values] and xref:values-and-types/vector.adoc[`VECTOR`] values cannot be compared using the operators `\<=`, `<`,`>=`, `>`.
+To compare spatial values within a specific range, use either the xref:functions/spatial.adoc#functions-withinBBox[`point.withinBBox()`] or the xref:functions/spatial.adoc#functions-point-wgs84-2d[`point()`] function.
+
+
+For the ordering of `VECTOR` types, see xref:values-and-types/vector.adoc#ordering-vector[`VECTOR` values -> Ordering `VECTOR` types].
+
 [[value-hierarchy]]
 === Hierarchy of values
 
@@ -48,13 +51,14 @@ Values of different types are ordered based on a predefined hierarchy, from leas
 * xref::values-and-types/property-structural-constructed.adoc#structural-types[`RELATIONSHIP`]
 * xref::values-and-types/lists.adoc[`LIST`]
 * xref::patterns/fixed-length-patterns.adoc#path-patterns[`PATH`]
+* xref::values-and-types/vector.adoc[`VECTOR`]
+* xref::values-and-types/spatial.adoc[`POINT`]
 * xref::values-and-types/temporal.adoc[`ZONED DATETIME`]
 * xref::values-and-types/temporal.adoc[`LOCAL DATETIME`]
 * xref::values-and-types/temporal.adoc[`DATE`]
 * xref::values-and-types/temporal.adoc[`ZONED TIME`]
 * xref::values-and-types/temporal.adoc[`LOCAL TIME`]
 * xref::values-and-types/temporal.adoc[`DURATION`]
-* xref::values-and-types/spatial.adoc[`POINT`]
 * xref::values-and-types/property-structural-constructed.adoc[`STRING`]
 * xref::values-and-types/property-structural-constructed.adoc[`BOOLEAN`]
 * Numbers: xref:values-and-types/property-structural-constructed.adoc[`INTEGER`, `FLOAT`]
@@ -90,7 +94,7 @@ ORDER BY values
 
 [[ordering-lists-maps]]
 === Ordering list and map values
- 
+
 *Lists are compared in lexicographic order:*
 
 * Elements are compared pairwise from the start to the end of the list.
@@ -144,3 +148,67 @@ If they have the same time and offset but different named time zones, they are s
 * Duration values cannot be directly compared.
 Since the length of a day, month, or year varies, Cypher does not define a strict ordering for durations.
 As a result, comparing two durations `(e.g, duration1 < duration2)` will always return `null`.
+
+[[ordering-vector-types]]
+=== Ordering vector types
+
+The xref:values-and-types/vector.adoc[`VECTOR`] supertypes are ordered in the following ascending order:
+
+* `VECTOR`
+* `VECTOR<TYPE>`
+* `VECTOR(DIMENSION)`
+
+`VECTOR` types with both a defined coordinate type and dimension are ordered according to the ordering of the vector coordinate types, listed in ascending order below:
+
+* `INTEGER8`
+* `INTEGER16`
+* `INTEGER32`
+* `INTEGER64`
+* `FLOAT32`
+* `FLOAT64`
+
+Within the same coordinate type, `VECTOR` types are ordered by their dimension, with smaller values first.
+`VECTOR` types of the same coordinate type and dimension are then ordered pairwise.
+
+.Ordering rules for `VECTOR` values
+[cols="3,3,2,6", options="header"]
+|===
+| A | B | Ordered as | Reason
+
+| `VECTOR<FLOAT32>(12345)`
+| `VECTOR<FLOAT32>(123456)`
+| A < B
+| Same coordinate type: compare by dimension ascending.
+
+| `VECTOR<INTEGER32>(1234)`
+| `VECTOR<FLOAT32>(1234)`
+| A < B
+| Coordinate type order: `INTEGER32` < `FLOAT32`
+
+| `VECTOR<INTEGER8>`
+| `VECTOR(3)`
+| A < B
+| Coordinate type defined and no dimension < dimension defined and no coordinate type
+
+| `VECTOR<INTEGER64>(123456)`
+| `VECTOR<FLOAT32>(3)`
+| A < B
+| Coordinate type order: `INTEGER64` < `FLOAT32`, compare coordinate type first.
+
+| `VECTOR<FLOAT64>(1234)`
+| `VECTOR<FLOAT32>(1234)`
+| B < A
+| Coordinate type order: `FLOAT32` < `FLOAT64`
+
+| `VECTOR<FLOAT32>([1, 2])`
+| `VECTOR<FLOAT32>([2, 1])`
+| A < B
+| Same coordinate type and dimension, pairwise value comparison.
+
+| `VECTOR<INTEGER16>(1234)`
+| `LIST<INTEGER>`
+| A < B
+| `VECTOR` values are ordered before `LIST` values.
+
+|===
+

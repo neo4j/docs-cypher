@@ -1,13 +1,101 @@
 :description: Vector functions allow you to compute the similarity scores of vector pairs.
 :table-caption!:
-
 :link-vector-indexes: xref:indexes/semantic-indexes/vector-indexes.adoc
-
-[[query-functions-vector]]
 = Vector functions
 
-Vector functions allow you to compute the similarity scores of vector pairs.
-These vector similarity functions are identical to those used by Neo4j's {link-vector-indexes}[vector search indexes].
+Vector functions allow you to construct xref:values-and-types/vector.adoc[`VECTOR` values], compute the similarity and distance of vector pairs, and calculate the size of a vector.
+
+[role=label--new-Neo4j-2025.10 label--cypher-25-only]
+[[functions-vector]]
+== vector()
+
+.Details
+|===
+| *Syntax* 3+| `vector(vectorValue, dimension, coordinateType)`
+| *Description* 3+| Constructs a xref:values-and-types/vector.adoc[`VECTOR`] value.
+.4+| *Arguments* | *Name* | *Type* | *Description*
+| `vectorValue` | `STRING` \| `LIST<INTEGER \| FLOAT>` | The numeric values to create the vector coordinates from.
+| `dimension` | `INTEGER` | The dimension (number of coordinates) of the vector.
+| `coordinateType` | `[INTEGER64, INTEGER32, INTEGER16, INTEGER8, FLOAT64, FLOAT32]` | The type of each coordinate in the vector.
+| *Returns* 3+| xref:values-and-types/vector.adoc[`VECTOR`]
+|===
+
+.Considerations
+|===
+
+| `VECTOR` values can be xref:values-and-types/vector.adoc#store-vector-properties[stored as properties].
+| If a `STRING` is used in `vectorValue`, it must start and end with square brackets (`[]`).
+The values inside the brackets must be comma-separated numbers, represented in either decimal or scientific notation.
+| `null`, `NaN`, and `Infinity` values are not allowed as coordinate values.
+| If `vectorValue` contains elements that are not of the specified `coordinateType`, they will be coerced to that coordinate type if possible.
+This includes the potential of lossy conversion in cases where a larger type, e.g. `INTEGER64` does not fit into the specified type, e.g. `FLOAT32`.
+| `dimension` must be greater than `0` and less than or equal to `4096`.
+| A `null` `vectorValue` or `dimension` will return `null`.
+|===
+
+.Construct a `VECTOR` value
+====
+
+.Query
+[source, cypher]
+----
+RETURN vector([1, 2, 3], 3, INTEGER) AS vector
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| vector
+
+| vector([1, 2, 3], 3, INTEGER NOT NULL)
+
+1+d|Rows: 1
+|===
+
+====
+
+.Construct a `VECTOR` value with a `STRING` as `vectorValue`
+====
+
+.Query
+[source, cypher]
+----
+RETURN vector("[1.05000e+00, 0.123, 5]", 3, FLOAT) AS vector
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| vector
+
+| vector([1.05, 0.123, 5.0], 3, FLOAT NOT NULL)
+
+1+d|Rows: 1
+|===
+
+====
+
+.`null` values
+====
+
+.Query
+[source, cypher]
+----
+RETURN vector(null, 3, FLOAT32) AS nullVectorValue,
+       vector([1, 2, 3], null, INTEGER8) AS nullDimension
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| nullVectorValue | nullDimension
+
+| null | null
+
+2+d|Rows: 1
+|===
+
+====
 
 
 [[functions-similarity-cosine]]
@@ -18,12 +106,10 @@ These vector similarity functions are identical to those used by Neo4j's {link-v
 | *Syntax* 3+| `vector.similarity.cosine(a, b)`
 | *Description* 3+| Returns a `FLOAT` representing the similarity between the argument vectors based on their cosine.
 .3+| *Arguments* | *Name* | *Type* | *Description*
-| `a` | `LIST<INTEGER \| FLOAT>` | A list representing the first vector.
-| `b` | `LIST<INTEGER \| FLOAT>` | A list representing the second vector.
+| `a` | `VECTOR` \| `LIST<INTEGER \| FLOAT>` |  A vector or list value representing the first vector.
+| `b` | `VECTOR` \| `LIST<INTEGER \| FLOAT>` | A vector or list value representing the second vector.
 | *Returns* 3+| `FLOAT`
 |===
-
-For more details, see the {link-vector-indexes}#similarity-functions[vector index documentation].
 
 .Considerations
 |===
@@ -33,11 +119,14 @@ For more details, see the {link-vector-indexes}#similarity-functions[vector inde
 | `vector.similarity.cosine(a, null)` returns `null`.
 | Both vectors must be of the same dimension.
 | Both vectors must be {link-vector-indexes}#similarity-functions[*valid*] with respect to cosine similarity.
-| The implementation is identical to that of the latest available vector index provider (`vector-2.0`).
-| `vector.similarity.cosine()` returns the neighborhood of nodes along with their respective cosine similarity scores, sorted in descending order of similarity.
-The similarity score range from `0` and `1`, with scores closer to `1` indicating a higher degree of similarity between the indexed vector and the query vector.
+| The implementation is the same of the latest vector index provider (`vector-2.0`).
+| The similarity score ranges from `0` and `1`, with scores closer to `1` indicating a higher degree of similarity.
+| The input arguments `a` and `b` accept `VECTOR` values as of Neo4j 2025.10.
+| Floating point operations are performed with `float32` arithmetic.
 
 |===
+
+For more details, see the {link-vector-indexes}#similarity-functions[vector index documentation].
 
 
 [[functions-similarity-euclidean]]
@@ -48,12 +137,11 @@ The similarity score range from `0` and `1`, with scores closer to `1` indicatin
 | *Syntax* 3+| `vector.similarity.euclidean(a, b)`
 | *Description* 3+| Returns a `FLOAT` representing the similarity between the argument vectors based on their Euclidean distance.
 .3+| *Arguments* | *Name* | *Type* | *Description*
-| `a` | `LIST<INTEGER \| FLOAT>` | A list representing the first vector.
-| `b` | `LIST<INTEGER \| FLOAT>` | A list representing the second vector.
+| `a` | `VECTOR` \| `LIST<INTEGER \| FLOAT>` | A vector or list value representing the first vector.
+| `b` | `VECTOR` \| `LIST<INTEGER \| FLOAT>` |  A vector or list value representing the second vector.
 | *Returns* 3+| `FLOAT`
 |===
 
-For more details, see the {link-vector-indexes}#similarity-functions[vector index documentation].
 
 .Considerations
 |===
@@ -63,12 +151,14 @@ For more details, see the {link-vector-indexes}#similarity-functions[vector inde
 | `vector.similarity.euclidean(a, null)` returns `null`.
 | Both vectors must be of the same dimension.
 | Both vectors must be {link-vector-indexes}#similarity-functions[*valid*] with respect to Euclidean similarity.
-| The implementation is identical to that of the latest available vector index provider (`vector-2.0`).
-| `vector.similarity.euclidean()` returns the neighborhood of nodes along with their respective Euclidean similarity scores, sorted in descending order of similarity.
-The similarity score range from `0` and `1`, with scores closer to `1` indicating a higher degree of similarity between the indexed vector and the query vector.
+| The implementation is the same of the latest available vector index provider (`vector-2.0`).
+| The similarity score ranges from `0` and `1`, with scores closer to `1` indicating a higher degree of similarity.
+| The input arguments `a` and `b` accept `VECTOR` values as of Neo4j 2025.10.
+| Floating point operations are performed with `float32` arithmetic.
 
 |===
 
+For more details, see the {link-vector-indexes}#similarity-functions[vector index documentation].
 
 
 .k-Nearest Neighbors
@@ -78,45 +168,53 @@ _k_-nearest neighbor queries return the _k_ entities with the highest similarity
 Such queries can be run against vector indexes in the form of _approximate_ _k_-nearest neighbor (k-ANN) queries, whose returned entities have a high probability of being among the true _k_ nearest neighbors.
 However, they can also be expressed as an exhaustive search using vector similarity functions directly.
 While this is typically significantly slower than using an index, it is exact rather than approximate and does not require an existing index.
-This can be useful for one-off queries on small sets of data.
+This can be useful for one-off queries on small datasets.
 
-To create the graph used in this example, run the following query in an empty Neo4j database:
+To create the graph used in this example, run the following query on an empty Neo4j database:
 
 [source, cypher, role=test-setup]
 ----
 CREATE
-  (:Node { id: 1, vector: [1.0, 4.0, 2.0]}),
-  (:Node { id: 2, vector: [3.0, -2.0, 1.0]}),
-  (:Node { id: 3, vector: [2.0, 8.0, 3.0]});
+  (:Node { id: 1, vector: vector([1.0, 4.0, 2.0], 3, FLOAT32) }),
+  (:Node { id: 2, vector: vector([3.0, -2.0, 1.0], 3, FLOAT32) }),
+  (:Node { id: 3, vector: vector([2.0, 8.0, 3.0], 3, FLOAT32) });
 ----
 
-Given a parameter `query` (here set to `[4.0, 5.0, 6.0]`), you can query for the two nearest neighbors of that query vector by Euclidean distance.
-This is achieved by matching on all candidate vectors and ordering on the similarity score:
+Given a parameter `query` (here set to `[4.0, 5.0, 6.0]`), you can query for the two nearest neighbors by Euclidean distance.
+This is achieved by matching on all candidate vectors and ordering by the similarity score:
 
-.Query
+////
+.Parameters
+[source, parameters]
+----
+{
+  "query": [4.0, 5.0, 6.0]
+}
+----
+////
+
 [source, cypher]
 ----
 MATCH (node:Node)
 WITH node, vector.similarity.euclidean($query, node.vector) AS score
 RETURN node, score
 ORDER BY score DESCENDING
-LIMIT 2;
+LIMIT 2
 ----
 
 This returns the two nearest neighbors.
 
-.Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
 
 | node
 | score
 
-| (:Node {vector: [2.0, 8.0, 3.0], id: 3})
+| (:Node {vector: vector([2.0, 8.0, 3.0], 3, FLOAT32 NOT NULL), id: 3})
 | 0.043478261679410934
 
-| (:Node {vector: [1.0, 4.0, 2.0], id: 1})
-| 0.03703703731298447 
+| (:Node {vector: vector([1.0, 4.0, 2.0], 3, FLOAT32 NOT NULL), id: 1})
+| 0.03703703731298447
 
 2+d|Rows: 2
 
@@ -125,3 +223,213 @@ This returns the two nearest neighbors.
 ======
 
 
+[role=label--new-Neo4j-2025.10 label--cypher-25-only]
+[[functions-vector_dimension_count]]
+== vector_dimension_count()
+
+.Details
+|===
+| *Syntax* 3+| `vector_dimension_count(vector)`
+| *Description* 3+| Returns the dimension of a `VECTOR`.
+.2+| *Arguments* | *Name* | *Type* | *Description*
+| `vector` | `VECTOR` | The vector to calculate the dimension of.
+| *Returns* 3+| `INTEGER`
+|===
+
+[TIP]
+You can also use the xref:functions/scalar.adoc#functions-size[`size()`] function to return the dimension of a `VECTOR` value.
+
+
+.Calculate the size of a `VECTOR`
+=====
+
+.Query
+[source, cypher]
+----
+RETURN vector_dimension_count(vector([1, 2, 3], 3, INTEGER8)) AS size
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+
+| size
+| 3
+
+1+d|Rows: 1
+
+|===
+=====
+
+
+[role=label--new-Neo4j-2025.10 label--cypher-25-only]
+[[functions-vector_distance]]
+== vector_distance()
+
+.Details
+|===
+| *Syntax* 3+| `vector_distance(vector1, vector2, vectorDistanceMetric)`
+| *Description* 3+| Returns a `FLOAT` representing the distance between the two vector values based on the selected `vectorDistanceMetric` algorithm.
+.4+| *Arguments* | *Name* | *Type* | *Description*
+| `vector1` | `VECTOR` | The first vector.
+| `vector2` | `VECTOR` | The second vector.
+| `vectorDistanceMetric` | `[EUCLIDEAN, EUCLIDEAN_SQUARED, MANHATTAN, COSINE, DOT, HAMMING]` | The vector distance algorithm to calculate the distance by.
+| *Returns* 3+| `FLOAT`
+|===
+
+.Supported `vectorDistanceMetric` algorithms
+[cols="1,3", options="header"]
+|===
+| Distance Type | Formula
+
+| `EUCLIDEAN`
+| √( (A₁ - B₁)² + (A₂ - B₂)² + ... + (Aᴰ - Bᴰ)² )
+
+| `EUCLIDEAN_SQUARED`
+| (A₁ - B₁)² + (A₂ - B₂)² + ... + (Aᴰ - Bᴰ)²
+
+| `MANHATTAN`
+| \|A₁ - B₁\| + \|A₂ - B₂\| + ... + \|Aᴰ - Bᴰ\|
+
+| `COSINE`
+| 1 - ( (A₁×B₁ + A₂×B₂ + ... + Aᴰ×Bᴰ) / ( √(A₁² + A₂² + ... + Aᴰ²) × √(B₁² + B₂² + ... + Bᴰ²) ) )
+
+| `DOT`
+| - (A₁×B₁ + A₂×B₂ + ... + Aᴰ×Bᴰ)
+
+| `HAMMING`
+| Number of dimensions in which `vector1` and `vector2` differ.
+|===
+
+.Considerations
+|===
+
+| The smaller the returned number, the more similar the vectors; the larger the number, the more distant the vectors.
+This is in contrast to the similarity functions where the closer to `1` the result is the higher the degree of similarity.
+| Floating point operations are performed with `float32` arithmetic.
+
+|===
+
+
+.Calculate the distance between two vectors using the `COSINE` distance
+====
+
+.Query
+[source, cypher]
+----
+RETURN vector_distance(vector([1, 2, 3], 3, INTEGER8), vector([1, 2, 4], 3, INTEGER8), COSINE) AS distance
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+
+| distance
+| 0.008539855480194092
+
+1+d|Rows: 1
+
+|===
+
+====
+
+.Calculate the distance between two vectors using the `EUCLIDEAN` distance
+====
+
+.Query
+[source, cypher]
+----
+RETURN vector_distance(vector([1.0, 5.0, 3.0, 6.7], 4, FLOAT32), vector([5.0, 2.5, 3.1, 9.0], 4, FLOAT32), EUCLIDEAN)
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+
+| distance
+| 5.248809337615967
+
+1+d|Rows: 1
+
+|===
+
+====
+
+[role=label--new-Neo4j-2025.20 label--cypher-25-only]
+[[functions-vector_norm]]
+== vector_norm()
+
+.Details
+|===
+| *Syntax* 3+| `vector_norm(vector, vectorDistanceMetric)`
+| *Description* 3+|  Returns a `FLOAT` representing the distance between the given vector and an origin vector, which is a vector with the same dimension with all coordinates set to zero, calculated using the specified `vectorDistanceMetric`.
+.3+| *Arguments* | *Name* | *Type* | *Description*
+| `vector` | `VECTOR` | A vector for which the norm to the origin vector will be computed.
+| `vectorDistanceMetric` | `[EUCLIDEAN, MANHATTAN]` | The vector distance algorithm to calculate the distance by.
+| *Returns* 3+| `FLOAT`
+|===
+
+.Supported `vectorDistanceMetric` algorithms
+[cols="1,3", options="header"]
+|===
+| Distance Type | Formula
+
+| `EUCLIDEAN`
+| √( (A₁ - B₁)² + (A₂ - B₂)² + ... + (Aᴰ - Bᴰ)² )
+
+| `MANHATTAN`
+| \|A₁ - B₁\| + \|A₂ - B₂\| + ... + \|Aᴰ - Bᴰ\|
+
+|===
+
+
+.Measure the norm between a vector and an origin vector using the `EUCLIDEAN` distance
+====
+
+.Considerations
+|===
+
+| Floating point operations are performed with `float32` arithmetic.
+
+|===
+
+.Query
+[source, cypher]
+----
+RETURN vector_norm(vector([1.0, 5.0, 3.0, 6.7], 4, FLOAT32), EUCLIDEAN) AS norm
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+
+| norm
+| 8.93812084197998
+
+1+d|Rows: 1
+
+|===
+
+====
+
+.Measure the norm between a vector and an origin vector using the `EUCLIDEAN` distance
+====
+
+.Query
+[source, cypher]
+----
+RETURN vector_norm(vector([1.0, 5.0, 3.0, 6.7], 4, FLOAT32), MANHATTAN) AS norm
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+
+| norm
+| 15.699999809265137
+
+1+d|Rows: 1
+
+|===
+
+====
