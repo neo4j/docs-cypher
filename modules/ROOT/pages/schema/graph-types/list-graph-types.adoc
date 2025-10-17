@@ -1,0 +1,212 @@
+:description: Information about showing the graph type of a database.
+:page-role: cypher-25-only new-neo4j-2025.xx enterprise-edition
+= Show graph types
+
+The `SHOW CURRENT GRAPH TYPE` command allows you to show the graph type specification for the current database.
+
+[NOTE]
+Showing a graph type requires the link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-constraints[`SHOW CONSTRAINTS` privilege].
+
+.Set graph type
+[source, cypher]
+----
+ALTER CURRENT GRAPH TYPE SET {
+   (p:Person => :Resident {name :: STRING, ssn :: INTEGER})
+     REQUIRE (p.name, p.ssn) IS KEY,
+   (:Pet => :Resident&Animal {insuranceNumber :: INTEGER IS KEY, healthCertificate :: STRING IS UNIQUE, name :: STRING}),
+   (:Robot => :Resident&Machine {application :: STRING NOT NULL, id :: INTEGER NOT NULL}),
+   (:City => {name :: STRING NOT NULL, population :: INTEGER}),
+   (:Resident)-[:LIVES_IN => {since :: ANY NOT NULL}]->(:City),
+   (:Company => {name :: STRING, address :: STRING IS UNIQUE}),
+   (:Person)-[:WORKS_FOR => {role :: STRING}]->(:Company),
+   CONSTRAINT company_name FOR (c:Company) REQUIRE c.name IS KEY,
+   CONSTRAINT animal_id FOR (a:Animal) REQUIRE a.id IS UNIQUE,
+   CONSTRAINT resident_address FOR (resident:Resident) REQUIRE resident.address :: STRING
+}
+----
+
+.Show the full graph type
+// tag::schema_graph_types_show[]
+[source, cypher]
+----
+SHOW CURRENT GRAPH TYPE
+----
+// end::schema_graph_types_show[]
+
+.Result
+[source, "queryresult"]
+----
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| specification                                                                                                                                                           |
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "{                                                                                                                                                                      |
+|    (:`City` => {`name` :: STRING NOT NULL, `population` :: INTEGER}),                                                                                                   |
+|    (:`Company` => {`address` :: STRING, `name` :: STRING}),                                                                                                             |
+|    (:`Person` => :`Resident` {`name` :: STRING, `ssn` :: INTEGER}),                                                                                                     |
+|    (:`Pet` => :`Animal`&`Resident` {`healthCertificate` :: STRING, `insuranceNumber` :: INTEGER, `name` :: STRING}),                                                    |
+|    (:`Robot` => :`Machine`&`Resident` {`application` :: STRING NOT NULL, `id` :: INTEGER NOT NULL}),                                                                    |
+|    (:`Resident`)-[:`LIVES_IN` => {`since` :: ANY NOT NULL}]->(:`City` =>),                                                                                              |
+|    (:`Person` =>)-[:`WORKS_FOR` => {`role` :: STRING}]->(:`Company` =>),                                                                                                |
+|    CONSTRAINT `constraint_d7524c38` FOR (`n`:`Company` =>) REQUIRE (`n`.`address`) IS UNIQUE,                                                                           |
+|    CONSTRAINT `company_name` FOR (`n`:`Company` =>) REQUIRE (`n`.`name`) IS KEY,                                                                                        |
+|    CONSTRAINT `constraint_bb1018eb` FOR (`n`:`Person` =>) REQUIRE (`n`.`name`, `n`.`ssn`) IS KEY,                                                                       |
+|    CONSTRAINT `constraint_302a3693` FOR (`n`:`Pet` =>) REQUIRE (`n`.`healthCertificate`) IS UNIQUE,                                                                     |
+|    CONSTRAINT `constraint_aa881a72` FOR (`n`:`Pet` =>) REQUIRE (`n`.`insuranceNumber`) IS KEY,                                                                          |
+|    CONSTRAINT `animal_id` FOR (`n`:`Animal`) REQUIRE (`n`.`id`) IS UNIQUE,                                                                                              |
+|    CONSTRAINT `resident_address` FOR (`n`:`Resident`) REQUIRE (`n`.`address`) IS :: STRING                                                                              |
+| }"                                                                                                                                                                      |
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
+
+[NOTE]
+Regardless of which syntax was used to define a property uniqueness or key constraint, they are all shown in the `specification` returned by `SHOW CURRENT GRAPH TYPE` using the `CONSTRAINT … FOR … REQUIRE` syntax.
+
+
+[[result-columns]]
+== Result columns for `SHOW CURRENT GRAPH TYPE`
+
+There are two return columns for `SHOW CURRENT GRAPH TYPE`: `type` and `specification`.
+Both are returned by default.
+
+.Listing graph types output
+[cols="3*", options="header"]
+|===
+| Column
+| Description
+| Type
+
+| `specification`
+| The graph type of the current database using the canonical form.
+This can be used in an `ALTER CURRENT GRAPH TYPE SET` command to recreate the same graph type. label:default-output[]
+| `STRING`
+|===
+
+[[constraints-in-show-current-graph-type]]
+== Constraints in `SHOW CURRENT GRAPH TYPE`
+
+Constraints created using the xref:schema/constraints/create-constraints.adoc[`CREATE CONSTRAINT`] command (i.e. not added with `ALTER CURRENT GRAPH TYPE SET`, `ADD`, or `ALTER`) are automatically added to the graph type.
+They will therefore appear in the `SHOW CURRENT GRAPH TYPE` result.
+
+.Create a node property uniqueness constraint with `CREATE CONSTRAINT` command
+[source, cypher]
+----
+CREATE CONSTRAINT car_constraint FOR (c:Car) REQUIRE c.licensePlate IS UNIQUE
+----
+
+.Show `specification` of the full graph type, 
+[source, cypher]
+----
+SHOW CURRENT GRAPH TYPE YIELD specification
+----
+
+.Result
+[source, "queryresult"]
+----
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| specification                                                                                                                                                           |
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "{                                                                                                                                                                      |
+|    (:`City` => {`name` :: STRING NOT NULL, `population` :: INTEGER}),                                                                                                   |
+|    (:`Company` => {`address` :: STRING, `name` :: STRING}),                                                                                                             |
+|    (:`Person` => :`Resident` {`name` :: STRING, `ssn` :: INTEGER}),                                                                                                     |
+|    (:`Pet` => :`Animal`&`Resident` {`healthCertificate` :: STRING, `insuranceNumber` :: INTEGER, `name` :: STRING}),                                                    |
+|    (:`Robot` => :`Machine`&`Resident` {`application` :: STRING NOT NULL, `id` :: INTEGER NOT NULL}),                                                                    |
+|    (:`Resident`)-[:`LIVES_IN` => {`since` :: ANY NOT NULL}]->(:`City` =>),                                                                                              |
+|    (:`Person` =>)-[:`WORKS_FOR` => {`role` :: STRING}]->(:`Company` =>),                                                                                                |
+|    CONSTRAINT `constraint_d7524c38` FOR (`n`:`Company` =>) REQUIRE (`n`.`address`) IS UNIQUE,                                                                           |
+|    CONSTRAINT `company_name` FOR (`n`:`Company` =>) REQUIRE (`n`.`name`) IS KEY,                                                                                        |
+|    CONSTRAINT `constraint_bb1018eb` FOR (`n`:`Person` =>) REQUIRE (`n`.`name`, `n`.`ssn`) IS KEY,                                                                       |
+|    CONSTRAINT `constraint_302a3693` FOR (`n`:`Pet` =>) REQUIRE (`n`.`healthCertificate`) IS UNIQUE,                                                                     |
+|    CONSTRAINT `constraint_aa881a72` FOR (`n`:`Pet` =>) REQUIRE (`n`.`insuranceNumber`) IS KEY,                                                                          |
+|    CONSTRAINT `animal_id` FOR (`n`:`Animal`) REQUIRE (`n`.`id`) IS UNIQUE,                                                                                              |
+|    CONSTRAINT `car_constraint` FOR (`n`:`Car`) REQUIRE (`n`.`licensePlate`) IS UNIQUE,                                                                                  |
+|    CONSTRAINT `resident_address` FOR (`n`:`Resident`) REQUIRE (`n`.`address`) IS :: STRING                                                                              |
+| }"                                                                                                                                                                      |
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
+
+[[graph-type-elements-in-show-constraints]]
+== Graph type elements in `SHOW CONSTRAINTS`
+
+Each element in a graph type is implemented with constraints.
+Whatever is added in a graph type is accordingly returned by the `SHOW CONSTRAINTS` command.
+For full information about this command, including its return columns, see xref:schema/constraints/list-constraints.adoc[].
+
+[NOTE]
+Showing constraints requires the link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-constraints[`SHOW CONSTRAINTS` privilege].
+
+Of particular interest are the  `enforcedLabel` and `classification` columns returned by `SHOW CONSTRAINTS`.
+`enforcedLabel` returns the implied node labels belonging to a node element type and the source and target node labels belonging to a relationship element type.
+The `classification` describes the status of a constraint in a graph type, with three possible return values:
+
+.Values returned by the `classification` column
+[cols="2*", options="header"]
+|===
+| `classification`
+| Applies to
+
+| `dependent`
+| Property existence and property type constraints defined on an identifying node label/relationship type in a xref:schema/graph-types/set-graph-types.adoc#node-element-types[node] or xref:schema/graph-types/set-graph-types.adoc#relationship-element-types[relationship element type], or the node label existence constraints, relationship target label constraints, or relationship source label constraints belonging to node or relationship element types.
+
+| `undesignated`
+| Key and property uniqueness constraints, regardless of whether defined on an xref:schema/graph-types/set-graph-types.adoc#constraints-on-identifying-labels-and-types[identifying] or xref:schema/graph-types/set-graph-types.adoc#constraints-on-non-identifying-labels-and-types[non-identifying] node label or relationship type.
+
+| `independent`
+| xref:schema/graph-types/set-graph-types.adoc#constraints-on-non-identifying-labels-and-types[Property existence and property type constraints on non-identifying node labels or relationship types].
+|===
+
+For more information, see xref:schema/constraints/list-constraints.adoc#list-constraints-result-columns[Result columns for listing constraints].
+
+.Show constraints
+[source, cypher]
+----
+SHOW CONSTRAINTS YIELD name, type, labelsOrTypes, enforcedLabel, classification
+ORDER BY labelsOrTypes
+----
+
+.Results
+[source, "queryresult"]
+----
++------------------------------------------------------------------------------------------------------------+
+| name                  | type                              | labelsOrTypes | enforcedLabel | classification |
++------------------------------------------------------------------------------------------------------------+
+| "animal_id"           | "NODE_PROPERTY_UNIQUENESS"        | ["Animal"]    | NULL          | "undesignated" |
+| "car_constraint"      | "NODE_PROPERTY_UNIQUENESS"        | ["Car"]       | NULL          | "undesignated" |
+| "constraint_22a8753a" | "NODE_PROPERTY_EXISTENCE"         | ["City"]      | NULL          | "dependent"    |
+| "constraint_83085900" | "NODE_PROPERTY_TYPE"              | ["City"]      | NULL          | "dependent"    |
+| "constraint_ff70b222" | "NODE_PROPERTY_TYPE"              | ["City"]      | NULL          | "dependent"    |
+| "company_name"        | "NODE_KEY"                        | ["Company"]   | NULL          | "undesignated" |
+| "constraint_437f8bc9" | "NODE_PROPERTY_TYPE"              | ["Company"]   | NULL          | "dependent"    |
+| "constraint_56444b08" | "NODE_PROPERTY_TYPE"              | ["Company"]   | NULL          | "dependent"    |
+| "constraint_d7524c38" | "NODE_PROPERTY_UNIQUENESS"        | ["Company"]   | NULL          | "undesignated" |
+| "constraint_2fd51eaf" | "RELATIONSHIP_TARGET_LABEL"       | ["LIVES_IN"]  | "City"        | "dependent"    |
+| "constraint_9dfe66aa" | "RELATIONSHIP_SOURCE_LABEL"       | ["LIVES_IN"]  | "Resident"    | "dependent"    |
+| "constraint_f26c0c3d" | "RELATIONSHIP_PROPERTY_EXISTENCE" | ["LIVES_IN"]  | NULL          | "dependent"    |
+| "constraint_77504979" | "NODE_PROPERTY_TYPE"              | ["Person"]    | NULL          | "dependent"    |
+| "constraint_82630a6c" | "NODE_LABEL_EXISTENCE"            | ["Person"]    | "Resident"    | "dependent"    |
+| "constraint_96f964fb" | "NODE_PROPERTY_TYPE"              | ["Person"]    | NULL          | "dependent"    |
+| "constraint_bb1018eb" | "NODE_KEY"                        | ["Person"]    | NULL          | "undesignated" |
+| "constraint_302a3693" | "NODE_PROPERTY_UNIQUENESS"        | ["Pet"]       | NULL          | "undesignated" |
+| "constraint_aa881a72" | "NODE_KEY"                        | ["Pet"]       | NULL          | "undesignated" |
+| "constraint_afe0a8de" | "NODE_LABEL_EXISTENCE"            | ["Pet"]       | "Resident"    | "dependent"    |
+| "constraint_c2c72e5b" | "NODE_LABEL_EXISTENCE"            | ["Pet"]       | "Animal"      | "dependent"    |
+| "constraint_c79712fe" | "NODE_PROPERTY_TYPE"              | ["Pet"]       | NULL          | "dependent"    |
+| "constraint_e6253a9f" | "NODE_PROPERTY_TYPE"              | ["Pet"]       | NULL          | "dependent"    |
+| "constraint_f44978e8" | "NODE_PROPERTY_TYPE"              | ["Pet"]       | NULL          | "dependent"    |
+| "resident_address"    | "NODE_PROPERTY_TYPE"              | ["Resident"]  | NULL          | "independent"  |
+| "constraint_12d19793" | "NODE_LABEL_EXISTENCE"            | ["Robot"]     | "Machine"     | "dependent"    |
+| "constraint_5d3b927"  | "NODE_PROPERTY_TYPE"              | ["Robot"]     | NULL          | "dependent"    |
+| "constraint_6e2d3d78" | "NODE_LABEL_EXISTENCE"            | ["Robot"]     | "Resident"    | "dependent"    |
+| "constraint_8993edce" | "NODE_PROPERTY_TYPE"              | ["Robot"]     | NULL          | "dependent"    |
+| "constraint_94c37fdc" | "NODE_PROPERTY_EXISTENCE"         | ["Robot"]     | NULL          | "dependent"    |
+| "constraint_e5820d7e" | "NODE_PROPERTY_EXISTENCE"         | ["Robot"]     | NULL          | "dependent"    |
+| "constraint_57239b68" | "RELATIONSHIP_SOURCE_LABEL"       | ["WORKS_FOR"] | "Person"      | "dependent"    |
+| "constraint_d7a3733b" | "RELATIONSHIP_TARGET_LABEL"       | ["WORKS_FOR"] | "Company"     | "dependent"    |
+| "constraint_df70c64c" | "RELATIONSHIP_PROPERTY_TYPE"      | ["WORKS_FOR"] | NULL          | "dependent"    |
++------------------------------------------------------------------------------------------------------------+
+----
+
+[NOTE]
+All dependent node label existence, relationship source/target label, property existence, and property types constraints have a generated name.
+This is because they cannot be named when defined in their respective node and relationship element types.
+The `createStatement` column will also return `null` for these constraints, because they cannot be created through a `CREATE CONSTRAINT` command.

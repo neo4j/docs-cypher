@@ -1,0 +1,150 @@
+:description: Information about altering element types in a graph type.
+:page-role: cypher-25-only new-neo4j-2025.xx enterprise-edition
+= Alter element types
+
+The xref:schema/graph-types/set-graph-types.adoc#node-element-types[node] and xref:schema/graph-types/set-graph-types.adoc#relationship-element-types[relationship element types] in a graph type can be altered using the `ALTER CURRENT GRAPH TYPE ALTER` command.
+When altering a graph type, only those node or relationship element types to be modified should be included.
+
+[NOTE]
+====
+Altering element types in a graph type requires the following privileges:
+
+* link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-constraints[`CREATE CONSTRAINT`]
+* link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-constraints[`DROP CONSTRAINT`]
+* link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-tokens[`NAME MANAGEMENT`] (if graph type includes node labels, relationship types, or properties not already in the graph)
+====
+
+.Set graph type
+[source, cypher]
+----
+ALTER CURRENT GRAPH TYPE SET {
+    (p:Person => :Resident {name :: STRING, ssn :: INTEGER})
+      REQUIRE (p.name, p.ssn) IS KEY,
+    (:Pet => :Resident&Animal {insuranceNumber :: INTEGER IS KEY, healthCertificate :: STRING IS UNIQUE, name :: STRING}),
+    (:Robot => :Resident {application :: STRING NOT NULL}),
+    (:City => {name :: STRING NOT NULL, population :: INTEGER}),
+    (:Resident)-[:LIVES_IN => {since :: DATE NOT NULL}]->(:City),
+    (:Company => {name :: STRING, address :: STRING IS UNIQUE}),
+    (:Person)-[:WORKS_FOR => {role :: STRING}]->(:Company),
+    CONSTRAINT company_name FOR (c:Company) REQUIRE c.name IS KEY,
+    CONSTRAINT animal_id FOR (a:Animal) REQUIRE a.id IS UNIQUE,
+    CONSTRAINT resident_address FOR (resident:Resident) REQUIRE resident.address :: STRING
+}
+----
+
+[NOTE]
+For details about the different elements a graph type can contain, see xref:schema/graph-types/set-graph-types.adoc[].
+
+.Alter node and relationship element types in a graph type
+[source, cypher]
+----
+ALTER CURRENT GRAPH TYPE ALTER {
+    (:Robot => :Resident&Machine {application :: STRING NOT NULL, id :: INTEGER NOT NULL}), // <1>
+    (:Resident)-[:LIVES_IN => {since :: ANY NOT NULL}]->(:City) // <2>
+}
+----
+
+////
+Cheat sheet example (necessary to exclude <1> tag in the cheat sheet):
+
+// tag::schema_graph_types_alter[]
+[source, cypher]
+----
+ALTER CURRENT GRAPH TYPE ALTER {
+    (:Robot => :Resident&Machine {application :: STRING NOT NULL, id :: INTEGER NOT NULL}),
+    (:Resident)-[:LIVES_IN => {since :: ANY NOT NULL}]->(:City)
+}
+----
+// end::schema_graph_types_alter[]
+
+////
+
+<1> Nodes with a `Robot` label must now also have a `Machine` label.
+`Robot` nodes are also required to have an `id` property of type `INTEGER`. 
+<2> `since` properties on `LIVES_IN` relationships can now be of `ANY` type (they were previously constrained to be of type `DATE`).
+
+.Updated data model, showing altered node element type and relationship element type in graph type
+image::graph-types-alter-graph-type.svg[Updated data model showing altered node element type and relationship element type in graph type, width=700, role=popup]
+
+This alteration is implemented by the _creation_ of the following constraints:
+
+[cols="3*", options="header"]
+|===
+| Identifying node label
+| Constraint type
+| Details
+
+| `(:Robot)`
+| Node property type
+| `id :: INTEGER`
+
+| `(:Robot)`
+| Node property existence
+| `id IS NOT NULL`
+
+| `(:Robot)`
+| Node label existence
+| Nodes with a `Robot` label must also have a `Machine` label.
+|===
+
+It is also implemented by the _removal_ of the following constraint:
+
+[cols="3*", options="header"]
+|===
+| Identifying relationship type
+| Constraint type
+| Details
+
+| `()-[:LIVES_IN]\->()`
+| Relationship property type
+| `since :: DATE`
+|===
+
+So long as the identifying node labels or relationship types are the same as those defined in the current graph type, `ALTER CURRENT GRAPH TYPE ALTER` will alter the element types into whatever is included in the alteration.
+*In other words, partially defining an element type will not leave the parts of the element type that are not included in the alteration unchanged.*
+*Instead, it will redefine the element type based on the reduced definition specified.*
+*Note, this does not apply to key and property uniqueness constraints defined on nodes with an identifying label or relationships with an identifying type; these cannot be modified by `ALTER` and will therefore remain unchanged.*
+
+For more information about how graph types are implemented, see xref:schema/graph-types/set-graph-types.adoc#graph-type-implementation[Set a graph type -> Graph type implementation: translation to constraints].
+
+[[rules]]
+== Rules
+
+The behavior of key and property uniqueness constraints on identifying node labels and relationship types, as well as constraints on non-identifying node labels and relationship types with regard to the `ALTER CURRENT GRAPH TYPE ALTER` command follows that of xref:schema/constraints/index.adoc[Neo4j constraints]; they can be created and dropped, but they cannot be altered through a single command (they must, in that case, be dropped and recreated to fit the desired alteration).
+
+It is not allowed to add key and property uniqueness constraints to node or relationship element types when altering a graph type.
+Nor can they be converted into another one through alteration.
+
+.Not allowed -- alter a node or relationship element type to include a key constraint
+[source, cypher, role=test-fail]
+----
+ALTER CURRENT GRAPH TYPE ALTER {
+    (:City => {name :: STRING NOT NULL, population :: INTEGER IS KEY}) // <1>
+}
+----
+
+<1> This alteration is invalid because it modifies the `City` node element type to include a node key constraint.
+
+.Not allowed -- alter a node or relationship element type by converting a key constraint to a property uniqueness constraint
+[source, cypher, role=test-fail]
+----
+ALTER CURRENT GRAPH TYPE ALTER {
+(p:Person => :Resident {name :: STRING, ssn :: INTEGER})
+    REQUIRE (p.name, p.ssn) IS UNIQUE // <1>
+}
+----
+
+<1> This alteration is not allowed because it attempts to modify the `Person` node element type by converting a node key constraint into a property uniqueness constraint.
+
+Constraints cannot be altered using the `ALTER CURRENT GRAPH TYPE ALTER` command.
+
+.Not allowed -- alter a constraint on a non-identifying relationship type in a graph type
+[source, cypher]
+----
+ALTER CURRENT GRAPH TYPE ALTER {
+    CONSTRAINT altered_animal_id FOR (a:Animal) REQUIRE a.id IS KEY // <1>
+}
+----
+
+<1> This alteration is not allowed because it tries to convert a property uniqueness constraint to a key constraint on a non-identifying node label.
+Also, the names of constraints cannot be altered.

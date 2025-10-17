@@ -1,0 +1,139 @@
+:description: Information about extending a graph type.
+:page-role: cypher-25-only new-neo4j-2025.xx enterprise-edition
+= Extend graph types
+
+A graph type can be extended with the command `ALTER CURRENT GRAPH TYPE ADD`.
+This command cannot alter existing elements in a graph type but adds entirely new elements to an existing graph type.
+
+[NOTE]
+====
+Extending a graph type requires the following privileges:
+
+* link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-constraints[`CREATE CONSTRAINT`]
+* link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-tokens[`NAME MANAGEMENT`] (if graph type includes node labels, relationship types, or properties not already in the graph)
+====
+
+.Set graph type
+// tag::schema_graph_types_set[]
+[source, cypher]
+----
+ALTER CURRENT GRAPH TYPE SET {
+    (p:Person => :Resident {name :: STRING, ssn :: INTEGER})
+      REQUIRE (p.name, p.ssn) IS KEY,
+    (:Pet => :Resident&Animal {insuranceNumber :: INTEGER IS KEY, healthCertificate :: STRING IS UNIQUE, name :: STRING}),
+    (:Robot => :Resident {application :: STRING NOT NULL}),
+    (:City => {name :: STRING NOT NULL, population :: INTEGER}),
+    (:Resident)-[:LIVES_IN => {since :: DATE NOT NULL}]->(:City),
+    CONSTRAINT company_name FOR (c:Company) REQUIRE c.name IS KEY,
+    CONSTRAINT animal_id FOR (a:Animal) REQUIRE a.id IS UNIQUE,
+    CONSTRAINT resident_address FOR (resident:Resident) REQUIRE resident.address :: STRING
+}
+----
+// end::schema_graph_types_set[]
+
+[NOTE]
+For details about the different elements a graph type can contain, see xref:schema/graph-types/set-graph-types.adoc[].
+
+.Extend a graph type by adding new element types
+[source, cypher]
+----
+ALTER CURRENT GRAPH TYPE ADD {
+    (:Company => {name :: STRING, address :: STRING IS UNIQUE}), // <1>
+    (:Person)-[:WORKS_FOR => {role :: STRING}]->(:Company)
+}
+----
+
+<1> This adds a node element type with an identifying label also used by an existing key constraint in the graph type (`company_name`).
+This addition is possible for property uniqueness and key constraints originally not defined on an identifying label, but not for property existence and property type constraints.
+
+////
+Cheat sheet example (necessary to exclude <1> tag in the cheat sheet):
+
+// tag::schema_graph_types_add[]
+[source, cypher]
+----
+ALTER CURRENT GRAPH TYPE ADD {
+    (:Company => {name :: STRING, address :: STRING IS UNIQUE}),
+    (:Person)-[:WORKS_FOR => {role :: STRING}]->(:Company)
+}
+----
+// end::schema_graph_types_add[]
+
+////
+
+The extension adds one node element type and one relationship element type to the graph type.
+It is implemented with the following constraints:
+
+[cols="3*", options="header"]
+|===
+| Identifying node label/relationship type
+| Constraint type
+| Details
+
+| `(:Company)`
+| Node property type
+| `name :: STRING`
+
+| `(:Company)`
+| Node property type
+| `address :: STRING`
+
+| `(:Company)`
+| Node property uniqueness
+| `address IS UNIQUE`
+
+| `()-[:WORKS_FOR]\->()`
+| Relationship property type
+| `role :: STRING`
+
+| `()-[:WORKS_FOR]\->()`
+| Relationship source label
+| Source node must have the label `Person`.
+
+| `()-[:WORKS_FOR]\->()`
+| Relationship target label
+| Target node must have the label `Company`.
+|===
+
+For more information about how graph types are implemented, see xref:schema/graph-types/set-graph-types.adoc#graph-type-implementation[Set a graph type -> Graph type implementation: translation to constraints].
+
+The graph type now includes the added node and relationship element type:
+
+.Current graph type -- with added node and relationship element types
+[source]
+----
+(p:Person => :Resident {name :: STRING, ssn :: INTEGER})
+   REQUIRE (p.name, p.ssn) IS KEY,
+(:Pet => :Resident&Animal {insuranceNumber :: INTEGER IS KEY, healthCertificate :: STRING IS UNIQUE, name :: STRING}),
+(:Robot => Resident {application :: STRING NOT NULL}),
+(:City => {name :: STRING NOT NULL, population :: INTEGER}),
+(:Resident)-[:LIVES_IN => {since :: DATE NOT NULL}]->(:City),
+CONSTRAINT company_name FOR (c:Company) REQUIRE c.name IS KEY,
+CONSTRAINT animal_id FOR (a:Animal) REQUIRE a.id IS UNIQUE,
+CONSTRAINT resident_address FOR (resident:Resident) REQUIRE resident.address :: STRING,
+(:Company => {name :: STRING, address :: STRING IS UNIQUE}),
+(:Person)-[:WORKS_FOR => {role :: STRING}]->(:Company)
+----
+
+.Updated data model, showing added node element type and relationship element type in graph type
+image::graph-types-extend-graph-type.svg[Updated data model showing added node element type and relationship element type, width=700, role=popup]
+
+.Invalid graph type extensions
+[source, cypher, role=test-fail]
+----
+ALTER CURRENT GRAPH TYPE ADD {
+  (p:Person => :Resident {name :: STRING, ssn :: INTEGER, nationality :: STRING})
+    REQUIRE (p.name, p.ssn) IS KEY, // <1>
+  CONSTRAINT pet_address FOR (pet:Pet) REQUIRE pet.address IS NOT NULL, // <2>
+  (:Animal => {type :: STRING NOT NULL}) // <3>
+}
+----
+
+<1> This attempts to extend the existing `Person` node element type by adding a new property (`nationality`).
+This is not valid.
+<2> This attempts to add a property type constraint on an identifying label in the existing graph type(`Pet`).
+This is not valid.
+The reverse (adding a node or relationship element type with an identifying label/type already defined by a property type or property existence constraint) is also not possible.
+<3> This attempts to add a node element type with an identifying label already used as an implied label in a node element type in the existing graph type (`Pet`).
+This is not valid.
+The reverse (adding a node element type with an implied label that is already used as an identifying label in an existing node element type) is also not possible.
