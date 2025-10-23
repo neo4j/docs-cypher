@@ -380,6 +380,10 @@ For example, all relationships in the path must be of type `EMPLOYED_BY`.
 * Nodes or relationships must have properties satisfying some condition.
 For example, all relationships must have the property `distance > 10`.
 
+* For every iteration of the QPP, an aggregated value over the constructed path so far should satisfy a predicate.
+For example, the sum of the property `distance` of the relationships in the path must be less than 50 for every step in the construction of the path.
+See xref::functions/predicate.adoc#functions-allreduce[allReduce] for more information about this predicate.
+
 To demonstrate the utility of predicates in quantified path patterns, this section considers an example of finding the shortest path by physical distance and compares that to the results yielded by using the xref:patterns/shortest-paths.adoc[`SHORTEST`] keyword.
 The graph in this example continues with `Station` nodes, but adds both a geospatial `location` property to the `Stations`, as well as `LINK` relationships with a `distance` property representing the distance between pairs of `Stations`:
 
@@ -557,6 +561,27 @@ RETURN reduce(acc = 0, r in relationships(p) | round(acc + r.distance, 2))
 This query avoids having to find all possible paths and then imposing a `LIMIT 1` to find the shortest one by distance.
 It also shows that there is only one path to solving the query (a number that remains constant even if the data from the rest of the UK railway network was included).
 Using inline predicates or making quantified path patterns more specific where possible can thus greatly improve query performance.
+
+An alternative is to use the information that we want to find paths with a total distance less than `6.05`.
+From the `ALL SHORTEST` query, we know that there exists a path with a total distance of `6.04`.
+Once the path exceeds this limit, we can prune it and continue searching other paths.
+The xref::functions/predicate.adoc#functions-allreduce[allReduce] predicate function expresses this as follows:
+
+.Query
+[source,cypher]
+----
+MATCH (bfr:Station {name: "London Blackfriars"}),
+      (ndl:Station {name: "North Dulwich"})
+MATCH p = (bfr) ((a)-[l:LINK]-(b:Station))+ (ndl)
+WHERE allReduce(
+  pathLength = 0,
+  link IN l | pathLength + link.distance,
+  pathLength < 6.05
+)
+RETURN reduce(acc = 0, r in relationships(p) | round(acc + r.distance, 2))
+  AS distance
+ORDER BY distance LIMIT 1
+----
 
 [[further-reading]]
 == Further reading
