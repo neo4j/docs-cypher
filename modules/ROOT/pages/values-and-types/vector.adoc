@@ -1,0 +1,271 @@
+= Vectors
+:description: Create and store vectors (embeddings) as properties on nodes and relationships, and use them for efficient semantic retrieval with vector indexes and the GenAI plugin.
+:page-role: new-neo4j-2025.10
+
+`VECTOR` values can be created and stored as xref:indexes/semantic-indexes/vector-indexes.adoc#embeddings[embedding] properties on nodes and relationships, and used for efficient semantic retrieval using xref:indexes/semantic-indexes/vector-indexes.adoc[vector indexes] and the xref:genai-integrations.adoc[GenAI plugin].
+`VECTOR` values can also be measured and compared (in terms of similarity, distance, and norm) using xref:functions/vector.adoc[vector functions].
+
+
+[[vector-type]]
+== The vector type
+
+The `VECTOR` type is a fixed-length, ordered collection of numeric values (`INTEGER` or `FLOAT`) stored as a single unit.
+The type of a value is defined by:
+
+- *Dimension* -- The number of values it contains.
+- *Coordinate type* -- The data type of the entries, determining precision and storage size.
+
+.An example `VECTOR` value
+[source]
+----
+vector([1.05, 0.123, 5], 3, FLOAT32)
+----
+
+In this example, `[1.05, 0.123, 5]` is the list of values, `3` its dimension, and `FLOAT32` the data type of the individual entries. +
+Each number in the list can also be seen as a coordinate along one of the vector's dimensions.
+
+[TIP]
+You can convert vectors into lists via the functions xref:functions/list.adoc#functions-tointegerlist[`toIntegerList()`] and xref:functions/list.adoc#functions-tofloatlist[`toFloatList()`].
+
+
+[[valid-values]]
+=== Valid values
+
+- A `VECTOR` value must have a dimension and a coordinate type (see table below for supported types).
+- The dimension of a `VECTOR` value must be larger than `0` and less than or equal to `4096`.
+- Vectors cannot contain lists as elements.
+
+[[supported-coordinate-types]]
+.Supported coordinate types
+[options="header",cols="2*<m"]
+|===
+| Default name | Alias
+
+| `FLOAT` | `FLOAT64`
+| `FLOAT32` |
+| `INTEGER` | `INT`, `INT64`, `INTEGER64`, `SIGNED INTEGER`
+| `INTEGER8` | `INT8`
+| `INTEGER16`| `INT16`
+| `INTEGER32` | `INT8`
+
+|===
+
+
+[[construct-vector-values]]
+== Construct vector values
+
+To construct a `VECTOR` value, use the xref:functions/vector.adoc#functions-vector[`vector()`] function.
+
+.Create a three-dimensional vector with `INTEGER` values
+====
+
+.Query
+[source, cypher]
+----
+RETURN vector([1, 2, 3], 3, INTEGER) AS vector
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| vector
+
+| vector([1, 2, 3], 3, INTEGER NOT NULL)
+
+1+d|Rows: 1
+|===
+
+====
+
+.Create a `VECTOR` value using parameters
+====
+
+.Parameters (`LIST<INTEGER>`)
+[source, parameters]
+----
+{
+  "integerList": [1, 2, 3, 4, 5]
+}
+----
+
+.Query
+[source, cypher]
+----
+RETURN vector($integerList, 5, INTEGER8) AS vector
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| vector
+
+| vector([1, 2, 3, 4, 5], 5, INTEGER8 NOT NULL)
+
+1+d|Rows: 1
+|===
+
+====
+
+
+[role=label--enterprise-edition]
+[[store-vector-properties]]
+== Store vector values as properties
+
+To store a `VECTOR` value as a node or relationship property, use the `vector()` function and a write clause.
+
+[NOTE]
+Storing `VECTOR` values on requires the database to be on link:{neo4j-docs-base-uri}/operations-manual/current/database-internals/store-formats/#store-format-overview[block format].
+This is the default on Aura instances.
+
+.Create a node and a `VECTOR` property
+====
+
+.Query
+[source, cypher]
+----
+CREATE (n:Label {vectorProp: vector([1,2,3], 3, INTEGER)})
+RETURN n.vectorProp AS vectorProp
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| vectorProp
+
+| vector([1, 2, 3], 3, INTEGER NOT NULL)
+
+1+d|Rows: 1
+|===
+
+====
+
+.Create a node and a `VECTOR` property using parameters
+====
+
+.Parameters
+[source, parameters]
+----
+{
+  "floatList": [1.3, 2.4, 3.1, 4.4, 5.9]
+}
+----
+
+.Query
+[source, cypher]
+----
+CREATE (n:Label {vectorProp: vector($floatList, 5, FLOAT)})
+RETURN n.vectorProp AS vectorProp
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| vectorProp
+
+| vector([1.3, 2.4, 3.1, 4.4, 5.9], 5, FLOAT NOT NULL)
+
+1+d|Rows: 1
+|===
+
+====
+
+
+[IMPORTANT]
+Lists containing `VECTOR` values as nested entries cannot be stored as properties.
+
+
+[[drivers-fallback]]
+== Vectors and client libraries (drivers)
+
+Working with vectors via link:{neo4j-docs-base-uri}/create-applications/[Neo4j's client libraries] results in a different behavior depending on the library version.
+
+- *Versions >= 6.0* -- Vectors are fully supported and mapped into client types (see the _Data types_ page of each language manual).
+- *Versions < 6.0* -- Vectors can be created, attached, and manipulated in queries via Cypher functions, but cannot be returned nor created in the application. +
+It is possible to create and store values as shown in the xref:store-vector-properties[Store vector values as properties] examples, but _returning_ a `VECTOR` results in a placeholder `MAP` value and a warning.
++
+.Result of returning a `VECTOR` with a driver older than 6.0
+[source]
+----
++----------------------------------------------------------------+
+| n.vector                                                       |
++----------------------------------------------------------------+
+| {originalType: "VECTOR(1, INTEGER64)", reason: "UNKNOWN_TYPE"} |
++----------------------------------------------------------------+
+warn: One or more values returned could not be handled by this version of the driver and were replaced with placeholder map values. Please upgrade your driver!
+03N95 (Neo.ClientNotification.UnknownType)
+----
+
+
+[[type-coercion]]
+== Type coercion
+
+_Coercion_ is the action of forcing entries of a different (implicit) type into a vector with a different coordinate type.
+
+When the coordinate type is the same as the type of the given elements, no coercion is done.
+When the coordinate type differs, coercion may be done or an error may be raised depending on the situation.
+
+*An error is raised* if a value does not fit into the coordinate type.
+If the coordinate type is an `INTEGER` type and all the coordinate values are `INTEGER` values, then an error will be raised if and only if one of the coordinate types does not fit into the size of the specified type.
+The same applies for `FLOAT` vector types: if the elements are all `FLOAT` values then an error will only be raised if one value does not fit into the specified type.
+
+[source, cypher, test-fail]
+----
+RETURN VECTOR([128], 1, INT8)
+// 22N28: data exception - overflow error. The result of the operation 'vector()' has caused an overflow.
+//   22003: data exception - numeric value out of range. The numeric value 128 is outside the required range.
+----
+
+*Coercion (i.e. lossy conversion) is allowed* when:
+
+- The list contains `INTEGER` values and the specified vector type is of a `FLOAT` type.
+Precision will be lost for values at the higher end of the range (see the link:https://docs.oracle.com/javase/specs/jls/se21/html/jls-5.html[Java type specification]), but an error will be raised only if the value were to overflow/underflow. +
++
+[source, cypher]
+----
+RETURN VECTOR([987374677], 1, FLOAT32)
+// vector([9.8737466E8], 1, FLOAT32 NOT NULL)
+----
+- The list contains `FLOAT` values and the specified type is of an `INTEGER` type.
+Information may be lost, as all values after the decimal point will be truncated, but an error will be raised only if the value were to overflow/underflow. +
++
+[source, cypher]
+----
+RETURN VECTOR([1.2], 1, INT)
+// vector([1], 1, INTEGER NOT NULL)
+----
+
+
+[[supertypes]]
+== Supertypes
+
+`VECTOR` is a supertype of `VECTOR<TYPE>(DIMENSION)` types.
+The same applies for `VECTOR` types with only a coordinate type or a dimension:
+
+- `VECTOR` with only a defined dimension is a supertype of all `VECTOR` values of that dimension, regardless of the coordinate type.
+For example, `VECTOR(4)` is a supertype of `VECTOR<FLOAT>(4)` and `VECTOR<INT8>(4)`.
+- `VECTOR` with only a defined coordinate type is a supertype of all `VECTOR` values with that coordinate type, regardless of the dimension.
+For example, `VECTOR<INT>` is a supertype of `VECTOR<INT>(3)` and `VECTOR<INT>(1024)`.
+
+All of these supertypes can be used in xref:expressions/predicates/type-predicate-expressions.adoc#type-predicate-vector[type predicate expressions].
+For more information, see:
+
+* xref:values-and-types/ordering-equality-comparison.adoc#ordering-and-comparison[Equality, ordering, and comparison of value types -> Ordering vector types]
+* xref:values-and-types/property-structural-constructed.adoc#vector-type-normalization[Property, structural, and constructed values -> Vector type normalization]
+
+
+[[lists-embeddings-vector-indexes]]
+== Lists, vector embeddings, and vector indexes
+
+`VECTOR` and xref:values-and-types/lists.adoc[`LIST`] values are similar and can both be indexed and searched through using xref:indexes/semantic-indexes/vector-indexes.adoc[vector indexes], but have a few key differences:
+
+- Elements in a `LIST` can be accessed individually, whereas operations on a `VECTOR` must operate on the entire `VECTOR`: it is not possible to access or slice individual elements.
+- Storing vector embeddings as `VECTOR` properties with a defined coordinate type allows them to be stored more efficiently.
+Moreover, reducing a vector's coordinate type (e.g., from `INTEGER16` to `INTEGER8`) downsizes storage requirements and improves performance, provided all values remain within the range supported by the smaller type.
+
+[TIP]
+You can convert vectors into lists via the functions xref:functions/list.adoc#functions-tointegerlist[`toIntegerList()`] and xref:functions/list.adoc#functions-tofloatlist[`toFloatList()`].
+
+For information about how to store embeddings as `VECTOR` values with the xref:genai-integrations.adoc[GenAI plugin], see:
+
+* xref:genai-integrations.adoc#single-embedding[Generate a single embedding and store it]
+* xref:genai-integrations.adoc#multiple-embeddings[Generate multiple embeddings and store them]
