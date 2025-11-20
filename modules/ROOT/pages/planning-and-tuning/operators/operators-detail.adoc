@@ -4,7 +4,7 @@
 
 Understanding the roles of different operators in an execution plan can be an important step in making queries more efficient.
 This page contains details and examples for each of the operators used by the Cypher planner.
-For an overview of how the Cypher planner uses operators, see xref:planning-and-tuning/execution-plans.adoc#reading-execution-plans[ Understanding execution plans -> Reading execution plans]. 
+For an overview of how the Cypher planner uses operators, see xref:planning-and-tuning/execution-plans.adoc#reading-execution-plans[ Understanding execution plans -> Reading execution plans].
 
 The operators are grouped into categories based on the role they fulfill in executing a Cypher query:
 
@@ -1187,7 +1187,7 @@ Total database accesses: 1, total allocated memory: 184
 ======
 
 [[query-plan-directed-all-relationships-scan]]
-=== Directed All Relationships Scan 
+=== Directed All Relationships Scan
 
 The `DirectedAllRelationshipsScan` operator fetches all relationships and their start and end nodes in the database.
 
@@ -2611,7 +2611,7 @@ Allows Cypher to use xref:indexes/search-performance-indexes/using-indexes.adoc#
 .Query
 [source, cypher]
 ----
-PROFILE 
+PROFILE
 WITH "Person" AS label
 MATCH (people:$(label))
 RETURN people.name
@@ -2657,7 +2657,7 @@ Allows Cypher to use xref:indexes/search-performance-indexes/using-indexes.adoc#
 .Query
 [source, cypher]
 ----
-PROFILE 
+PROFILE
 WITH "FRIENDS_WITH" AS relType
 MATCH ()-[r:$(relType)]->()
 RETURN count(r) as relCount
@@ -2703,7 +2703,7 @@ Allows Cypher to use xref:indexes/search-performance-indexes/using-indexes.adoc#
 .Query
 [source, cypher]
 ----
-PROFILE 
+PROFILE
 WITH "FRIENDS_WITH" AS relType
 MATCH ()-[r:$(relType)]-()
 RETURN count(r) as relCount
@@ -6086,6 +6086,57 @@ Total database accesses: 15, total allocated memory: 2232
 ----
 
 ======
+
+
+[role=label--new-2025.11]
+[[query-plan-merge-unique-node]]
+=== Merge Unique Node
+
+////
+[source, cypher, role=test-setup]
+----
+CREATE CONSTRAINT team_name IF NOT EXISTS FOR (t:Team) REQUIRE (t.name) IS UNIQUE
+----
+////
+
+The `MergeUniqueNode` operator is similar to the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-merge[`Merge`] operator, but is used when there is a property uniqueness constraint on the property used in the `MERGE` statement.
+
+.MergeUniqueNode
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+MERGE (t:Team {name: 'Engineering'})
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version}
+
+Batch size 128
+
++------------------+----+---------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+--------------+
+| Operator         | Id | Details                                           | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            | Indexes Used |
++------------------+----+---------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+--------------+
+| +ProduceResults  |  0 |                                                   |              1 |    0 |       0 |              0 |                        |           |                     |              |
+| |                +----+---------------------------------------------------+----------------+------+---------+----------------+                        |           |                     +--------------+
+| +EmptyResult     |  1 |                                                   |              1 |    0 |       0 |                |                        |           |                     |              |
+| |                +----+---------------------------------------------------+----------------+------+---------+----------------+                        |           |                     +--------------+
+| +MergeUniqueNode |  2 | UNIQUE t:Team(name) WHERE name = $autostring_0,   |              1 |    1 |       2 |            248 |                    1/0 |     2.922 | Fused in Pipeline 0 | team_name: 1 |
++------------------+----+---------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+--------------+
+
+Total database accesses: 2, total allocated memory: 312
+----
+
+======
+
 
 [role=label--new-2025.09]
 [[query-plan-lock-nodes]]
