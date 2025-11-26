@@ -1,0 +1,249 @@
+= Label expression predicates
+:description: This page describes how to use label expression predicates with Cypher.
+
+A label expression predicate can be used to verify that the labels of a node or the relationship type of a relationship matches a given label expression.
+
+[[label-expression-predicat-syntax]]
+== Syntax
+
+[source, syntax]
+----
+<expr>:<label-expression>
+----
+
+Where `<expr>` is any Cypher expression and `<label-expression>` is any Cypher xref::patterns/reference.adoc#label-expressions[label expression].
+
+[[example-graph]]
+== Example graph
+
+The following graph is used for the examples below:
+
+image::label_expression_predicates_graph.svg[width="700",role="middle"]
+
+To recreate the graph, run the following query against an empty Neo4j database:
+
+[source, cypher]
+----
+CREATE (alice:Person&Manager {name:'Alice', age: 65, skills: ['Java', 'Python']}),
+       (cecil:Person&Developer {name: 'Cecil', age: 25, skills: ['Java', 'Python']}),
+       (cecilia:Person&Developer {name: 'Cecilia', age: 31, skills: ['JavaScript', 'TypeScript']}),
+       (charlie:Person&Engineer {name: 'Charlie', age: 61, skills: ['C++', 'Python']}),
+       (daniel:Person&Director {name: 'Daniel', age: 39, skills: ['JavaScript', 'Slides']}),
+       (eskil:Person&CEO {name: 'Eskil', age: 39, skills: ['Slides', 'ChatGPT']}),
+
+       (cecil)-[:WORKS_FOR]->(alice),
+       (cecilia)-[:WORKS_FOR]->(alice),
+       (charlie)-[:WORKS_FOR]->(daniel),
+       (alice)-[:REPORTS_TO]->(daniel),
+       (daniel)-[:REPORTS_TO]->(eskil)
+----
+
+[node-label-expression-predicate]
+== Test that node has a certain labels
+
+Given `p` is a node, `p:Manager` tests whether node `p` has the label `Manager` or not and results in `true` or `false`, respectively.
+
+// tag::node-label-expression-predicate-1[]
+[source, cypher]
+----
+MATCH (p:Person)
+RETURN p.name AS name, p:Manager AS isManager
+----
+// end::node-label-expression-predicate-1[]
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | isManager
+
+| "Alice" | true
+| "Cecil" | false
+| "Cecilia" | false
+| "Charlie" | false
+| "Daniel" | false
+| "Eskil" | false
+
+2+d|Rows: 6
+|===
+
+Given `p` is a node and a more complex xref::patterns/reference.adoc#label-expressions[label expression], e.g, `Manager|Director|CEO`, `p:Manager|Director|CEO` tests whether node `p` matches the label expression `Manager|Director|CEO` or not and results in `true` or `false`, respectively.
+More specifically, `p:Manager|Director|CEO` tests whether `p` has at least one of the three labels `Manager`, `Director`, and `CEO`.
+
+// tag::node-label-expression-predicate-2[]
+[source, cypher]
+----
+MATCH (p:Person)
+RETURN p.name AS name,
+       p:Manager|Director|CEO AS isManager
+----
+// end::node-label-expression-predicate-2[]
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | isManager
+
+| "Alice" | true
+| "Cecil" | false
+| "Cecilia" | false
+| "Charlie" | false
+| "Daniel" | true
+| "Eskil" | true
+
+2+d|Rows: 6
+|===
+
+`p:!CEO` tests whether `p` does not have the label `CEO`.
+
+[source, cypher]
+----
+MATCH (p:Person)-[r]->(m)
+RETURN p.name AS name,
+       m:!CEO AS doesNotWorkDirectlyForTheCEO
+----
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | doesNotWorkDirectlyForTheCEO
+
+| "Alice" | true
+| "Cecil" | true
+| "Cecilia" | true
+| "Charlie" | true
+| "Daniel" | false
+
+2+d|Rows: 5
+|===
+
+When '<exp>', then the label expression predicate results in `null`, e.g. if `p` is `null`, then `p:!CEO` results in `null`.
+
+[source, cypher]
+----
+MATCH (p:Person)
+OPTIONAL MATCH (p)-[r]->(m)
+RETURN p.name AS name,
+       m:!CEO AS doesNotWorkDirectlyForTheCEO
+----
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | doesNotWorkDirectlyForTheCEO
+
+| "Alice" | true
+| "Cecil" | true
+| "Cecilia" | true
+| "Charlie" | true
+| "Daniel" | false
+| "Eskil" | null
+
+2+d|Rows: 6
+|===
+
+The function xref:functions/scalar.adoc#functions-coalesce[coalesce] allows to turn a `null` into a default values:
+
+[source, cypher]
+----
+MATCH (p:Person)
+OPTIONAL MATCH (p)-[r]->(m)
+RETURN p.name AS name,
+       coalesce(m:!CEO, false) AS doesNotWorkDirectlyForTheCEO
+----
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | doesNotWorkDirectlyForTheCEO
+
+| "Alice" | true
+| "Cecil" | true
+| "Cecilia" | true
+| "Charlie" | true
+| "Daniel" | false
+| "Eskil" | false
+
+2+d|Rows: 6
+|===
+
+[role=label--new-Neo4j-2025.07 label--cypher-25-only]
+[[dynamic-node-label-expression-predicate]]
+== Test that node matches dynamic label expression
+
+If we do not know the manager labels, we can infer a list of `managerLabels` by collecting all non-`Person` labels from people with a direct report.
+Nodes can be tested with the label expression predicate to match xref:patterns/reference.adoc#dynamic-label-and-type-expressions[dynamic label expression].
+`p:$any(managerLabels)` test whether node `p` has at least on of the label in the list `managerLabels`.
+
+[source, cypher]
+----
+CYPHER 25
+MATCH ()-[r]->(p:Person)
+UNWIND labels(p) AS label
+FILTER label <> "Person"
+RETURN COLLECT(label) AS managerLabels
+NEXT
+MATCH (p)
+RETURN p.name AS name, p:$any(managerLabels) AS isManager
+----
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | isManager
+
+| "Alice" | true
+| "Cecil" | false
+| "Cecilia" | false
+| "Charlie" | false
+| "Daniel" | true
+| "Eskil" | true
+
+2+d|Rows: 6
+|===
+
+[node-label-expression-predicate]
+== Test that relationship has a certain relationship type
+
+Given `r` is a relationship, `r:WORKS_FOR` tests whether `r` has the relationship type `WORKS_FOR` or not and result in `true` or `false`, respectively.
+
+// tag::relationship-label-expression-predicate[]
+[source, cypher]
+----
+MATCH (p:Person)-[r]->()
+RETURN p.name AS name,
+       r:WORKS_FOR AS isNotManager
+----
+// end::relationship-label-expression-predicate[]
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | isNotManager
+
+| "Alice" | false
+| "Cecil" | true
+| "Cecilia" | true
+| "Charlie" | true
+| "Daniel" | false
+
+2+d|Rows: 5
+|===
+
+If `r` is `null`, then the label expression predicate, e.g. `r:WORKS_FOR|REPORTS_TO` results in `null`.
+
+[source, cypher]
+----
+MATCH (p:Person)
+OPTIONAL MATCH ()-[r]->(p)
+RETURN DISTINCT
+  p.name AS name,
+  coalesce(r:WORKS_FOR|REPORTS_TO, false) AS hasReports
+----
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | hasReports
+
+| "Alice" | true
+| "Cecil" | false
+| "Cecilia" | false
+| "Charlie" | false
+| "Daniel" | true
+| "Eskil" | true
+
+2+d|Rows: 6
+|===
+
