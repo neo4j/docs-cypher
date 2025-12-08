@@ -6035,6 +6035,58 @@ Total database accesses: 4, total allocated memory: 184
 
 ======
 
+[role=label--new-2025.11]
+[[query-plan-merge-into]]
+=== Merge Into
+
+The `MergeInto` operator is similar to the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-merge[`Merge`] operator, but is used when the start and end node of the pattern is matched outside the `MERGE` pattern.
+
+If necessary, the operator locks the pattern nodes before creating the relationship, to avoid creating multiple relationships between the nodes.
+
+
+.MergeInto
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH (s:Person {name: 'me'})
+MERGE (s)-[:FRIENDS_WITH]->(s)
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version}
+
+Batch size 128
+
++-----------------+----+-------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+----------------------+
+| Operator        | Id | Details                                               | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            | Indexes Used         |
++-----------------+----+-------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+----------------------+
+| +ProduceResults |  0 |                                                       |              1 |    0 |       0 |              0 |                        |           |                     |                      |
+| |               +----+-------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     +----------------------+
+| +EmptyResult    |  1 |                                                       |              1 |    0 |       0 |                |                        |           |                     |                      |
+| |               +----+-------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     +----------------------+
+| +Apply          |  2 |                                                       |              1 |    1 |       0 |                |                        |           |                     |                      |
+| |\              +----+-------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     +----------------------+
+| | +MergeInto    |  3 | MERGE (s)-[anon_0:FRIENDS_WITH]->(s)                  |              1 |    1 |       1 |                |                        |           |                     |                      |
+| | |             +----+-------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     +----------------------+
+| | +Argument     |  4 | s                                                     |              1 |    1 |       0 |           2288 |                    1/0 |     0.673 | Fused in Pipeline 1 |                      |
+| |               +----+-------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+----------------------+
+| +NodeIndexSeek  |  5 | RANGE INDEX s:Person(name) WHERE name = $autostring_0 |              1 |    1 |       2 |            376 |                    1/0 |     0.256 | In Pipeline 0       | range_person_name: 1 |
++-----------------+----+-------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+----------------------+
+
+Total database accesses: 15, total allocated memory: 2232
+----
+
+======
+
 
 [[query-plan-locking-merge]]
 === Locking Merge
