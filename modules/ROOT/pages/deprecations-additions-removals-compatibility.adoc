@@ -59,6 +59,33 @@ a| Both are similar to the `Merge` operator, but:
 * xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-merge-into[`MergeInto`] is used when the start and end node of the pattern is matched outside the `MERGE` pattern;
 * xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-merge-unique-node[`MergeUniqueNode`] is used when there is a property uniqueness constraint on the property used in the `MERGE` statement.
 
+a|
+label:functionality[]
+label:updated[]
+
+[source, csv]
+----
+// people.csv
+label,name
+Actor,Henry Cavill
+----
+
+[source, cypher, role=test-skip]
+----
+CREATE RANGE INDEX actor_has_name FOR (a:Actor) ON (a.name);
+
+LOAD CSV WITH HEADERS FROM 'people.csv' AS row
+// The MERGE below can leverage the index to check for existence before a CREATE
+MERGE (:$(row.label) { name: row.name })
+----
+
+a| Cypher can now leverage indexes on property values, improving the performance of xref:clauses/match.adoc#dynamic-match-caveats[`MATCH`] and xref:clauses/merge.adoc#dynamic-merge-caveats[`MERGE`] when doing so, however:
+
+* It only supports exact seeks on range indexes (no full text or spatial).
+* The index order cannot be leveraged, so the planner must insert separate ordering if required later on in the query.
+* Parallel runtime seeks and scans are single-threaded.
+* The planner doesn't combine multiple property index seeks when generating the results for the dynamic part of the query.
+
 |===
 
 
