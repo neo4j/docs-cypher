@@ -1,0 +1,255 @@
+:description: This page explains how to list indexes used for search performance.
+= Show indexes
+
+////
+The below indexes are created in schema/indexes/create-indexes.adoc
+[source, cypher, role=test-setup]
+----
+CREATE INDEX node_range_index_name FOR (n:Person) ON (n.surname);
+CREATE INDEX rel_range_index_name FOR ()-[r:KNOWS]-() ON (r.since);
+CREATE INDEX composite_range_node_index_name FOR (n:Person) ON (n.age, n.country);
+CREATE INDEX composite_range_rel_index_name FOR ()-[r:PURCHASED]-() ON (r.date, r.amount);
+CREATE INDEX range_index_param FOR (n:Person) ON (n.firstname);
+CREATE TEXT INDEX node_text_index_nickname FOR (n:Person) ON (n.nickname);
+CREATE TEXT INDEX rel_text_index_name FOR ()-[r:KNOWS]-() ON (r.interest);
+CREATE TEXT INDEX text_index_param FOR (n:Person) ON (n.favoriteColor);
+CREATE POINT INDEX node_point_index_name FOR (n:Person) ON (n.sublocation);
+CREATE POINT INDEX rel_point_index_name FOR ()-[r:STREET]-() ON (r.intersection);
+CREATE POINT INDEX point_index_param FOR ()-[r:STREET]-() ON (r.coordinate);
+CREATE POINT INDEX point_index_with_config FOR (n:Label) ON (n.prop2) OPTIONS {
+  indexConfig: {
+    `spatial.cartesian.min`: [-100.0, -100.0],
+    `spatial.cartesian.max`: [100.0, 100.0]
+  }
+};
+CREATE INDEX example_index FOR (n:Book) ON (n.title);
+CREATE TEXT INDEX indexOnBooks FOR (b:Label1) ON (b.prop1);
+CREATE CONSTRAINT uniqueBookIsbn FOR (book:Book) REQUIRE (book.isbn) IS UNIQUE;
+CREATE CONSTRAINT bookRecommendations FOR (book:Book) REQUIRE (book.recommend) IS NOT NULL;
+----
+////
+
+Listing indexes can be done with `SHOW INDEXES`.
+
+[NOTE]
+Listing indexes requires link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-index[the `SHOW INDEX` privilege].
+
+[[listing-indexes-examples]]
+== Examples
+
+* xref:indexes/search-performance-indexes/list-indexes.adoc#listing-all-indexes[]
+* xref:indexes/search-performance-indexes/list-indexes.adoc#listing-specific-columns[]
+* xref:indexes/search-performance-indexes/list-indexes.adoc#listing-indexes-with-filtering[]
+
+[[listing-all-indexes]]
+=== Listing all indexes
+
+To list all indexes with the default output columns, the `SHOW INDEXES` command can be used.
+If all columns are required, use `SHOW INDEXES YIELD *`.
+
+.Showing all indexes
+[source, cypher, role=test-result-skip]
+----
+SHOW INDEXES
+----
+
+// SHOW INDEXES default outputs
+// 4.4: id, name, state, populationPercent, uniqueness, type, entityType, labelsOrTypes, properties, indexProvider
+// 5.0: id, name, state, populationPercent, type, entityType, labelsOrTypes, properties, indexProvider, owningConstraint
+// 5.8: id, name, state, populationPercent, type, entityType, labelsOrTypes, properties, indexProvider, owningConstraint, lastRead, readCount
+
+.Result
+[queryresult]
+----
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| id | name                              | state    | populationPercent | type     | entityType     | labelsOrTypes | properties         | indexProvider      | owningConstraint | lastRead                 | readCount |
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 3  | "composite_range_node_index_name" | "ONLINE" | 100.0             | "RANGE"  | "NODE"         | ["Person"]    | ["age", "country"] | "range-1.0"        | NULL             | NULL                     | 0         |
+| 4  | "composite_range_rel_index_name"  | "ONLINE" | 100.0             | "RANGE"  | "RELATIONSHIP" | ["PURCHASED"] | ["date", "amount"] | "range-1.0"        | NULL             | 2023-03-13T11:41:44.537Z | 1         |
+| 16 | "example_index"                   | "ONLINE" | 100.0             | "RANGE"  | "NODE"         | ["Book"]      | ["title"]          | "range-1.0"        | NULL             | 2023-04-10T15:41:44.537Z | 2         |
+| 17 | "indexOnBooks"                    | "ONLINE" | 100.0             | "TEXT"   | "NODE"         | ["Label1"]    | ["prop1"]          | "text-2.0"         | NULL             | NULL                     | 0         |
+| 14 | "node_label_lookup_index"         | "ONLINE" | 100.0             | "LOOKUP" | "NODE"         | NULL          | NULL               | "token-lookup-1.0" | NULL             | 2023-04-13T08:11:15.537Z | 10        |
+| 10 | "node_point_index_name"           | "ONLINE" | 100.0             | "POINT"  | "NODE"         | ["Person"]    | ["sublocation"]    | "point-1.0"        | NULL             | 2023-04-05T16:21:44.692Z | 1         |
+| 1  | "node_range_index_name"           | "ONLINE" | 100.0             | "RANGE"  | "NODE"         | ["Person"]    | ["surname"]        | "range-1.0"        | NULL             | 2022-12-30T02:01:44.537Z | 6         |
+| 6  | "node_text_index_nickname"        | "ONLINE" | 100.0             | "TEXT"   | "NODE"         | ["Person"]    | ["nickname"]       | "text-2.0"         | NULL             | 2023-04-13T11:41:44.537Z | 2         |
+| 12 | "point_index_param"               | "ONLINE" | 100.0             | "POINT"  | "RELATIONSHIP" | ["STREET"]    | ["coordinate"]     | "point-1.0"        | NULL             | NULL                     | 0         |
+| 13 | "point_index_with_config"         | "ONLINE" | 100.0             | "POINT"  | "NODE"         | ["Label"]     | ["prop2"]          | "point-1.0"        | NULL             | NULL                     | 0         |
+| 5  | "range_index_param"               | "ONLINE" | 100.0             | "RANGE"  | "NODE"         | ["Person"]    | ["firstname"]      | "range-1.0"        | NULL             | 2023-12-13T08:23:53.338Z | 2         |
+| 11 | "rel_point_index_name"            | "ONLINE" | 100.0             | "POINT"  | "RELATIONSHIP" | ["STREET"]    | ["intersection"]   | "point-1.0"        | NULL             | 2023-03-03T13:37:42.537Z | 2         |
+| 2  | "rel_range_index_name"            | "ONLINE" | 100.0             | "RANGE"  | "RELATIONSHIP" | ["KNOWS"]     | ["since"]          | "range-1.0"        | NULL             | 2023-04-12T10:41:44.692Z | 5         |
+| 7  | "rel_text_index_name"             | "ONLINE" | 100.0             | "TEXT"   | "RELATIONSHIP" | ["KNOWS"]     | ["interest"]       | "text-2.0"         | NULL             | 2023-04-01T10:40:44.537Z | 3         |
+| 15 | "rel_type_lookup_index"           | "ONLINE" | 100.0             | "LOOKUP" | "RELATIONSHIP" | NULL          | NULL               | "token-lookup-1.0" | NULL             | 2023-04-12T21:41:44.537Z | 7         |
+| 8  | "text_index_param"                | "ONLINE" | 100.0             | "TEXT"   | "NODE"         | ["Person"]    | ["favoriteColor"]  | "text-2.0"         | NULL             | NULL                     | 0         |
+| 18 | "uniqueBookIsbn"                  | "ONLINE" | 100.0             | "RANGE"  | "NODE"         | ["Book"]      | ["isbn"]           | "range-1.0"        | "uniqueBookIsbn" | 2023-04-13T11:41:44.692Z | 6         |
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+18 rows
+----
+
+One of the output columns from `SHOW INDEXES` is the name of the index.
+This can be used to drop the index with the xref:indexes/search-performance-indexes/drop-indexes.adoc[`DROP INDEX` command].
+
+[[listing-specific-columns]]
+=== Listing specific columns
+
+It is possible to return only specific columns of the available indexes using the `YIELD` clause:
+
+
+.Returning specific columns for all indexes
+[source, cypher, role=test-result-skip]
+----
+SHOW INDEXES
+YIELD name, type, indexProvider AS provider, options, createStatement
+RETURN name, type, provider, options.indexConfig AS config, createStatement
+----
+
+.Result
+[queryresult]
+----
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| name                              | type     | provider           | config                                                                                                                                                                                                                                                                                                                                                                                                                     | createStatement                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "composite_range_node_index_name" | "RANGE"  | "range-1.0"        | {}                                                                                                                                                                                                                                                                                                                                                                                                                         | "CREATE RANGE INDEX `composite_range_node_index_name` FOR (n:`Person`) ON (n.`age`, n.`country`)"                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| "composite_range_rel_index_name"  | "RANGE"  | "range-1.0"        | {}                                                                                                                                                                                                                                                                                                                                                                                                                         | "CREATE RANGE INDEX `composite_range_rel_index_name` FOR ()-[r:`PURCHASED`]-() ON (r.`date`, r.`amount`)"                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| "example_index"                   | "RANGE"  | "range-1.0"        | {}                                                                                                                                                                                                                                                                                                                                                                                                                         | "CREATE RANGE INDEX `example_index` FOR (n:`Book`) ON (n.`title`)"                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| "indexOnBooks"                    | "TEXT"   | "text-2.0"         | {}                                                                                                                                                                                                                                                                                                                                                                                                                         | "CREATE TEXT INDEX `indexOnBooks` FOR (n:`Label1`) ON (n.`prop1`)"                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| "index_343aff4e"                  | "LOOKUP" | "token-lookup-1.0" | {}                                                                                                                                                                                                                                                                                                                                                                                                                         | "CREATE LOOKUP INDEX `index_343aff4e` FOR (n) ON EACH labels(n)"                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| "index_f7700477"                  | "LOOKUP" | "token-lookup-1.0" | {}                                                                                                                                                                                                                                                                                                                                                                                                                         | "CREATE LOOKUP INDEX `index_f7700477` FOR ()-[r]-() ON EACH type(r)"                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| "node_point_index_name"           | "POINT"  | "point-1.0"        | {`spatial.cartesian.min`: [-1000000.0, -1000000.0], `spatial.wgs-84.min`: [-180.0, -90.0], `spatial.wgs-84.max`: [180.0, 90.0], `spatial.cartesian.max`: [1000000.0, 1000000.0], `spatial.wgs-84-3d.max`: [180.0, 90.0, 1000000.0], `spatial.cartesian-3d.min`: [-1000000.0, -1000000.0, -1000000.0], `spatial.cartesian-3d.max`: [1000000.0, 1000000.0, 1000000.0], `spatial.wgs-84-3d.min`: [-180.0, -90.0, -1000000.0]} | "CREATE POINT INDEX `node_point_index_name` FOR (n:`Person`) ON (n.`sublocation`) OPTIONS {indexConfig: {`spatial.cartesian-3d.max`: [1000000.0, 1000000.0, 1000000.0],`spatial.cartesian-3d.min`: [-1000000.0, -1000000.0, -1000000.0],`spatial.cartesian.max`: [1000000.0, 1000000.0],`spatial.cartesian.min`: [-1000000.0, -1000000.0],`spatial.wgs-84-3d.max`: [180.0, 90.0, 1000000.0],`spatial.wgs-84-3d.min`: [-180.0, -90.0, -1000000.0],`spatial.wgs-84.max`: [180.0, 90.0],`spatial.wgs-84.min`: [-180.0, -90.0]}}"       |
+| "node_range_index"                | "RANGE"  | "range-1.0"        | {}                                                                                                                                                                                                                                                                                                                                                                                                                         | "CREATE RANGE INDEX `node_range_index` FOR (n:`Person`) ON (n.`surname`)"                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| "node_text_index_nickname"        | "TEXT"   | "text-2.0"         | {}                                                                                                                                                                                                                                                                                                                                                                                                                         | "CREATE TEXT INDEX `node_text_index_nickname` FOR (n:`Person`) ON (n.`nickname`)"                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| "point_index_with_config"         | "POINT"  | "point-1.0"        | {`spatial.cartesian.min`: [-100.0, -100.0], `spatial.wgs-84.min`: [-180.0, -90.0], `spatial.wgs-84.max`: [180.0, 90.0], `spatial.cartesian.max`: [100.0, 100.0], `spatial.wgs-84-3d.max`: [180.0, 90.0, 1000000.0], `spatial.cartesian-3d.min`: [-1000000.0, -1000000.0, -1000000.0], `spatial.cartesian-3d.max`: [1000000.0, 1000000.0, 1000000.0], `spatial.wgs-84-3d.min`: [-180.0, -90.0, -1000000.0]}                 | "CREATE POINT INDEX `point_index_with_config` FOR (n:`Label`) ON (n.`prop2`) OPTIONS {indexConfig: {`spatial.cartesian-3d.max`: [1000000.0, 1000000.0, 1000000.0],`spatial.cartesian-3d.min`: [-1000000.0, -1000000.0, -1000000.0],`spatial.cartesian.max`: [100.0, 100.0],`spatial.cartesian.min`: [-100.0, -100.0],`spatial.wgs-84-3d.max`: [180.0, 90.0, 1000000.0],`spatial.wgs-84-3d.min`: [-180.0, -90.0, -1000000.0],`spatial.wgs-84.max`: [180.0, 90.0],`spatial.wgs-84.min`: [-180.0, -90.0]}}"                            |
+| "rel_point_index_name"            | "POINT"  | "point-1.0"        | {`spatial.cartesian.min`: [-1000000.0, -1000000.0], `spatial.wgs-84.min`: [-180.0, -90.0], `spatial.wgs-84.max`: [180.0, 90.0], `spatial.cartesian.max`: [1000000.0, 1000000.0], `spatial.wgs-84-3d.max`: [180.0, 90.0, 1000000.0], `spatial.cartesian-3d.min`: [-1000000.0, -1000000.0, -1000000.0], `spatial.cartesian-3d.max`: [1000000.0, 1000000.0, 1000000.0], `spatial.wgs-84-3d.min`: [-180.0, -90.0, -1000000.0]} | "CREATE POINT INDEX `rel_point_index_name` FOR ()-[r:`STREET`]-() ON (r.`intersection`) OPTIONS {indexConfig: {`spatial.cartesian-3d.max`: [1000000.0, 1000000.0, 1000000.0],`spatial.cartesian-3d.min`: [-1000000.0, -1000000.0, -1000000.0],`spatial.cartesian.max`: [1000000.0, 1000000.0],`spatial.cartesian.min`: [-1000000.0, -1000000.0],`spatial.wgs-84-3d.max`: [180.0, 90.0, 1000000.0],`spatial.wgs-84-3d.min`: [-180.0, -90.0, -1000000.0],`spatial.wgs-84.max`: [180.0, 90.0],`spatial.wgs-84.min`: [-180.0, -90.0]}}" |
+| "rel_range_index_name"            | "RANGE"  | "range-1.0"        | {}                                                                                                                                                                                                                                                                                                                                                                                                                         | "CREATE RANGE INDEX `rel_range_index_name` FOR ()-[r:`KNOWS`]-() ON (r.`since`)"                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| "rel_text_index_name"             | "TEXT"   | "text-2.0"         | {}                                                                                                                                                                                                                                                                                                                                                                                                                         | "CREATE TEXT INDEX `rel_text_index_name` FOR ()-[r:`KNOWS`]-() ON (r.`interest`)"                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| "uniqueBookIsbn"                  | "RANGE"  | "range-1.0"        | {}                                                                                                                                                                                                                                                                                                                                                                                                                         | "CREATE CONSTRAINT `uniqueBookIsbn` FOR (n:`Book`) REQUIRE (n.`isbn`) IS UNIQUE"                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
+
+Note that `YIELD` is mandatory if the `RETURN` clause is used.
+`RETURN` is not, however, mandatory when the YIELD clause is used.
+
+[[listing-indexes-with-filtering]]
+=== Listing indexes with filtering
+
+The `SHOW INDEX` command can be filtered in various ways.
+
+For example, to show only range indexes, use `SHOW RANGE INDEXES`.
+
+Another more flexible way of filtering the output is to use the `WHERE` clause.
+An example is to only show indexes not belonging to constraints.
+
+To show only range indexes that does not belong to a constraint we can combine the filtering versions.
+
+.Showing range indexes
+[source, cypher, role=test-result-skip]
+----
+SHOW RANGE INDEXES WHERE owningConstraint IS NULL
+----
+
+.Result
+[queryresult]
+----
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| id | name                              | state    | populationPercent | type    | entityType     | labelsOrTypes | properties         | indexProvider | owningConstraint | lastRead                 | readCount |
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 3  | "composite_range_node_index_name" | "ONLINE" | 100.0             | "RANGE" | "NODE"         | ["Person"]    | ["age", "country"] | "range-1.0"   | NULL             | NULL                     | 0         |
+| 4  | "composite_range_rel_index_name"  | "ONLINE" | 100.0             | "RANGE" | "RELATIONSHIP" | ["PURCHASED"] | ["date", "amount"] | "range-1.0"   | NULL             | 2023-03-13T11:41:44.537Z | 1         |
+| 16 | "example_index"                   | "ONLINE" | 100.0             | "RANGE" | "NODE"         | ["Book"]      | ["title"]          | "range-1.0"   | NULL             | 2023-04-10T15:41:44.537Z | 2         |
+| 1  | "node_range_index_name"           | "ONLINE" | 100.0             | "RANGE" | "NODE"         | ["Person"]    | ["surname"]        | "range-1.0"   | NULL             | 2022-12-30T02:01:44.537Z | 6         |
+| 5  | "range_index_param"               | "ONLINE" | 100.0             | "RANGE" | "NODE"         | ["Person"]    | ["firstname"]      | "range-1.0"   | NULL             | 2023-12-13T08:23:53.338Z | 2         |
+| 2  | "rel_range_index_name"            | "ONLINE" | 100.0             | "RANGE" | "RELATIONSHIP" | ["KNOWS"]     | ["since"]          | "range-1.0"   | NULL             | 2023-04-12T10:41:44.692Z | 5         |
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+6 rows
+----
+
+This will only return the default output columns.
+
+To get all columns, use:
+
+[source, syntax, role="noheader"]
+----
+SHOW RANGE INDEXES YIELD * WHERE owningConstraint IS NULL
+----
+
+[[listing-indexes-result-columns]]
+== Result columns for listing indexes
+
+The below table contains the full information about all columns returned by the `SHOW INDEXES YIELD *` command:
+
+.List indexes output
+[options="header", cols="4,6,2"]
+|===
+| Column | Description | Type
+
+| `id`
+| The id of the index. label:default-output[]
+| `INTEGER`
+
+| `name`
+| Name of the index (explicitly set by the user or automatically assigned). label:default-output[]
+| `STRING`
+
+| `state`
+| Current state of the index. label:default-output[]
+| `STRING`
+
+| `populationPercent`
+| % of index population. label:default-output[]
+| `FLOAT`
+
+| `type`
+| The IndexType of this index (`FULLTEXT`, `LOOKUP`, `POINT`, `RANGE`, `TEXT`, or `VECTOR`). label:default-output[]
+| `STRING`
+
+| `entityType`
+| Type of entities this index represents (`NODE` or `RELATIONSHIP`). label:default-output[]
+| `STRING`
+
+| `labelsOrTypes`
+| The labels or relationship types of this index. label:default-output[]
+| `LIST<STRING>`
+
+| `properties`
+| The properties of this index. label:default-output[]
+| `LIST<STRING>`
+
+| `indexProvider`
+| The index provider for this index. label:default-output[]
+| `STRING`
+
+// New in 5.0
+| `owningConstraint`
+| The name of the constraint the index is associated with or `null` if the index is not associated with any constraint. label:default-output[]
+| `STRING`
+
+| `lastRead`
+| The last time the index was used for reading.
+Returns `null` if the index has not been read since `trackedSince`, or if the statistics are not tracked.
+label:default-output[]
+label:new[Introduced in 5.8]
+| `ZONED DATETIME`
+
+| `readCount`
+| The number of read queries that have been issued to this index since `trackedSince`, or `null` if the statistics are not tracked. label:default-output[]
+label:new[Introduced in 5.8]
+| `INTEGER`
+
+| `trackedSince`
+| The time when usage statistics tracking started for this index, or `null` if the statistics are not tracked.
+label:new[Introduced in 5.8]
+| `ZONED DATETIME`
+
+| `options`
+| Information retrieved from the `OPTIONS` map about the provider and configuration settings for an index.
+If neither is specified when creating the index, this column will return the default values.
+| `MAP`
+
+| `failureMessage`
+| The failure description of a failed index.
+| `STRING`
+
+| `createStatement`
+| Statement used to create the index.
+| `STRING`
+
+|===
