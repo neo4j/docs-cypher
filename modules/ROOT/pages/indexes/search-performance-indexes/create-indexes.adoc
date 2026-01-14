@@ -1,0 +1,773 @@
+:description: This page explains how to create indexes used for search performance.
+= Create indexes
+
+Creating an index is done with the `CREATE [index_type] INDEX [index_name]` command.
+If no index type is specified in the create command a xref:indexes/search-performance-indexes/create-indexes.adoc#create-range-index[range index] is created.
+
+The following index types are included in this category:
+
+* xref:indexes/search-performance-indexes/create-indexes.adoc#create-range-index[Range indexes]
+* xref:indexes/search-performance-indexes/create-indexes.adoc#create-text-index[Text indexes]
+* xref:indexes/search-performance-indexes/create-indexes.adoc#create-point-index[Point indexes]
+* xref:indexes/search-performance-indexes/create-indexes.adoc#create-lookup-index[Token lookup indexes]
+
+It is recommended to give the index a name when it is created.
+If the index is not explicitly named, it gets an auto-generated name.
+
+[NOTE]
+====
+The index name must be unique among both indexes and constraints.
+====
+
+The `CREATE INDEX` command is optionally idempotent.
+This mean that its default behavior is to throw an error if an attempt is made to create the same index twice.
+If `IF NOT EXISTS` is appended to the command, no error is thrown and nothing happens should an index with the same name or same schema and index type already exist.
+It may still throw an error if conflicting constraints exist, such as constraints with the same name or schema and backing index type.
+Instead, an informational notification is returned showing the existing index which blocks the creation.
+
+Index configuration settings can be specified using the `OPTIONS` clause.
+However, not all indexes have available configuration settings.
+In those cases, nothing needs to be specified and the `OPTIONS` map should be omitted from the query.
+
+[NOTE]
+====
+Creating an index requires link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-index[the `CREATE INDEX` privilege].
+====
+
+[NOTE]
+====
+An index cannot be used while its `state` is `POPULATING`, which occurs immediately after it is created.
+To check the `state` of an index -- whether it is `ONLINE` (usable) or `POPULATING` (still being built; the `populationPercent` column shows the progress of the index creation) -- run the following command: `SHOW INDEXES`.
+====
+
+[[create-range-index]]
+== Create a range index
+
+Creating a range index can be done with the `CREATE INDEX` command.
+Note that the index name must be unique.
+
+Range indexes have no supported index configuration.
+
+[[range-indexes-supported-predicates]]
+=== Supported predicates
+
+Range indexes support most types of predicates:
+
+[cols="2", options="header"]
+|===
+
+| Predicate | Syntax
+
+| Equality check.
+a|
+[source, syntax, role="noheader"]
+----
+n.prop = value
+----
+
+| List membership check.
+a|
+[source, syntax, role="noheader"]
+----
+n.prop IN list
+----
+
+| Existence check.
+a|
+[source, syntax, role="noheader"]
+----
+n.prop IS NOT NULL
+----
+
+| Range search.
+a|
+[source, syntax, role="noheader"]
+----
+n.prop > value
+----
+
+| Prefix search.
+a|
+[source, syntax, role="noheader"]
+----
+STARTS WITH
+----
+
+|===
+
+[[range-indexes-examples]]
+=== Examples
+
+* xref:indexes/search-performance-indexes/create-indexes.adoc#create-a-single-property-range-index-for-nodes[]
+* xref:indexes/search-performance-indexes/create-indexes.adoc#create-a-single-property-range-index-for-relationships[]
+* xref:indexes/search-performance-indexes/create-indexes.adoc#create-a-composite-range-index-for-nodes[]
+* xref:indexes/search-performance-indexes/create-indexes.adoc#create-a-composite-range-index-for-relationships[]
+* xref:indexes/search-performance-indexes/create-indexes.adoc#create-a-range-index-by-param[]
+* xref:indexes/search-performance-indexes/create-indexes.adoc#create-a-range-index-only-if-it-does-not-already-exist[]
+
+[discrete]
+[[create-a-single-property-range-index-for-nodes]]
+==== Create a single-property range index for nodes
+
+The following statement creates a named range index on all nodes labeled with `Person` and which have the `surname` property.
+
+.Creating a node range index on a single property
+[source, cypher]
+----
+CREATE INDEX node_range_index_name FOR (n:Person) ON (n.surname)
+----
+
+[discrete]
+[[create-a-single-property-range-index-for-relationships]]
+==== Create a single-property range index for relationships
+
+The following statement creates a named range index on all relationships with relationship type `KNOWS` and property `since`.
+
+.Creating a relationship range index on a single property
+[source, cypher]
+----
+CREATE INDEX rel_range_index_name FOR ()-[r:KNOWS]-() ON (r.since)
+----
+
+[discrete]
+[[create-a-composite-range-index-for-nodes]]
+==== Create a composite range index for nodes
+
+A range index on multiple properties is also called a composite index.
+For node range indexes, only nodes with the specified label and that contain all the specified properties are added to the index.
+
+The following statement creates a named composite range index on all nodes labeled with `Person` and which have both an `age` and `country` property.
+
+.Creating a composite node range index on multiple properties
+[source, cypher]
+----
+CREATE INDEX composite_range_node_index_name FOR (n:Person) ON (n.age, n.country)
+----
+
+[discrete]
+[[create-a-composite-range-index-for-relationships]]
+==== Create a composite range index for relationships
+
+A range index on multiple properties is also called a composite index.
+For relationship range indexes, only relationships with the specified type and that contain all the specified properties are added to the index.
+
+The following statement creates a named composite range index on all relationships labeled with `PURCHASED` and which have both a `date` and `amount` property.
+
+.Creating a composite relationship range index on multiple properties
+[source, cypher]
+----
+CREATE INDEX composite_range_rel_index_name FOR ()-[r:PURCHASED]-() ON (r.date, r.amount)
+----
+
+[discrete]
+[[create-a-range-index-by-param]]
+==== Create a range index using a parameter
+
+The following statement creates a named range index on all nodes with a `Person` label and a `firstname` property using a parameter for the index name.
+
+.Parameters
+[source, parameters]
+----
+{
+  "name": "range_index_param"
+}
+----
+
+.Creating a node range index on a single property
+[source, cypher]
+----
+CREATE INDEX $name FOR (n:Person) ON (n.firstname)
+----
+
+[discrete]
+[[create-a-range-index-only-if-it-does-not-already-exist]]
+==== Create a range index only if it does not already exist
+
+If it is not known whether an index exists or not, add `IF NOT EXISTS` to ensure it does.
+
+.Creating a range index with `IF NOT EXISTS`
+[source, cypher]
+----
+CREATE INDEX node_range_index_name IF NOT EXISTS
+FOR (n:Person) ON (n.surname)
+----
+
+The index is not created if there already exists an index with the same schema and type, same name or both.
+Instead an informational notification is returned.
+
+.Notification
+[source]
+----
+`CREATE RANGE INDEX node_range_index_name IF NOT EXISTS FOR (e:Person) ON (e.surname)` has no effect.
+`RANGE INDEX node_range_index_name FOR (e:Person) ON (e.surname)` already exists.
+----
+
+
+[[create-text-index]]
+== Create a text index
+
+Creating a text index can be done with the `CREATE TEXT INDEX` command.
+Note that the index name must be unique.
+
+Text indexes have no supported index configuration.
+
+See xref:indexes/search-performance-indexes/create-indexes.adoc#text-indexes-trigram-indexes[Trigram indexing] for information about how text indexes process `STRING` values.
+
+
+[[text-indexes-supported-predicates]]
+=== Supported predicates
+
+Text indexes only solve predicates operating on `STRING` values.
+
+The following predicates that only operate on `STRING` values are always solvable by a text index:
+
+* `STARTS WITH`
+* `ENDS WITH`
+* `CONTAINS`
+
+However, other predicates are only used when it is known that the property is compared to a `STRING`:
+
+* `n.prop = "string"`
+* `n.prop IN ["a", "b", "c"]`
+
+This means that a text index is not able to solve, for example, e.g. `a.prop = b.prop`, unless a xref:constraints/managing-constraints.adoc#create-property-type-constraints[property type constraint] also exists on the property.
+
+Text indexes support the following predicates:
+
+[cols="2", options="header"]
+|===
+| Predicate | Syntax
+
+| Equality check.
+a|
+[source, syntax, role="noheader"]
+----
+n.prop = 'example_string'
+----
+
+| List membership check.
+a|
+[source, syntax, role="noheader"]
+----
+n.prop IN ['abc', 'example_string', 'neo4j']
+----
+
+| Prefix search.
+a|
+[source, syntax, role="noheader"]
+----
+STARTS WITH
+----
+
+| Suffix search.
+a|
+[source, syntax, role="noheader"]
+----
+ENDS WITH
+----
+
+| Substring search.
+a|
+[source, syntax, role="noheader"]
+----
+CONTAINS
+----
+
+|===
+
+The above set of predicates can be extended with the use of type constraints.
+See the section about xref:indexes/search-performance-indexes/using-indexes.adoc#type-constraints[index compatibility and type constraints] for more information.
+
+[TIP]
+Text indexes are only used for exact query matches. To perform approximate matches (including, for example, variations and typos), and to compute a similarity score between `STRING` values, use semantic xref:indexes/semantic-indexes/full-text-indexes.adoc[full-text indexes] instead.
+
+[[text-indexes-trigram-indexes]]
+=== Trigram indexing
+
+Text indexes uses trigram indexing.
+This means that `STRING` values are indexed into overlapping trigrams, each containing three Unicode code points.
+For example, the word `"developer"` would be indexed by the following trigrams: `["dev", "eve", "vel", "elo", "lop", "ope", "per"]`.
+
+This makes text indexes particularly suitable for substring (`CONTAINS`) and suffix (`ENDS WITH`) searches, as well as prefix searches (`STARTS WITH`).
+For example, searches like `CONTAINS "vel"` or `ENDS WITH "per"` can be efficiently performed by directly looking up the relevant trigrams in the index.
+By comparison, range indexes, which indexes `STRING` values lexicographically (see xref:indexes/search-performance-indexes/using-indexes.adoc#range-index-backed-order-by[Range index-backed `ORDER BY`] for more information) and are therefore more suited for prefix searches, would need to scan through all indexed values to check if `"vel"` existed anywhere within the text.
+For more information, see xref:indexes/search-performance-indexes/using-indexes.adoc#text-indexes[The impact of indexes on query performance -> Text indexes].
+
+
+[[text-indexes-examples]]
+=== Examples
+
+* xref:indexes/search-performance-indexes/create-indexes.adoc#create-a-node-text-index[]
+* xref:indexes/search-performance-indexes/create-indexes.adoc#create-a-relationship-text-index[]
+* xref:indexes/search-performance-indexes/create-indexes.adoc#create-a-text-index-by-param[]
+* xref:indexes/search-performance-indexes/create-indexes.adoc#create-a-text-index-only-if-it-does-not-already-exist[]
+
+[discrete]
+[[create-a-node-text-index]]
+==== Create a node text index
+
+The following statement creates a named text index on all nodes labeled with `Person` and which have the `nickname` `STRING` property.
+
+.Creating a node text index on a single property
+[source, cypher]
+----
+CREATE TEXT INDEX node_text_index_nickname FOR (n:Person) ON (n.nickname)
+----
+
+[discrete]
+[[create-a-relationship-text-index]]
+==== Create a relationship text index
+
+The following statement creates a named text index on all relationships with relationship type `KNOWS` and `STRING` property `interest`.
+
+.Creating a relationship text index on a single property
+[source, cypher]
+----
+CREATE TEXT INDEX rel_text_index_name FOR ()-[r:KNOWS]-() ON (r.interest)
+----
+
+[discrete]
+[[create-a-text-index-by-param]]
+==== Create a text index using a parameter
+
+The following statement creates a named text index on all nodes with the `Person` label the `favoriteColor` `STRING` property using a parameter for the index name.
+
+.Parameters
+[source, parameters]
+----
+{
+  "name": "text_index_param"
+}
+----
+
+.Creating a node text index on a single property
+[source, cypher]
+----
+CREATE TEXT INDEX $name FOR (n:Person) ON (n.favoriteColor)
+----
+
+[discrete]
+[[create-a-text-index-only-if-it-does-not-already-exist]]
+==== Create a text index only if it does not already exist
+
+If it is not known whether an index exists or not, add `IF NOT EXISTS` to ensure it does.
+
+The following statement attempts to create a named text index on all nodes labeled with `Person` and which have the `nickname` `STRING` property.
+
+.Creating a text index with `IF NOT EXISTS`
+[source, cypher]
+----
+CREATE TEXT INDEX node_index_name IF NOT EXISTS FOR (n:Person) ON (n.nickname)
+----
+
+Note that the index is not created if there already exists an index with the same schema and type, same name or both.
+Instead, an informational notification is returned.
+
+.Notification
+[source]
+----
+`CREATE TEXT INDEX node_index_name IF NOT EXISTS FOR (e:Person) ON (e.nickname)` has no effect.
+`TEXT INDEX node_text_index_nickname FOR (e:Person) ON (e.nickname)` already exists.
+----
+
+[[create-point-index]]
+== Create a point index
+
+Creating a point index can be done with the `CREATE POINT INDEX` command.
+Note that the index name must be unique.
+
+Point indexes have supported index configuration.
+
+
+[[point-indexes-supported-predicates]]
+=== Supported predicates
+
+Point indexes only solve predicates operating on `POINT` values.
+
+Point indexes support the following predicates:
+
+[cols="2", options="header"]
+|===
+| Predicate | Syntax
+
+| Property point value.
+a|
+[source, syntax, role="noheader"]
+----
+n.prop = point({x: value, y: value})
+----
+
+| Within bounding box.
+a|
+[source, syntax, role="noheader"]
+----
+point.withinBBox(n.prop, lowerLeftCorner, upperRightCorner)
+----
+
+| Distance.
+a|
+[source, syntax, role="noheader"]
+----
+point.distance(n.prop, center) < = distance
+----
+
+|===
+
+The above set of predicates can be extended with the use of type constraints.
+See xref:indexes/search-performance-indexes/using-indexes.adoc#type-constraints[The impact of indexes on query performances -> Property type constraints] for more information.
+
+[TIP]
+To learn more about the spatial data types supported by Cypher, see the page about xref:values-and-types/spatial.adoc[Spatial values].
+
+
+[[point-indexes-examples]]
+=== Examples
+
+* xref:indexes/search-performance-indexes/create-indexes.adoc#create-a-node-point-index[]
+* xref:indexes/search-performance-indexes/create-indexes.adoc#create-a-relationship-point-index[]
+* xref:indexes/search-performance-indexes/create-indexes.adoc#create-a-point-index-by-param[]
+* xref:indexes/search-performance-indexes/create-indexes.adoc#create-a-point-index-only-if-it-does-not-already-exist[]
+* xref:indexes/search-performance-indexes/create-indexes.adoc#create-a-point-index-specifying-the-index-configuration[]
+
+[discrete]
+[[create-a-node-point-index]]
+==== Create a node point index
+
+The following statement creates a named point index on all nodes labeled with `Person` and which have the `sublocation` `POINT` property.
+
+.Creating a node point index on a single property
+[source, cypher]
+----
+CREATE POINT INDEX node_point_index_name FOR (n:Person) ON (n.sublocation)
+----
+
+[discrete]
+[[create-a-relationship-point-index]]
+==== Create a relationship point index
+
+The following statement creates a named point index on all relationships with relationship type `STREET` and `POINT` property `intersection`.
+
+.Creating a relationship point index on a single property
+[source, cypher]
+----
+CREATE POINT INDEX rel_point_index_name FOR ()-[r:STREET]-() ON (r.intersection)
+----
+
+[discrete]
+[[create-a-point-index-by-param]]
+==== Create a point index using a parameter
+
+The following statement creates a named point index on all relationships with relationship type `STREET` and `POINT` property `coordinate` using a parameter for the index name.
+
+.Parameters
+[source, parameters]
+----
+{
+  "name": "point_index_param"
+}
+----
+
+.Creating a relationship point index on a single property
+[source, cypher]
+----
+CREATE POINT INDEX $name FOR ()-[r:STREET]-() ON (r.coordinate)
+----
+
+[discrete]
+[[create-a-point-index-only-if-it-does-not-already-exist]]
+==== Create a point index only if it does not already exist
+
+If it is not known whether an index exists or not, add `IF NOT EXISTS` to ensure it does.
+
+.Creating a point index with `IF NOT EXISTS`
+[source, cypher]
+----
+CREATE POINT INDEX node_point_index IF NOT EXISTS
+FOR (n:Person) ON (n.sublocation)
+----
+
+Note that the index is not created if there already exists an index with the same schema and type, same name or both.
+Instead, an informational notification is returned.
+
+.Notification
+[source]
+----
+`CREATE POINT INDEX node_point_index IF NOT EXISTS FOR (e:Person) ON (e.sublocation)` has no effect.
+`POINT INDEX node_point_index_name FOR (e:Person) ON (e.sublocation)` already exists.
+----
+
+[discrete]
+[[create-a-point-index-specifying-the-index-configuration]]
+==== Create a point index specifying the index configuration
+
+To create a point index with a specific index configuration, the `indexConfig` settings in the `OPTIONS` clause.
+The valid configuration settings are:
+
+* `spatial.cartesian.min` (default value: [`-1000000.0`, `-1000000.0`])
+* `spatial.cartesian.max` (default value: [`1000000.0`, `1000000.0`])
+* `spatial.cartesian-3d.min` (default value: [`-1000000.0`, `-1000000.0`, `-1000000.0`])
+* `spatial.cartesian-3d.max` (default value: [`1000000.0`, `1000000.0`, `1000000.0``])
+* `spatial.wgs-84.min` (default value: [`-180.0`, `-90.0`])
+* `spatial.wgs-84.max` (default value: [`-180.0`, `-90.0`])
+* `spatial.wgs-84-3d.min` (default value: [`-180.0`, `-90.0`, `-1000000.0`])
+* `spatial.wgs-84-3d.max` (default value: [`180.0`, `90.0`, `1000000.0`])
+
+
+The following statement creates a point index specifying the `spatial.cartesian.min` and `spatial.cartesian.max` settings.
+
+.Creating a point index with index configuration
+[source, cypher]
+----
+CREATE POINT INDEX point_index_with_config
+FOR (n:Label) ON (n.prop2)
+OPTIONS {
+  indexConfig: {
+    `spatial.cartesian.min`: [-100.0, -100.0],
+    `spatial.cartesian.max`: [100.0, 100.0]
+  }
+}
+----
+
+Note that the wgs-84 and 3D cartesian settings, which are not specified in this example, are set with their respective default values.
+
+[[create-lookup-index]]
+== Create a token lookup index
+
+Two token lookup indexes are created by default when creating a Neo4j database (one node label lookup index and one relationship type lookup index).
+Only one node label and one relationship type lookup index can exist at the same time.
+
+If a token lookup index has been dropped, it can be recreated with the `CREATE LOOKUP INDEX` command.
+Note that the index name must be unique.
+
+Token lookup indexes have no supported index configuration.
+
+
+[[lookup-index-supported-predicates]]
+=== Supported predicates
+
+Token lookup indexes are present by default and solve only node label and relationship type predicates:
+
+[cols="2, 2a", options="header"]
+|===
+| Predicate | Syntax (example)
+
+| Node label predicate.
+|
+[source, syntax, role="noheader"]
+----
+MATCH (n:Label)
+----
+
+[source, syntax, role="noheader"]
+----
+MATCH (n)
+WHERE n:Label
+----
+
+| Relationship type predicate.
+|
+[source, syntax, role="noheader"]
+----
+MATCH ()-[r:REL]->()
+----
+
+[source, syntax, role="noheader"]
+----
+MATCH ()-[r]->()
+WHERE r:REL
+----
+
+|===
+
+[WARNING]
+====
+Token lookup indexes improve the performance of Cypher queries and the population of other indexes. Dropping these indexes may lead to severe performance degradation.
+====
+
+
+[[lookup-index-examples]]
+=== Examples
+
+* xref:indexes/search-performance-indexes/create-indexes.adoc#create-a-node-label-lookup-index[]
+* xref:indexes/search-performance-indexes/create-indexes.adoc#create-a-relationship-type-lookup-index[]
+* xref:indexes/search-performance-indexes/create-indexes.adoc#create-a-lookup-index-only-if-it-does-not-already-exist[]
+
+[discrete]
+[[create-a-node-label-lookup-index]]
+==== Create a node label lookup index
+
+The following statement creates a named node label lookup index on all nodes with one or more labels:
+
+// Lookup indexes exist by default, recreating them would raise an error
+.Creating a node label lookup index
+[source, cypher, role=test-skip]
+----
+CREATE LOOKUP INDEX node_label_lookup_index FOR (n) ON EACH labels(n)
+----
+
+[NOTE]
+====
+Only one node label lookup index can exist at a time.
+====
+
+[discrete]
+[[create-a-relationship-type-lookup-index]]
+==== Create a relationship type lookup index
+
+The following statement creates a named relationship type lookup index on all relationships with any relationship type.
+
+// Lookup indexes exist by default, recreating them would raise an error
+.Creating a relationship type lookup index
+[source, cypher, role=test-skip]
+----
+CREATE LOOKUP INDEX rel_type_lookup_index FOR ()-[r]-() ON EACH type(r)
+----
+
+[NOTE]
+====
+Only one relationship type lookup index can exist at a time.
+====
+
+[discrete]
+[[create-a-lookup-index-only-if-it-does-not-already-exist]]
+==== Create a token lookup index only if it does not already exist
+
+If it is not known whether an index exists or not, add `IF NOT EXISTS` to ensure it does.
+
+.Creating a node label lookup index with `IF NOT EXISTS`
+[source, cypher]
+----
+CREATE LOOKUP INDEX node_label_lookup IF NOT EXISTS FOR (n) ON EACH labels(n)
+----
+
+The index is not created if there already exists an index with the same schema and type, same name or both.
+Instead, an informational notification is returned.
+
+.Notification
+[source]
+----
+`CREATE LOOKUP INDEX node_label_lookup IF NOT EXISTS FOR (e) ON EACH labels(e)` has no effect.
+`LOOKUP INDEX node_label_lookup_index FOR (e) ON EACH labels(e)` already exists.
+----
+
+[[create-conflicting-index]]
+== Creating an index when a conflicting index or constraint exists
+
+* xref:indexes/search-performance-indexes/create-indexes.adoc#failure-to-create-an-already-existing-index[]
+* xref:indexes/search-performance-indexes/create-indexes.adoc#failure-to-create-an-index-with-the-same-name-as-an-already-existing-index[]
+* xref:indexes/search-performance-indexes/create-indexes.adoc#failure-to-create-an-index-when-a-constraint-already-exists[]
+* xref:indexes/search-performance-indexes/create-indexes.adoc#failure-to-create-an-index-with-the-same-name-as-an-already-existing-constraint[]
+
+[discrete]
+[[failure-to-create-an-already-existing-index]]
+=== Failure to create an already existing index
+
+Create an index on the property `title` on nodes with the `Book` label, when that index already exists.
+
+////
+[source, cypher, role=test-setup]
+----
+CREATE INDEX example_index FOR (n:Book) ON (n.title)
+----
+////
+
+.Creating a duplicate index
+[source, cypher, role=test-fail]
+----
+CREATE INDEX bookTitleIndex FOR (book:Book) ON (book.title)
+----
+
+In this case, the index can not be created because it already exists.
+
+.Error message
+[source, error]
+----
+There already exists an index (:Book {title}).
+----
+
+Using `IF NOT EXISTS` when creating the index would result in no error and would not create a new index.
+
+[discrete]
+[[failure-to-create-an-index-with-the-same-name-as-an-already-existing-index]]
+=== Failure to create an index with the same name as an already existing index
+
+Create a named index on the property `numberOfPages` on nodes with the `Book` label, when an index with the given name already exists.
+The index type of the existing index does not matter.
+
+////
+[source, cypher, role=test-setup]
+----
+CREATE TEXT INDEX indexOnBooks FOR (b:Label1) ON (b.prop1)
+----
+////
+
+.Creating an index with a duplicated name
+[source, cypher, role=test-fail]
+----
+CREATE INDEX indexOnBooks FOR (book:Book) ON (book.numberOfPages)
+----
+
+In this case, the index cannot be created because there already exists an index with the given name.
+
+.Error message
+[source, error]
+----
+There already exists an index called 'indexOnBooks'.
+----
+
+Using `IF NOT EXISTS` when creating the index would result in no error and would not create a new index.
+
+[discrete]
+[[failure-to-create-an-index-when-a-constraint-already-exists]]
+=== Failure to create an index when a constraint already exists
+
+Create an index on the property `isbn` on nodes with the `Book` label, when an index-backed constraint already exists on that schema.
+This is only relevant for range indexes.
+
+////
+[source, cypher, role=test-setup]
+----
+CREATE CONSTRAINT uniqueBookIsbn FOR (book:Book) REQUIRE (book.isbn) IS UNIQUE
+----
+////
+
+.Creating a range index on same schema as existing index-backed constraint
+[source, cypher, role=test-fail]
+----
+CREATE INDEX bookIsbnIndex FOR (book:Book) ON (book.isbn)
+----
+
+In this case, the index can not be created because an index-backed constraint already exists on that label and property combination.
+
+.Error message
+[source, error]
+----
+There is a uniqueness constraint on (:Book {isbn}), so an index is already created that matches this.
+----
+
+[discrete]
+[[failure-to-create-an-index-with-the-same-name-as-an-already-existing-constraint]]
+=== Failure to create an index with the same name as an already existing constraint
+
+Create a named index on the property `numberOfPages` on nodes with the `Book` label, when a constraint with the given name already exists.
+
+////
+[source, cypher, role=test-setup]
+----
+CREATE CONSTRAINT bookRecommendations FOR (book:Book) REQUIRE (book.recommend) IS NOT NULL
+----
+////
+
+.Creating an index with same name as an existing constraint
+[source, cypher, role=test-fail]
+----
+CREATE INDEX bookRecommendations FOR (book:Book) ON (book.recommendations)
+----
+
+In this case, the index can not be created because there already exists a constraint with the given name.
+
+.Error message
+[source, error]
+----
+There already exists a constraint called 'bookRecommendations'.
+----
