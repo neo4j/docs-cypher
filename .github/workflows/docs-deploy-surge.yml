@@ -48,7 +48,7 @@ jobs:
             });
             var fs = require('fs');
             fs.mkdirSync(process.env.ARTIFACT_DIR, { recursive: true });
-            fs.writeFileSync(process.env.ARTIFACT_DIR + '/docs.zip', Buffer.from(downloadDocs.data));
+            fs.writeFileSync(process.env.ARTIFACT_DIR + '/docs/docs.zip', Buffer.from(downloadDocs.data));
 
             var matchArtifactChangelog = artifacts.data.artifacts.filter((artifact) => {
               return artifact.name == "changelog"
@@ -59,26 +59,26 @@ jobs:
               artifact_id: matchArtifactChangelog.id,
               archive_format: 'zip',
             });
-            fs.writeFileSync(process.env.ARTIFACT_DIR + '/changelog.zip', Buffer.from(downloadChangelog.data));
+            fs.writeFileSync(process.env.ARTIFACT_DIR + '/changelog/changelog.zip', Buffer.from(downloadChangelog.data));
 
       - id: unzip-docs
         env:
-          ARTIFACT_DIR: ${{ runner.temp }}/artifacts
+          ARTIFACT_DIR: ${{ runner.temp }}/artifacts/docs
         run: |
           cd "$ARTIFACT_DIR"
-          unzip docs.zip -d site
+          unzip docs.zip
 
       - id: unzip-changelog
-        if: ${{ hashFiles(format('{0}/changelog.zip', runner.temp + '/artifacts')) != '' }}
+        if: ${{ hashFiles(format('{0}/artifacts/changelog/changelog.zip', runner.temp)) != '' }}
         env:
-          ARTIFACT_DIR: ${{ runner.temp }}/artifacts
+          ARTIFACT_DIR: ${{ runner.temp }}/artifacts/changelog
         run: |
           cd "$ARTIFACT_DIR"
           unzip changelog.zip
       
       - id: get-deploy-id
         env:
-          ARTIFACT_DIR: ${{ runner.temp }}/artifacts
+          ARTIFACT_DIR: ${{ runner.temp }}/artifacts/docs
         run: |
           deployid=$(<"$ARTIFACT_DIR/deployid")
           case "$deployid" in ''|*[!0-9]*) echo "Provided PR number is not an integer"; exit 1 ;; esac
@@ -102,10 +102,10 @@ jobs:
         env:
           DEPLOY_URL: ${{ steps.get-deploy-url.outputs.deploy-url }}
           SURGE_TOKEN: "${{ secrets.DOCS_SURGE_TOKEN }}"
-          SITE_DIR: ${{ runner.temp }}/artifacts/site
+          ARTIFACT_DIR: ${{ runner.temp }}/artifacts/docs
         run: |
           npm install -g surge
-          cd "$SITE_DIR"
+          cd "$ARTIFACT_DIR"
           surge . "$DEPLOY_URL" --token "$SURGE_TOKEN"
 
       # If the PR artifacts include a changelog file, add it to the PR as a comment
@@ -117,7 +117,7 @@ jobs:
           number: ${{ steps.get-deploy-id.outputs.deploy-id }}
           recreate: true
           header: docs-pr-changes
-          path: changelog
+          path: ${{ runner.temp }}/artifacts/changelog/changelog
           GITHUB_TOKEN: ${{ secrets.DOCS_PR_COMMENT_TOKEN }}
 
       # If there's no changelog, add a generic comment to the PR
