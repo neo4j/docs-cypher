@@ -39,7 +39,7 @@ Vector indexes allow you to query vector embeddings from large datasets.
 An embedding is a numerical representation of a data object, such as a text, image, or document.
 Each word or token in a text is typically represented as high-dimensional vector where each dimension represents a certain aspect of the word’s meaning.
 
-The embedding for a particular data object can be created by both proprietary (such as https://cloud.google.com/vertex-ai[Vertex AI] or https://openai.com/[OpenAI]) and open source (such as https://github.com/UKPLab/sentence-transformers[sentence-transformers]) embedding generators, which can produce vector embeddings with dimensions such as 256, 768, 1536, and 3072.
+The embedding for a particular data object can be created by both proprietary (such as https://cloud.google.com/vertex-ai[Vertex AI] or https://openai.com/[OpenAI]) and open source (such as https://github.com/huggingface/sentence-transformers[sentence-transformers]) embedding generators, which can produce vector embeddings with dimensions such as 256, 768, 1536, and 3072.
 Vector embeddings are stored as `LIST<INTEGER | FLOAT>` properties on a node or relationship.
 As of Neo4j 2025.10, they can also be more efficiently stored as xref:values-and-types/vector.adoc[`VECTOR`] properties using Cypher 25.
 
@@ -68,7 +68,8 @@ A vector index allows you to retrieve a neighborhood of nodes or relationships b
 == Create vector indexes
 
 A vector index is a single-label, single-property index for nodes or a single-relationship-type, single-property index for relationships.
-It can be used to index nodes or relationships by `LIST<INTEGER | FLOAT>` properties valid to the dimensions and vector similarity function of the index.
+It can be used to index nodes or relationships by `LIST<INTEGER | FLOAT>` or, as of Neo4j 2025.10, `VECTOR` properties valid to the dimensions and vector similarity function of the index.
+As of Neo4j 2026.01, the index can also be multi-label, multi-relationship-type or include additional properties for filtering purposes.
 
 A vector index is created by using the `CREATE VECTOR INDEX [index_name]` command.
 It is recommended to give the index a name when it is created.
@@ -115,6 +116,52 @@ OPTIONS { indexConfig: {
  `vector.similarity_function`: $similarityFunction
 }}
 ----
+
+Like full-text indexes, vector indexes may be created for multiple labels or relationship types.
+In that case, all nodes with _at least one_ label matching _at least one_ of the labels or a relationship whose type matches _at least one_ of the relationship types are included as long as they have the vector property.
+
+In contrast to multi-property full-text indexes, the vector property is the only property to determine if the node or relationship is included in the index.
+The additional properties will only be included in the index if they are of one of the types `INTEGER`, `FLOAT`, `STRING`, `BOOLEAN`, `DATE`, `ZONED DATETIME`, `LOCAL DATETIME`, `ZONED TIME`, `LOCAL TIME` or `DURATION`.
+If the node or relationship does not have an additional property or if the additional property is of another type, it is treated as `null` by the index.
+
+You can create a vector index on multiple labels with additional properties for filtering using the following query:
+
+.Create a vector index for multiple labels and with additional properties
+[source, cypher]
+----
+CREATE VECTOR INDEX multiLabelAdditionalProperties IF NOT EXISTS
+FOR (n:Movie|Actor)
+ON n.embedding
+WITH [n.title, n.plot, n.name, n.born]
+OPTIONS { indexConfig: {
+ `vector.dimensions`: 1536,
+ `vector.similarity_function`: 'cosine'
+}}
+----
+
+And similarly for relationships on multiple relationship types with additional properties using the following syntax:
+
+.Create a vector index for multiple relationship types and an additional property
+[source, cypher, role=test-skip]
+----
+CREATE VECTOR INDEX name IF NOT EXISTS
+FOR ()-[r:REL_TYPE1|REL_TYPE2|REL_TYPE3]-()
+ON (r.embedding)
+WITH [r.property]
+OPTIONS { indexConfig: {
+ `vector.dimensions`: $dimension,
+ `vector.similarity_function`: $similarityFunction
+}}
+----
+
+////
+Ensure all indexes are online
+
+[source, cypher, role=test-setup]
+----
+CALL db.awaitIndexes()
+----
+////
 
 [[configuration-settings]]
 === Configuration settings
@@ -261,7 +308,7 @@ For more information about what Java versions are supported by different Neo4j v
 == Show vector indexes
 
 To list all vector indexes in a database, use the `SHOW VECTOR INDEXES` command.
-This is the same xref:indexes/search-performance-indexes/managing-indexes.adoc#list-indexes[`SHOW` command as for other indexes], with the index type filtering on `VECTOR`.
+This is the same xref:indexes/search-performance-indexes/list-indexes.adoc[`SHOW` command as for other indexes], with the index type filtering on `VECTOR`.
 
 [NOTE]
 Listing indexes requires link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-index[the `SHOW INDEX` privilege].
@@ -278,15 +325,16 @@ SHOW VECTOR INDEXES
 .Result
 [source, role=queryresult]
 ----
-+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| id | name         | state    | populationPercent | type     | entityType | labelsOrTypes | properties        | indexProvider | owningConstraint | lastRead                 | readCount |
-+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| 2  | "moviePlots" | "ONLINE" | 100.0             | "VECTOR" | "NODE"     | ["Movie"]     | ["embedding"]     | "vector-2.0"  | NULL             | 2024-05-07T09:19:09.225Z | 47        |
-+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| id | name                             | state    | populationPercent | type     | entityType | labelsOrTypes      | properties                                     | indexProvider | owningConstraint | lastRead                 | readCount |
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2  | "moviePlots"                     | "ONLINE" | 100.0             | "VECTOR" | "NODE"     | ["Movie"]          | ["embedding"]                                  | "vector-2.0"  | NULL             | 2024-05-07T09:19:09.225Z | 47        |
+| 3  | "multiLabelAdditionalProperties" | "ONLINE" | 100.0             | "VECTOR" | "NODE"     | ["Movie", "Actor"] | ["embedding", "title", "plot", "name", "born"] | "vector-3.0"  | NULL             | 2024-05-07T09:19:09.225Z | 47        |
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 ====
 
-For a full description of all return columns, see xref:indexes/search-performance-indexes/managing-indexes#listing-indexes-result-columns[Search-performance indexes → Result columns for listing indexes].
+For a full description of all return columns, see xref:indexes/search-performance-indexes/list-indexes.adoc#listing-indexes-result-columns[Search-performance indexes -> List indexes -> Result columns for listing indexes].
 
 .Show vector indexes with full or filtered details
 ====
@@ -302,11 +350,12 @@ SHOW VECTOR INDEXES YIELD *
 .Result
 [source, role=queryresult]
 ----
-+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| id | name        | state    | populationPercent | type     | entityType | labelsOrTypes | properties        | indexProvider | owningConstraint| lastRead                  | readCount | trackedSince              | options                                                                                                                                                                                                       | failureMessage | createStatement                                                                                                                                                                                                                                              |
-+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| 2  | "moviePlots"| "ONLINE" | 100.0             | "VECTOR" | "NODE"     | ["Movie"]     | ["embedding"]     | "vector-2.0"  | NULL            | 2024-05-07T09:19:09.225Z  | 47        | 2024-05-07T08:26:19.072Z  | {indexConfig: {`vector.dimensions`: 1536, `vector.hnsw.m`: 16, `vector.quantization.enabled`: TRUE, `vector.similarity_function`: "COSINE", `vector.hnsw.ef_construction`: 100}, indexProvider: "vector-2.0"} | ""             | "CREATE VECTOR INDEX `moviePlots` FOR (n:`Movie`) ON (n.`embedding`) OPTIONS {indexConfig: {`vector.dimensions`: 1536,`vector.hnsw.ef_construction`: 100,`vector.hnsw.m`: 16,`vector.quantization.enabled`: true,`vector.similarity_function`: 'COSINE'}}"   |
-+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| id | name                             | state    | populationPercent | type     | entityType | labelsOrTypes      | properties                                     | indexProvider | owningConstraint | lastRead                 | readCount | trackedSince              | options                                                                                                                                                                          | failureMessage | createStatement                                                                                                                                                                                                                                                                                                                       |
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2  | "moviePlots"                     | "ONLINE" | 100.0             | "VECTOR" | "NODE"     | ["Movie"]          | ["embedding"]                                  | "vector-2.0"  | NULL             | 2024-05-07T09:19:09.225Z | 47        | 2024-05-07T08:26:19.072Z  | {indexConfig: {`vector.dimensions`: 1536, `vector.hnsw.m`: 16, `vector.quantization.enabled`: TRUE, `vector.similarity_function`: "COSINE", `vector.hnsw.ef_construction`: 100}} | ""             | "CREATE VECTOR INDEX `moviePlots` FOR (n:`Movie`) ON (n.`embedding`) OPTIONS {indexConfig: {`vector.dimensions`: 1536,`vector.hnsw.ef_construction`: 100,`vector.hnsw.m`: 16,`vector.quantization.enabled`: true,`vector.similarity_function`: 'COSINE'}}"                                                                            |
+| 3  | "multiLabelAdditionalProperties" | "ONLINE" | 100.0             | "VECTOR" | "NODE"     | ["Movie", "Actor"] | ["embedding", "title", "plot", "name", "born"] | "vector-3.0"  | NULL             | 2024-05-07T09:19:09.225Z | 47        | 2024-05-07T08:26:19.072Z  | {indexConfig: {`vector.dimensions`: 1536, `vector.hnsw.m`: 16, `vector.quantization.enabled`: TRUE, `vector.similarity_function`: "COSINE", `vector.hnsw.ef_construction`: 100}} | ""             | "CREATE VECTOR INDEX `multiLabelAdditionalProperties` FOR (n:`Movie`|`Actor`) ON (n.`embedding`) WITH [n.`title`, n.`plot`, n.`name`, n.`born`] OPTIONS {indexConfig: {`vector.dimensions`: 1536,`vector.hnsw.ef_construction`: 100,`vector.hnsw.m`: 16,`vector.quantization.enabled`: true,`vector.similarity_function`: 'COSINE'}}" |
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 
 To return only specific details, specify the desired column name(s) after the `YIELD` clause.
@@ -320,18 +369,22 @@ SHOW VECTOR INDEXES YIELD name, type, entityType, labelsOrTypes, properties
 .Result
 [source, role=queryresult]
 ----
-+----------------------------------------------------------------------+
-| name         | type     | entityType | labelsOrTypes | properties    |
-+----------------------------------------------------------------------+
-| "moviePlots" | "VECTOR" | "NODE"     | ["Movie"]     | ["embedding"] |
-+----------------------------------------------------------------------+
++--------------------------------------------------------------------------------------------------------------------------------+
+| name                             | type     | entityType | labelsOrTypes      | properties                                     |
++--------------------------------------------------------------------------------------------------------------------------------+
+| "moviePlots"                     | "VECTOR" | "NODE"     | ["Movie"]          | ["embedding"]                                  |
+| "multiLabelAdditionalProperties" | "VECTOR" | "NODE"     | ["Movie", "Actor"] | ["embedding", "title", "plot", "name", "born"] |
++--------------------------------------------------------------------------------------------------------------------------------+
 ----
 ====
 
 [[drop-vector-indexes]]
 == Drop vector indexes
 
-A vector index is dropped by using the xref:indexes/search-performance-indexes/managing-indexes.adoc#drop-an-index[same command as for other indexes], `DROP INDEX`.
+A vector index is dropped by using the xref:indexes/search-performance-indexes/drop-indexes.adoc[same command as for other indexes], `DROP INDEX`.
+It is possible to drop vector indexes created in a different Cypher version than the one in use.
+For example, although the multiple labels or additional properties were added in Cypher 25, such indexes can still be dropped using Cypher 5.
+
 The index name can also be given as a parameter when dropping an index:  `DROP INDEX $name`.
 
 [NOTE]
@@ -524,10 +577,10 @@ If the use of the procedure is unavoidable, performing any other write operation
 --
 |
 
-| Procedure signatures from `SHOW PROCEDURES` will render the vector arguments with a type of `ANY` rather than the semantically correct type of `LIST<INTEGER \| FLOAT>`.
+| Procedure signatures from `SHOW PROCEDURES` render the vector arguments with a type of `ANY` rather than the semantically correct type of `VECTOR \| LIST<INTEGER \| FLOAT>`.
 [NOTE]
 --
-The types are still enforced as `LIST<INTEGER \| FLOAT>`.
+The types are still enforced as `VECTOR \| LIST<INTEGER \| FLOAT>`.
 --
 |
 

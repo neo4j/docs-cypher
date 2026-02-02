@@ -1,0 +1,144 @@
+:description: This page explains how to drop indexes used for search performance.
+= Drop indexes
+
+An index can be dropped (removed) using the name with the `DROP INDEX index_name` command.
+This command can drop indexes of any type, except those backing constraints.
+
+It is possible to drop indexes created in a different Cypher version than the one in use.
+For example, although `VECTOR` indexes on multiple labels or with additional properties were added in Cypher 25, such indexes can still be dropped using Cypher 5.
+
+The name of the index can be found using the xref:indexes/search-performance-indexes/list-indexes.adoc[`SHOW INDEXES` command], given in the output column `name`.
+
+////
+The below indexes are created in schema/indexes/create-indexes.adoc
+[source, cypher, role=test-setup]
+----
+CREATE INDEX node_range_index_name FOR (n:Person) ON (n.surname);
+CREATE INDEX rel_range_index_name FOR ()-[r:KNOWS]-() ON (r.since);
+CREATE INDEX composite_range_node_index_name FOR (n:Person) ON (n.age, n.country);
+CREATE INDEX composite_range_rel_index_name FOR ()-[r:PURCHASED]-() ON (r.date, r.amount);
+CREATE INDEX range_index_param FOR (n:Person) ON (n.firstname);
+CREATE TEXT INDEX node_text_index_nickname FOR (n:Person) ON (n.nickname);
+CREATE TEXT INDEX rel_text_index_name FOR ()-[r:KNOWS]-() ON (r.interest);
+CREATE TEXT INDEX text_index_param FOR (n:Person) ON (n.favoriteColor);
+CREATE POINT INDEX node_point_index_name FOR (n:Person) ON (n.sublocation);
+CREATE POINT INDEX rel_point_index_name FOR ()-[r:STREET]-() ON (r.intersection);
+CREATE POINT INDEX point_index_param FOR ()-[r:STREET]-() ON (r.coordinate);
+CREATE POINT INDEX point_index_with_config FOR (n:Label) ON (n.prop2) OPTIONS {
+  indexConfig: {
+    `spatial.cartesian.min`: [-100.0, -100.0],
+    `spatial.cartesian.max`: [100.0, 100.0]
+  }
+};
+CREATE INDEX example_index FOR (n:Book) ON (n.title);
+CREATE TEXT INDEX indexOnBooks FOR (b:Label1) ON (b.prop1);
+CREATE CONSTRAINT uniqueBookIsbn FOR (book:Book) REQUIRE (book.isbn) IS UNIQUE;
+CREATE CONSTRAINT bookRecommendations FOR (book:Book) REQUIRE (book.recommend) IS NOT NULL;
+----
+////
+
+[source, syntax]
+----
+DROP INDEX index_name [IF EXISTS]
+----
+
+The `DROP INDEX` command is optionally idempotent.
+This means that its default behavior is to throw an error if an attempt is made to drop the same index twice.
+With `IF EXISTS`, no error is thrown and nothing happens should the index not exist.
+Instead, an informational notification is returned detailing that the index does not exist.
+
+[NOTE]
+====
+Dropping an index requires link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/authentication-authorization/database-administration/#access-control-database-administration-index[the `DROP INDEX` privilege].
+====
+
+
+[[drop-indexes-examples]]
+== Examples
+
+* xref:indexes/search-performance-indexes/drop-indexes.adoc#drop-an-index[]
+* xref:indexes/search-performance-indexes/drop-indexes.adoc#drop-an-index-by-param[]
+* xref:indexes/search-performance-indexes/drop-indexes.adoc#drop-index-backing-constraint[]
+* xref:indexes/search-performance-indexes/drop-indexes.adoc#drop-a-non-existing-index[]
+
+
+[[drop-an-index]]
+=== Drop an index
+
+The following statement attempts to drop the index named `example_index`.
+
+.Dropping an index
+[source, cypher]
+----
+DROP INDEX example_index
+----
+
+If an index with that name exists it is removed, if not the command fails.
+
+
+[[drop-an-index-by-param]]
+==== Drop an index using a parameter
+
+The following statement attempts to drop the index named `range_index_param` using a parameter for the index name.
+
+.Parameters
+[source, parameters]
+----
+{
+  "name": "range_index_param"
+}
+----
+
+.Dropping an index
+[source, cypher]
+----
+DROP INDEX $name
+----
+
+If an index with that name exists it is removed, if not the command fails.
+
+
+[[drop-index-backing-constraint]]
+=== Failure to drop an index backing a constraint
+
+It is not possible to drop indexes that back constraints.
+
+.Dropping an index backing a constraint
+[source, cypher,role=test-fail]
+----
+DROP INDEX uniqueBookIsbn
+----
+
+
+.GQL error chain
+[role="queryresult",stripes="all",cols="1"]
+|===
+| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/22NBC/[22NBC]: error: data exception - index belongs to constraint. Index belongs to constraint 'uniqueBookIsbn'.
+
+_cause_: link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/50N10/[50N10]: error: general processing exception - index drop failed. Unable to drop 'uniqueBookIsbn'.
+|===
+
+Dropping the index-backed constraint also removes the backing index.
+For more information, see xref:constraints/managing-constraints.adoc#drop-constraint[Drop a constraint by name].
+
+
+[[drop-a-non-existing-index]]
+=== Drop a non-existing index
+
+If it is uncertain if an index exists and you want to drop it if it does but not get an error should it not, use `IF EXISTS`.
+
+The following statement attempts to drop the index named `missing_index_name`.
+
+.Dropping an index with `IF EXISTS`
+[source, cypher]
+----
+DROP INDEX missing_index_name IF EXISTS
+----
+
+If an index with that name exists it is removed, if not the command does nothing and an informational notification is instead returned.
+
+.Notification
+[source]
+----
+`DROP INDEX missing_index_name IF EXISTS` has no effect. `missing_index_name` does not exist.
+----
