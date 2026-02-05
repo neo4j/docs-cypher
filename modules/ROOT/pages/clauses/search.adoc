@@ -5,7 +5,21 @@
 [[query-search]]
 = SEARCH
 
-The `SEARCH` clause is not a clause in its own right -- rather, it is a subclause used with xref:clauses/match.adoc[`MATCH`] and xref:clauses/optional-match.adoc[`OPTIONAL MATCH`] clauses to add constraints on their pattern based on vector similarity.
+.Preview Feature
+[IMPORTANT]
+====
+The *vector search feature is offered AS-IS* as described in your agreement with Neo4j and should only be used for internal development purposes.
+When this feature becomes generally available, you will need to upgrade to the latest Neo4j version (which may require downtime) to use the feature for non-development purposes.
+
+Vector search is *enabled by default*, both in Aura and self-managed Neo4j.
+During the Preview period, if you have any feedback, comments, or encounter any issues, we welcome them in our link:https://github.com/neo4j/neo4j/issues[public GitHub repository].
+We will address them to the best of our ability.
+Please include the term *Vector search* in the title of your issue so we can identify it more easily. +
+Customers with active contracts may contact Neo4j Support through the standard support channels.
+Please note that any cases related to the Preview feature will be classified as Severity 4 by default, in accordance with the link:https://neo4j.com/terms/support-terms/[Support Terms].
+====
+
+The `SEARCH` clause is not a clause in its own right -- rather, it is a subclause used within xref:clauses/match.adoc[`MATCH`] and xref:clauses/optional-match.adoc[`OPTIONAL MATCH`] clauses to add constraints on their pattern based on approximate nearest neighbor (ANN) vector search.
 In order to use the `SEARCH` clause, you must first have xref::indexes/semantic-indexes/vector-indexes.adoc#create-vector-index[created a vector index].
 
 == SEARCH clause syntax
@@ -13,35 +27,36 @@ In order to use the `SEARCH` clause, you must first have xref::indexes/semantic-
 The `SEARCH` clause has the following syntax
 [source, syntax]
 ----
-SEARCH binding_variable IN (
-  VECTOR INDEX index_name
-  FOR query_vector
-  [WHERE ...]
-  LIMIT limit
-) [SCORE AS score_alias]
+[OPTIONAL] MATCH pattern
+  SEARCH binding_variable IN (
+    VECTOR INDEX index_name
+    FOR query_vector
+    [WHERE ...]
+    LIMIT top_k
+  ) [SCORE AS score_alias]
 ----
 
-The `SEARCH` clause adds constraints to the pattern from the enclosing `MATCH` or `OPTIONAL MATCH`, by only returning nodes or relationships that have a `VECTOR` or `LIST<INTEGER NOT NULL | FLOAT NOT NULL>` property similar enough to the `query_vector`.
+The `SEARCH` clause constraints the `pattern` from the enclosing `MATCH` or `OPTIONAL MATCH`, by only returning nodes or relationships, included in the results of the ANN vector search as described by the `SEARCH` clause.
 Below follows a short description of the different parts of the syntax:
 
-- The `binding_variable` must be a node or relationship variable from the pattern of the enclosing `MATCH` or `OPTIONAL MATCH` clause.
+- The `binding_variable` must be a node or relationship variable from the `pattern` of the enclosing `MATCH` or `OPTIONAL MATCH` clause.
 
-- The `index_name` must be an identifier which matches the name of an existing vector index in the Neo4j database.
+- The `index_name` must be an identifier that matches the name of an existing vector index in the Neo4j database.
 The vector index must be a node vector index if the `binding_variable` refers to a node and a relationship vector index if the `binding_variable` refers to a relationship.
 
 - The `query_vector` can be any expression that evaluates to a `VECTOR` or `LIST<INTEGER NOT NULL | FLOAT NOT NULL>`, for example a literal, a parameter or a property.
 The `SEARCH` clause returns a neighborhood of nodes or relationships based on the similarity between the `query_vector` the corresponding property of those nodes or relationships.
 
-- The optional `WHERE` subclause is used to do vector search with filters and is a restricted version of the normal Cypher xref::clauses/where.adoc[`WHERE` clause].
+- The optional `WHERE` subclause is used to describe a vector search with filters, where a filter is applied within the vector index, and is a restricted version of the normal Cypher xref::clauses/where.adoc[`WHERE` clause].
 For more information, see xref::clauses/search.adoc#vector-search-filtering-predicates[Predicates for vector search with filters].
 
-- The `limit` refers to the number of approximate nearest neighbor nodes or relationships to return from the `SEARCH` clause.
-The `limit` must be of type `INTEGER NOT NULL` and in the interval `0 \<= limit \<= 2147483647` footnote:[2147483647 is the `Integer.MAX_VALUE` from Java].
+- The `LIMIT` clause sets the number of approximate nearest neighbor nodes or relationships returned by the `SEARCH` clause.
+The `top_k` must be of type `INTEGER NOT NULL` and in the interval `0 \<= top_k \<= 2147483647` footnote:[2147483647 is the `Integer.MAX_VALUE` from Java].
 
 - The optional `SCORE` subclause makes the `SEARCH` clause return the similarity score for each node or relationship in addition to the node or relationship itself.
 In the result, the column for the similarity scores will be called `score_alias`.
 
-- The `SEARCH` clause puts some restrictions on which pattern the enclosing `MATCH` or `OPTIONAL MATCH` clause is allowed to have.
+- The `SEARCH` clause puts some restrictions on which `pattern` the enclosing `MATCH` or `OPTIONAL MATCH` clause is allowed to have.
 For more information, see xref::clauses/search.adoc#limitations[Limitations of the `SEARCH` clause].
 
 
@@ -50,7 +65,7 @@ For more information, see xref::clauses/search.adoc#limitations[Limitations of t
 
 The following graph is used for the examples below:
 
-image::graph-search-clause.svg[Example graph with Person nodes connecting via knows relationships,width=700,role=popup]
+image::graph-search-clause.svg[Example graph with Movie nodes with title, release date and rating,width=700,role=popup]
 
 To recreate the graph, run the following query in an empty Neo4j database:
 
