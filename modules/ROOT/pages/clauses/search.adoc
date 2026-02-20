@@ -1,0 +1,890 @@
+:description: The `SEARCH` clause is a subclause of a `MATCH` or `OPTIONAL MATCH` clause and is used to filter the results based on vector similarity.
+:table-caption!:
+:page-role: new-neo4j-2026.01 cypher-25-only
+
+[[query-search]]
+= SEARCH
+
+.Preview Feature
+[IMPORTANT]
+====
+The *vector search feature is offered AS-IS* as described in your agreement with Neo4j and should only be used for internal development purposes.
+When this feature becomes generally available, you will need to upgrade to the latest Neo4j version (which may require downtime) to use the feature for non-development purposes.
+
+Vector search is *enabled by default*, both in Aura and self-managed Neo4j.
+
+During the Preview period, if you have any feedback, comments, or encounter any issues, we welcome them in our link:https://github.com/neo4j/neo4j/issues[public GitHub repository].
+We will address them to the best of our ability.
+Please include the term *Vector search* in the title of your issue so we can identify it more easily. +
+Customers with active contracts may contact Neo4j Support through the standard support channels.
+Please note that any cases related to the Preview feature will be classified as Severity 4 by default, in accordance with the link:https://neo4j.com/terms/support-terms/[Support Terms].
+====
+
+
+The `SEARCH` clause is not a clause in its own right -- rather, it is a subclause used within xref:clauses/match.adoc[`MATCH`] and xref:clauses/optional-match.adoc[`OPTIONAL MATCH`] clauses to add constraints on their pattern based on approximate nearest neighbor (ANN) vector search.
+In order to use the `SEARCH` clause, you must first have xref::indexes/semantic-indexes/vector-indexes.adoc#create-vector-index[created a vector index].
+
+== SEARCH clause syntax
+
+The `SEARCH` clause has the following syntax
+[source, syntax]
+----
+[OPTIONAL] MATCH pattern
+  SEARCH binding_variable IN (
+    VECTOR INDEX index_name
+    FOR query_vector
+    [WHERE ...]
+    LIMIT top_k
+  ) [SCORE AS score_alias]
+----
+
+The `SEARCH` clause constrains the `pattern` from the enclosing `MATCH` or `OPTIONAL MATCH`, by only returning nodes or relationships included in the results of the ANN vector search as described by the `SEARCH` clause.
+Below follows a short description of the different parts of the syntax:
+
+- The `binding_variable` must be a node or relationship variable from the `pattern` of the enclosing `MATCH` or `OPTIONAL MATCH` clause.
+
+- The `index_name` must be an identifier that matches the name of an existing vector index in the Neo4j database.
+The vector index must be a node vector index if the `binding_variable` refers to a node and a relationship vector index if the `binding_variable` refers to a relationship.
+
+- The `query_vector` can be any expression that evaluates to a `VECTOR` or `LIST<INTEGER NOT NULL | FLOAT NOT NULL>`, for example a literal, a parameter or a property.
+The `SEARCH` clause returns a neighborhood of nodes or relationships based on the similarity between the `query_vector` the corresponding property of those nodes or relationships.
+
+- The optional `WHERE` subclause applies a filter to the vector index, and is a restricted version of the normal Cypher xref::clauses/where.adoc[`WHERE` clause].
+For more information, see xref::clauses/search.adoc#vector-search-filtering-predicates[Predicates for vector search with filters].
+
+- The `LIMIT` clause sets the number of approximate nearest neighbor nodes or relationships returned by the `SEARCH` clause.
+The `top_k` must be of type `INTEGER NOT NULL` and in the interval `0 \<= top_k \<= 2147483647` footnote:[2147483647 is the `Integer.MAX_VALUE` from Java].
+
+- The optional `SCORE` subclause makes the `SEARCH` clause return the similarity score for each node or relationship in addition to the node or relationship itself.
+In the result, the column for the similarity scores will be called `score_alias`.
+
+- The `SEARCH` clause puts some restrictions on which `pattern` the enclosing `MATCH` or `OPTIONAL MATCH` clause is allowed to have.
+For more information, see xref::clauses/search.adoc#limitations[Limitations of the `SEARCH` clause].
+
+
+[[search-example-graph]]
+== Example graph and vector index
+
+The following graph is used for the examples below:
+
+image::graph-search-clause.svg[Example graph with Movie nodes with title, release date and rating,width=700,role=popup]
+
+To recreate the graph, run the following query in an empty Neo4j database:
+
+[source, cypher, role=test-setup]
+----
+CREATE (:Movie {title: 'Aladdin', releaseDate: date('1992-11-08'), rating: 8.0}),
+       (:Movie {title: 'Cinderella', embedding: vector([1, 3, 4], 3, INTEGER), releaseDate: date('1950-02-15'), rating: 7.3}),
+       (:Movie:Favorite {title: 'Frozen', embedding: [1, 3, 3], releaseDate: date('2013-11-10'), rating: 7.4}),
+       (:Movie {title: 'Lilo & Stitch', embedding: vector([1, 1, 3], 3, INTEGER), releaseDate: date('2002-06-16'), rating: 7.4}),
+       (:Movie:Favorite {title: 'Lion King', embedding: vector([2, 5, 2], 3, INTEGER), releaseDate: date('1994-06-12'), rating: 8.5}),
+       (:Movie:Favorite {title: 'Mulan', embedding: [2, 3, 3], releaseDate: date('1998-06-05'), rating: 7.7}),
+       (:Movie {title: 'Snow White', embedding: vector([1, 2, 3], 3, INTEGER), releaseDate: date('1937-12-21'), rating: 7.6})
+----
+
+Each node in the example graph represents a movie with properties for its title, release date and rating.
+The majority of the nodes also have a `VECTOR` property called `embedding`, which is a vector representation of the plot of the movie.
+In a real-world example, these vector embeddings would typically be generated by a proprietary or open source embedding generator and have a dimension of for example 768 or 1536, but for simplicity this example dataset uses vector embeddings of dimension 3.
+
+The examples use a vector index named `moviePlots` on the `embedding` property and `releaseDate` and `rating` as additional properties for filtering.
+Such a vector index can be created with the following Cypher query:
+
+[source, cypher, role=test-setup]
+----
+CREATE VECTOR INDEX moviePlots IF NOT EXISTS
+FOR (m:Movie) ON m.embedding
+WITH [m.releaseDate, m.rating]
+OPTIONS {
+  indexConfig: {
+    `vector.similarity_function`: 'cosine',
+    `vector.dimensions`: 3,
+    `vector.quantization.enabled`: false
+  }
+}
+----
+
+For more information about the creation of vector indexes, see xref::indexes/semantic-indexes/vector-indexes.adoc#create-vector-index[Create vector indexes].
+
+== Basic vector search
+
+=== Find the most similar nodes
+In our example dataset, the movie with the title `Snow White` has the embedding `vector([1, 2, 3], 3, INTEGER)`.
+To find the 4 most similar movies to `Snow White`, you can run several different Cypher queries with the `SEARCH` clause.
+
+.Using a vector literal as the query vector
+====
+.Query
+// tag::clauses_search_vector_literal[]
+[source, cypher]
+----
+MATCH (movie:Movie)
+  SEARCH movie IN (
+    VECTOR INDEX moviePlots
+    FOR vector([1, 2, 3], 3, INTEGER)
+    LIMIT 4
+  )
+RETURN movie.title AS title
+----
+// end::clauses_search_vector_literal[]
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| title
+
+| "Snow White"
+| "Cinderella"
+| "Frozen"
+| "Mulan"
+
+1+|Rows: 4
+|===
+====
+
+.Using a list literal as the query vector
+====
+.Query
+// tag::clauses_search_list_literal[]
+[source, cypher]
+----
+MATCH (movie:Movie)
+  SEARCH movie IN (
+    VECTOR INDEX moviePlots
+    FOR [1, 2, 3]
+    LIMIT 4
+  )
+RETURN movie.title AS title
+----
+// end::clauses_search_list_literal[]
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| title
+
+| "Snow White"
+| "Cinderella"
+| "Frozen"
+| "Mulan"
+
+1+|Rows: 4
+|===
+====
+
+.Using a vector parameter as the query vector
+====
+.Parameters
+[source, parameters]
+----
+{
+  snowWhiteEmbedding: vector([1, 2, 3], 3, INTEGER)
+}
+----
+
+.Query
+// tag::clauses_search_vector_parameter[]
+[source, cypher]
+----
+MATCH (movie:Movie)
+  SEARCH movie IN (
+    VECTOR INDEX moviePlots
+    FOR $snowWhiteEmbedding
+    LIMIT 4
+  )
+RETURN movie.title AS title
+----
+// end::clauses_search_vector_parameter[]
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| title
+
+| "Snow White"
+| "Cinderella"
+| "Frozen"
+| "Mulan"
+
+1+|Rows: 4
+|===
+====
+
+.Using a property as the query vector
+====
+.Query
+// tag::clauses_search_vector_from_graph[]
+[source, cypher]
+----
+MATCH (snowWhite:Movie {title: 'Snow White'})
+MATCH (movie:Movie)
+  SEARCH movie IN (
+    VECTOR INDEX moviePlots
+    FOR snowWhite.embedding
+    LIMIT 4
+  )
+RETURN movie.title AS title
+----
+// end::clauses_search_vector_from_graph[]
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| title
+
+| "Snow White"
+| "Cinderella"
+| "Frozen"
+| "Mulan"
+
+1+|Rows: 4
+|===
+====
+
+All four queries above return the same result.
+The movie nodes are returned in decreasing similarity order.
+`Snow White` is the most similar movie to itself, while `Mulan` is the fourth most similar movie to `Snow White`.
+The movies `Lilo & Stitch` and `Lion King` are not returned as they are not among the top 4 most similar movies, while the movie `Aladdin` does not have an `embedding` property and is therefore not considered by the vector index at all.
+
+[NOTE]
+====
+The label predicate `:Movie` in the `MATCH` patterns above is not strictly required.
+As the vector index only contains nodes with label `:Movie`, the `SEARCH` clause adds this predicate implicitly.
+====
+
+=== Find the most similar nodes with score
+
+To return the four most similar movies to `Snow White` together with their similarity score, you can include the optional `SCORE` subclause in the `SEARCH` clause.
+
+.Adding the similarity score to the output
+====
+.Query
+// tag::clauses_search_score[]
+[source, cypher]
+----
+MATCH (snowWhite:Movie {title: 'Snow White'})
+MATCH (movie:Movie)
+  SEARCH movie IN (
+    VECTOR INDEX moviePlots
+    FOR snowWhite.embedding
+    LIMIT 4
+  ) SCORE AS similarityScore
+RETURN movie.title AS title, similarityScore
+----
+// end::clauses_search_score[]
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| title | similarityScore
+
+| "Snow White" | 1.0
+| "Cinderella" | 0.9979352951049805
+| "Frozen" | 0.9905114769935608
+| "Mulan" | 0.9843324422836304
+
+2+|Rows: 4
+|===
+====
+
+Similarity scores have type `FLOAT NOT NULL` and are bounded between `0.0` and `1.0`.
+The closer to `1.0` the score is, the more similar the indexed `embedding` property is to the query vector.
+The movie `Snow White` has a similarity score of `1.0` as its `embedding` property is identical to the query vector.
+
+Similarity scores are calculated using the similarity function that was chosen when the vector index was created, the default is cosine similarity.
+For more information on similarity functions, see xref::indexes/semantic-indexes/vector-indexes.adoc#similarity-functions[Cosine and Euclidean similarity functions].
+
+=== Additional predicates in the MATCH pattern
+
+The pattern in the `MATCH` or `OPTIONAL MATCH` can have label and property predicates on the node or relationship with the binding variable.
+
+.Finding the most similar movies with an extra label predicate
+====
+.Query
+// tag::clauses_search_label_predicate[]
+[source, cypher]
+----
+MATCH (movie:Movie&Favorite)
+  SEARCH movie IN (
+    VECTOR INDEX moviePlots
+    FOR vector([1, 2, 3], 3, INTEGER)
+    LIMIT 4
+  )
+RETURN movie.title AS title
+----
+// end::clauses_label_predicate[]
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| title
+
+| "Frozen"
+| "Mulan"
+
+1+|Rows: 2
+|===
+====
+
+[NOTE]
+====
+The label predicate acts as a post-filtering step to the vector search.
+Even if the movie node with the title `Lion King` also has the label `Favorite`, it is not returned as it is not among the four most similar nodes to the query vector.
+====
+
+.Finding the most similar movies with an extra property predicate
+====
+.Query
+// tag::clauses_search_property_predicate[]
+[source, cypher]
+----
+MATCH (movie:Movie {releaseDate: date('2013-11-10')})
+  SEARCH movie IN (
+    VECTOR INDEX moviePlots
+    FOR vector([1, 2, 3], 3, INTEGER)
+    LIMIT 4
+  )
+RETURN movie.title AS title
+----
+// end::clauses_property_predicate[]
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| title
+
+| "Frozen"
+
+1+|Rows: 2
+|===
+====
+
+[[vector-search-filtering]]
+== Vector search with filters
+A `MATCH` or `OPTIONAL MATCH` clause can have both a `WHERE` subclause and `SEARCH` subclause.
+Regardless of their order, the `WHERE` clause will act as a post-filtering step to the vector search, further filtering down the results.
+
+Either of the queries below find the four most similar movies to `Snow White` and then filter down the result to only movies which were released after 1990.
+
+.The order of WHERE and SEARCH does not affect the result
+====
+.WHERE followed by SEARCH
+// tag::clauses_search_where_search[]
+[source, cypher]
+----
+MATCH (movie:Movie)
+  WHERE movie.releaseDate > date('1990')
+  SEARCH movie IN (
+    VECTOR INDEX moviePlots
+    FOR vector([1, 2, 3], 3, INTEGER)
+    LIMIT 4
+  )
+RETURN movie.title AS title, movie.releaseDate.year AS year
+----
+// end::clauses_search_where_search[]
+
+.SEARCH followed by WHERE
+// tag::clauses_search_search_where[]
+[source, cypher]
+----
+MATCH (movie:Movie)
+  SEARCH movie IN (
+    VECTOR INDEX moviePlots
+    FOR vector([1, 2, 3], 3, INTEGER)
+    LIMIT 4
+  )
+  WHERE movie.releaseDate > date('1990')
+RETURN movie.title AS title, movie.releaseDate.year AS year
+----
+// end::clauses_search_search_where[]
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| title | year
+
+| "Frozen" | 2013
+| "Mulan"  | 1998
+
+2+|Rows: 2
+|===
+====
+
+Often, it is preferable to do the filtering _while_ performing the vector search, so called in-index filtering, instead of as a post-filtering step.
+This can be achieved with _vector search with filters_, where the `WHERE` is a subclause to the `SEARCH` clause instead of a subclause to the enclosing `MATCH` or `OPTIONAL MATCH` clause.
+
+To find the four most similar movies to `Snow White` which were released after 1990 with a vector search with filters, use the following query.
+
+.Vector search with filter
+====
+.Query
+// tag::clauses_search_filter[]
+[source, cypher]
+----
+MATCH (movie:Movie)
+  SEARCH movie IN (
+    VECTOR INDEX moviePlots
+    FOR vector([1, 2, 3], 3, INTEGER)
+    WHERE movie.releaseDate > date('1990')
+    LIMIT 4
+  )
+RETURN movie.title AS title, movie.releaseDate.year AS year
+----
+// end::clauses_search_filter[]
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| title | year
+
+| "Frozen"         | 2013
+| "Mulan"          | 1998
+| "Lilo & Stitch"  | 2002
+| "Lion King"      | 1994
+
+2+|Rows: 4
+|===
+====
+
+[NOTE]
+====
+When using vector search with filters, the vector search continues until it has found the requested number of result that also fulfills the other predicates.
+By contrast, using a normal `WHERE` clause in the `MATCH` can lead to significantly fewer results.
+Because of this, you might want to set a higher `LIMIT` in the `SEARCH` clause and complement it with a lower `LIMIT` in the `RETURN`.
+This approach is called over-fetching.
+====
+
+=== Combining vector search with filters and post-filtering
+
+Vector search with filters and a normal `WHERE` clause can be combined.
+The following query finds the four most similar movies to `Snow White` which were released after 1990, and then does post-filtering to discard any result with a rating worse than 7.5.
+
+.Vector search with filter and `WHERE` clause
+====
+.Query
+// tag::clauses_search_filtering_where[]
+[source, cypher]
+----
+MATCH (movie:Movie)
+  SEARCH movie IN (
+    VECTOR INDEX moviePlots
+    FOR vector([1, 2, 3], 3, INTEGER)
+    WHERE movie.releaseDate > date('1990')
+    LIMIT 4
+  )
+  WHERE movie.rating > 7.5
+RETURN movie.title AS title, movie.releaseDate.year AS year, movie.rating AS rating
+----
+// end::clauses_search_filtering_where[]
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| title | year | rating
+
+| "Mulan"      | 1998 | 7.7
+| "Lion King"  | 1994 | 8.5
+
+3+|Rows: 2
+|===
+====
+
+[[vector-search-filtering-predicates]]
+=== Predicates for vector search with filters
+The optional `WHERE` subclause used to do _vector search with filters_ is a restricted version of the normal Cypher xref::clauses/where.adoc[`WHERE` clause] and only allows certain types of predicates.
+The predicate must be a property predicate or several property predicates with `AND` between them.
+
+.Vector search with filter with an AND predicate on the same property
+====
+.Query
+// tag::clauses_search_filter_and_same[]
+[source, cypher]
+----
+MATCH (movie:Movie)
+  SEARCH movie IN (
+    VECTOR INDEX moviePlots
+    FOR vector([1, 2, 3], 3, INTEGER)
+    WHERE movie.releaseDate > date('1948') AND date('2010') > movie.releaseDate
+    LIMIT 4
+  )
+RETURN movie.title AS title, movie.releaseDate.year AS year
+----
+// end::clauses_search_filter_and_same[]
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| title | year
+
+| "Cinderella"    | 1950
+| "Mulan"         | 1998
+| "Lilo & Stitch" | 2002
+| "Lion King"     | 1994
+
+2+|Rows: 4
+|===
+====
+
+[TIP]
+====
+The `WHERE` subclause in the query above can also be written as `WHERE date('1948') <  movie.releaseDate < date('2010')` .
+====
+
+.Vector search with filter with an AND predicate on separate properties
+====
+.Query
+// tag::clauses_search_filter_and[]
+[source, cypher]
+----
+MATCH (snowWhite:Movie {title:"Snow White"})
+MATCH (movie:Movie)
+  SEARCH movie IN (
+    VECTOR INDEX moviePlots
+    FOR snowWhite.embedding
+    WHERE movie.releaseDate < date('2000') AND movie.rating >= snowWhite.rating
+    LIMIT 4
+  )
+RETURN movie.title AS title, movie.releaseDate.year AS year, movie.rating AS rating
+----
+// end::clauses_search_filter_and[]
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| title | year | rating
+
+| "Snow White" | 1937 | 7.6
+| "Mulan"      | 1998 | 7.7
+| "Lion King"  | 1994 | 8.5
+
+3+|Rows: 4
+|===
+====
+
+[NOTE]
+====
+If the `LIMIT` in the `SEARCH` clause is larger than the total number of indexed vectors fulfilling the predicate, the vector search will return fewer results.
+In the example above, only three nodes are returned despite the `LIMIT` being four.
+Due to the approximate nature of vector search, this can also happen if the `LIMIT` is smaller than but close to the total number of indexed vectors fulfilling the predicate.
+====
+
+The variable in the property predicate must be the same as the binding variable in the `SEARCH` clause.
+
+.Not allowed -- Mismatch of a property predicate variable and a binding variable in the SEARCH clause
+====
+.Query
+[source, cypher, role=test-fail]
+----
+MATCH (m: Movie {name: "Snow White"})
+MATCH (movie:Movie)
+  SEARCH movie IN (
+    VECTOR INDEX moviePlots
+    FOR vector([1, 2, 3], 3, INTEGER)
+    WHERE m.rating > 8
+    LIMIT 4
+  )
+RETURN movie.title AS title
+----
+
+.GQLSTATUS error chain
+[role="queryresult",stripes="all",cols="1"]
+|===
+| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42I74/[42I74]: error: syntax error or access rule violation - wrong variable for vector search filtering. The variable `m` in a vector search filter property predicate must be the same as the search clause binding variable `movie`.
+
+link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]: error: syntax error or access rule violation - invalid syntax
+|===
+
+====
+
+All properties in the property predicate must have been added as additional properties for filtering when xref:#search-example-graph[creating the vector index].
+
+.Not allowed -- A property of the property predicate wasn't defined as an additional property in the vector index
+====
+.Query 
+[source, cypher, role=test-fail]
+----
+MATCH (movie:Movie)
+  SEARCH movie IN (
+    VECTOR INDEX moviePlots
+    FOR vector([1, 2, 3], 3, INTEGER)
+    WHERE movie.rating > 8 AND movie.title > "L"
+    LIMIT 4
+  )
+RETURN movie.title AS title, movie.rating AS rating
+----
+
+.GQLSTATUS error chain
+[role="queryresult",stripes="all",cols="1"]
+|===
+| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/22ND3/[22ND3]: error: data exception - wrong property for vector search filtering. The property `title` has not been added as an additional property for the vector index `moviePlots`.
+|===
+
+====
+
+For further limitations on the `WHERE` predicate, see xref::clauses/search.adoc#limitations-where[Limitations of the `WHERE` predicate].
+
+== More on vector search
+
+=== Using a query vector with different dimensions
+
+If the query vector has a different dimension than the configured dimension of the vector index, the query will fail.
+
+.Not allowed -- Query vector with only two dimensions when three are being used
+====
+.Query
+[source, cypher, role=test-fail]
+----
+MATCH (movie:Movie)
+  SEARCH movie IN (
+    VECTOR INDEX moviePlots
+    FOR vector([1, 2], 2, INTEGER)
+    LIMIT 4
+  )
+RETURN movie.title AS title
+----
+
+.GQLSTATUS error chain
+[role="queryresult",stripes="all",cols="1"]
+|===
+| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/51N65/[51N65]: error: system configuration or operation exception - vector index dimensionality mismatch. Vector index `moviePlots` has a configured dimensionality of 3, but the provided vector has dimension 2.
+|===
+====
+
+[NOTE]
+====
+If the vector index has no configured dimension, the query succeeds.
+However, if there are no vectors in the index of the same dimension as the query vector, the result of the query will be empty.
+====
+
+=== Using a query vector which evaluates to null
+If the query vector evaluates to `null`, for example because it refers to a non-existing property, a `SEARCH` clause inside a `MATCH` returns no results.
+
+.A query vector which evaluates to null
+====
+.Query
+// tag::clauses_search_null_match[]
+[source, cypher]
+----
+MATCH (snowWhite:Movie {title: 'Snow White'})
+MATCH (movie:Movie)
+  SEARCH movie IN (
+    VECTOR INDEX moviePlots
+    FOR snowWhite.prop
+    LIMIT 4
+  )
+RETURN movie.title AS title
+----
+// end::clauses_search_null_match[]
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| title
+1+|Rows: 0
+|===
+====
+
+If the `SEARCH` clause with a query vector evaluating to `null` is instead in an `OPTIONAL MATCH` clause, it returns `null` as per regular `OPTIONAL MATCH` semantics.
+
+.A query vector which evaluates to null as per regular OPTIONAL MATCH semantics
+====
+.Query
+// tag::clauses_search_null_optional_match[]
+[source, cypher]
+----
+MATCH (snowWhite:Movie {title: 'Snow White'})
+OPTIONAL MATCH (movie:Movie)
+  SEARCH movie IN (
+    VECTOR INDEX moviePlots
+    FOR snowWhite.prop
+    LIMIT 4
+  )
+RETURN movie.title AS title
+----
+// end::clauses_search_null_optional_match[]
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| title
+|null
+1+|Rows: 1
+|===
+====
+
+=== Using a binding variable which is not from the enclosing clause
+
+The binding variable in a `SEARCH` clause must be a node or relationship variable from the pattern of the enclosing `MATCH` or `OPTIONAL MATCH` clause.
+Trying to refer to a variable from an earlier clause in the query or introducing a new variable will cause the query to fail.
+
+.Not allowed -- Binding variable from earlier clause
+====
+.Query
+[source, cypher, role=test-fail]
+----
+MATCH (movie:Movie)
+MATCH (m: Movie {name: 'Snow White'})
+  SEARCH movie IN (
+    VECTOR INDEX moviePlots
+    FOR m.embedding
+    LIMIT 4
+  )
+RETURN movie.title AS title
+----
+
+.GQLSTATUS error chain
+[role="queryresult",stripes="all",cols="1"]
+|===
+| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42I69/[42I69]: error: syntax error or access rule violation - invalid search variable reference. `movie` must reference a variable from the same MATCH statement.
+
+link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]: error: syntax error or access rule violation - invalid syntax
+|===
+
+====
+
+.Not allowed -- Binding variable not previously defined
+====
+.Query
+[source, cypher, role=test-fail]
+----
+MATCH (movie:Movie)
+  SEARCH node IN (
+    VECTOR INDEX moviePlots
+    FOR vector([1, 2, 3], 3, INTEGER)
+    LIMIT 4
+  )
+RETURN movie.title AS title
+----
+
+.GQLSTATUS error chain
+[role="queryresult",stripes="all",cols="1"]
+|===
+| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42N62/[42N62]: error: syntax error or access rule violation - variable not defined. Variable `node` not defined.
+
+link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]: error: syntax error or access rule violation - invalid syntax
+|===
+
+====
+
+[[limitations]]
+== Limitations of the SEARCH clause
+The tables below list some past and current limitations of the `SEARCH` clause.
+If applicable, the version which lifted the limitation is also listed.
+
+The `SEARCH` clause puts restrictions on the pattern of the enclosing `MATCH` or `OPTIONAL MATCH` clause.
+
+.Limitations of the `MATCH` or `OPTIONAL MATCH` pattern
+[%header,cols="3a,4a,a"]
+|===
+| Limitation | Disallowed example |  Lifted in
+| The pattern cannot have more than one bound variable.
+|`MATCH (movie:Movie)-[r]\->()`
+|
+
+| The pattern cannot have predicates on other elements than the bound variable.
+| `MATCH (:Actor)-[]\->(m:Movie)`
+|
+
+| The pattern cannot have a length longer than one relationship hop.
+| `MATCH ()-[r: KNOWS]\->()-[]\->()`
+
+`MATCH (movie:Movie)-[*1..3]\->()`
+|
+
+| The pattern cannot have multiple pattern parts.
+| `MATCH (movie:Movie), ()`
+|
+
+| The pattern cannot have a path selector other than `ALL`.
+| `MATCH ANY 2 (movie: Movie)`
+|
+|===
+
+The optional `WHERE` subclause used to do _vector search with filters_ is a restricted version of the normal Cypher xref::clauses/where.adoc[`WHERE` clause] and only allows certain types of property predicates.
+
+[[limitations-where]]
+.Limitations of the `WHERE` predicate
+[%header,cols="3a,3a,a"]
+|===
+| Limitation | Disallowed example |  Lifted in
+|The xref:expressions/predicates/comparison-operators.adoc[comparison operator] in the predicate cannot be `<>`.
+| `WHERE movie.rating <> 7.5`
+|
+
+| The predicate cannot include other xref::expressions/predicates/boolean-operators.adoc[boolean operators] than `AND`.
+| `WHERE NOT movie.rating > 8`
+footnote:[`NOT` is allowed for boolean properties.
+For example, given that `seen` has been added as an additional property for filtering when the vector index was created, `WHERE NOT movie.seen` is allowed and will be rewritten to `WHERE movie.seen = false` internally.]
+
+`WHERE movie.rating > 8 OR movie.releaseDate \<= date("2000")`
+|
+
+| The predicate cannot include a xref::expressions/predicates/list-operators.adoc[list operator].
+| `WHERE movie.rating IN [7, 7.5, 8]`
+|
+
+
+| The predicate cannot include a xref::expressions/predicates/string-operators.adoc[string operator].
+| `WHERE movie.rating STARTS WITH '8'`
+|
+
+| The predicate cannot include a xref::expressions/predicates/type-predicate-expressions.adoc[type predicate expression].
+| `WHERE movie.rating IS +::+ FLOAT`
+|
+
+| The expression in the predicate cannot be of type `POINT`.
+| `WHERE movie.rating < point({x:2.3, y:4.5})`
+|
+
+| The expression in the predicate cannot be of type `VECTOR`.
+| `WHERE movie.rating < vector([8.2, 8.5], 2, FLOAT)`
+|
+
+| The expression in the predicate cannot be of type `LIST`.
+| `WHERE movie.rating < [8, 8.5]`
+|
+
+| The expression in the predicate is not allowed to reference the binding variable.
+| `WHERE movie.rating > movie.title`
+|
+
+| The predicate cannot contain multiple property predicates on the same property in the same direction.
+| `WHERE movie.rating > 8.2 AND movie.rating >= 8.5`
+|
+
+| The predicate cannot contain multiple property predicates on the same property where one is an equality and one is a range predicate.
+| `WHERE movie.rating > 8.2 AND movie.rating = 8.5`
+|
+|===
+
+.Other limitations of the SEARCH clause
+[%header,cols="4a,d"]
+|===
+| Limitation | Lifted in
+
+| Unlike in other index commands such as `CREATE VECTOR INDEX` and `DROP INDEX`, the index name is not allowed to be a parameter in the `VECTOR INDEX` subclause of `SEARCH`.
+|
+
+|The query vector is not allowed to reference the binding variable.
+
+.Not allowed
+[source, cypher, role=test-fail]
+----
+MATCH (movie:Movie)
+  SEARCH movie IN (
+    VECTOR INDEX moviePlots
+    FOR movie.embedding
+    LIMIT 4
+  )
+RETURN movie.title AS title
+----
+
+.GQLSTATUS error chain
+[role="queryresult",stripes="all",cols="1"]
+!===
+!link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42I75/[42I75]: error: syntax error or access rule violation - self-referencing in vector search. The expression 'movie.embedding' in the search clause may not depend on the search clause binding variable `movie`.
+
+link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]: error: syntax error or access rule violation - invalid syntax
+!===
+|
+
+|===
