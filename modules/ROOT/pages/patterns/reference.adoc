@@ -408,23 +408,26 @@ A path pattern is the top level pattern that is matched against paths in a graph
 
 [source, syntax, role=noheader]
 ----
+pathPattern ::= [ pathVariableDeclaration ] [ pathPatternPrefix ] pathPatternExpression
+
 pathVariableDeclaration ::= pathVariable "="
 
-pathPatternExpression ::=
-  { parenthesizedPathPatternExpression | pathPatternPhrase }
+pathPatternPrefix ::= pathModePrefix | shortestPathSelector
+
+pathPatternExpression ::= { parenthesizedPathPatternExpression | pathPatternPhrase }
 
 parenthesizedPathPatternExpression ::=
-  "(" 
-     [ subpathVariableDeclaration ]
-     pathPatternExpression   
-     [ parenthesizedPathPatternWhereClause ]
-  ")"
+  "("
+    [ subpathVariableDeclaration ]
+    pathPatternExpression
+    [ parenthesizedPathPatternWhereClause ]
+")"
 
 subpathVariableDeclaration ::= pathVariable "="
 
 pathPatternPhrase ::= [{ simplePathPattern | quantifiedPathPattern }]+
 
-simplePathPattern ::= nodePattern 
+simplePathPattern ::= nodePattern
   [ { relationshipPattern | quantifiedRelationship } nodePattern ]*
 
 parenthesizedPathPatternWhereClause ::= "WHERE" booleanExpression
@@ -1884,235 +1887,163 @@ RETURN [n IN nodes(p) | n.q] AS nodes
 1+d|Rows: 2
 |===
 
-
-
-
-
+[role=label--new-Neo4j-2026.03 label--cypher-25-only]
+[[path-modes]]
 == Path modes
 
-== *Reference section*
-
-=== *Path patterns*
-
-This just needs an update to its syntax to show where the path mode
-keyword(s) go.
-
-pathPattern ::=
-
-[ pathVariableDeclaration ] [ pathPatternPrefix ] pathPatternExpression
-
-pathVariableDeclaration ::= pathVariable "="
-
-pathPatternPrefix ::=
-
-pathModePrefix | shortestPathSelector
-
-pathPatternExpression ::=
-
-\{ parenthesizedPathPatternExpression | pathPatternPhrase }
-
-parenthesizedPathPatternExpression ::=
-
-"("
-
-{empty}[ subpathVariableDeclaration ]
-
-pathPatternExpression
-
-{empty}[ parenthesizedPathPatternWhereClause ]
-
-")"
-
-subpathVariableDeclaration ::= pathVariable "="
-
-pathPatternPhrase ::=
-
-[\{ simplePathPattern | quantifiedPathPattern }]+
-
-simplePathPattern ::= nodePattern
-
-[ \{ relationshipPattern | quantifiedRelationship } nodePattern ]*
-
-parenthesizedPathPatternWhereClause ::=
-
-"WHERE" booleanExpression
-
-=== **Path modes**
-
-==== *Summary*
-
-Path modes define the uniqueness constraints for nodes and relationships
-within a *single path pattern*. This contrasts with match modes that
-constrain relationship uniqueness across an entire MATCH clause. For
-more information on match modes see the
-https://neo4j.com/docs/cypher-manual/current/patterns/match-modes/[[.underline]#Match
-Modes Documentation#].
+Path modes define the uniqueness constraints for nodes and relationships within a single path pattern.
+This contrasts with match modes which constrain relationship uniqueness across an entire `MATCH` clause.
+For more information, see xref:patterns/match-modes.adoc[].
 
 Cypher supports three path modes:
 
-[width="100%",cols="51%,49%",options="header",]
-|===
-|*Path Mode* |*Definition*
-|*WALK* |No constraints imposed; both nodes and relationships can be
-repeated within the path.
+* xref:patterns/match-modes.adoc#different-relationships[`WALK`]: no constraints imposed; both nodes and relationships can be repeated within the path.
+* xref:patterns/match-modes.adoc#repeatable-elements[`TRAIL`]: relationships cannot be repeated, but nodes can be repeated within the path.
+* xref:patterns/match-modes.adoc#repeatable-elements[`ACYCLIC`]: nodes cannot be repeated within a path.
+A node can be repeated across paths, enabling equijoins to be formed.
 
-|*TRAIL* |Relationships cannot be repeated, but nodes can be repeated
-within the path.
 
-|*ACYCLIC* |Nodes cannot be repeated (which inherently prevents
-relationship repetition) within the path.
-|===
+=== Syntax
 
-==== *Syntax*
-
-****pathModePrefix ::= pathMode [ pathKeywords ]
+[source, syntax, role=noheader]
+----
+pathModePrefix ::= pathMode [ pathKeywords ]
 
 pathMode ::= WALK | TRAIL | ACYCLIC
 
 pathKeywords ::= PATH | PATHS
+----
 
-=== **Rules**
 
-==== *All path modes in a MATCH must be the same*
+=== Rules
 
-All path patterns in a single MATCH clause must use the same path mode.
-For example, you cannot mix ACYCLIC with a pattern that uses the default
-WALK mode:
+==== All path modes in a MATCH must be the same
 
-MATCH p = ACYCLIC (a)-->(b), q = TRAIL (c)-->(d)
+All path patterns in a single `MATCH` clause must use the same path mode.
+For example, you cannot mix `ACYCLIC` with a pattern that uses the default `WALK` mode:
 
+[source, cypher, role=test-fail]
+----
+MATCH p = ACYCLIC (a)-->(b), q = TRAIL (c)-->(d)
 RETURN p, q
+----
 
-**Result:**
+.GQLSTATUS error chain
+[role="queryresult",stripes="all",cols="1"]
+|===
+| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42N61/[42N61]: error: syntax error or access rule violation - unsupported mixing
+of different path modes. Mixing `ACYCLIC` and `TRAIL` in the same graph pattern is not supported. Split the pattern into separate `MATCH` clauses instead.
 
-****42N61: syntax error or access rule violation - unsupported mixing
-of different path modes. Mixing ACYCLIC and TRAIL in the same graph
-pattern is not supported. Split the pattern into separate MATCH clauses
-instead. (line 1, column 7 (offset: 6))
+_cause_: link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]: error: syntax error or access rule violation - invalid syntax
+|===
 
-"MATCH p = ACYCLIC (a)-->(b), q = TRAIL (c)-->(d)"
 
-^
+==== Only WALK can be combined with the REPEATABLE ELEMENTS match mode
 
-42001: syntax error or access rule violation - invalid syntax
+Explicit path modes like `ACYCLIC` or `TRAIL` cannot be used with the `REPEATABLE ELEMENTS` match mode.
+For example:
 
-==== **Only WALK can be combined with the REPEATABLE ELEMENTS match mode**
-
-Explicit path modes like ACYCLIC or TRAIL cannot be used with the
-REPEATABLE ELEMENTS match mode. For example:
-
-MATCH REPEATABLE ELEMENTS p = ACYCLIC (n)-->\{1, 10}(m)
-
+[source, cypher, role=test-fail]
+----
+MATCH REPEATABLE ELEMENTS p = ACYCLIC (n)-->{1, 10}(m)
 RETURN p
+----
 
-**Result:**
+.GQLSTATUS error chain
+[role="queryresult",stripes="all",cols="1"]
+|===
+| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42N60/[42N60]: error: syntax error or access rule violation - unsupported
+combination of match mode and path mode. `REPEATABLE ELEMENTS` with `ACYCLIC` path mode is not supported.
 
-****42N60: syntax error or access rule violation - unsupported
-combination of match mode and path mode. REPEATABLE ELEMENTS with
-ACYCLIC path mode is not supported. (line 1, column 31 (offset: 30))
+_cause_: link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]: error: syntax error or access rule violation - invalid syntax
+|===
 
-"MATCH REPEATABLE ELEMENTS p = ACYCLIC (n)-->\{1, 10}(m)"
 
-^
+==== Mixing restrictive path selectors and explicit path modes is not allowed
 
-42001: syntax error or access rule violation - invalid syntax
+Explicit path modes cannot currently be combined with restricitve path selectors (e.g., `ANY`, `SHORTEST`) or legacy shortest path functions like
+`shortestPath()`.
+For example:
 
-==== **Mixing restrictive path selectors and explicit path modes is not allowed**
-
-Explicit path modes cannot currently be combined with restricitve path
-selectors (e.g., ANY, SHORTEST) or legacy shortest path functions like
-shortestPath(). For example:
-
-MATCH p = ANY ACYCLIC (start)-->(target)
-
+[source, cypher, role=test-fail]
+----
+MATCH p = ANY ACYCLIC (start)-->(target)
 RETURN p
+----
 
-**Result:**
+.GQLSTATUS error chain
+[role="queryresult",stripes="all",cols="1"]
+|===
+| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/51N26/[51N26]: error: system configuration or operation exception - not supported
+in this version. Using `SHORTEST` together with explicit path mode `ACYCLIC` is not available. This implementation of Cypher does not support `SHORTEST` with path mode `ACYCLIC`.
 
-****51N26: system configuration or operation exception - not supported
-in this version. Using `SHORTEST` together with explicit path mode
-`ACYCLIC` is not available. This implementation of Cypher does not
-support SHORTEST with path mode `ACYCLIC`. (line 1, column 11 (offset:
-10))
+_cause_: link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]: error: syntax error or access rule violation - invalid syntax
+|===
 
-"MATCH p = ANY ACYCLIC (start)-->(target)"
 
-^
-
-42001: syntax error or access rule violation - invalid syntax
-
-==== **Path modes can’t be applied to MERGE clause**
+==== Path modes can't be applied to MERGE clauses
 
 For example, this is not allowed:
 
-MERGE ACYCLIC (robert:Critic)-[:P]->(c:Critic)
+[source, cypher]
+----
+MERGE ACYCLIC (robert:Critic)-[:P]->(c:Critic)
+----
 
-==== **Repeated node variables within a path pattern result in no matches**
 
-Declaring a node variable more than once within a single restrictive
-path pattern (like ACYCLIC) will result in no matches. Because the
-variable must bind to the same node element and the path mode forbids
-repeated nodes, a solution cannot exist.
+==== Repeated node variables within a path pattern result in no matches
 
-// This query will return 0 results because node 'x' is repeated
+Declaring a node variable more than once within a single restrictive path pattern (like `ACYCLIC`) results in no matches.
+Because the variable must bind to the same node element and the path mode forbids repeated nodes, there is no solution.
 
+[source, cypher]
+----
+// This query returns 0 results because the node 'x' is repeated
 MATCH p = ACYCLIC (x:Router)-[:LINK]->(x)
-
 RETURN p
+----
 
-==== **Repeated node variables within a path pattern result in no matches**
 
-Declaring a node variable more than once within a single restrictive
-path pattern (like ACYCLIC) will result in no matches.
+==== Repeated node variables within a path pattern result in no matches
 
-// This query will return 0 results because node 'x' is repeated
+Declaring a node variable more than once within a single restrictive path pattern (like `ACYCLIC`) results in no matches.
 
+[source, cypher]
+----
+// This query will return 0 results because node 'x' is repeated
 MATCH p = ACYCLIC (x:Router)-[:LINK]->+(x)
-
 RETURN p
+----
 
-==== **Repeated node variables across different path patterns specify an equijoin**
 
-When a node variable is repeated in *separate* path patterns within the
-same MATCH clause, it specifies an equijoin.
+==== Repeated node variables across different path patterns specify an equijoin
 
-// 'x' is repeated across p and q, creating an equijoin between two
-acyclic paths.
+When a node variable is repeated in separate path patterns within the same `MATCH` clause, it specifies an equijoin.
 
+[source, cypher]
+----
+// 'x' is repeated across p and q, creating an equijoin between two acyclic paths.
 // This is allowed because each individual path pattern remains acyclic.
-
 MATCH p = ACYCLIC (a:Router)-[:LINK]->+(x:Router),
-
-q = ACYCLIC (x)-[:LINK]->+(z:Router)
-
+  q = ACYCLIC (x)-[:LINK]->+(z:Router)
 RETURN p, q
+----
 
-==== **Path mode scope in subqueries**
 
-The path mode of a subquery (such as an EXISTS or COUNT expression) is
-independent of the path mode in the outer query. This allows you to
-perform secondary checks with different uniqueness constraints.
+==== Path mode scope in subqueries
 
-// The outer query finds paths using relationship uniqueness (default
-WALK +
+The path mode of a subquery (such as an `EXISTS` or `COUNT` expression) is independent of the path mode in the outer query.
+This allows you to perform secondary checks with different uniqueness constraints.
 
-// DIFFERENT RELATIONSHIPS). The subquery checks for the existence of an
-ACYCLIC
-
+[source, cypher]
+----
+// The outer query finds paths using relationship uniqueness (default WALK +
+// DIFFERENT RELATIONSHIPS). The subquery checks for the existence of an ACYCLIC
 // path connecting a and b.
-
-MATCH p = (a:Router \{name: 'A'})-[:LINK]->+(b:Router \{name: 'D'})
-
-WHERE EXISTS \{ MATCH ACYCLIC (a)-[:LINK]->+(b) }
-
+MATCH p = (a:Router {name: 'A'})-[:LINK]->+(b:Router {name: 'D'})
+  WHERE EXISTS { MATCH ACYCLIC (a)-[:LINK]->+(b) }
 RETURN [n IN nodes(p) | n.name] AS route
-
-
-
-
-
-
-
+----
 
 
 [[node-pattern-pairs]]
