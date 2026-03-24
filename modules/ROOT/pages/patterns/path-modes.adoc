@@ -1,12 +1,10 @@
 :description: Information about Cypher's different path modes, which determine whether or not nodes and relationships can appear more than once in a graph pattern match.
-:table-caption!:
 :page-role: new-neo4j-2026.03 cypher-25-only
 
 = Path modes
 
-Path modes determine whether or not nodes or relationships can appear
-more than once in a path pattern match. Cypher supports three path
-modes:
+Path modes determine whether or not nodes or relationships can appear more than once in a path pattern match.
+Cypher supports three path modes:
 
 * xref:patterns/match-modes.adoc#different-relationships[`WALK`]: no constraints imposed; both nodes and relationships can be repeated within the path.
 * xref:patterns/match-modes.adoc#repeatable-elements[`TRAIL`]: relationships cannot be repeated, but nodes can be repeated within the path.
@@ -15,36 +13,36 @@ A node can be repeated across paths, enabling equijoins to be formed.
 
 The actual uniqueness constraint for a given path pattern is the combination of the path mode and the match mode.
 As the default match mode is `DIFFERENT RELATIONSHIPS`, and because the only path mode that can be combined with `REPEATABLE ELEMENTS` is `WALK`, the only path mode that alters the uniqueness constraint is `ACYCLIC`.
-This page therefore only discusses the `ACYCLIC` path mode.
+This page therefore focuses on the `ACYCLIC` path mode.
 
 For more information on match modes, refer to xref:patterns/match-modes.adoc[].
 
 
-== Syntax example
+== Syntax
 
 Place the `ACYCLIC` keyword at the head of every path pattern within a MATCH clause.
 
-[source, cypher]
+[source, cypher, role=test-skip]
 ----
 MATCH p = ACYCLIC (start:User {id: 1})-[:FRIEND]->+(target:User)
 RETURN p
 ----
 
 
-== Performance: expansion vs pruning
+== Performance
 
 Using `ACYCLIC` is significantly more efficient than using manual post-filters for node uniqueness.
 
 
-=== The old way: discarding results with WHERE
+=== Discarding results with WHERE
 
 In earlier versions of Cypher, the engine returns all paths that satisfy the structural requirements of the pattern.
 Only after these paths are generated does a WHERE filter discard those containing cycles.
 
-[source, cypher]
+[source, cypher, role=test-skip]
 ----
 MATCH p = (start:User {id: 1})-[:FRIEND]->+(target:User)
-WHERE size(nodes(p)) = COUNT { UNWIND nodes(p) AS n RETURN DISTINCT n }
+  WHERE size(nodes(p)) = COUNT { UNWIND nodes(p) AS n RETURN DISTINCT n }
 RETURN p
 ----
 
@@ -52,11 +50,11 @@ RETURN p
 * *Overhead:* The engine must compute and hold a massive set of cyclic solutions in memory before the filter can discard them.
 
 
-=== The new way: inline pruning with ACYCLIC
+=== Inline pruning with ACYCLIC
 
 The `ACYCLIC` path mode applies the uniqueness constraint during evaluation.
 
-[source, cypher]
+[source, cypher, role=test-skip]
 ----
 MATCH p = ACYCLIC (start:User \{id: 1})-[:FRIEND]->+(target:User)
 RETURN p
@@ -73,34 +71,33 @@ solution immediately.
 To illustrate the practical application of `ACYCLIC` pruning, consider a router network used to model packet forwarding.
 In networking, identifying loop-free transmission routes is critical for avoiding broadcast storms and network congestion.
 
-
-=== The graph: router network
-
 The following graph contains several routing loops and bidirectional links between routers.
 
 [source, cypher, role=test-setup]
 ----
 INSERT
-    (a:Router {name: 'A'}), (b:Router {name: 'B'}), (c:Router {name: 'C'}),
-    (d:Router {name: 'D'}), (e:Router {name: 'E'}), (f:Router {name: 'F'}),
-    (g:Router {name: 'G'}), (h:Router {name: 'H'}), (i:Router {name: 'I'}),
-    (j:Router {name: 'J'}), (k:Router {name: 'K'}), (z:Router {name: 'Z'}),
+  (a:Router {name: 'A'}), (b:Router {name: 'B'}), (c:Router {name: 'C'}),
+  (d:Router {name: 'D'}), (e:Router {name: 'E'}), (f:Router {name: 'F'}),
+  (g:Router {name: 'G'}), (h:Router {name: 'H'}), (i:Router {name: 'I'}),
+  (j:Router {name: 'J'}), (k:Router {name: 'K'}), (z:Router {name: 'Z'}),
 
-    (a)-[:LINK]->(b), (a)-[:LINK]->(c), (a)-[:LINK]->(d), (c)-[:LINK]->(b),
-    (c)-[:LINK]->(d), (b)-[:LINK]->(e), (c)-[:LINK]->(e), (d)-[:LINK]->(f),
-    (e)-[:LINK]->(g), (f)-[:LINK]->(g), (h)-[:LINK]->(i), (h)-[:LINK]->(j),
-    (i)-[:LINK]->(j), (i)-[:LINK]->(z), (g)-[:LINK]->(j), (g)-[:LINK]->(k),
-    (j)-[:LINK]->(k), (j)-[:LINK]->(z), (k)-[:LINK]->(z)
+  (a)-[:LINK]->(b), (a)-[:LINK]->(c), (a)-[:LINK]->(d), (c)-[:LINK]->(b),
+  (c)-[:LINK]->(d), (b)-[:LINK]->(e), (c)-[:LINK]->(e), (d)-[:LINK]->(f),
+  (e)-[:LINK]->(g), (f)-[:LINK]->(g), (h)-[:LINK]->(i), (h)-[:LINK]->(j),
+  (i)-[:LINK]->(j), (i)-[:LINK]->(z), (g)-[:LINK]->(j), (g)-[:LINK]->(k),
+  (j)-[:LINK]->(k), (j)-[:LINK]->(z), (k)-[:LINK]->(z)
 ----
 
-image:router-network.png[Router network graph, width=600, role=popup]
+.Router network graph
+image:router-network.png[Router network graph, role=popup]
 
-==== The problem with TRAIL in packet forwarding
+
+=== TRAIL in packet forwarding
 
 In many graph contexts, relationship uniqueness (`TRAIL`) is sufficient.
 However, in packet forwarding, a packet should not visit the same router twice, even if it uses a different link.
 A `TRAIL` pattern only ensures that no relationship is reused.
-In our graph, the bidirectional links between Router B and Router C, and between Router C and Router D, allow a TRAIL traversal to bounce through the same nodes repeatedly.
+In the router network graph, the bidirectional links between Router B and Router C, and between Router C and Router D, allow a TRAIL traversal to bounce through the same nodes repeatedly.
 
 For example, the following query uses the default behavior for graph element uniqueness, which disallows repeated relationships but allows repeated nodes:
 
@@ -111,8 +108,8 @@ For example, the following query uses the default behavior for graph element uni
 // will step through every node in the path except the last i.e. 'Z', whereas the (m)
 // node pattern will step through every node in the path except the first i.e. 'A'
 MATCH p = (:Router {name: 'A'})
-    ((l WHERE l.name <> 'Z')-[:LINK]-(m WHERE m.name <> 'A'))+
-    (:Router {name: 'Z'})
+  ((l WHERE l.name <> 'Z')-[:LINK]-(m WHERE m.name <> 'A'))+
+  (:Router {name: 'Z'})
 
 // The following filters for paths that have cycles, where the number ofnodes
 // in the path is greater than the number of distinct nodes in the path
@@ -137,7 +134,8 @@ ORDER BY length(p), p LIMIT 1
 
 Notice how the J node is visited twice.
 
-==== The solution: ACYCLIC forwarding paths
+
+=== ACYCLIC forwarding paths
 
 Use `ACYCLIC` to strictly model packet forwarding where revisiting is avoided.
 This mode ensures that no node is repeated:
@@ -168,10 +166,10 @@ That would be affected by the failure of each:
 ----
 // Collect all the ACYCLIC paths so as to count the total number of paths from 'A' to 'Z'
 LET middleNodesOfPaths = COLLECT {
-    MATCH p = ACYCLIC (start:Router {name: 'A'})-[:LINK]-+(end:Router {name: 'Z'})
+  MATCH p = ACYCLIC (start:Router {name: 'A'})-[:LINK]-+(end:Router {name: 'Z'})
 
 // List slicing is a convenient way to remove the first and last node
-    RETURN nodes(p)[1..-1]
+  RETURN nodes(p)[1..-1]
 }
 
 // The number of lists of middle nodes equals the number of paths
