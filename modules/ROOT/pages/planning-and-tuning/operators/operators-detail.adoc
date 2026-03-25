@@ -1571,10 +1571,10 @@ Total database accesses: 37
 ////
 [source, cypher, role=test-setup]
 ----
-DROP INDEX moviePlots IF EXISTS;
-CREATE VECTOR INDEX moviePlots IF NOT EXISTS
- FOR ()-[m:Movie]-() ON m.embedding
- WITH [m.releaseDate, m.rating]
+DROP INDEX reviews IF EXISTS;
+CREATE VECTOR INDEX reviews IF NOT EXISTS
+ FOR ()-[r:REVIEWED]-() ON r.embedding
+ WITH [r.rating]
  OPTIONS {
    indexConfig: {
      `vector.similarity_function`: 'cosine',
@@ -1595,13 +1595,14 @@ The `DirectedRelationshipVectorIndexSearch` operator searches a vector index for
 [source, cypher]
 ----
 PROFILE
-MATCH ()-[movie:Movie]->()
-  SEARCH movie IN (
-    VECTOR INDEX moviePlots
+MATCH ()-[r:REVIEWED]->()
+  SEARCH r IN (
+    VECTOR INDEX reviews
     FOR vector([1, 2, 3], 3, INTEGER)
+    WHERE r.rating >= 3
     LIMIT 4
   )
-RETURN movie.title AS title
+RETURN r.content AS content, r.rating AS rating
 ----
 
 .Query Plan
@@ -1611,20 +1612,21 @@ Planner COST
 
 Runtime PIPELINED
 
-Runtime version {neo4j-version}
+Runtime version 2026.04
 
 Batch size 128
 
-+----------------------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+---------------+
-| Operator                               | Id | Details                                                                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            | Indexes Used  |
-+----------------------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+---------------+
-| +ProduceResults                        |  0 | title                                                                                                |              3 |    0 |       0 |              0 |                        |           |                     |               |
-| |                                      +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     +---------------+
-| +Projection                            |  1 | movie.title AS title                                                                                 |              3 |    0 |       0 |                |                        |           |                     |               |
-| |                                      +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     +---------------+
-| +DirectedRelationshipVectorIndexSearch |  2 | SEARCH ()-[movie:Movie]->() IN (VECTOR INDEX moviePlots FOR RuntimeConstant(vector($autolist_0, $aut |              3 |    0 |       1 |            248 |                    0/0 |     2.686 | Fused in Pipeline 0 | moviePlots: 1 |
-|                                        |    | oint_1, INTEGER NOT NULL)) LIMIT 4)                                                                  |                |      |         |                |                        |           |                     |               |
-+----------------------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+---------------+
++----------------------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+--------------+
+| Operator                               | Id | Details                                                                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            | Indexes Used |
++----------------------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+--------------+
+| +ProduceResults                        |  0 | content, rating                                                                                      |              1 |    0 |       0 |              0 |                        |           |                     |              |
+| |                                      +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     +--------------+
+| +Projection                            |  1 | r.content AS content, cache[r.rating] AS rating                                                      |              1 |    0 |       0 |                |                        |           |                     |              |
+| |                                      +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     +--------------+
+| +DirectedRelationshipVectorIndexSearch |  2 | SEARCH ()-[r:REVIEWED]->() IN (VECTOR INDEX reviews FOR RuntimeConstant(vector($autolist_0, $autoint |              1 |    0 |       1 |            248 |                    0/0 |     0.548 | Fused in Pipeline 0 | reviews: 1   |
+|                                        |    | _1, INTEGER NOT NULL)) WHERE rating >= $autoint_2 LIMIT 4)                                           |                |      |         |                |                        |           |                     |              |
++----------------------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+--------------+
+
 Total database accesses: 1, total allocated memory: 312
 ----
 
@@ -1636,10 +1638,10 @@ Total database accesses: 1, total allocated memory: 312
 ////
 [source, cypher, role=test-setup]
 ----
-DROP INDEX moviePlots IF EXISTS;
-CREATE VECTOR INDEX moviePlots IF NOT EXISTS
- FOR ()-[m:Movie]-() ON m.embedding
- WITH [m.releaseDate, m.rating]
+DDROP INDEX reviews IF EXISTS;
+CREATE VECTOR INDEX reviews IF NOT EXISTS
+ FOR ()-[r:REVIEWED]-() ON r.embedding
+ WITH [r.rating]
  OPTIONS {
    indexConfig: {
      `vector.similarity_function`: 'cosine',
@@ -1660,13 +1662,14 @@ The `UndirectedRelationshipVectorIndexSearch` operator searches a vector index f
 [source, cypher]
 ----
 PROFILE
-MATCH ()-[movie:Movie]-()
-  SEARCH movie IN (
-    VECTOR INDEX moviePlots
+MATCH ()-[r:REVIEWED]-()
+  SEARCH r IN (
+    VECTOR INDEX reviews
     FOR vector([1, 2, 3], 3, INTEGER)
+    WHERE r.rating >= 3
     LIMIT 4
   )
-RETURN movie.title AS title
+RETURN r.content AS content, r.rating AS rating
 ----
 
 .Query Plan
@@ -1676,20 +1679,21 @@ Planner COST
 
 Runtime PIPELINED
 
-Runtime version {neo4j-version}
+Runtime version 2026.04
 
 Batch size 128
 
-++------------------------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+---------------+
- | Operator                                 | Id | Details                                                                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            | Indexes Used  |
- +------------------------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+---------------+
- | +ProduceResults                          |  0 | title                                                                                                |              6 |    0 |       0 |              0 |                        |           |                     |               |
- | |                                        +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     +---------------+
- | +Projection                              |  1 | movie.title AS title                                                                                 |              6 |    0 |       0 |                |                        |           |                     |               |
- | |                                        +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     +---------------+
- | +UndirectedRelationshipVectorIndexSearch |  2 | SEARCH ()-[movie:Movie]-() IN (VECTOR INDEX moviePlots FOR RuntimeConstant(vector($autolist_0, $auto |              6 |    0 |       1 |            248 |                    0/0 |     0.464 | Fused in Pipeline 0 | moviePlots: 1 |
- |                                          |    | int_1, INTEGER NOT NULL)) LIMIT 4)                                                                   |                |      |         |                |                        |           |                     |               |
- +------------------------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+---------------+
++------------------------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+--------------+
+| Operator                                 | Id | Details                                                                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            | Indexes Used |
++------------------------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+--------------+
+| +ProduceResults                          |  0 | content, rating                                                                                      |              2 |    0 |       0 |              0 |                        |           |                     |              |
+| |                                        +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     +--------------+
+| +Projection                              |  1 | r.content AS content, cache[r.rating] AS rating                                                      |              2 |    0 |       0 |                |                        |           |                     |              |
+| |                                        +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     +--------------+
+| +UndirectedRelationshipVectorIndexSearch |  2 | SEARCH ()-[r:REVIEWED]-() IN (VECTOR INDEX reviews FOR RuntimeConstant(vector($autolist_0, $autoint_ |              2 |    0 |       1 |            248 |                    0/0 |     0.553 | Fused in Pipeline 0 | reviews: 1   |
+|                                          |    | 1, INTEGER NOT NULL)) WHERE rating >= $autoint_2 LIMIT 4)                                            |                |      |         |                |                        |           |                     |              |
++------------------------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+--------------+
+
 Total database accesses: 1, total allocated memory: 312
 ----
 
