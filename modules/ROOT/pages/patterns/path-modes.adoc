@@ -1,16 +1,22 @@
-:description: Information about Cypher's different path modes, which determine whether or not nodes and relationships can appear more than once in a graph pattern match.
+:description: Information about Cypher's different path modes, which determine whether or not nodes and relationships can appear more than once in a path pattern.
 :page-role: new-neo4j-2026.03 cypher-25-only
 
 = Path modes
 
-Path modes determine whether or not nodes or relationships can appear more than once in a path pattern match.
+Path modes determine whether or not nodes or relationships can appear more than once in a path pattern.
+
 Cypher supports three path modes:
 
 * `WALK`: no constraints imposed; both nodes and relationships can be repeated within the path.
 * `TRAIL`: relationships cannot be repeated, but nodes can be repeated within the path.
 * `ACYCLIC`: nodes cannot be repeated within a path. A node can be repeated across paths, enabling equijoins to be formed.
 
-The actual uniqueness constraint for a given path pattern is the combination of the path mode and the match mode.
+
+== Path modes and match modes
+
+The scope of a path mode is the path pattern, whereas the scope of a match mode is all of the path pattern under a single MATCH.
+The effective uniqueness constraint at the individual path pattern match is determined by which of the two is more restrictive.
+
 As the default match mode is `DIFFERENT RELATIONSHIPS`, and because the only path mode that can be combined with `REPEATABLE ELEMENTS` is `WALK`, the only path mode that alters the uniqueness constraint is `ACYCLIC`.
 This page therefore focuses on the `ACYCLIC` path mode.
 
@@ -19,50 +25,13 @@ For more information on match modes, refer to xref:patterns/match-modes.adoc[].
 
 == Syntax
 
-Place the `ACYCLIC` keyword at the head of every path pattern within a MATCH clause.
+Place the path mode keyword (`ACYCLIC`) at the head of every path pattern within a MATCH clause.
 
 [source, cypher, role=test-skip]
 ----
 MATCH p = ACYCLIC (start:User {id: 1})-[:FRIEND]->+(target:User)
 RETURN p
 ----
-
-
-== Performance
-
-Using `ACYCLIC` is significantly more efficient than using manual post-filters for node uniqueness.
-
-
-=== Discarding results with WHERE
-
-In earlier versions of Cypher, the engine returns all paths that satisfy the structural requirements of the pattern.
-Only after these paths are generated does a WHERE filter discard those containing cycles.
-
-[source, cypher, role=test-skip]
-----
-MATCH p = (start:User {id: 1})-[:FRIEND]->+(target:User)
-  WHERE size(nodes(p)) = COUNT { UNWIND nodes(p) AS n RETURN DISTINCT n }
-RETURN p
-----
-
-* *Evaluation:* The engine generates every possible path, including those that loop infinitely or visit the same nodes multiple times.
-* *Overhead:* The engine must compute and hold a massive set of cyclic solutions in memory before the filter can discard them.
-
-
-=== Inline pruning with ACYCLIC
-
-The `ACYCLIC` path mode applies the uniqueness constraint during evaluation.
-
-[source, cypher, role=test-skip]
-----
-MATCH p = ACYCLIC (start:User \{id: 1})-[:FRIEND]->+(target:User)
-RETURN p
-----
-
-* *Evaluation:* As the engine traverses the graph, it monitors the nodes already present in the path.
-* *Pruning:* If the engine attempts to move to a node that has already been visited in the current path, it prunes that specific candidate
-solution immediately.
-* *Efficiency:* Because invalid paths are never fully generated or held in memory, execution is faster and uses fewer resources.
 
 
 == Example
@@ -102,22 +71,22 @@ For example, the following query uses the default behavior for graph element uni
 
 [source, cypher]
 ----
-// We use a quantified path pattern with inline predicates to exclude paths that either
-// return to the start router or pass through the target router. The (l) node pattern
-// will step through every node in the path except the last i.e. 'Z', whereas the (m)
-// node pattern will step through every node in the path except the first i.e. 'A'
+// This query uses a quantified path pattern with inline predicates to exclude paths
+// that either return to the start router or pass through the target router. The (l)
+// node pattern steps through every node in the path except the last i.e. 'Z', whereas
+// the (m) node pattern steps through every node in the path except the first i.e. 'A'.
 MATCH p = (:Router {name: 'A'})
   ((l WHERE l.name <> 'Z')-[:LINK]-(m WHERE m.name <> 'A'))+
   (:Router {name: 'Z'})
 
-// The following filters for paths that have cycles, where the number ofnodes
-// in the path is greater than the number of distinct nodes in the path
+// The following filters for paths that have cycles, where the number of nodes in the
+// path is greater than the number of distinct nodes in the path.
 WHERE size(nodes(p)) > COUNT { UNWIND nodes(p) AS n RETURN DISTINCT n }
 
-// A list comprehension converts the sequence of nodes to a compact list of their names
+// A list comprehension converts the sequence of nodes to a compact list of their names.
 RETURN [n IN nodes(p) | n.name] AS routeWithCycles
 
-// The query is just for illustration, so we pick 1 path out of the 88 possible paths
+// For illustration purposes, this picks one of the 88 possible paths.
 ORDER BY length(p), p LIMIT 1
 ----
 
@@ -141,8 +110,8 @@ This mode ensures that no node is repeated:
 
 [source, cypher]
 ----
-// With the ACYCLIC path mode we no longer need to use predicates to exclude visiting
-// the start or destination nodes
+// With the ACYCLIC path mode you no longer need to use predicates to exclude visiting
+// the start or destination nodes.
 MATCH p = ACYCLIC (:Router {name: 'A'})-[:LINK]-+(:Router {name: 'Z'})
 RETURN [n IN nodes(p) | n.name] AS routeWithoutCycles
 ORDER BY p LIMIT 1
@@ -163,23 +132,23 @@ That would be affected by the failure of each:
 
 [source, cypher]
 ----
-// Collect all the ACYCLIC paths so as to count the total number of paths from 'A' to 'Z'
+// Collect all the ACYCLIC paths to count the total number of paths from 'A' to 'Z'.
 LET middleNodesOfPaths = COLLECT {
   MATCH p = ACYCLIC (start:Router {name: 'A'})-[:LINK]-+(end:Router {name: 'Z'})
 
-// List slicing is a convenient way to remove the first and last node
+// List slicing is a convenient way to remove the first and last node.
   RETURN nodes(p)[1..-1]
 }
 
-// The number of lists of middle nodes equals the number of paths
+// The number of lists of middle nodes equals the number of paths.
 LET numPaths = size(middleNodesOfPaths)
 
 // middleNodesOfPaths is a list of lists, which the flatten function unnests into
-// a single list of nodes
+// a single list of nodes.
 UNWIND coll.flatten(middleNodesOfPaths) AS node
 
 // As the paths are ACYCLIC, counting the number of times a particular node appears in
-// the list of lists tells you in how many paths that node appears
+// the list of lists tells you in how many paths that node appears.
 WITH node.name AS node, count(*) AS numPathsWithNode, numPaths
 
 RETURN node, round(100.0 * numPathsWithNode / numPaths, 1) AS `% of paths with node`
@@ -206,3 +175,39 @@ ORDER BY numPathsWithNode DESC
 
 This shows that router G is the weakest point in the network, with 100% of traffic from A to Z passing through it.
 
+
+== Performance improvement with ACYCLIC
+
+Using `ACYCLIC` is significantly more efficient than using manual post-filters for node uniqueness.
+
+
+=== Discarding results with WHERE
+
+In earlier versions of Cypher, the engine returns all paths that satisfy the structural requirements of the pattern.
+Only after these paths are generated does a WHERE filter discard those containing cycles.
+
+[source, cypher, role=test-skip]
+----
+MATCH p = (start:User {id: 1})-[:FRIEND]->+(target:User)
+  WHERE size(nodes(p)) = COUNT { UNWIND nodes(p) AS n RETURN DISTINCT n }
+RETURN p
+----
+
+* *Evaluation:* The engine generates every possible path, including those that loop infinitely or visit the same nodes multiple times.
+* *Overhead:* The engine must compute and hold a massive set of cyclic solutions in memory before the filter can discard them.
+
+
+=== Inline pruning with ACYCLIC
+
+The `ACYCLIC` path mode applies the uniqueness constraint during evaluation.
+
+[source, cypher, role=test-skip]
+----
+MATCH p = ACYCLIC (start:User \{id: 1})-[:FRIEND]->+(target:User)
+RETURN p
+----
+
+* *Evaluation:* As the engine traverses the graph, it monitors the nodes already present in the path.
+* *Pruning:* If the engine attempts to move to a node that has already been visited in the current path, it prunes that specific candidate
+solution immediately.
+* *Efficiency:* Because invalid paths are never fully generated or held in memory, execution is faster and uses fewer resources.
