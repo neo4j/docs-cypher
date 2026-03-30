@@ -1179,6 +1179,72 @@ Total database accesses: 1, total allocated memory: 184
 
 ======
 
+[[query-plan-node-vector-index-search]]
+=== Node Vector Index Search
+
+////
+[source, cypher, role=test-setup]
+----
+DROP INDEX moviePlots IF EXISTS;
+CREATE VECTOR INDEX moviePlots IF NOT EXISTS
+ FOR (m:Movie) ON m.embedding
+ WITH [m.releaseDate, m.rating]
+ OPTIONS {
+   indexConfig: {
+     `vector.similarity_function`: 'cosine',
+     `vector.dimensions`: 3,
+     `vector.quantization.enabled`: false
+   }
+ };
+----
+////
+
+[role=label--new-2026.01]
+The `NodeVectorIndexSearch` operator searches a vector index for similar vector embeddings.
+
+.NodeVectorIndexSearch
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH (movie:Movie)
+  SEARCH movie IN (
+    VECTOR INDEX moviePlots
+    FOR vector([1, 2, 3], 3, INTEGER)
+    LIMIT 4
+  )
+RETURN movie.title AS title
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version {neo4j-version}
+
+Batch size 128
+
++------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+---------------+
+| Operator               | Id | Details                                                                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            | Indexes Used  |
++------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+---------------+
+| +ProduceResults        |  0 | title                                                                                                |             10 |    0 |       0 |              0 |                        |           |                     |               |
+| |                      +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     +---------------+
+| +Projection            |  1 | movie.title AS title                                                                                 |             10 |    0 |       0 |                |                        |           |                     |               |
+| |                      +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     +---------------+
+| +NodeVectorIndexSearch |  2 | SEARCH movie IN (VECTOR INDEX moviePlots FOR RuntimeConstant(vector($autolist_0, $autoint_1, INTEGER |             10 |    0 |       1 |            248 |                    0/0 |     1.364 | Fused in Pipeline 0 | moviePlots: 1 |
+|                        |    |  NOT NULL)) LIMIT 4)                                                                                 |                |      |         |                |                        |           |                     |               |
++------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+---------------+
+
+Total database accesses: 1, total allocated memory: 312
+----
+
+======
+
 [[query-plan-directed-all-relationships-scan]]
 === Directed All Relationships Scan
 
@@ -1499,6 +1565,139 @@ Total database accesses: 37
 
 ======
 
+[[query-plan-directed-relationship-vector-index-search]]
+=== Directed Relationship Index Search
+
+////
+[source, cypher, role=test-setup]
+----
+DROP INDEX reviews IF EXISTS;
+CREATE VECTOR INDEX reviews IF NOT EXISTS
+ FOR ()-[r:REVIEWED]-() ON r.embedding
+ WITH [r.rating]
+ OPTIONS {
+   indexConfig: {
+     `vector.similarity_function`: 'cosine',
+     `vector.dimensions`: 3,
+     `vector.quantization.enabled`: false
+   }
+ };
+----
+////
+
+[role=label--new-2026.01]
+The `DirectedRelationshipVectorIndexSearch` operator searches a vector index for similar vector embeddings.
+
+.DirectedRelationshipVectorIndexSearch
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH ()-[r:REVIEWED]->()
+  SEARCH r IN (
+    VECTOR INDEX reviews
+    FOR vector([1, 2, 3], 3, INTEGER)
+    WHERE r.rating >= 3
+    LIMIT 4
+  )
+RETURN r.content AS content, r.rating AS rating
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version 2026.04
+
+Batch size 128
+
++----------------------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+--------------+
+| Operator                               | Id | Details                                                                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            | Indexes Used |
++----------------------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+--------------+
+| +ProduceResults                        |  0 | content, rating                                                                                      |              1 |    0 |       0 |              0 |                        |           |                     |              |
+| |                                      +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     +--------------+
+| +Projection                            |  1 | r.content AS content, cache[r.rating] AS rating                                                      |              1 |    0 |       0 |                |                        |           |                     |              |
+| |                                      +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     +--------------+
+| +DirectedRelationshipVectorIndexSearch |  2 | SEARCH ()-[r:REVIEWED]->() IN (VECTOR INDEX reviews FOR RuntimeConstant(vector($autolist_0, $autoint |              1 |    0 |       1 |            248 |                    0/0 |     0.548 | Fused in Pipeline 0 | reviews: 1   |
+|                                        |    | _1, INTEGER NOT NULL)) WHERE rating >= $autoint_2 LIMIT 4)                                           |                |      |         |                |                        |           |                     |              |
++----------------------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+--------------+
+
+Total database accesses: 1, total allocated memory: 312
+----
+
+======
+
+[[query-plan-undirected-relationship-vector-index-search]]
+=== Undirected Relationship Index Search
+
+////
+[source, cypher, role=test-setup]
+----
+DROP INDEX reviews IF EXISTS;
+CREATE VECTOR INDEX reviews IF NOT EXISTS
+ FOR ()-[r:REVIEWED]-() ON r.embedding
+ WITH [r.rating]
+ OPTIONS {
+   indexConfig: {
+     `vector.similarity_function`: 'cosine',
+     `vector.dimensions`: 3,
+     `vector.quantization.enabled`: false
+   }
+ };
+----
+////
+
+[role=label--new-2026.01]
+The `UndirectedRelationshipVectorIndexSearch` operator searches a vector index for similar vector embeddings.
+
+.UndirectedRelationshipVectorIndexSearch
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+MATCH ()-[r:REVIEWED]-()
+  SEARCH r IN (
+    VECTOR INDEX reviews
+    FOR vector([1, 2, 3], 3, INTEGER)
+    WHERE r.rating >= 3
+    LIMIT 4
+  )
+RETURN r.content AS content, r.rating AS rating
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version 2026.04
+
+Batch size 128
+
++------------------------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+--------------+
+| Operator                                 | Id | Details                                                                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            | Indexes Used |
++------------------------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+--------------+
+| +ProduceResults                          |  0 | content, rating                                                                                      |              2 |    0 |       0 |              0 |                        |           |                     |              |
+| |                                        +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     +--------------+
+| +Projection                              |  1 | r.content AS content, cache[r.rating] AS rating                                                      |              2 |    0 |       0 |                |                        |           |                     |              |
+| |                                        +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     +--------------+
+| +UndirectedRelationshipVectorIndexSearch |  2 | SEARCH ()-[r:REVIEWED]-() IN (VECTOR INDEX reviews FOR RuntimeConstant(vector($autolist_0, $autoint_ |              2 |    0 |       1 |            248 |                    0/0 |     0.553 | Fused in Pipeline 0 | reviews: 1   |
+|                                          |    | 1, INTEGER NOT NULL)) WHERE rating >= $autoint_2 LIMIT 4)                                            |                |      |         |                |                        |           |                     |              |
++------------------------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+--------------+
+
+Total database accesses: 1, total allocated memory: 312
+----
+
+======
 
 [[query-plan-directed-union-relationship-types-scan]]
 === Directed Union Relationship Types Scan
@@ -4743,7 +4942,17 @@ Aggregation operators are used to compute summary statistics over groups of grap
 
 The `EagerAggregation` operator evaluates a grouping expression and uses the result to group rows into different groupings.
 For each of these groupings, `EagerAggregation` will then evaluate all aggregation functions and return the result.
-To do this, `EagerAggregation`, as the name implies, needs to pull in all data eagerly from its source and build up state, which leads to increased memory pressure in the system.
+To do this, `EagerAggregation`, as the name implies, must pull in all data eagerly from its source and build up state, which leads to increased memory pressure in the system.
+
+[NOTE]
+====
+The cost of memory pressure of the `EagerAggregation` operator is still much lower than that of the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-eager[`Eager` operator].
+`EagerAggregation` consumes all input rows and outputs as many rows as there are groups, which generally reduces cardinality (row count).
+If there are no grouping keys, all input rows are in a single group, producing a single output row.
+In contrast, the `Eager` operator buffers all input rows in memory, then passes them on, with cardinality unchanged.
+
+`EagerAggregation` can be replaced with a less expensive xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-ordered-aggregation[`OrderedAggregation` operator] if the aggregation has a grouping key and the input is ordered by that key.
+====
 
 
 .EagerAggregation
@@ -6075,9 +6284,9 @@ CREATE CONSTRAINT team_name IF NOT EXISTS FOR (t:Team) REQUIRE (t.name) IS UNIQU
 
 [NOTE]
 ====
-`MergeUniqueNode` was added in Cypher 2025.11 but it did not work as intended in that version.
-For this reason, the operator was disabled in Cypher 2025.12.
-Cypher 2026.02 fixes the bug and is thus the recommended version to use. 
+`MergeUniqueNode` was added in Neo4j 2025.11 but it did not work as intended in that version.
+For this reason, the operator was disabled in Neo4j 2025.12.
+Neo4j 2026.02 fixes the bug and is thus the recommended version to use. 
 ====
 
 The `MergeUniqueNode` operator is similar to the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-merge[`Merge`] operator, but is used when there is a property uniqueness constraint on the property used in the `MERGE` statement.
