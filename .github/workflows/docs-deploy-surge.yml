@@ -10,6 +10,11 @@
 
 name: "Deploy docs preview"
 
+permissions:
+  actions: read
+  contents: read
+  pull-requests: write
+
 on:
   workflow_run:
     workflows: ["Verify docs PR"]
@@ -17,15 +22,32 @@ on:
       - completed
 
 jobs:
-  publish-docs:
-    # Uncomment this if statement to deploy only when the PR builds cleanly
-    # if: github.event.workflow_run.conclusion == 'success'
+  # [Optional] Restrict automatic dpeloyment to PRs from the upstream repo
+  # For fork PRs, requires manual approval via the "preview" environment.
+  # For PRs from the main repository this job is skipped and deploy-docs runs immediately.
+  # Setup: create a "preview" environment in Settings → Environments with required reviewers.
+  # approve-fork:
+  #   if: github.event.workflow_run.head_repository.full_name != github.repository
+  #   environment: preview
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Fork PR approved for deployment
+  #       run: echo "Approved"
+
+  deploy-docs:
+    # needs: [approve-fork]
+    # Run when approve-fork succeeded (fork, approved) or was skipped (non-fork).
+    # Uncomment the conclusion check to deploy only when the PR builds cleanly:
+    # && github.event.workflow_run.conclusion == 'success'
+    # if: |
+    #   always() &&
+    #   (needs.approve-fork.result == 'success' || needs.approve-fork.result == 'skipped')
 
     runs-on: ubuntu-latest
 
     steps:
       - name: "Download built documentation"
-        uses: actions/github-script@v7
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
           RUN_ID: ${{ github.event.workflow_run.id }}
           WORKSPACE: ${{ github.workspace }}
@@ -60,25 +82,62 @@ jobs:
             });
             fs.writeFileSync('${{ env.WORKSPACE }}/changelog.zip', Buffer.from(downloadChangelog.data));
 
-      - id: unzip-docs
-        run: unzip docs.zip
+      - id: suspicious-path-check
+        name: Suspicious paths check
+        env:
+          ARTIFACT_DIR: ${{ runner.temp }}/artifacts/docs
+        run: |
+          cd "$ARTIFACT_DIR"
+          if unzip -l docs.zip | grep -q "\.\./"; then
+            exit 1
+          fi
 
-      - id: get-top-dir
+      - id: hidden-files-check
+        name: Hidden files check
+        env:
+          ARTIFACT_DIR: ${{ runner.temp }}/artifacts/docs
+        run: |
+          cd "$ARTIFACT_DIR"
+          HIDDEN_FILES=$(find . -type f -name ".*" | wc -l)
+          if [ "$HIDDEN_FILES" -ne 0 ]; then
+            echo "Security Alert: Unexpected hidden files detected!"
+            exit 1
+          fi
+
+      - id: unzip-docs
+        name: Unzip docs artifact
+        env:
+          ARTIFACT_DIR: ${{ runner.temp }}/artifacts/docs
+        run: |
+          cd "$ARTIFACT_DIR"
+          unzip docs.zip
+
+      - id: find-changelog
+        name: Get changelog
         run: |
           root=$(ls -d */index.html | sed -r 's/(.*)\/index\.html/\1/')
           echo "top-dir=$root" >> $GITHUB_OUTPUT
 
       - id: unzip-changelog
-        if: ${{ hashFiles('changelog.zip') != '' }}
-        run: unzip changelog.zip
+        name: Unzip changelog artifact
+        if: ${{ steps.find-changelog.outputs.has-changelog == 'true' }}
+        env:
+          ARTIFACT_DIR: ${{ runner.temp }}/artifacts/changelog
+        run: |
+          cd "$ARTIFACT_DIR"
+          unzip changelog.zip
       
       - id: get-deploy-id
+        name: Get deploy ID
+        env:
+          ARTIFACT_DIR: ${{ runner.temp }}/artifacts/docs
         run: |
           deployid=$(<deployid)
           case "$deployid" in ''|*[!0-9]*) echo "Provided PR number is not an integer"; exit 1 ;; esac
           echo "deploy-id=$deployid" >> "$GITHUB_OUTPUT"
 
       - id: get-deploy-url
+        name: Get deploy URL
         env:
           ORG: ${{ github.event.repository.owner.login }}
           REPO: ${{ github.event.repository.name }}
@@ -87,25 +146,39 @@ jobs:
           deployurl=$ORG-$REPO-$DEPLOYID.surge.sh
           echo "deploy-url=$deployurl" >> $GITHUB_OUTPUT
       
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
         with:
           node-version: lts/*
+
+      - id: prepare-deploy-dir
+        name: Prepare deploy directory
+        shell: bash
+        env:
+          DOCS_SRC_DIR: ${{ runner.temp }}/artifacts/docs
+          DOCS_DEPLOY_DIR: ${{ runner.temp }}/deploy-docs
+        run: |
+          mkdir -p "$DOCS_DEPLOY_DIR"
+          # Copy only the built docs into a clean directory for deployment
+          cp -R "$DOCS_SRC_DIR"/. "$DOCS_DEPLOY_DIR"/
       
-      - name: Deploy docs to surge
+      - id: surge-deploy
+        name: Deploy docs to surge
         shell: bash
         env:
           DEPLOY_URL: ${{ steps.get-deploy-url.outputs.deploy-url }}
           SURGE_TOKEN: "${{ secrets.DOCS_SURGE_TOKEN }}"
-          SITE_DIR: ${{ steps.get-top-dir.outputs.top-dir }}
+          DEPLOY_DIR: ${{ runner.temp }}/deploy-docs
         run: |
           npm install -g surge
-          surge ./$SITE_DIR $DEPLOY_URL --token "$SURGE_TOKEN"
+          cd "$DEPLOY_DIR"
+          surge . "$DEPLOY_URL" --token "$SURGE_TOKEN"
 
       # If the PR artifacts include a changelog file, add it to the PR as a comment
       # The changelog contains links to new and changed files in the deployed docs
-      - name: Comment on PR (changelog)
-        if: ${{ hashFiles('changelog') != '' }}
-        uses: marocchino/sticky-pull-request-comment@331f8f5b4215f0445d3c07b4967662a32a2d3e31 #v2.9.0
+      - id: comment-changelog
+        name: Prepare changelog comment
+        if: ${{ steps.find-changelog.outputs.has-changelog == 'true' }}
+        uses: marocchino/sticky-pull-request-comment@70d2764d1a7d5d9560b100cbea0077fc8f633987 #v3
         with:
           number: ${{ steps.get-deploy-id.outputs.deploy-id }}
           recreate: true
@@ -114,11 +187,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.DOCS_PR_COMMENT_TOKEN }}
 
       # If there's no changelog, add a generic comment to the PR
-      - name: Comment on PR (no changelog)
-        if: ${{ hashFiles('changelog') == '' }}
+      - id: comment-no-changelog
+        name: Comment on PR (no changelog)
+        if: ${{ steps.find-changelog.outputs.has-changelog == 'false' }}
         env:
           DEPLOY_URL: ${{ steps.get-deploy-url.outputs.deploy-url }}
-        uses: marocchino/sticky-pull-request-comment@331f8f5b4215f0445d3c07b4967662a32a2d3e31 #v2.9.0
+        uses: marocchino/sticky-pull-request-comment@70d2764d1a7d5d9560b100cbea0077fc8f633987 #v3
         with:
           number: ${{ steps.get-deploy-id.outputs.deploy-id }}
           header: docs-pr-changes
