@@ -61,6 +61,67 @@ SHOW CURRENT GRAPH TYPE
 [NOTE]
 Regardless of which syntax was used to define a property uniqueness or key constraint, they are all shown in the `specification` returned by `SHOW CURRENT GRAPH TYPE` using the `CONSTRAINT … FOR … REQUIRE` syntax.
 
+[role=label--new-Neo4j-2026.XX]
+[[listing-graph-type-with-general-cypher]]
+== Listing current graph type combined with general Cypher
+
+The `SHOW CURRENT GRAPH TYPE` command can be combined with general Cypher clauses in a single query.
+
+For example, splitting the graph type specification into separate strings.
+
+.Return separate strings for each part of the graph type
+[source, cypher]
+----
+SHOW CURRENT GRAPH TYPE
+YIELD specification
+
+// Filter out the empty graph type
+FILTER specification <> '{}'
+
+// Split string definition into separate lines
+WITH split(specification, '\r\n') AS specificationLines
+
+// Remove the { and } lines
+WITH specificationLines[1..-1] AS elementLines
+
+// Remove leading indention and trailing commas
+WITH [line IN elementLines | rtrim(trim(line), ',')] AS graphTypeLines
+
+UNWIND graphTypeLines AS graphTypeElement
+RETURN graphTypeElement
+----
+
+.Result
+[queryresult]
+----
++--------------------------------------------------------------------------------------------------------------------+
+| graphTypeElement                                                                                                   |
++--------------------------------------------------------------------------------------------------------------------+
+| "(:`City` => {`name` :: STRING NOT NULL, `population` :: INTEGER})"                                                |
+| "(:`Company` => {`address` :: STRING, `name` :: STRING})"                                                          |
+| "(:`Person` => :`Resident` {`name` :: STRING, `ssn` :: INTEGER})"                                                  |
+| "(:`Pet` => :`Animal`&`Resident` {`healthCertificate` :: STRING, `insuranceNumber` :: INTEGER, `name` :: STRING})" |
+| "(:`Robot` => :`Machine`&`Resident` {`application` :: STRING NOT NULL, `id` :: INTEGER NOT NULL})"                 |
+| "(:`Resident`)-[:`LIVES_IN` => {`since` :: ANY NOT NULL}]->(:`City` =>)"                                           |
+| "(:`Person` =>)-[:`WORKS_FOR` => {`role` :: STRING}]->(:`Company` =>)"                                             |
+| "CONSTRAINT `constraint_1324d6fc` FOR (`n`:`Company` =>) REQUIRE (`n`.`address`) IS UNIQUE"                        |
+| "CONSTRAINT `company_name` FOR (`n`:`Company` =>) REQUIRE (`n`.`name`) IS KEY"                                     |
+| "CONSTRAINT `constraint_5d8979dd` FOR (`n`:`Person` =>) REQUIRE (`n`.`name`, `n`.`ssn`) IS KEY"                    |
+| "CONSTRAINT `constraint_bbcb9835` FOR (`n`:`Pet` =>) REQUIRE (`n`.`healthCertificate`) IS UNIQUE"                  |
+| "CONSTRAINT `constraint_550b510e` FOR (`n`:`Pet` =>) REQUIRE (`n`.`insuranceNumber`) IS KEY"                       |
+| "CONSTRAINT `animal_id` FOR (`n`:`Animal`) REQUIRE (`n`.`id`) IS UNIQUE"                                           |
+| "CONSTRAINT `resident_address` FOR (`n`:`Resident`) REQUIRE (`n`.`address`) IS :: STRING"                          |
++--------------------------------------------------------------------------------------------------------------------+
+14 rows
+----
+
+[NOTE]
+====
+When combining `SHOW CURRENT GRAPH TYPE` with other clauses, the `YIELD` clause is mandatory and must not be omitted.
+In addition, `YIELD *` is not permitted.
+Instead, the `YIELD` clause needs to explicitly list the yielded columns.
+The query must also end with a valid last clause (like a `RETURN` or an updating clause).
+====
 
 [[result-columns]]
 == Result columns for `SHOW CURRENT GRAPH TYPE`
