@@ -3,8 +3,16 @@
 
 You can use a label expression predicate to verify that the labels of a node or the relationship type of a relationship match a given label expression.
 
+Cypher supports two label expression alternatives:
+
+* Colon form (`<expr>:<label-expression>`)
+* `IS [NOT] LABELED`  form label:new[Introduced in Neo4j 2026.04] label:cypher[Cypher 25 only]
+
 [[label-expression-predicat-syntax]]
 == Syntax
+
+[[label-expression-predicate-colon-syntax]]
+=== Colon form
 
 [source, syntax]
 ----
@@ -12,6 +20,34 @@ You can use a label expression predicate to verify that the labels of a node or 
 ----
 
 Where `<expr>` is any Cypher expression and `<label-expression>` is any Cypher xref::patterns/reference.adoc#label-expressions[label expression].
+
+[[is-labeled-predicate]]
+[role=label--new-Neo4j-2026.04 label--cypher-25-only]
+=== `IS [NOT] LABELED` predicate
+
+[source, syntax]
+----
+<expr> IS LABELED <label-expression>
+<expr> IS NOT LABELED <label-expression>
+<expr> IS NOT <label-expression>
+----
+
+
+* If `<expr>` evaluates to `null`, the predicate result is `null`.
+* Otherwise, the label expression is evaluated against the node's label set or the relationship's single type, and the result is `true` or `false` equivalent to the colon form.
+* `IS NOT LABELED <label-expression>` negates the result of the entire label expression.
+  This is different from using `!` *inside* the label expression.
+For example:
+** `n IS LABELED !A&B` means the node has label `B`, and does not have label `A`.
+** `n IS NOT LABELED A&B` means the node does not have both label `A` and label `B`.
+
+
+[NOTE]
+====
+`IS [NOT] LABELED` is only valid in expression contexts, (for example, xref:clauses/where.adoc[`WHERE`], xref:clauses/return.adoc[`RETURN`], xref:clauses/with.adoc[`WITH`], on the right-hand side of xref:clauses/set.adoc[`SET`] property assignments, or in xref:expressions/conditional-expressions.adoc[`CASE`] branches).
+It cannot be used in place of a label expression inside a xref:patterns/reference.adoc#node-patterns[node pattern] or xref:patterns/reference.adoc#relationship-patterns[relationship pattern] (for example `MATCH (n IS LABELED Person)` is invalid), nor as xref:clauses/set.adoc[`SET`] / xref:clauses/remove.adoc[`REMOVE`] label specification syntax.
+In patterns and when attaching or removing labels, use the colon form instead (for example `(n:Person)`).
+====
 
 [[example-graph]]
 == Example graph
@@ -111,7 +147,7 @@ RETURN p.name AS name,
 2+d|Rows: 5
 |===
 
-When `<exp>` results in ´null`, then the label expression predicate results in `null`, e.g. if `p` is `null`, then `p:!CEO` results in `null`.
+When `<expr>` evaluates to `null`, the label expression predicate results in `null`; for example if `p` is `null`, then `p:!CEO` results in `null`.
 
 [source, cypher]
 ----
@@ -194,7 +230,61 @@ RETURN p.name AS name, p:$any(managerLabels) AS isManager
 2+d|Rows: 6
 |===
 
-[node-label-expression-predicate]
+[[is-labeled-predicate-examples]]
+[role=label--new-Neo4j-2026.04 label--cypher-25-only]
+== Examples using `IS [NOT] LABELED`
+
+.Test a node with `IS LABELED`
+// tag::predicates_label_expression_predicates_is_labeled[]
+[source, cypher]
+----
+MATCH (p:Person)
+RETURN p.name AS name, p IS LABELED Manager AS isManager
+----
+// end::predicates_label_expression_predicates_is_labeled[]
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | isManager
+
+| "Alice" | true
+| "Cecil" | false
+| "Cecilia" | false
+| "Charlie" | false
+| "Daniel" | false
+| "Eskil" | false
+
+2+d|Rows: 6
+|===
+
+.Simple `CASE` with `IS LABELED` branches
+[source, cypher]
+----
+MATCH (p:Person)
+RETURN p.name AS name,
+       CASE p
+         WHEN IS LABELED CEO THEN 'executive'
+         WHEN IS LABELED Manager|Director THEN 'lead'
+         ELSE 'ic'
+       END AS role
+ORDER BY name
+----
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | role
+
+| "Alice" | "lead"
+| "Cecil" | "ic"
+| "Cecilia" | "ic"
+| "Charlie" | "ic"
+| "Daniel" | "lead"
+| "Eskil" | "executive"
+
+2+d|Rows: 6
+|===
+
+[relationship-label-expression-predicate]
 == Test whether a relationship has a certain relationship type
 
 Given that `r` is a relationship, `r:WORKS_FOR` tests whether `r` has the relationship type `WORKS_FOR` or not and result in `true` or `false`, respectively.
