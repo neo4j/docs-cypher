@@ -1,0 +1,168 @@
+:description: Information about how to match patterns allowing re-traversals of both nodes and relationship using `REPEATABLE ELEMENTS`.
+= Paths with repeated nodes and relationships
+:table-caption!:
+:page-role: new-neo4j-2025.06 cypher-25-only
+
+By default, Cypher does not allow relationships to be re-traversed in the same graph pattern match.
+This constraint can be bypassed using the `REPEATABLE ELEMENTS` keyword, which ensures there are no restrictions on how many times a node or relationship can occur for a given `MATCH` result.
+
+The `REPEATABLE ELEMENTS` keyword must be specified after the `MATCH` clause.
+
+.Query using `REPEATABLE ELEMENTS`
+[source, cypher]
+----
+MATCH REPEATABLE ELEMENTS p = (start)--{,2}(end)
+RETURN p
+----
+
+[NOTE]
+`REPEATABLE ELEMENTS` is a xref:appendix/gql-conformance/index.adoc[GQL conformant] match mode.
+Match modes determine whether relationships can appear more than once in a graph pattern match.
+For more information, see xref:patterns/reference.adoc#match-modes[Syntax and semantics -> Match modes].
+
+[[example-graph]]
+== Example graph
+
+This page will use the scenario of the link:https://en.wikipedia.org/wiki/Seven_Bridges_of_K%C3%B6nigsberg[Seven bridges of Königsberg], a problem studied by link:https://en.wikipedia.org/wiki/Leonhard_Euler[Leonhard Euler] in 1736 to determine if one could cross all seven bridges of Königsberg exactly once in a single walk.
+
+image::match-modes-graph.svg[Graph showing the seven bridges of Königsberg, width=600, role=popup]
+
+To recreate the graph, run the following query against an empty Neo4j database:
+
+[source, cypher, role=test-setup]
+----
+CREATE (kneiphof:Location {name: "Kneiphof"}),
+       (northBank:Location {name: "North Bank"}),
+       (southBank:Location {name: "South Bank"}),
+       (lomse:Location {name: "Lomse"}),
+
+       (kneiphof)-[:BRIDGE {id: 1}]->(northBank),
+       (kneiphof)-[:BRIDGE {id: 6}]->(southBank),
+       (kneiphof)-[:BRIDGE {id: 7}]->(lomse),
+       (northBank)-[:BRIDGE {id: 5}]->(kneiphof),
+       (northBank)-[:BRIDGE {id: 2}]->(lomse),
+       (southBank)-[:BRIDGE {id: 4}]->(kneiphof),
+       (southBank)-[:BRIDGE {id: 3}]->(lomse)
+----
+
+[[repeatable-elements-and-konigsberg-bridges-problem]]
+== `REPEATABLE ELEMENTS` and the Königsberg bridges problem
+
+The section on xref:patterns/unique-relationship-paths.adoc#default-traversal-rules-and-konigsberg-bridges-problem[Cypher's default traversal rules and the Königsberg bridges problem] showed the impossibility of crossing each of the seven bridges in Königsberg exactly once in a single walk.
+
+`REPEATABLE ELEMENTS` does not solve this impossibility.
+However, the ability to re-traverse relationships does allow Cypher to return paths when testing Euler's hypothesis.
+
+The following query matches the graph for paths with a length of `7` relationships using `REPEATABLE ELEMENTS` and returns a sample path.
+
+.Find a path with a length of 7 relationships using `REPEATABLE ELEMENTS`
+// tag::patterns_repeatable_elements[]
+[source, cypher]
+----
+MATCH REPEATABLE ELEMENTS p = (:Location {name: 'Kneiphof'})-[:BRIDGE]-{7}()
+WITH collect(p)[0] AS samplePath
+RETURN [n IN nodes(samplePath) | n.name] AS samplePathLocations,
+       [r IN relationships(samplePath) | r.id] AS samplePathBridges
+----
+// end::patterns_repeatable_elements[]
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| samplePathLocations | samplePathBridges
+
+| ["Kneiphof", "North Bank", "Kneiphof", "North Bank", "Kneiphof", "North Bank", "Kneiphof", "North Bank"]
+| [1, 5, 1, 5, 1, 5, 1]
+
+2+d|Rows: 1
+|===
+
+While no paths with a length of `7` can be returned using Cypher's default `MATCH` behavior, the query now returns a `samplePath` that shows the same two bridges (`1` and `5`) being repeatedly re-traversed until the maximum path length is reached.
+
+The next example matches paths starting and ending at the same `Location` (`Kneiphof`), where each bridge is crossed at least once, using `REPEATABLE ELEMENTS`:
+
+.Find a path traversing all bridges at least once before returning to the starting `Location` using `REPEATABLE ELEMENTS`
+[source, cypher]
+----
+MATCH REPEATABLE ELEMENTS p = (start:Location {name: 'Kneiphof'})-[:BRIDGE]-{,9}(start) // <1>
+WHERE all(bridge IN range(1,7) WHERE bridge IN [r IN relationships(p) | r.id]) // <2>
+RETURN [n IN nodes(p) | n.name] AS visitedLocations,
+       [r IN relationships(p) | r.id] AS crossedBridges
+ORDER BY length(p), crossedBridges
+LIMIT 1
+----
+
+<1> Paths with a length of less than 9 relationships return no results because they do not allow enough moves to traverse all seven bridges at least once while forming a cycle back to `Kneiphof`.
+<2> The xref:functions/predicate.adoc#functions-all[`all()`] function ensures that each bridge must be traversed once in the path.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| visitedLocations | crossedBridges
+
+| ["Kneiphof", "North Bank", "Kneiphof", "South Bank", "Lomse", "North Bank", "Kneiphof", "South Bank", "Lomse", "Kneiphof"]
+| [1, 1, 4, 3, 2, 5, 6, 3, 7]
+
+2+d|Rows: 1
+|===
+
+The order of the bridges traversed in the path returned demonstrates that bridges `1` and `3` were crossed twice in order to return to `Kneiphof`.
+
+image::repeatable-elements-graph.svg[Several graphs showing order of traversals when using repeatable elements width=600, role=popup]
+_Sequence of bridge traversals when using `REPEATABLE ELEMENTS`._
+
+For more information about `REPEATABLE ELEMENTS`, see xref:patterns/reference.adoc#match-modes-rules-repeatable-elements[Syntax and semantics -> Repeatable relationship and node matching].
+
+[[bounded-path-length]]
+=== Bounded path length
+
+When using Cypher's default `MATCH` behavior, the number of returned paths is limited because relationships cannot be re-traversed.
+However, because `REPEATABLE ELEMENTS` allows for re-traversing relationships, it enables full cycle re-traversals and paths that can double back on relationships.
+As a result, `REPEATABLE ELEMENTS` can generate a very large, or even infinite, number of valid paths.
+
+The below query shows that there are `10583` valid paths with a length of `7` relationships starting from `Kneiphof` using `REPEATABLE ELEMENTS`:
+
+.Count the paths traversing all 7 bridges at least once using `REPEATABLE ELEMENTS`
+[source, cypher]
+----
+MATCH REPEATABLE ELEMENTS p = (:Location {name: 'Kneiphof'})-[:BRIDGE]-{7}()
+RETURN count(p) AS pathCount
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| pathCount
+
+| 10583
+
+1+d|Rows: 1
+|===
+
+If the path length is increased to exactly `10`, a total of `490047` paths are returned, `11` hops returns `1818159` paths, `12` hops returns `6498397` paths, and so on, without limit.
+
+To ensure that a `MATCH` will return a finite number of solutions in a finite amount of time, xref:patterns/reference.adoc#quantifiers-rules[unbounded quantifiers] that do not impose an upper bound on a pattern, such as `*`, `+`, or `{1,}` are not allowed in combination with `REPEATABLE ELEMENTS`.
+Also, users should take into account that the number of results returned for a high number of repetitions can significantly impact both memory usage and the speed of the query.
+
+.Not allowed: find paths of an unbounded length using `REPEATABLE ELEMENTS`
+[source, cypher, role=test-fail]
+----
+MATCH REPEATABLE ELEMENTS p = (start:Location {name: 'Kneiphof'})-[:BRIDGE]-+(start)
+WHERE all(bridge IN range(1,7) WHERE bridge IN [r IN relationships(p) | r.id])
+RETURN count(p) AS pathCount
+----
+
+.GQLSTATUS error chain
+[role="queryresult",stripes="all",cols="1"]
+|===
+| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42N53/[42N53]: error: syntax error or access rule violation - unsafe usage of repeatable elements. The quantified path pattern may yield an infinite number of rows under match mode 'REPEATABLE ELEMENTS'. Add an upper bound to the quantified path pattern.
+
+link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]: error: syntax error or access rule violation - invalid syntax
+|===
+
+
+[[further-reading]]
+== Further reading
+
+* link:https://neo4j.com/blog/developer/i-would-walk-500-miles/[Neo4j Developer Blog: I Would Walk 500 Miles]
+* link:https://neo4j.com/blog/developer/query-chomp-repeat/[Neo4j Developer Blog: Query, Chomp, Repeat]
