@@ -1,0 +1,499 @@
+:description: `GROUP BY` groups results by a grouping element or a list of grouping elements.
+:table-caption!:
+:page-role: new-neo4j-2026.05 cypher-25-only
+
+[[query-group-by]]
+= GROUP BY
+
+`GROUP BY` is subclause that allows you to group the results of a `RETURN` or `WITH` clause.
+
+`GROUP BY` arranges identical data into groups based on one or more columns.
+It is commonly used with aggregate functions like xref:functions/aggregating.adoc#functions-count[count()] or xref:functions/aggregating.adoc#functions-avg[avg()] to perform calculations on each group of data.
+
+`GROUP BY` functions similarly to SQL's `GROUP BY` and it is also xref:appendix/gql-conformance/supported-optional.adoc#gq15[GQL-compliant].
+
+[[example-graph]]
+== Example graph
+
+The following graph is used for the examples below:
+
+// TODO: replace image
+image::graph-limit-clause.svg[Example graph with a Person node,width=600,role=popup]
+
+To recreate it, run the following query against an empty Neo4j database:
+
+[source, cypher, role=test-setup]
+----
+CREATE (alice:Person {name: 'Alice', age: 30}),
+       (bob:Person {name: 'Bob', age: 30}),
+       (charlie1:Person {name: 'Charlie', age: 45}),
+       (charlie2:Person {name: 'Charlie', age: 45}),
+       (david:Person {name: 'David', age: 28}),
+       (eve:Person {name: 'Eve', age: 22})
+----
+
+
+[[syntax]]
+== Syntax
+
+.Syntax for GROUP BY in a RETURN clause
+[source, syntax]
+----
+RETURN <return statement body>
+  GROUP BY { <grouping element> {, <grouping element> } … | () | ALL } 
+  <order by and page clause>
+----
+
+.Syntax for GROUP BY in a WITH clause
+[source, syntax]
+----
+WITH <return statement body>
+  GROUP BY { <grouping element> {, <grouping element> } … | () | ALL } 
+  [<order by and page clause>]
+  [<where clause>]
+----
+
+[[examples]]
+== Basic examples
+
+// Single Group
+// Multiple Groups
+// Empty Groups
+// ALL
+// Without Aggregation
+
+// as subsections
+
+.GROUP BY without aggregation
+=====
+
+[source, cypher]
+----
+MATCH (p: Person)
+WITH p.name AS name, p.age AS age
+RETURN name, age 
+  GROUP BY name, age
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| age | name 
+
+| 30  | "Bob"     
+| 45  | "Charlie" 
+| 28  | "David"   
+| 22  | "Eve"     
+| 30  | "Alice"   
+2+d|Rows: 5
+|===
+
+In this query the GROUP BY is equivalent to xref:clauses/return.adoc#return-unique-results[`DISTINCT`].
+=====
+
+
+.GROUP BY with aggregation
+=====
+
+[source, cypher]
+----
+MATCH (p: Person)
+RETURN p.name AS name, collect(p.name) AS names, sum(p.age) AS totalAge 
+  GROUP BY name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| name      | names                  | totalAge 
+
+| "Bob"     | ["Bob"]                | 30       
+| "Charlie" | ["Charlie", "Charlie"] | 90       
+| "David"   | ["David"]              | 28       
+| "Eve"     | ["Eve"]                | 22       
+| "Alice"   | ["Alice"]              | 30       
+3+d|Rows: 5
+|===
+
+=====
+
+.GROUP BY ALL with aggregation
+=====
+
+[source, cypher]
+----
+MATCH (p: Person)
+RETURN p.name AS name, collect(p.name) AS names, sum(p.age) AS totalAge 
+  GROUP BY ALL
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| name      | names                  | totalAge 
+
+| "Bob"     | ["Bob"]                | 30       
+| "Charlie" | ["Charlie", "Charlie"] | 90       
+| "David"   | ["David"]              | 28       
+| "Eve"     | ["Eve"]                | 22       
+| "Alice"   | ["Alice"]              | 30       
+3+d|Rows: 5
+|===
+
+=====
+
+.GROUP BY () with aggregation
+=====
+
+[source, cypher]
+----
+MATCH (p: Person)
+RETURN collect(p.name) AS names, sum(p.age) AS totalAge 
+  GROUP BY ()
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| names                                                  | totalAge 
+
+| ["Bob", "Charlie", "David", "Eve", "Charlie", "Alice"] | 200      
+2+d|Rows: 1
+|===
+
+=====
+
+.GROUP BY on two columns
+=====
+
+[source, cypher]
+----
+MATCH (p: Person)
+RETURN p.name AS name, p.age AS age, sum(p.age) AS totalAge 
+  GROUP BY name, age
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| name      | age | totalAge 
+
+| "Bob"     | 30  | 30       
+| "Charlie" | 45  | 90       
+| "David"   | 28  | 28       
+| "Eve"     | 22  | 22       
+| "Alice"   | 30  | 30            
+3+d|Rows: 5
+|===
+
+=====
+
+
+== Grouping by unaliased items
+
+Blurp.
+
+.GROUP BY with unaliased return item
+=====
+
+[source, cypher]
+----
+MATCH (p: Person)
+LET name = p.name
+RETURN name, p.age AS age, sum(p.age) AS totalAge 
+  GROUP BY name, p.age
+  ORDER BY name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| name      | age | totalAge 
+
+| "Alice"   | 30  | 30       
+| "Bob"     | 30  | 30       
+| "Charlie" | 45  | 90       
+| "David"   | 28  | 28       
+| "Eve"     | 22  | 22       
+3+d|Rows: 5
+|===
+
+=====
+
+
+== Grouping by non-returned items
+
+Blurp.
+
+.GROUP BY an item that is not returned
+=====
+
+[source, cypher]
+----
+MATCH (p: Person)
+LET name = p.name
+RETURN p.age AS age, sum(p.age) AS totalAge 
+  GROUP BY name, age
+  ORDER BY name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| age | totalAge 
+
+| 30  | 30       
+| 30  | 30       
+| 45  | 90       
+| 28  | 28       
+| 22  | 22            
+2+d|Rows: 5
+|===
+
+=====
+
+
+== Grouping with property access
+
+Blurp.
+
+.GROUP BY with property access
+=====
+
+[source, cypher]
+----
+MATCH (p: Person)
+RETURN DISTINCT p.name AS name, p.age AS age 
+  GROUP BY p.name, age
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name      | age
+
+| "Bob"     | 30  
+| "Charlie" | 45  
+| "David"   | 28  
+| "Eve"     | 22  
+| "Alice"   | 30             
+2+d|Rows: 5
+|===
+
+=====
+
+
+== Rules for grouping keys
+
+May be empty
+ALL means every return item is a grouping key
+
+Rule 6.
+
+If a projection clause contains a <group by clause>, then every projection item needs to be: 
+
+Either: 
+1) a leaf:
+- an aggregating function, e.g. sum(x.a).
+- a constant, e.g. 0.1.
+- a parameter, e.g. $param.
+- a local variable, e.g. the x in count(*) + size([ x IN range(1, 10) | x ]).
+- a grouping key expression (if it is recognizable as defined in CIP-248)
+
+2) a sub-expression
+- a sub-expression, where all operands are either a leaf or a sub-expression.
+
+3) Exact grouping key
+- be equal to a grouping key expression
+
+
+Rule 7. Any grouping key present in the <grouping element>s but not in the return items will not be projected and part of the output.
+
+
+== Variable visibility
+
+Variable visibility in RETURN with GROUP BY
+MATCH (:Account)-[t:Transfers]->(account:Account)
+LET name = account.name
+RETURN account, t.name AS transfer_name, SUM(t.amount) AS total_incoming
+  GROUP BY account, transfer_name, name
+  ORDER BY t.name, name
+
+
+Below is a listing of variables that are visible to the different parts of the return clause, a note on how the set is defined, as well as the return columns of the clause. 
+RETURN
+Visible variables: { t, account, name }
+Result columns: { account, transfer_name, total_incoming }
+Non-Aggregating return items 
+Visible variables: { account, transfer_name name }
+Note: The non-aggregating return items see grouping key expressions. 
+Aggregating return items
+Visible variables: { t, account, name }
+Note: The aggregating return items see all incoming constants and variables.
+Grouping Elements 
+Visible variables: { t, account, name, transfer_name, t.name }
+Note: The grouping elements see all incoming constants and variables as well as grouping return item aliases.
+Subclause expressions
+Visible variables: { account, name, total_incoming, t.name, transfer_name }
+Note: The sort keys see all return item aliases and grouping keys
+
+Variable visibility in WHERE with GROUP BY
+MATCH (:Account)-[t:Transfers]->(account:Account)
+LET name = account.name
+WITH account, t.name AS transfer_name, SUM(t.amount) AS total_incoming
+  GROUP BY account, transfer_name, name
+  ORDER BY t.name, name
+  WHERE account.counter > 0
+RETURN transfer_name, total_incoming
+
+
+Below is a listing of variables that are visible to the different parts of the return clause, a note on how the set is defined, as well as the return columns of the clause. 
+WITH
+Visible variables: { t, account, name }
+Outgoing: { account, transfer_name, total_incoming }
+Non-Aggregating return items 
+Visible variables: { account, transfer_name name }
+Note: The non-aggregating return items see grouping key expressions.
+Aggregating return items
+Visible variables: { t, account, name }
+Note: The aggregating return items see all incoming constants and variables.
+Grouping Elements 
+Visible variables: { t, account, name, transfer_name, t.name }
+Note: The grouping elements see all incoming constants and variables as well as grouping return item aliases.
+Subclause expressions
+Visible variables: { account, name, total_incoming, t.name, transfer_name }
+Note: The sort keys see all return item aliases and grouping keys
+
+
+== Errors
+
+.Missing grouping element in GROUP BY
+=====
+
+[source, cypher]
+----
+MATCH (p: Person)
+LET name = p.name
+RETURN p.age AS age, sum(p.age) 
+  GROUP BY name
+----
+
+// TODO: GQL error code
+.GQLSTATUS error chain
+[role="queryresult",stripes="all", cols="1", ]
+|===
+| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42XXX/[42XXX]: error: syntax error or access rule violation - non-grouping key reference: The projection item `age` must only be dependent on grouping keys.
+
+link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]: error: syntax error or access rule violation - invalid syntax
+|===
+
+=====
+
+
+.Missing grouping element in GROUP BY ()
+=====
+
+[source, cypher]
+----
+MATCH (p: Person)
+LET name = p.name
+RETURN p.age AS age, sum(p.age) 
+  GROUP BY ()
+----
+
+// TODO: GQL error code
+.GQLSTATUS error chain
+[role="queryresult",stripes="all", cols="1", ]
+|===
+| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42XXX/[42XXX]: error: syntax error or access rule violation - non-grouping key reference: The projection item `age` must only be dependent on grouping keys.
+
+link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]: error: syntax error or access rule violation - invalid syntax
+|===
+
+=====
+
+
+.Missing grouping element in GROUP BY when using DISTINCT
+=====
+
+[source, cypher]
+----
+MATCH (p: Person)
+RETURN DISTINCT p.name AS name, p.age AS age 
+  GROUP BY name
+----
+
+// TODO: GQL error code
+.GQLSTATUS error chain
+[role="queryresult",stripes="all", cols="1", ]
+|===
+| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42XXX/[42XXX]: error: syntax error or access rule violation - non-grouping key reference: The projection item `age` must only be dependent on grouping keys.
+
+link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]: error: syntax error or access rule violation - invalid syntax
+|===
+
+=====
+
+
+.GROUP BY ALL does not allow complex grouping keys
+=====
+
+[source, cypher]
+----
+MATCH (n) 
+RETURN n.age + 1, n.age + 1 + count(*) 
+  GROUP BY ALL
+----
+
+.GQLSTATUS error chain
+[role="queryresult",stripes="all", cols="1", ]
+|===
+| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42I18/[42I18]: error: syntax error or access rule violation - invalid reference to implicitly grouped expressions. The aggregation column contains implicit grouping expressions referenced by the variables `n`. Implicit grouping expressions are variables not explicitly declared as grouping keys.
+
+link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]: error: syntax error or access rule violation - invalid syntax
+|===
+
+=====
+
+.GROUP BY with ambiguous references in grouping elements
+=====
+
+[source, cypher]
+----
+WITH {p: 1} AS a, 2 AS b 
+RETURN a.p AS a, sum(b) 
+  GROUP BY a.p
+----
+
+// TODO: GQL error code
+.GQLSTATUS error chain
+[role="queryresult",stripes="all", cols="1", ]
+|===
+| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42XXX/[42XXX]: error: error: syntax error or access rule violation - non-grouping key reference: The projection item `a` must only be dependent on grouping keys.
+
+link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]: error: syntax error or access rule violation - invalid syntax
+|===
+
+=====
+
+
+.GROUP BY with ambiguous references in grouping elements
+=====
+
+[source, cypher]
+---- 
+WITH {p: 1} AS c, 2 AS b
+RETURN c AS a, sum(b) 
+  GROUP BY a.p
+----
+
+// TODO: GQL error code
+.GQLSTATUS error chain
+[role="queryresult",stripes="all", cols="1", ]
+|===
+| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42XXX/[42XXX]: error: error: syntax error or access rule violation - non-grouping key reference: The projection item `a` must only be dependent on grouping keys.
+
+link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]: error: syntax error or access rule violation - invalid syntax
+|===
+
+=====
