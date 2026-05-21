@@ -30,6 +30,7 @@ CREATE CONSTRAINT bookRecommendations FOR (book:Book) REQUIRE (book.recommend) I
 ////
 
 Listing indexes can be done with `SHOW INDEXES`.
+For general information about the `SHOW` command, see the xref:clauses/show.adoc[`SHOW`] page.
 
 [NOTE]
 ====
@@ -43,6 +44,7 @@ Listing indexes requires link:{neo4j-docs-base-uri}/operations-manual/current/au
 * xref:indexes/search-performance-indexes/list-indexes.adoc#listing-all-indexes[]
 * xref:indexes/search-performance-indexes/list-indexes.adoc#listing-specific-columns[]
 * xref:indexes/search-performance-indexes/list-indexes.adoc#listing-indexes-with-filtering[]
+* xref:indexes/search-performance-indexes/list-indexes.adoc#composable-show-indexes[]
 
 
 [[listing-all-indexes]]
@@ -176,6 +178,44 @@ To get all columns, use:
 ----
 SHOW RANGE INDEXES YIELD * WHERE owningConstraint IS NULL
 ----
+
+[role=label--cypher-25-only label--new-Neo4j-2026.05]
+[[composable-show-indexes]]
+=== Combine `SHOW INDEXES` with other Cypher clauses
+
+The `SHOW INDEXES` command can be combined with general Cypher clauses in a single query.
+
+For example, returning a string of drop index commands for all indexes except token lookup indexes and indexes backing constraints.
+
+.Return commands to drop all indexes as a single string
+[source, cypher, role=test-result-skip]
+----
+SHOW INDEXES
+YIELD name, type, owningConstraint
+WHERE type <> 'LOOKUP' AND owningConstraint IS NULL
+WITH "DROP INDEX `" + name + "`;" AS dropCommand
+WITH collect(dropCommand) AS dropCommands
+RETURN reduce(acc = head(dropCommands), dc IN tail(dropCommands) | acc + " " + dc) AS result
+----
+
+.Result
+[queryresult]
+----
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "DROP INDEX `composite_range_node_index_name`; DROP INDEX `composite_range_rel_index_name`; DROP INDEX `example_index`; DROP INDEX `indexOnBooks`; DROP INDEX `node_point_index_name`; DROP INDEX `node_range_index_name`; DROP INDEX `node_text_index_nickname`; DROP INDEX `point_index_param`; DROP INDEX `point_index_with_config`; DROP INDEX `range_index_param`; DROP INDEX `rel_point_index_name`; DROP INDEX `rel_range_index_name`; DROP INDEX `rel_text_index_name`; DROP INDEX `text_index_param`;" |
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+1 row
+----
+
+[NOTE]
+====
+When combining `SHOW INDEXES` with other clauses, the `YIELD` clause is mandatory and must not be omitted.
+`YIELD` must explicitly list the yielded columns.
+`YIELD *` is not permitted.
+The query must also end with a valid last clause (like a `RETURN` or an updating clause).
+====
 
 [[listing-indexes-result-columns]]
 == Result columns for listing indexes

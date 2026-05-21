@@ -4,6 +4,7 @@
 To list all constraints with the default output columns, use `SHOW CONSTRAINTS`.
 If all columns are required, use `SHOW CONSTRAINTS YIELD *`.
 For the full command syntax to list constraints, see xref:schema/syntax.adoc#list-constraints[Syntax -> Show constraints].
+For general information about the `SHOW` command, see the xref:clauses/show.adoc[`SHOW`] page.
 The constraints listed on this page are created on the page xref:schema/constraints/create-constraints.adoc[].
 
 [NOTE]
@@ -62,7 +63,7 @@ FOR ()-[knows:KNOWS]-() REQUIRE (knows.since, knows.how) IS RELATIONSHIP KEY;
 CREATE CONSTRAINT node_uniqueness_param
 FOR (book:Book) REQUIRE book.prop1 IS UNIQUE;
 CREATE CONSTRAINT rel_exist_param
-FOR ()-[wrote:WROTE]-() REQUIRE wrote.published IS NOT NULL
+FOR ()-[wrote:WROTE]-() REQUIRE wrote.published IS NOT NULL;
 ----
 ////
 
@@ -256,6 +257,56 @@ YIELD name, type, createStatement
 
 ======
 
+
+[role=label--cypher-25-only label--new-Neo4j-2026.05]
+[[composable-show-constraints]]
+== Combine `SHOW CONSTRAINTS` with other Cypher clauses
+
+The `SHOW CONSTRAINTS` command can be combined with general Cypher clauses in a single query.
+
+For example, returning the labels and properties of nodes in the graph that are constrained by a node key constraint.
+
+////
+The graph below are created on schema/constraints/create-constraints.adoc, except for the `Director` label and `imdbId` property on Jensen Ackles.
+
+[source, cypher, role=test-setup]
+----
+CREATE (:Actor:Director {firstname: 'Jensen', surname: 'Ackles', imdbId: 'nm0010075'})-[:KNOWS {since: 2008, how: 'coworkers', friend: true}]->(:Actor {firstname: 'Misha', surname: 'Collins'});
+----
+////
+
+.Return labels and properties of node key constrained nodes
+[source, cypher]
+----
+SHOW CONSTRAINTS
+YIELD name, type, labelsOrTypes, properties
+WHERE type = 'NODE_KEY'
+WITH name, labelsOrTypes[0] AS label, properties
+MATCH (n:$(label))
+WHERE all(p IN properties WHERE p IN keys(n))
+RETURN name AS constraint, labels(n) AS labels, properties(n) AS properties
+----
+
+.Result
+[queryresult]
+----
++----------------------------------------------------------------------------------------------------------------+
+| constraint        | labels               | properties                                                          |
++----------------------------------------------------------------------------------------------------------------+
+| "actor_fullname"  | ["Director","Actor"] | {firstname -> "Jensen", imdbId -> "nm0010075", surname -> "Ackles"} |
+| "actor_fullname"  | ["Actor"]            | {firstname -> "Misha", surname -> "Collins"}                        |
+| "director_imdbId" | ["Director","Actor"] | {firstname -> "Jensen", imdbId -> "nm0010075", surname -> "Ackles"} |
++----------------------------------------------------------------------------------------------------------------+
+3 rows
+----
+
+[NOTE]
+====
+When combining `SHOW CONSTRAINTS` with other clauses, the `YIELD` clause is mandatory and must not be omitted.
+`YIELD` must explicitly list the yielded columns.
+`YIELD *` is not permitted.
+The query must also end with a valid last clause (like a `RETURN` or an updating clause).
+====
 
 [[list-constraints-result-columns]]
 == Result columns for listing constraints
