@@ -3,6 +3,7 @@
 = Show graph types
 
 The `SHOW CURRENT GRAPH TYPE` command allows you to show the graph type specification for the current database.
+It can either be shown as a string representation or, as of Neo4j 2026.06, a virtual graph representation.
 For general information about the `SHOW` command, see the xref:clauses/show.adoc[`SHOW`] page.
 
 [NOTE]
@@ -29,7 +30,7 @@ ALTER CURRENT GRAPH TYPE SET {
 }
 ----
 
-.Show the full graph type
+.Show the full graph type as a string
 // tag::schema_graph_types_show[]
 [source, cypher]
 ----
@@ -64,6 +65,24 @@ SHOW CURRENT GRAPH TYPE
 
 [NOTE]
 Regardless of which syntax was used to define a property uniqueness or key constraint, they are all shown in the `specification` returned by `SHOW CURRENT GRAPH TYPE` using the `CONSTRAINT … FOR … REQUIRE` syntax.
+
+.Show the full graph type as a virtual graph label:new[Introduced in Neo4j 2026.06]
+// tag::schema_graph_types_show_as_graph[]
+[source, cypher]
+----
+SHOW CURRENT GRAPH TYPE AS GRAPH
+----
+// end::schema_graph_types_show_as_graph[]
+
+.Result
+[source, "queryresult"]
+----
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| nodes                                                                                     | relationships                                                                                                                                  |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| [Node[-5]{},Node[-6]{},Node[-1]{},Node[-7]{},Node[-3]{},Node[-8]{},Node[-4]{},Node[-2]{}] | [:IMPLIES[-1]{},:IMPLIES[-4]{},:IMPLIES[-5]{},:IMPLIES[-2]{},:IMPLIES[-3]{},:RELATIONSHIP_ELEMENT_TYPE[-6]{},:RELATIONSHIP_ELEMENT_TYPE[-7]{}] |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
 
 [role=label--new-Neo4j-2026.05]
 [[composable-show-graph-types]]
@@ -127,6 +146,10 @@ The query must also end with a valid last clause (like a `RETURN` or an updating
 [[result-columns]]
 == Return columns
 
+The columns returned by `SHOW CURRENT GRAPH TYPE` and `SHOW CURRENT GRAPH TYPE AS GRAPH` are different.
+
+=== `SHOW CURRENT GRAPH TYPE` columns
+
 There is one return column for `SHOW CURRENT GRAPH TYPE`: `specification`.
 It is returned by default.
 
@@ -142,6 +165,144 @@ It is returned by default.
 This can be used in an `ALTER CURRENT GRAPH TYPE SET` command to recreate the same graph type. label:default-output[]
 | `STRING`
 |===
+
+[role=label--new-Neo4j-2026.06]
+[[result-columns-as-graph]]
+=== `SHOW CURRENT GRAPH TYPE AS GRAPH` columns
+
+There are two return columns for `SHOW CURRENT GRAPH TYPE AS GRAPH`: `nodes` and `relationships`.
+They are returned by default.
+
+.Show current graph type as graph output
+[cols="3*", options="header"]
+|===
+| Column
+| Description
+| Type
+
+| `nodes`
+| A list of virtual nodes representing the node element types, node constraints not belonging to any node element type, and nodes used to represent empty endpoints on relationships. label:default-output[]
+| `LIST<NODE NOT NULL>`
+
+| `relationships`
+| A list of virtual relationships representing the relationship element types, relationship constraints not belonging to any relationship element type, and label implications in node element types. label:default-output[]
+| `LIST<RELATIONSHIP NOT NULL>`
+|===
+
+==== Virtual nodes
+
+There are three different virtual nodes used to represent parts of the graph type.
+
+- _Node element type virtual nodes_: these represent a node element type in the graph type.
+They contain information around the identifying label, property specifications and any key or uniqueness constraints tied to the node element type.
+- _Node constraint virtual nodes_: these represent node constraints that are not tied to any node element type.
+They are collected per label, so there is not one such node per constraint but per group of constraints sharing a label.
+They contain information around the label and constraints belonging to it.
+- _Empty relationship endpoint virtual nodes_: these represent the empty endpoints of relationships.
+Either an unconstrainted endpoint of a relationship element type or the empty end point of a relationship constraint not belonging to a relationship element type.
+They contain no additional information.
+
+The node element type virtual nodes all have the label `NodeElementType` and then the information about them is stored in their properties:
+
+.Node element type virtual node properties
+[cols="3*", options="header"]
+|===
+| Property
+| Description
+| Type
+
+| `label`
+| The identifying label of the node element type.
+| `STRING`
+
+| `properties`
+| Any properties defined on the node element type, otherwise an empty list.
+The format of the strings are the same as given in the graph type definition, for example `"prop :: STRING NOT NULL"`.
+| `LIST<STRING NOT NULL>`
+
+| `constraints`
+| Any key or uniqueness constraints belonging to the node element type, otherwise an empty list.
+The constraints are represented by their string descriptions in the graph type definition.
+| `LIST<STRING NOT NULL>`
+|===
+
+The node constraint virtual nodes all have the label `NodeLabel` and then the information about them is stored in their properties:
+
+.Node constraint virtual nodes properties
+[cols="3*", options="header"]
+|===
+| Property
+| Description
+| Type
+
+| `label`
+| The label of the node constraints.
+| `STRING`
+
+| `constraints`
+| Any constraints belonging to the label, otherwise an empty list.
+The constraints are represented by their string descriptions in the graph type definition.
+| `LIST<STRING NOT NULL>`
+|===
+
+The empty relationship endpoint virtual nodes have the label `AnyLabel` and no properties, as they store no additional information.
+
+==== Virtual relationships
+
+There are three different virtual relationships used to represent parts of the graph type.
+
+- _Relationship element type virtual relationships_: these represent a relationship element type in the graph type.
+They contain information around the identifying relationship type, property specifications and any key or uniqueness constraints tied to the relationship element type.
+- _Relationship constraint virtual relationships_: these represent relationship constraints that are not tied to any relationship element type.
+They are collected per relationship type, so there is not one such relationship per constraint but per group of constraints sharing a relationship type.
+They contain information around the relationship type and constraints belonging to it.
+- _Label implication virtual relationships_: these represent a label implication of a node element type.
+They contain no additional information.
+
+The relationship element type virtual relationships all have the relationship type `RELATIONSHIP_ELEMENT_TYPE` and then the information about them is stored in their properties:
+
+.Relationship element type virtual relationship properties
+[cols="3*", options="header"]
+|===
+| Property
+| Description
+| Type
+
+| `label`
+| The identifying relationship type of the relationship element type.
+| `STRING`
+
+| `properties`
+| Any properties defined on the relationship element type, otherwise an empty list.
+The format of the strings are the same as given in the graph type definition, for example `"prop :: STRING NOT NULL"`.
+| `LIST<STRING NOT NULL>`
+
+| `constraints`
+| Any key or uniqueness constraints belonging to the relationship element type, otherwise an empty list.
+The constraints are represented by their string descriptions in the graph type definition.
+| `LIST<STRING NOT NULL>`
+|===
+
+The relationship constraint virtual relationships all have the relationship type `RELATIONSHIP_TYPE` and then the information about them is stored in their properties:
+
+.Relationship constraint virtual relationship properties
+[cols="3*", options="header"]
+|===
+| Property
+| Description
+| Type
+
+| `label`
+| The relationship type of the relationship constraints.
+| `STRING`
+
+| `constraints`
+| Any constraints belonging to the relationship, otherwise an empty list.
+The constraints are represented by their string descriptions in the graph type definition.
+| `LIST<STRING NOT NULL>`
+|===
+
+The label implication virtual relationships have relationship type `IMPLIES` and no properties, as they store no additional information.
 
 [[constraints-in-show-current-graph-type]]
 == Constraints in `SHOW CURRENT GRAPH TYPE`
@@ -185,6 +346,22 @@ SHOW CURRENT GRAPH TYPE YIELD specification
 |    CONSTRAINT `resident_address` FOR (`n`:`Resident`) REQUIRE (`n`.`address`) IS :: STRING                                                                              |
 | }"                                                                                                                                                                      |
 +-------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
+
+.Show the full graph type as a virtual graph label:new[Introduced in Neo4j 2026.06]
+[source, cypher]
+----
+SHOW CURRENT GRAPH TYPE AS GRAPH YIELD nodes, relationships
+----
+
+.Result
+[source, "queryresult"]
+----
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| nodes                                                                                                | relationships                                                                                                                                  |
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| [Node[-5]{},Node[-6]{},Node[-1]{},Node[-7]{},Node[-3]{},Node[-8]{},Node[-9]{},Node[-4]{},Node[-2]{}] | [:IMPLIES[-1]{},:IMPLIES[-4]{},:IMPLIES[-5]{},:IMPLIES[-2]{},:IMPLIES[-3]{},:RELATIONSHIP_ELEMENT_TYPE[-6]{},:RELATIONSHIP_ELEMENT_TYPE[-7]{}] |
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 
 [[graph-type-elements-in-show-constraints]]
