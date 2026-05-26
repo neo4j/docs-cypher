@@ -1,0 +1,137 @@
+:description: Information about Cypher's `SHOW` command.
+= SHOW
+
+The `SHOW` command can be used to show the metadata of a database or a DBMS.
+This page discusses common behavior to all `SHOW` commands.
+Rules pertaining to specific `SHOW` commands, as well as the different columns returned by them, are listed on other pages or in the Operations Manual as follows:
+
+* link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/attribute-based-access-control/#_listing_auth_rules[`SHOW AUTH RULES` (Operations Manual)]
+* link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/syntax/#_show_aliases[`SHOW ALIASES` (Operations Manual)]
+* xref:schema/constraints/list-constraints.adoc[`SHOW CONSTRAINTS`]
+* xref:schema/graph-types/list-graph-types.adoc[`SHOW CURRENT GRAPH TYPE`]
+* link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/standard-databases/listing-databases/[`SHOW DATABASES` (Operations Manual)]
+* xref:functions/show-functions.adoc[`SHOW FUNCTIONS`]
+* xref:indexes/search-performance-indexes/list-indexes.adoc[`SHOW INDEXES`]
+* link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/manage-privileges/#access-control-list-privileges[`SHOW PRIVILEGES` (Operations Manual)]
+* link:{neo4j-docs-base-uri}/operations-manual/current/procedures/show-procedures/[`SHOW PROCEDURES` (Operations Manual)]
+* link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/manage-roles/#access-control-list-roles[`SHOW ROLES` (Operations Manual)]
+* link:{neo4j-docs-base-uri}/operations-manual/current/clustering/server-syntax/#_list_servers[`SHOW SERVERS` (Operations Manual)]
+* link:{neo4j-docs-base-uri}/operations-manual/current/configuration/show-settings/[`SHOW SETTINGS` (Operations Manual)]
+* link:{neo4j-docs-base-uri}/operations-manual/current/database-internals/show-and-terminate-transactions/#show-transactions[`SHOW TRANSACTIONS` (Operations Manual)]
+* link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/manage-users/#access-control-list-users[`SHOW USERS` (Operations Manual)]
+
+[[common-behavior-and-rules]]
+== Common behavior and rules
+
+All `SHOW` commands have similar behavior and comply to the same rules.
+
+[[using-show-with-yield]]
+=== Returning default and non-default columns using `SHOW` and `YIELD`
+
+All `SHOW` commands have default return columns, and most have non-default return columns as well.
+For information about the specific columns, visit the documentation for the specific `SHOW` command listed above.
+
+Using `YIELD` returns non-default columns, either specific columns or all available columns.
+
+.Show indexes -- return only default columns
+// tag::clauses_show_default_columns[]
+[source, cypher]
+----
+SHOW INDEXES
+----
+// end::clauses_show_default_columns[]
+
+.Show indexes -- return specific columns with `YIELD`
+// tag::clauses_show_specific_columns[]
+[source, cypher]
+----
+SHOW INDEXES
+YIELD name, type, indexProvider
+----
+// end::clauses_show_specific_columns[]
+
+.Show indexes -- return all available columns using `YIELD *`
+// tag::clauses_show_all_columns[]
+[source, cypher]
+----
+SHOW INDEXES
+YIELD *
+----
+// end::clauses_show_all_columns[]
+
+[[using-show-with-return]]
+=== Using `SHOW` commands with `RETURN`
+
+If the `RETURN` clause is used in any `SHOW` command, `YIELD` is mandatory.
+
+.`RETURN` after `YIELD`
+[source, cypher]
+----
+SHOW INDEXES
+YIELD name, type, indexProvider AS provider, options, createStatement
+RETURN name, type, provider, options.indexConfig AS config, createStatement
+----
+
+[[filter-show-using-where]]
+=== Filter `SHOW` commands using `WHERE`
+
+All `SHOW` commands can be filtered using the xref:clauses/where.adoc[`WHERE`] clause.
+This allows you to narrow down results based on specific conditions, such as names or status values.
+
+.Filter `SHOW` command using `WHERE`
+// tag::clauses_show_filter[]
+[source, cypher]
+----
+SHOW SETTINGS YIELD name, value, description
+WHERE name STARTS WITH 'server'
+RETURN name, value, description
+----
+// end::clauses_show_filter[]
+
+[role=label--new-2026.05 label--cypher-25-only]
+[[composable-show-commands]]
+== Composable `SHOW` commands
+
+The following `SHOW` commands can be combined with each other and other Cypher clauses; see their respective sections for examples:
+
+* xref:schema/constraints/list-constraints.adoc#composable-show-constraints[`SHOW CONSTRAINTS`]
+* xref:schema/graph-types/list-graph-types.adoc#composable-show-graph-types[`SHOW CURRENT GRAPH TYPE`]
+* link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/standard-databases/listing-databases/#_show_quarantined_databases_and_lift_their_quarantine[`SHOW DATABASES` (Operations Manual)]
+* xref:functions/show-functions.adoc#composable-show-functions[`SHOW FUNCTIONS`]
+* xref:indexes/search-performance-indexes/list-indexes.adoc#composable-show-indexes[`SHOW INDEXES`]
+* link:{neo4j-docs-base-uri}/operations-manual/current/procedures/show-procedures/#composable-show-procedures[`SHOW PROCEDURES` (Operations Manual)]
+* link:{neo4j-docs-base-uri}/operations-manual/current/configuration/show-settings/#combine-show-settings-with-general-cypher[`SHOW SETTINGS` (Operations Manual)]
+* link:{neo4j-docs-base-uri}/operations-manual/current/database-internals/show-and-terminate-transactions/#_combine_transaction_commands_with_other_cypher_commands[`SHOW TRANSACTIONS` (Operations Manual)] -- it has been possible to combine `SHOW TRANSACTIONS` with `TERMINATE TRANSACTIONS` since Neo4j 5.0.
+
+[NOTE]
+====
+When combining a `SHOW` command with other clauses, the `YIELD` clause is mandatory and must not be omitted.
+`YIELD` must explicitly list the yielded columns.
+`YIELD *` is not permitted.
+The query must also end with a valid last clause (like a `RETURN` or an updating clause).
+====
+
+.Return all functions and procedures
+// tag::clauses_show_composed[]
+[source, cypher]
+----
+SHOW PROCEDURES
+YIELD name, signature
+RETURN name, signature, 'procedure' AS type
+UNION
+SHOW FUNCTIONS
+YIELD name, signature
+RETURN name, signature, 'function' AS type
+----
+// end::clauses_show_composed[]
+
+
+.Return all functions with more than one signature
+[source, cypher]
+----
+SHOW FUNCTIONS
+YIELD name, signature
+WITH name, collect(signature) AS signatures
+FILTER size(signatures) > 1
+RETURN name, signatures
+----

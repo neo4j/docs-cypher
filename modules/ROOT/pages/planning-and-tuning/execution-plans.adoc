@@ -1,152 +1,382 @@
-:description: This page describes how to understand a Cypher execution plan.
+:description: This page explains how to understand Cypher query plans shown by the `EXPLAIN` or `PROFILE` keywords.
 :page-aliases: execution-plans/index.adoc
-= Understanding execution plans
+= Understanding query plans
 
-This page describes how to understand the execution plans produced by the Cypher planner.
-It begins by explaining the lifecycle of a Cypher query, before giving a step-by-step breakdown of a particular query and the execution plan it uses.
-It then explains the difference between lazy and eager query evaluation.
+This page explains how Cypher queries are planned, and how to understand the query plans shown when using the `EXPLAIN` or `PROFILE` keywords.
 
+[[cypher-query-lifecycle]]
 == The lifecycle of a Cypher query
 
 A Cypher query begins as a declarative query represented as a string, describing the graph pattern to match in a database.
-After parsing, the query string goes through the query optimizer (also known as the planner), which produces an imperative plan, known as the logical plan, to determine the most efficient way of executing the query given the current state of the database.footnote:[The relevant information about the current state of the database includes which indexes and constraints are available, as well as various statistics maintained by the database.
+After parsing, the query string goes through the query optimizer (also known as the planner), which produces a logical plan, determining the most efficient way to execute the query given the current state of the database.footnote:[The relevant information about the current state of the database includes which indexes and constraints are available, as well as various statistics maintained by the database.
 The Cypher planner uses this information to determine which access patterns will produce the best execution plan.]
 In the final phase, this logical plan is turned into an executable physical plan, which actually runs the query against the database.
 Executing this physical plan is the task of the xref:planning-and-tuning/runtimes/index.adoc[Cypher runtime].
 
 image::runtimes-cypher-lifecycle.svg[Diagram showing the lifecycle of a Cypher query,width=600,role=popup]
 
-[[runtimes-example-graph]]
-== Example graph
+[[reading-explain-and-profile-query-plans]]
+== `EXPLAIN` and `PROFILE` query plans
 
-To explain how to understand a Cypher execution plan, a graph based on the UK national rail network is used.
-The data in the graph is taken from link:https://www.raildeliverygroup.com/our-services/essential-services/real-time-train-journey-information.html[publicly available datasets].
+Query plans can be shown by prepending a query with either `EXPLAIN` or `PROFILE`.
 
-image::patterns-qpp-calling-points.svg[Example graph for quantified path patterns,width=800,role=popup]
+* `EXPLAIN`: plans the query but does not run it.
+Only returns estimated rows.
+* `PROFILE`: runs the query, and the plan shows real measurements (for example, the number of DB hits the plan involved).
+Unlike `EXPLAIN`, queries prepended with `PROFILE` can write data to the database.
+Note that _profiling your query uses more resources,_ so you should not profile unless you are actively working on a query.
 
-The graph contains two types of nodes: `Stop` and `Station`.
-Each `Stop` on a train service `CALLS_AT` one `Station`, and has the properties `arrives` and `departs` that give the times the train is at the `Station`.
-Following the `NEXT` relationship of a `Stop` will give the next `Stop` of a service.
-
-To recreate the graph, run the following query against an empty Neo4j database:
-
-.Query
+[[example-query-plan]]
+== Example query plan
+////
 [source, cypher, role=test-setup]
 ----
-CREATE (pmr:Station {name: 'Peckham Rye'}),
-  (dmk:Station {name: 'Denmark Hill'}),
-  (clp:Station {name: 'Clapham High Street'}),
-  (wwr:Station {name: 'Wandsworth Road'}),
-  (clj:Station {name: 'Clapham Junction'}),
-  (s1:Stop {arrives: time('17:19'), departs: time('17:20')}),
-  (s2:Stop {arrives: time('17:12'), departs: time('17:13')}),
-  (s3:Stop {arrives: time('17:10'), departs: time('17:11')}),
-  (s4:Stop {arrives: time('17:06'), departs: time('17:07')}),
-  (s5:Stop {arrives: time('16:58'), departs: time('17:01')}),
-  (s6:Stop {arrives: time('17:17'), departs: time('17:20')}),
-  (s7:Stop {arrives: time('17:08'), departs: time('17:10')}),
-  (clj)<-[:CALLS_AT]-(s1), (wwr)<-[:CALLS_AT]-(s2),
-  (clp)<-[:CALLS_AT]-(s3), (dmk)<-[:CALLS_AT]-(s4),
-  (pmr)<-[:CALLS_AT]-(s5), (clj)<-[:CALLS_AT]-(s6),
-  (dmk)<-[:CALLS_AT]-(s7),
-  (s5)-[:NEXT {distance: 1.2}]->(s4),(s4)-[:NEXT {distance: 0.34}]->(s3),
-  (s3)-[:NEXT {distance: 0.76}]->(s2), (s2)-[:NEXT {distance: 0.3}]->(s1),
-  (s7)-[:NEXT {distance: 1.4}]->(s6)
+CREATE (me:Person {name: 'me'}),
+       (andy:Person {name: 'Andy'}),
+       (bob:Person {name: 'Bob'}),
+       (mattias:Person {name: 'Mattias'}),
+       (lovis:Person {name: 'Lovis'}),
+       (pontus:Person {name: 'Pontus'}),
+       (max:Person {name: 'Max'}),
+       (konstantin:Person {name: 'Konstantin'}),
+       (stefan:Person {name: 'Stefan'}),
+       (mats:Person {name: 'Mats'}),
+       (petra:Person {name: 'Petra'}),
+       (craig:Person {name: 'Craig'}),
+       (steven:Person {name: 'Steven'}),
+       (chris:Person {name: 'Chris'}),
+       (london:Location {name: 'London'}),
+       (malmo:Location {name: 'Malmo'}),
+       (sf:Location {name: 'San Francisco'}),
+       (berlin:Location {name: 'Berlin'}),
+       (newyork:Location {name: 'New York'}),
+       (kuala:Location {name: 'Kuala Lumpur'}),
+       (stockholm:Location {name: 'Stockholm'}),
+       (paris:Location {name: 'Paris'}),
+       (madrid:Location {name: 'Madrid'}),
+       (rome:Location {name: 'Rome'}),
+       (england:Country {name: 'England'}),
+       (field:Team {name: 'Field'}),
+       (engineering:Team {name: 'Engineering', id:42}),
+       (sales:Team {name: 'Sales'}),
+       (monads:Team {name: 'Team Monads'}),
+       (birds:Team {name: 'Team Enlightened Birdmen'}),
+       (quality:Team {name: 'Team Quality'}),
+       (rassilon:Team {name: 'Team Rassilon'}),
+       (executive:Team {name: 'Team Executive'}),
+       (remoting:Team {name: 'Team Remoting'}),
+       (other:Team {name: 'Other'}),
+       (me)-[:WORKS_IN {id: 0, duration: 190, title: 'senior sales engineer', badgeNumber: 4332}]->(london),
+       (bob)-[:WORKS_IN {id: 1, duration: 187, title: 'junior developer', badgeNumber: 3293}]->(london),
+       (andy)-[:WORKS_IN {id: 2, duration: 150, title: ''}]->(london),
+       (mattias)-[:WORKS_IN {id: 3, duration: 230, title: 'senior developer', badgeNumber: 7627}]->(london),
+       (lovis)-[:WORKS_IN {id: 4, duration: 230, title: 'junior developer'}]->(sf),
+       (pontus)-[:WORKS_IN {id: 5, duration: 230, title: 'junior developer', badgeNumber: 9596}]->(malmo),
+       (max)-[:WORKS_IN {id: 6, duration: 230, title: 'field engineer', badgeNumber: 4416}]->(newyork),
+       (konstantin)-[:WORKS_IN {id: 7, duration: 230, title: 'frontend developer'}]->(london),
+       (stefan)-[:WORKS_IN {id: 8, duration: 230, title: 'chief architect', badgeNumber: 2951}]->(london),
+       (stefan)-[:WORKS_IN {id: 9, duration: 230, title: 'language architect', badgeNumber: 7092}]->(berlin),
+       (mats)-[:WORKS_IN {id: 10, duration: 230, title: 'senior developer', badgeNumber: 1402}]->(malmo),
+       (petra)-[:WORKS_IN {id: 11, duration: 230, title: 'language architect'}]->(london),
+       (craig)-[:WORKS_IN {id: 12, duration: 230, title: 'senior developer'}]->(malmo),
+       (steven)-[:WORKS_IN {id: 13, duration: 230, title: 'junior developer', badgeNumber: 1515}]->(malmo),
+       (chris)-[:WORKS_IN {id: 14, duration: 230, title: 'field engineer', badgeNumber: 6828}]->(madrid),
+       (london)-[:IN]->(england),
+       (me)-[:FRIENDS_WITH]->(andy),
+       (andy)-[:FRIENDS_WITH]->(bob),
+       (mattias)-[:FRIENDS_WITH]->(max),
+       (pontus)-[:FRIENDS_WITH]->(mats),
+       (konstantin)-[:FRIENDS_WITH]->(steven),
+       (craig)-[:FRIENDS_WITH]->(stefan),
+       (petra)-[:FRIENDS_WITH]->(lovis),
+       (me)-[:FRIENDS_WITH]->(chris),
+       (chris)-[:FRIENDS_WITH]->(stefan),
+       (bob)-[:FRIENDS_WITH]->(andy),
+       (steven)-[:FRIENDS_WITH]->(mats),
+       (mattias)-[:FRIENDS_WITH]->(me);
+
+CREATE CONSTRAINT constraint_WORKS_IN_id_unique IF NOT EXISTS FOR ()-[r:WORKS_IN]-() REQUIRE (r.id) IS UNIQUE;
+CREATE CONSTRAINT constraint_WORKS_IN_badgeNumber_unique IF NOT EXISTS FOR ()-[r:WORKS_IN]-() REQUIRE (r.badgeNumber) IS UNIQUE;
+CREATE INDEX range_index_name IF NOT EXISTS FOR (n:Person) ON (n.name);
 ----
+////
 
-The example query uses a xref:patterns/variable-length-paths.adoc#quantified-path-patterns[quantified path pattern] to count the number of possible path patterns between the start `Station`, `Denmark Hill`, and the end `Station`, `Clapham Junction`:
-
-.Query
+.Find all `Person` nodes not `FRIENDS_WITH` `me`
 [source, cypher]
 ----
-MATCH (:Station { name: 'Denmark Hill' })<-[:CALLS_AT]-(d:Stop)
-      ((:Stop)-[:NEXT]->(:Stop))+
-      (a:Stop)-[:CALLS_AT]->(:Station { name: 'Clapham Junction' })
-RETURN count(*)
+PROFILE
+MATCH (me:Person {name: 'me'}), (other:Person)
+WHERE NOT (me)-[:FRIENDS_WITH]->(other)
+RETURN other.name
 ----
 
-As can be seen from the graph, two such patterns exist (one with a service departing `Denmark Hill` at `17:07` which stops at the Stations `Clapham High Street` and `Wandsworth Road`, and one direct service departing `Denmark Hill` at `17:10`):
-
-image::patterns-qpp-solutions.svg[Graph showing two patterns,width=600,role=popup]
-
-For the purposes of understanding Cypher execution plans, however, the query result is less interesting than the planning that produces it.
-
-[[reading-execution-plans]]
-== Reading execution plans
-
-The Cypher planner produces logical plans which describe how a particular query is going to be executed.
-This execution plan is essentially a binary tree of operators.
-An operator is, in turn, a specialized execution module that is responsible for some type of transformation to the data before passing it on to the next operator, until the desired graph pattern has been matched.
-The execution plans produced by the planner thus decide which operators will be used and in what order they will be applied to achieve the aim declared in the original query.
-
-In order to view the plan of a query, prepend the query with `EXPLAIN` - this will not run the query, but only show the tree of operators used to find the desired result.
-
-.Query
-[source, cypher]
+.Query plan
+[source, role="queryplan", subs="attributes+"]
 ----
-EXPLAIN
-MATCH (:Station { name: 'Denmark Hill' })<-[:CALLS_AT]-(d:Stop)
-      ((:Stop)-[:NEXT]->(:Stop))+
-      (a:Stop)-[:CALLS_AT]->(:Station { name: 'Clapham Junction' })
-RETURN count(*)
-----
+Cypher 25
 
-This is the resulting execution planfootnote:[The format of the execution plans displayed in this section are those generated when using link:{neo4j-docs-base-uri}/operations-manual/current/cypher-shell/[Cypher Shell].
-The execution plans generated by link:{neo4j-docs-base-uri}/browser/[Neo4j Browser] use a different format.]:
+Planner COST
 
-[role="queryplan"]
-----
-+-------------------+----+------------------------------------------------------------------------+----------------+---------------------+
-| Operator          | Id | Details                                                                | Estimated Rows | Pipeline            |
-+-------------------+----+------------------------------------------------------------------------+----------------+---------------------+
-| +ProduceResults   |  0 | `count(*)`                                                             |              1 | In Pipeline 3       |
-| |                 +----+------------------------------------------------------------------------+----------------+---------------------+
-| +EagerAggregation |  1 | count(*) AS `count(*)`                                                 |              1 |                     |
-| |                 +----+------------------------------------------------------------------------+----------------+                     |
-| +Filter           |  2 | NOT anon_1 = anon_5 AND anon_0.name = $autostring_0 AND anon_0:Station |              0 |                     |
-| |                 +----+------------------------------------------------------------------------+----------------+                     |
-| +Expand(All)      |  3 | (d)-[anon_1:CALLS_AT]->(anon_0)                                        |              0 |                     |
-| |                 +----+------------------------------------------------------------------------+----------------+                     |
-| +Filter           |  4 | d:Stop                                                                 |              0 |                     |
-| |                 +----+------------------------------------------------------------------------+----------------+                     |
-| +NullifyMetadata  | 14 |                                                                        |              0 |                     |
-| |                 +----+------------------------------------------------------------------------+----------------+                     |
-| +Repeat(Trail)    |  5 | (a) (...){1, *} (d)                                                    |              0 | Fused in Pipeline 2 |
-| |\                +----+------------------------------------------------------------------------+----------------+---------------------+
-| | +Filter         |  6 | isRepeatTrailUnique(anon_8) AND anon_7:Stop                            |              6 |                     |
-| | |               +----+------------------------------------------------------------------------+----------------+                     |
-| | +Expand(All)    |  7 | (anon_9)<-[anon_8:NEXT]-(anon_7)                                       |              6 |                     |
-| | |               +----+------------------------------------------------------------------------+----------------+                     |
-| | +Filter         |  8 | anon_9:Stop                                                            |             11 |                     |
-| | |               +----+------------------------------------------------------------------------+----------------+                     |
-| | +Argument       |  9 | anon_9                                                                 |             13 | Fused in Pipeline 1 |
-| |                 +----+------------------------------------------------------------------------+----------------+---------------------+
-| +Filter           | 10 | a:Stop                                                                 |              0 |                     |
-| |                 +----+------------------------------------------------------------------------+----------------+                     |
-| +Expand(All)      | 11 | (anon_6)<-[anon_5:CALLS_AT]-(a)                                        |              0 |                     |
-| |                 +----+------------------------------------------------------------------------+----------------+                     |
-| +Filter           | 12 | anon_6.name = $autostring_1                                            |              1 |                     |
-| |                 +----+------------------------------------------------------------------------+----------------+                     |
-| +NodeByLabelScan  | 13 | anon_6:Station                                                         |             10 | Fused in Pipeline 0 |
-+-------------------+----+------------------------------------------------------------------------+----------------+---------------------+
+Runtime PIPELINED
+
+Runtime version 2026.05.0
+
+Batch size 128
+
++--------------------+----+--------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+---------------------+
+| Operator           | Id | Details                                                | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            | Indexes Used        |
++--------------------+----+--------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+---------------------+
+| +ProduceResults    |  0 | `other.name`                                           |             13 |   12 |       0 |              0 |                    0/0 |     0,086 |                     |                     |
+| |                  +----+--------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+                     +---------------------+
+| +Projection        |  1 | other.name AS `other.name`                             |             13 |   12 |      24 |                |                    0/0 |     0,216 | In Pipeline 3       |                     |
+| |                  +----+--------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+---------------------+
+| +Apply             |  2 |                                                        |             13 |   12 |       0 |                |                    0/0 |     0,008 |                     |                     |
+| |\                 +----+--------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+---------------------+
+| | +Apply           |  3 |                                                        |             13 |   12 |       0 |                |                    0/0 |           |                     |                     |
+| | |\               +----+--------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+---------------------+
+| | | +Anti          |  9 |                                                        |             13 |   12 |       0 |           1256 |                    0/0 |     0,224 | In Pipeline 3       |                     |
+| | | |              +----+--------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+---------------------+
+| | | +Limit         |  8 | 1                                                      |              1 |    2 |       0 |            752 |                        |           |                     |                     |
+| | | |              +----+--------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     +---------------------+
+| | | +Expand(Into)  |  4 | (me)-[:FRIENDS_WITH]->(other)                          |              1 |    2 |      16 |            632 |                        |           |                     |                     |
+| | | |              +----+--------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     +---------------------+
+| | | +Argument      |  5 | me, other                                              |             14 |   14 |       0 |           4472 |                    1/0 |     6,150 | Fused in Pipeline 2 |                     |
+| | |                +----+--------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+---------------------+
+| | +NodeByLabelScan |  6 | other:Person                                           |             14 |   14 |      15 |           2424 |                    1/0 |     0,310 | In Pipeline 1       |                     |
+| |                  +----+--------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+---------------------+
+| +NodeIndexSeek     |  7 | RANGE INDEX me:Person(name) WHERE name = $autostring_0 |              1 |    1 |       2 |            376 |                    0/1 |     3,368 | In Pipeline 0       | range_index_name: 1 |
++--------------------+----+--------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+---------------------+
+
+Total database accesses: 57, total allocated memory: 7024
+
+12 rows
+ready to start consuming query after 75 ms, results consumed after another 17 ms
 ----
 
-The operators can be seen in the leftmost column of the results table.
-The most important thing to remember when reading execution plans is that they are read from the bottom up.
-To follow the execution of this query it is, therefore, necessary to start from the bottom or leaf operator, xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-node-by-label-scan[NodeByLabelScan] (which fetches all nodes with a specific label from the node label index) and move step-by-step up the operator tree to see how the data in the graph is gradually refined until the final, root operator,  xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-produce-results[ProduceResults], generates readable results for the user.
 
-To read more about the specific role played by operators used in this example, and many others, see the section on xref::planning-and-tuning/operators/index.adoc[].
+[[query-plan-parts]]
+== Query plan parts
 
-The `id` column specifies a unique ID assigned to each operator.
-There are no guarantees about the order of the ids, although they will usually start with 0 at the root operator, and will increase until the leaf operator is reached at the beginning of the operator tree.
+A query plan contains three parts:
 
-The `Details` column in the middle of the execution plan describes what task is performed by each operator.
-For example, the details column of the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-repeat[Repeat] operator in the middle of the execution plan (`id 5`), specifies that the operator traverses a quantified path pattern without an upward limit.
+image::query-plan-parts.svg[Query plan broken up into its 3 parts, role=popup,width=900]
 
-Finally, the `Estimated Rows` column details the number of rows that are expected to be produced by each operator.
-This estimate is an approximate number based on the available statistical information and the planner uses it to choose a suitable execution plan.footnote:[The statistical information maintained by Neo4j includes the following: the number of nodes having a certain label, the number of relationships by type, selectivity per index, and the number of relationships by type, ending with or starting from a node with a specific label.]
+* *Header*: Cypher version, planner, runtime, and batch size (not included when using xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-slotted-runtime[slotted runtime]).
+* *Table*: binary tree of operators showing how the query is planned. The operators are listed in the leftmost column, and each operator is assigned one row in the plan.
+* *Footer*: total database accesses (sum of DB hits across all operators), plus optional totals for memory and xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-parallel-runtime[parallel-runtime] workers.
+** If `EXPLAIN` is used, `?` will be shown instead of the number of total database accesses.
+Does not show the total allocated memory.
+** If `PROFILE` is used, the number of actual total database accesses will be shown.
+If some operators cannot be measured, the output appears as `<n> + ?`, where `<n>` indicates a lower bound.
+The total allocated memory represents the query-wide peak memory (not equivalent to the sum of each operator's peak memory).
 
-For details about how the different Cypher runtimes changes a particular execution plan, see xref:planning-and-tuning/runtimes/concepts.adoc[].
+[[query-plan-table-columns]]
+== Query plan table columns
+
+[NOTE]
+====
+* Columns only appear if at least one operator has a value for them.
+
+* Empty cells indicate that no data is available for the corresponding operator.
+
+* When a query uses either pipelined or parallel runtime, some operator profile data gets merged due to fusing and so can only be displayed per-pipeline rather than per-operator.
+====
+
+[cols="1m, 1a, 2a, 2a", options="header"]
+|===
+| Column | When | Description | Considerations
+
+| Operator
+| Always
+| Name of the operator (e.g. `NodeByLabelScan`, `Expand(All)`, and `Filter`).
+|
+
+| Id
+| Always
+| A stable id for the operator within this plan. Only useful for cross-referencing.
+|
+
+| Details
+| Always
+a| Operator-specific arguments.
+For example:
+
+* xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-all-nodes-scan[`AllNodesScan`]: a variable (e.g. `n`)
+* xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-node-by-label-scan[`NodeByLabelScan`]: variable + label (e.g. `n:Person`).
+* xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-expand-all[`Expand(All)`] / xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-expand-into[`Expand(Into)`]: a pattern (e.g. `(n)-[r:KNOWS]\->(m)`)
+* xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-filter[`Filter`]: the predicate, (e.g. `n.age > 30`)
+|
+
+| Estimated Rows
+| Always
+| The planner's estimate of how many rows this operator will produce. Used for plan choice.
+| Derived from index/label statistics and a selectivity model, with no runtime feedback and can, therefore, be incorrect.
+Treat it as a hint, not a measurement, to compare with the `Rows` column.
+
+| Rows
+| `PROFILE` only
+| The number of rows the operator actually produced when the query executed.
+|
+
+| DB Hits
+| `PROFILE` only
+| A count of low-level database access operations, including entity reads, property reads, and index entry reads.
+This metric reflects the amount of work performed by the storage layer.
+Lower values generally indicate more efficient query execution and improved performance.
+| `DB Hits` is not the same as `Rows`. 
+A single matched row can produce many DB hits.
+For more information, see xref:planning-and-tuning/execution-plans.adoc#dbhits[Database hits] below.
+
+| Memory (Bytes)
+| `PROFILE` only
+| Per-operator peak heap memory used.
+Blank for operators that do not allocate memory.
+| `Memory (Bytes)` is per-operator peak, not cumulative.
+Two operators each reporting `100 MB` does not mean 200 MB was used in total; they may have been active at different times.
+The query-wide peak is the total allocated memory line in the query plan footer.
+
+| Page Cache Hits/Misses
+| `PROFILE` only, enterprise edition
+| Page cache stats.
+| Measures how often data is found in memory versus requiring a read from disk.
+A warm cache means most data is already stored in memory, resulting in mostly hits.
+A cold cache means data must be loaded from disk, resulting in more misses, especially on the first execution. 
+Results should not be compared across runs with different cache states.
+
+| Time (ms)
+| `PROFILE` only, pipelined / parallel runtime
+| Wall-clock time spent in this operator. For parallel runtime this gives the cumulative time spent by all workers.
+| `Time (ms)` in pipelined / parallel runtimes is per pipeline, not per operator.
+Operators that are fused together share a single time figure.
+A large `Time (ms)` on one row represents the whole fused pipeline.
+
+| Ordered by
+| When results are ordered using xref:clauses/order-by.adoc[`ORDER BY`].
+| The provided order this operator guarantees, e.g. `n.name ASC`.
+|
+
+| Pipeline
+| Pipelined / Parallel runtime
+| Which runtime pipeline the operator belongs to, e.g. `Fused in Pipeline 3`.
+Operators in the same fused pipeline are compiled together.
+|
+
+| Indexes Used
+| `PROFILE` only
+| Which indexes the operator used and how many times each was accessed (not the number of rows that were read from the index). Useful in particular when debugging dynamic lookups.
+|
+
+|===
+
+[[reading-query-plan-tables]]
+== Reading query plan tables
+
+The Cypher planner produces logical plans that describe how a particular query is going to be executed.
+This query plan is a binary tree of operators.
+An operator is a specialized execution module that is responsible for some type of transformation to the data before passing it on to the next operator until the desired graph pattern has been matched.
+The plans produced by the planner thus decide which operators will be used and in what order they are applied to achieve the aim declared in the original query.
+
+The most important thing to remember when reading execution plans is that they are read from the bottom up. The *root operator* (the top row of the query plan table) is xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-produce-results[`ProduceResults`], the operator responsible for producing results, and data flows upward from the *leaf operator* (the bottom row of the query plan table).
+The relationships between operators are described in terms of parent and child: an operator’s inputs are its *child operators*, and the operator receiving those inputs is its *parent operator*.
+
+[source]
+----
++ProduceResults <- Root operator
+|
++Projection     <- Parent operator of Apply
+|
++Apply          <- Child operator of Projection
+|
+| ...           (intermediate operators omitted)
+|
++NodeIndexSeek  <- Leaf operator
+----
+
+Each operator can have 0, 1, or 2 child operators:
+
+* 0 children = leaf operator
+
+* 1 children = unary operator
+
+* 2 children = binary operator
+
+For binary operators the convention is:
+
+The right-hand input (RHS) is shown first, indented one level deeper.
+The left-hand input (LHS) is shown second, at the same indentation level as the operator itself.
+
+[source]
+----
++Apply         <- the binary operator
+|\
+| +RHS-subtree <- right-hand input (evaluated first / indented)
+|
++LHS-subtree   <- left-hand input (same level as the binary operator)
+----
+
+For an xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`]-style (i.e. performing nested loops) binary operator, the LHS is run once, then the RHS is run once per LHS row, with the LHS bindings available.
+For a xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-node-hash-join[`Join`] or xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-cartesian-product[`CartesianProduct`], both sides are full inputs combined by the operator.
+
+[[full-example]]
+== Full example
+
+[source]
+----
++--------------------+----+--------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+---------------------+
+| Operator           | Id | Details                                                | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            | Indexes Used        |
++--------------------+----+--------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+---------------------+
+| +ProduceResults    |  0 | `other.name`                                           |             13 |   12 |       0 |              0 |                    0/0 |     0,086 |                     |                     |
+| |                  +----+--------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+                     +---------------------+
+| +Projection        |  1 | other.name AS `other.name`                             |             13 |   12 |      24 |                |                    0/0 |     0,216 | In Pipeline 3       |                     |
+| |                  +----+--------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+---------------------+
+| +Apply             |  2 |                                                        |             13 |   12 |       0 |                |                    0/0 |     0,008 |                     |                     |
+| |\                 +----+--------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+---------------------+
+| | +Apply           |  3 |                                                        |             13 |   12 |       0 |                |                    0/0 |           |                     |                     |
+| | |\               +----+--------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+---------------------+
+| | | +Anti          |  9 |                                                        |             13 |   12 |       0 |           1256 |                    0/0 |     0,224 | In Pipeline 3       |                     |
+| | | |              +----+--------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+---------------------+
+| | | +Limit         |  8 | 1                                                      |              1 |    2 |       0 |            752 |                        |           |                     |                     |
+| | | |              +----+--------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     +---------------------+
+| | | +Expand(Into)  |  4 | (me)-[:FRIENDS_WITH]->(other)                          |              1 |    2 |      16 |            632 |                        |           |                     |                     |
+| | | |              +----+--------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     +---------------------+
+| | | +Argument      |  5 | me, other                                              |             14 |   14 |       0 |           4472 |                    1/0 |     6,150 | Fused in Pipeline 2 |                     |
+| | |                +----+--------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+---------------------+
+| | +NodeByLabelScan |  6 | other:Person                                           |             14 |   14 |      15 |           2424 |                    1/0 |     0,310 | In Pipeline 1       |                     |
+| |                  +----+--------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+---------------------+
+| +NodeIndexSeek     |  7 | RANGE INDEX me:Person(name) WHERE name = $autostring_0 |              1 |    1 |       2 |            376 |                    0/1 |     3,368 | In Pipeline 0       | range_index_name: 1 |
++--------------------+----+--------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+---------------------+
+----
+
+1. xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-node-index-seek[`NodeIndexSeek`] (id `7`) — leaf operator at the bottom.
+Uses the range index on `Person(name)` to find the single node where `name = 'me'`.
+Produces `1` row.
+
+2. xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-node-by-label-scan[`NodeByLabelScan`] (id `6`) — leaf on the RHS branch.
+Scans all `Person` nodes, producing `14` rows (one per `Person`).
+This forms the LHS input to `Apply` (id `3`), providing the other rows that are then tested by the `Anti` (id `9`) operator.
+
+3. xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-argument[`Argument`] (id `5`) — leaf inside the RHS of the `Anti` subtree.
+Carries the already-bound variables `me` and `other` through.
+Produces `14` rows (no computation, just variable propagation).
+
+4. xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-expand-into[`Expand(Into)`] (id `4`) — for each `(me, other)` pair, checks whether a `(me)-[:FRIENDS_WITH]->(other)` pattern exists.
+This is executed once per input row (`14` invocations), producing rows when matches are found.
+
+5. xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-limit[`Limit`] (id `8`) — restricts the expansion input to 1 row per evaluation context, controlling how many expansions are attempted per bound row in the anti pattern evaluation.
+
+6. xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-anti[`Anti`] (id `9`) — binary operator implementing `NOT EXISTS`.
+For each `(me, other)` pair from its LHS, it runs the RHS (`Limit` \-> `Expand`) and only emits the LHS row if the RHS produces zero rows.
+In this case, 12 of 14 `(me, other)` pairs survive because no friendship edge exists.
+
+7. xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`] (id `3`) — binary operator. Its LHS is the `NodeByLabelScan` (providing `other` rows), and its RHS is the `Anti` subtree. For each LHS row, the RHS is executed with bindings available, so the anti-check is evaluated per `other`.
+
+8. `Apply` (id `2`) — outer binary operator combining LHS: NodeIndexSeek (binding `me`) and RHS: `Apply` (id `3`).
+The RHS runs once per me row, with `me` bound, producing the filtered `other` rows.
+
+9. xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-projection[`Projection`] (id `1`) — computes `other.name` for each remaining row.
+Produces `12` rows.
+
+10. xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-produce-results[`ProduceResults`] (id `0`) — root operator. Emits the final 12 rows to the client.
 
 [[lazy-eager-evaluation]]
 == Lazy and eager query evaluation
@@ -156,6 +386,63 @@ This means that most operators pipe their output rows to their parent operators 
 In other words, a child operator may not be fully exhausted before the parent operator starts consuming the input rows produced by the child.
 
 However, some operators, such as those used for aggregation and sorting, need to aggregate all their rows before they can produce output.
-These operators are called eager operators (see the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-eager-aggregation[EagerAggregation] operator in the above table (`id 1`) for an example).
-Such operators need to complete execution in its entirety before any rows are sent to their parents as input, and are sometimes required to enforce correct Cypher semantics.
-For more information about the row-by-row processing of Cypher queries, see the section on xref:clauses/clause-composition.adoc[].
+These operators are called xref:planning-and-tuning/operators/operators-detail.adoc#aggregation-operators[eager operators].
+Such operators need to complete execution in its entirety before any rows are sent to their parents as input in order for the planner to preserve correctness (e.g. when reads and writes touch the same properties).
+Eager operators have a memory cost — the entire upstream output is buffered.
+The reason for an eager operator is shown in its `Details` column.
+
+[[dbhits]]
+== Database hits
+
+Each operator will send a request to the storage engine to do work such as retrieving or updating data.
+A _database hit_ (DBHits) is an abstract unit of this storage engine work.
+
+These are all the actions that trigger one or more database hits:
+
+* **Create actions**
+** Create a node.
+** Create a relationship.
+** Create a new node label.
+** Create a new relationship type.
+** Create a new ID for property keys with the same name.
+
+* **Delete actions**
+** Delete a node.
+** Delete a relationship.
+
+* **Update actions**
+** Set one or more labels on a node.
+** Remove one or more labels from a node.
+
+* **Node-specific actions**
+** Get a node by its ID.
+** Get the degree of a node.
+** Determine whether a node is dense.
+** Determine whether a label is set on a node.
+** Get the labels of a node.
+** Get a property of a node.
+** Get an existing node label.
+** Get the name of a label by its ID, or its ID by its name.
+
+* **Relationship-specific actions**
+** Get a relationship by its ID.
+** Get a property of a relationship.
+** Get an existing relationship type.
+** Get a relationship type name by its ID, or its ID by its name.
+
+* **General actions**
+** Get the name of a property key by its ID, or its ID by the key name.
+** Find a node or relationship through an index seek or index scan.
+** Find a path in a variable-length expand.
+** Find a shortest path.
+** Ask the count store for a value.
+
+* **Schema actions**
+** Add an index.
+** Drop an index.
+** Get the reference of an index.
+** Create a constraint.
+** Drop a constraint.
+
+* Call a procedure.
+* Call a user-defined function.
