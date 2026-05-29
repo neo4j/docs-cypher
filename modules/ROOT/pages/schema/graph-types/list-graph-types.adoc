@@ -3,9 +3,13 @@
 = Show graph types
 
 The `SHOW CURRENT GRAPH TYPE` command allows you to show the graph type specification for the current database.
+For general information about the `SHOW` command, see the xref:clauses/show.adoc[`SHOW`] page.
 
 [NOTE]
 Showing a graph type requires the link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-constraints[`SHOW CONSTRAINTS` privilege].
+
+[[examples]]
+== Examples
 
 .Set graph type
 [source, cypher]
@@ -61,9 +65,67 @@ SHOW CURRENT GRAPH TYPE
 [NOTE]
 Regardless of which syntax was used to define a property uniqueness or key constraint, they are all shown in the `specification` returned by `SHOW CURRENT GRAPH TYPE` using the `CONSTRAINT … FOR … REQUIRE` syntax.
 
+[role=label--new-Neo4j-2026.05]
+[[composable-show-graph-types]]
+=== Combine `SHOW CURRENT GRAPH TYPE` with other Cypher clauses
+
+The `SHOW CURRENT GRAPH TYPE` command can be combined with general Cypher clauses in a single query.
+
+For example, splitting the graph type specification into separate strings.
+
+.Return separate strings for each part of the graph type
+[source, cypher]
+----
+SHOW CURRENT GRAPH TYPE
+YIELD specification
+FILTER specification <> '{}' // <1>
+WITH split(specification, '\r\n') AS specificationLines // <2>
+WITH specificationLines[1..-1] AS elementLines // <3>
+WITH [line IN elementLines | rtrim(trim(line), ',')] AS graphTypeLines // <4>
+
+UNWIND graphTypeLines AS graphTypeElement
+RETURN graphTypeElement
+----
+
+<1> Filter out the empty graph type.
+<2> Split `STRING` definition into separate lines.
+<3> Remove the opening and closing lines of the graph type (`{` and `}`).
+<4> Remove leading indention and trailing commas.
+
+.Result
+[queryresult]
+----
++--------------------------------------------------------------------------------------------------------------------+
+| graphTypeElement                                                                                                   |
++--------------------------------------------------------------------------------------------------------------------+
+| "(:`City` => {`name` :: STRING NOT NULL, `population` :: INTEGER})"                                                |
+| "(:`Company` => {`address` :: STRING, `name` :: STRING})"                                                          |
+| "(:`Person` => :`Resident` {`name` :: STRING, `ssn` :: INTEGER})"                                                  |
+| "(:`Pet` => :`Animal`&`Resident` {`healthCertificate` :: STRING, `insuranceNumber` :: INTEGER, `name` :: STRING})" |
+| "(:`Robot` => :`Machine`&`Resident` {`application` :: STRING NOT NULL, `id` :: INTEGER NOT NULL})"                 |
+| "(:`Resident`)-[:`LIVES_IN` => {`since` :: ANY NOT NULL}]->(:`City` =>)"                                           |
+| "(:`Person` =>)-[:`WORKS_FOR` => {`role` :: STRING}]->(:`Company` =>)"                                             |
+| "CONSTRAINT `constraint_1324d6fc` FOR (`n`:`Company` =>) REQUIRE (`n`.`address`) IS UNIQUE"                        |
+| "CONSTRAINT `company_name` FOR (`n`:`Company` =>) REQUIRE (`n`.`name`) IS KEY"                                     |
+| "CONSTRAINT `constraint_5d8979dd` FOR (`n`:`Person` =>) REQUIRE (`n`.`name`, `n`.`ssn`) IS KEY"                    |
+| "CONSTRAINT `constraint_bbcb9835` FOR (`n`:`Pet` =>) REQUIRE (`n`.`healthCertificate`) IS UNIQUE"                  |
+| "CONSTRAINT `constraint_550b510e` FOR (`n`:`Pet` =>) REQUIRE (`n`.`insuranceNumber`) IS KEY"                       |
+| "CONSTRAINT `animal_id` FOR (`n`:`Animal`) REQUIRE (`n`.`id`) IS UNIQUE"                                           |
+| "CONSTRAINT `resident_address` FOR (`n`:`Resident`) REQUIRE (`n`.`address`) IS :: STRING"                          |
++--------------------------------------------------------------------------------------------------------------------+
+14 rows
+----
+
+[NOTE]
+====
+When combining `SHOW CURRENT GRAPH TYPE` with other clauses, the `YIELD` clause is mandatory and must not be omitted.
+`YIELD` must explicitly list the yielded columns.
+`YIELD *` is not permitted.
+The query must also end with a valid last clause (like a `RETURN` or an updating clause).
+====
 
 [[result-columns]]
-== Result columns for `SHOW CURRENT GRAPH TYPE`
+== Return columns
 
 There is one return column for `SHOW CURRENT GRAPH TYPE`: `specification`.
 It is returned by default.
@@ -155,7 +217,7 @@ The `classification` describes the status of a constraint in a graph type, with 
 | xref:schema/graph-types/set-graph-types.adoc#constraints-on-non-identifying-labels-and-types[Property existence and property type constraints on non-identifying node labels or relationship types].
 |===
 
-For more information, see xref:schema/constraints/list-constraints.adoc#list-constraints-result-columns[Result columns for listing constraints].
+For more information, see xref:schema/constraints/list-constraints.adoc#show-constraints-result-columns[Show constraints -> Return columns].
 
 .Show constraints
 [source, cypher]
