@@ -221,6 +221,17 @@ For larger data sets, you might want to use larger batch sizes, such as `10000 R
 [[composite-databases]]
 == Composite databases
 
+////
+[source, cypher, test-setup]
+----
+CREATE OR REPLACE COMPOSITE DATABASE `composite`;
+CREATE OR REPLACE DATABASE `remoteGraph1`;
+CREATE OR REPLACE DATABASE `remoteGraph2`;
+CREATE ALIAS `composite.remoteGraph1` FOR DATABASE `remoteGraph1`;
+CREATE ALIAS `composite.remoteGraph2` FOR DATABASE `remoteGraph2`;
+----
+////
+
 As of Neo4j 5.18, `CALL { ... } IN TRANSACTIONS` can be used with link:{neo4j-docs-base-uri}/operations-manual/current/scalability/composite-databases/concepts/[composite databases].
 
 Even though composite databases allow accessing multiple graphs in a single query, only one graph can be modified in a single transaction.
@@ -228,6 +239,11 @@ Even though composite databases allow accessing multiple graphs in a single quer
 
 While the previous examples are generally valid for composite databases, there's a few extra factors that come into play when working with composite databases in subqueries.
 The following examples show how you can use `CALL { ... } IN TRANSACTIONS` on a composite database.
+
+[IMPORTANT]
+====
+Your application needs to be connected to the composite database when submitting queries involving its constituents. Select the composite database in UI tools or when running queries via client libraries.
+====
 
 .Import a CSV file on all constituents
 ====
@@ -242,11 +258,11 @@ The following examples show how you can use `CALL { ... } IN TRANSACTIONS` on a 
 ----
 
 .Create `Person` nodes on all constituents, drawing data from friends.csv
-[source, cypher, test-skip]
+[source, cypher, test-database=composite]
 ----
 UNWIND graph.names() AS graphName
 LOAD CSV FROM 'file:///friends.csv' AS line
-CALL (*) {
+CALL (graphName, line) {
   USE graph.byName( graphName )
   CREATE (:Person {name: line[1], age: toInteger(line[2])})
 } IN TRANSACTIONS
@@ -256,15 +272,15 @@ CALL (*) {
 .Remove all nodes and relationships from all constituents
 ====
 .Query
-[source, cypher, test-skip]
+[source, cypher, test-database=composite]
 ----
 UNWIND graph.names() AS graphName
-CALL {
+CALL (graphName) {
   USE graph.byName( graphName )
   MATCH (n)
   RETURN elementId(n) AS id
 }
-CALL {
+CALL (graphName, id) {
   USE graph.byName( graphName )
   WITH id
   MATCH (n)
@@ -279,7 +295,6 @@ That is why the nodes are matched in a subquery _preceding_ the one that actuall
 If the `MATCH` clause were inside the second subquery, the data deletion would run as one single transaction.
 
 ====
-
 
 [NOTE]
 ====
@@ -309,7 +324,7 @@ The next example assumes the existence of two constituents `remoteGraph1` and `r
 While the declared batch size is 3, only the first 2 rows act on `composite.remoteGraph1`, so the batch size for the first transaction is 2. That is followed by 3 rows on `composite.remoteGraph2`, 1 on `composite.remoteGraph2` and finally 2 on `composite.remoteGraph1`.
 
 .Query
-[source, cypher, test-skip]
+[source, cypher, test-database=composite]
 ----
 WITH ['composite.remoteGraph1', 'composite.remoteGraph2'] AS graphs
 UNWIND [0, 0, 1, 1, 1, 1, 0, 0] AS i
