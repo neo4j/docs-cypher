@@ -26,6 +26,7 @@ CALL {
     subQuery
 } IN [[concurrency] CONCURRENT] TRANSACTIONS
 [OF batchSize ROW[S]]
+[DISJOINT BY {NONE | AUTO | (<expr>, ...)}]
 [REPORT STATUS AS statusVar]
 [ON ERROR {CONTINUE | BREAK | FAIL | RETRY [FOR] [duration SEC[OND[S]]] [THEN {CONTINUE | BREAK | FAIL}]}]
 ----
@@ -889,7 +890,7 @@ Deadlock detection and transaction retries can be time-consuming.
 When importing data that includes a significant number of relationships to be merged between the same nodes but processed in different batches, increasing the concurrency may not enhance performance.
 On the contrary, it could slow down the import process.
 
-.Dealing with deadlocks
+.Finding and retrying deadlocked transactions
 =====
 
 The following query tries to create `Movie` and `Year` nodes connected by a `RELEASED_IN` relationship.
@@ -1090,8 +1091,64 @@ The result shows that all transactions are now successful:
 +-------------------------------------------------+
 ----
 
-Deadlock resolution and transaction retries are time-consuming, making deadlock avoidance a preferred strategy.
-This can be achieved by dividing a task into two distinct subqueries: a data-independent subquery run in parallel with maximum concurrency, and a data-dependent subquery executed serially (i.e.  one transaction at a time) to avoid deadlocks.
+=====
+
+Deadlock resolution and transaction retries are time-consuming, however.
+The preferred strategy for dealing with deadlocks should instead be one of prevention.
+
+[role=label--new-Neo4j-2026.06 label--cypher-25-only]
+[[disjoint-by]]
+=== Batch scheduling with `DISJOINT BY`
+
+Batch scheduling prevents deadlocks in concurrent transactions by ensuring that batches sharing resources never run at the same time, while batches that do not share resources run concurrently.
+This can be particularly useful when importing relationships.
+
+The default batch scheduling strategy for all queries can be configured database-wide using the link:{neo4j-docs-base-uri}/operations-manual/current/configuration/configuration-settings/#config_dbms.cypher.transactions.default_subquery_batch_strategy[`dbms.cypher.transactions.default_subquery_batch_strategy`] setting.
+Accepted values for this setting are `NONE` (no scheduling), `AUTO` (automatic inference), and `DEFAULT` (the product default, currently `NONE`).
+
+Alternatively, `DISJOINT BY` can be appended to individual `CALL { ... } IN CONCURRENT TRANSACTIONS` statements to control batch scheduling at the query level.
+
+There are three forms of `DISJOINT BY`
+
+* xref:subqueries/subqueries-in-transactions.adoc#lock-expressions[`DISJOINT BY (<expr>, ...)`]: declares lock-prone resources explicitly per row.
+* xref:subqueries/subqueries-in-transactions.adoc#automatic-inference[`DISJOINT BY AUTO`]: the runtime infers lock-prone resources automatically.
+* xref:subqueries/subqueries-in-transactions.adoc#disabled-inference[`DISJOINT BY NONE`]: disables scheduling explicitly, overriding any database-level default.
+
+`DISJOINT BY` overrides the database-wide setting.
+For example, if `dbms.cypher.transactions.default_subquery_batch_strategy` is set to `AUTO`, a query with `DISJOINT BY NONE` will run without batch scheduling.
+
+[NOTE]
+`DISJOINT BY` can only be run together with concurrent transactions; it is not valid in a sequential `CALL` subquery.
+
+[[lock-expressions]]
+==== Declaring lock expressions with `DISJOINT BY`
+
+
+`DISJOINT BY (<expr>, ...)` allows you to declare the expressions identifying locked resources for a `CALL { ... } IN CONCURRENT TRANSACTIONS` statement.
+
+The expressions are evaluated per input row, using only variables imported into the subquery scope, and before any subquery clause is executed.
+They act as constraints on batch composition: the runtime ensures that no two concurrent batches share a value for any of the declared expressions.
+
+The first expression in the list is used as the primary grouping identity for each batch.
+Choosing a low-cardinality expression first leads to better batch grouping, though the order does not affect correctness.
+No automatic lock expression inference is performed — the supplied list is the entire lock expression set for that subquery.
+
+[[automatic-inference]]
+==== Automatic lock expression inference with `DISJOINT BY AUTO`
+
+
+: the runtime infers lock-prone resources automatically from the subquery body. If none can be inferred, the subquery executes with no scheduling restriction.
+
+[[disabled-inference]]
+==== Disabling batch scheduling with `DISJOINT BY NONE`
+
+
+
+// Below: relevant for users who are not on 2026.06 or later
+[[task-division]]
+=== Deadlock prevention by task division
+
+Deadlock prevention can also be achieved by dividing a task into two distinct subqueries: a data-independent subquery run in parallel with maximum concurrency, and a data-dependent subquery executed serially (i.e.  one transaction at a time) to avoid deadlocks.
 In the below example, nodes and properties are created in a concurrent subquery, while the relationships connecting those nodes are created in a serial subquery.
 This method benefits from the performance of concurrent transactions while avoiding deadlocks.
 
@@ -1115,7 +1172,11 @@ RETURN nodeStatus.transactionId as nodeTransaction,
 ----
 // end::subqueries_in_transactions_deadlock_example_2[]
 
-=====
+==
+
+
+
+
 
 [[restrictions]]
 == Restrictions
