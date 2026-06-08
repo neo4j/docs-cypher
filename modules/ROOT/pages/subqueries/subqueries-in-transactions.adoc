@@ -1136,7 +1136,30 @@ The first expression acts as the primary grouping key, meaning rows with the sam
 Choosing a low-cardinality first expression therefore leads to better batch grouping, though the order does not affect correctness.
 
 For example, given `DISJOINT BY (n.id, n.category)`, two batches are scheduled concurrently only if they share no values for either `n.id` or `n.category`.
-If any row in one batch shares a value for either expression with any row in another batch, those batches are run sequentially.
+Any row in one batch that shares a value for either expression with a row in another batch causes those batches to be run sequentially.
+With a batch size of `2` (i.e. `IN CONCURRENT TRANSACTIONS OF 2 ROWS DISJOINT BY (n.id, n.category)`), the batching and execution may look something like this:
+
+.Simplified batch scheduling model
+[source]
+----
+row 1: id=1, category=A
+row 2: id=2, category=A
+row 3: id=3, category=A
+row 4: id=4, category=B
+row 5: id=5, category=B
+
+Batches:
+  Batch A: rows 1, 2  (category=A)
+  Batch B: row  3     (category=A)
+  Batch C: rows 4, 5  (category=B)
+
+Execution:
+  Batch A ------->
+                  Batch B -------->
+  Batch C ------------------------>
+----
+
+Batch A and Batch B share `category=A` and are therefore serialized; Batch C shares no values with either and runs concurrently throughout.
 
 No automatic lock expression inference is performed when using `DISJOINT BY (<expr>, ...)`; the supplied list is the entire lock expression set for that subquery.
 
@@ -1144,14 +1167,14 @@ No automatic lock expression inference is performed when using `DISJOINT BY (<ex
 ====
 
 This example imports movies and release years from a CSV file, creating `Movie` and `Year` nodes and `RELEASED_IN` relationships between them.
-For an import workload like this, xref:schema/constraints/create-constraints.adoc#create-key-constraints[key constraints] (index-backed constraints ensuring both the existence and the uniqueness of a property) on `Movie.id` and `Year.year` are likely in place to prevent duplicate nodes.
+For this import, xref:schema/constraints/create-constraints.adoc#create-key-constraints[key constraints] are in place to ensure the existence of unique `movieId` properties for `Movie` nodes and `value` properties for `Year` nodes.
 With these constraints, two concurrent batches attempting to `MERGE` the same `Movie` or `Year` node simultaneously will contend on the key constraint lock, causing a deadlock.
 
 .Create node key constraints
 [source, cypher]
 ----
-CREATE CONSTRAINT movie_id IF NOT EXISTS FOR (m:Movie) REQUIRE m.id IS KEY;
-CREATE CONSTRAINT year IF NOT EXISTS FOR (y:Year) REQUIRE y.year IS KEY;
+CREATE CONSTRAINT movie_id IF NOT EXISTS FOR (m:Movie) REQUIRE m.movieId IS KEY;
+CREATE CONSTRAINT year_value IF NOT EXISTS FOR (y:Year) REQUIRE y.value IS KEY;
 ----
 
 .Import with explicit lock expressions
@@ -1159,81 +1182,19 @@ CREATE CONSTRAINT year IF NOT EXISTS FOR (y:Year) REQUIRE y.year IS KEY;
 ----
 LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/movies.csv' AS line
 CALL (line) {
-  MERGE (m:Movie {id: line.movieId})
-  MERGE (y:Year {year: line.year})
+  MERGE (m:Movie {movieId: line.movieId})
+  MERGE (y:Year {value: line.year})
   MERGE (m)-[:RELEASED_IN]->(y)
 } IN CONCURRENT TRANSACTIONS
   DISJOINT BY (line.year, line.movieId)
   ON ERROR RETRY THEN CONTINUE
 ----
 
-`DISJOINT BY (row.year, row.movieId)` declares that `row.year` and `row.movieId` identify the locked resources for each batch.
-`row.year` is the primary grouping key; since many movies share the same release year, it is low-cardinality and leads to efficient batch grouping.
-
-Given that the CSV contains multiple movies released in the same year, the runtime groups rows into batches by `row.year` and serialises batches that share a year value:
-
-.Simplified batch scheduling model
-[source]
-----
-row 1: movieId=1, year=1995
-row 2: movieId=2, year=1995
-row 3: movieId=3, year=1995
-row 4: movieId=4, year=1996
-row 5: movieId=5, year=1996
-
-Batches:
-  Batch A: rows 1, 2  (year=1995)
-  Batch B: row  3     (year=1995)
-  Batch C: rows 4, 5  (year=1996)
-
-Execution:
-  Batch A ------->
-                  Batch B -------->
-  Batch C ------------------------>
-
-Batch A and Batch B share `year=1995` and are therefore serialized; Batch C shares no values with either and runs concurrently throughout.
-----
+`DISJOINT BY (line.year, line.movieId)` declares that `line.year` and `line.movieId` identify the locked resources for each batch.
+`line.year` is the primary grouping key; since many movies share the same release year, it is low-cardinality and leads to efficient batch grouping.
 
 `ON ERROR RETRY THEN CONTINUE` provides a fallback for transient errors.
 
-====
-
-
-
-.`DISJOINT BY (<expr>, ...)`: importing relationships between pre-existing nodes
-====
-
-In this example, `Person` and `Movie` nodes have already been imported separately.
-A list of rating records is passed in as the `$batch` parameter.
-Even though no nodes are created, the `MERGE` on the `RATED` relationship acquires write locks on both endpoint nodes.
-Two concurrent batches sharing the same `row.personId` or `row.movieId` can therefore deadlock on those endpoint locks.
-However, `DISJOINT BY (row.personId, row.movieId)` ensures that no two concurrent batches share an endpoint node, thereby preventing deadlocks up front.
-
-.Parameters
-[source, parameters]
-----
-{
-  "batch": [
-    {"personId": "1", "movieId": "1", "score": 4.5, "timestamp": "2024-01-01"},
-    {"personId": "1", "movieId": "2", "score": 3.0, "timestamp": "2024-01-02"},
-    {"personId": "2", "movieId": "1", "score": 5.0, "timestamp": "2024-01-03"}
-  ]
-}
-----
-
-.Importing ratings between pre-existing nodes
-[source, cypher]
-----
-UNWIND $batch AS row
-CALL (row) {
-  MATCH (a:Person {id: row.personId})
-  MATCH (m:Movie  {id: row.movieId})
-  MERGE (a)-[r:RATED]->(m)
-  SET r.score = row.score, r.timestamp = row.timestamp
-} IN CONCURRENT TRANSACTIONS OF 500 ROWS
-  DISJOINT BY (row.personId, row.movieId)
-  ON ERROR RETRY THEN CONTINUE
-----
 ====
 
 
@@ -1245,12 +1206,54 @@ This is useful when the locked resources are straightforward to infer statically
 If the runtime cannot infer any lock expressions, the subquery executes with no scheduling restriction.
 
 
+.`DISJOINT BY AUTO`: importing actors and movies
+====
 
+This example imports actors and their roles from a CSV file, creating `Person` and `Movie` nodes and `ACTS_IN` relationships between them.
+With key constraints on `Person.name` and `Movie.title`, the runtime infers the lock expressions automatically from the `MERGE` patterns — the same expressions a user would write manually with `DISJOINT BY (line.person, line.movie)`.
+
+.Create node key constraints
+[source, cypher]
+----
+CREATE CONSTRAINT person_name IF NOT EXISTS FOR (p:Person) REQUIRE p.name IS KEY;
+CREATE CONSTRAINT movie_title IF NOT EXISTS FOR (m:Movie) REQUIRE m.title IS KEY;
+----
+
+.Import with automatic lock inference
+[source, cypher]
+----
+LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/actors.csv' AS line
+CALL (line) {
+  MERGE (p:Person {name: line.person})
+  MERGE (m:Movie  {title: line.movie})
+  CREATE (p)-[:ACTS_IN {role: line.roles}]->(m)
+} IN CONCURRENT TRANSACTIONS
+  DISJOINT BY AUTO
+----
+
+====
 
 [[disabled-inference]]
 ==== Disabling batch scheduling with `DISJOINT BY NONE`
 
+`DISJOINT BY NONE` explicitly disables batch scheduling, overriding `dbms.cypher.transactions.default_subquery_batch_strategy`.
 
+.`DISJOINT BY NONE`: importing independent nodes
+====
+
+This example imports movies from a CSV file, creating `Movie` nodes.
+With a key constraint on the `movieId` property of `Movie` nodes, each row is guaranteed to operate on a distinct node; concurrent batches cannot contend on the same resource, making batch scheduling unnecessary.
+
+[source, cypher]
+----
+LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/movies.csv' AS line
+CALL (line) {
+  MERGE (m:Movie {movieId: line.movieId})
+} IN CONCURRENT TRANSACTIONS
+  DISJOINT BY NONE
+----
+
+====
 
 // Below: relevant for users who are not on 2026.06 or later
 [[task-division]]
