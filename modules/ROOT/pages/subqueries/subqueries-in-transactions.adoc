@@ -1096,6 +1096,15 @@ The result shows that all transactions are now successful:
 Deadlock resolution and transaction retries are time-consuming, however.
 The preferred strategy for dealing with deadlocks should instead be one of prevention.
 
+
+////
+[source, cypher, role=test-setup]
+----
+MATCH (n)
+DETACH DELETE n;
+----
+////
+
 [role=label--new-Neo4j-2026.06 label--cypher-25-only]
 [[disjoint-by]]
 === Batch scheduling and deadlock prevention with `DISJOINT BY`
@@ -1129,14 +1138,14 @@ For example, if `dbms.cypher.transactions.default_subquery_batch_strategy` is se
 
 `DISJOINT BY (<expr>, ...)` allows you to declare the expressions identifying locked resources for a `CALL { ... } IN CONCURRENT TRANSACTIONS` statement.
 
-The expressions must use only variables imported from the outer query, since they are evaluated before the subquery body runs; for example, `elementId(n)` or `n.id`, where `n` is an imported variable.
-They act as constraints on batch composition: the runtime ensures that no two concurrent batches share a value for any of the declared expressions.
+The expressions must use only variables imported from the outer query, since they are evaluated before the subquery runs; for example, `elementId(n)` or `n.id`, where `n` is an imported variable.
+They act as constraints on batch composition: the xref:planning-and-tuning/runtimes/index.adoc[runtime] ensures that no two concurrent batches share a value for any of the declared expressions.
 The first expression acts as the primary grouping key, meaning rows with the same value for it are grouped into the same batch.
 Choosing a low-cardinality first expression therefore leads to better batch grouping, though the order does not affect correctness.
 
 For example, given `DISJOINT BY (n.id, n.category)`, two batches are scheduled concurrently only if they share no values for either `n.id` or `n.category`.
 Any row in one batch that shares a value for either expression with a row in another batch causes those batches to be run sequentially.
-With a batch size of `2` (i.e. `IN CONCURRENT TRANSACTIONS OF 2 ROWS DISJOINT BY (n.id, n.category)`), the batching and execution may look something like this:
+With a batch size of `2` (i.e. `IN CONCURRENT TRANSACTIONS OF 2 ROWS DISJOINT BY (n.id, n.category)`), the batching and execution could look something like this:
 
 .Simplified batch scheduling model
 [source]
@@ -1165,7 +1174,7 @@ No automatic lock expression inference is performed when using `DISJOINT BY (<ex
 .`DISJOINT BY (<expr>, ...)`: importing nodes and relationships
 ====
 
-This example imports movies and release years from a CSV file, creating `Movie` and `Year` nodes and `RELEASED_IN` relationships between them.
+This example imports movies and their release years from a CSV file, creating `Movie` and `Year` nodes and `RELEASED_IN` relationships between them.
 For this import, xref:schema/constraints/create-constraints.adoc#create-key-constraints[key constraints] are in place to ensure the existence of unique `movieId` properties for `Movie` nodes and `value` properties for `Year` nodes.
 With these constraints, two concurrent batches attempting to `MERGE` the same `Movie` or `Year` node simultaneously will contend on the key constraint lock, causing a deadlock.
 
@@ -1285,8 +1294,6 @@ RETURN nodeStatus.transactionId as nodeTransaction,
        relationshipStatus.committed AS successfulRelationshipTransaction
 ----
 // end::subqueries_in_transactions_deadlock_prevention_task_division[]
-
-==
 
 [[restrictions]]
 == Restrictions
