@@ -1178,6 +1178,7 @@ CREATE CONSTRAINT year_value IF NOT EXISTS FOR (y:Year) REQUIRE y.value IS KEY;
 ----
 
 .Import with explicit lock expressions
+// tag::subqueries_in_transactions_deadlock_prevention_disjoint_by_lock_expression[]
 [source, cypher]
 ----
 LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/movies.csv' AS line
@@ -1189,6 +1190,7 @@ CALL (line) {
   DISJOINT BY (line.year, line.movieId)
   ON ERROR RETRY THEN CONTINUE
 ----
+// end::subqueries_in_transactions_deadlock_prevention_disjoint_by_lock_expression[]
 
 `DISJOINT BY (line.year, line.movieId)` declares that `line.year` and `line.movieId` identify the locked resources for each batch.
 `line.year` is the primary grouping key; since many movies share the same release year, it is low-cardinality and leads to efficient batch grouping.
@@ -1220,6 +1222,7 @@ CREATE CONSTRAINT movie_title IF NOT EXISTS FOR (m:Movie) REQUIRE m.title IS KEY
 ----
 
 .Import with automatic lock inference
+// tag::subqueries_in_transactions_deadlock_prevention_disjoint_by_auto[]
 [source, cypher]
 ----
 LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/actors.csv' AS line
@@ -1230,6 +1233,7 @@ CALL (line) {
 } IN CONCURRENT TRANSACTIONS
   DISJOINT BY AUTO
 ----
+// end::subqueries_in_transactions_deadlock_prevention_disjoint_by_auto[]
 
 ====
 
@@ -1244,6 +1248,8 @@ CALL (line) {
 This example imports movies from a CSV file, creating `Movie` nodes.
 With a key constraint on the `movieId` property of `Movie` nodes, each row is guaranteed to operate on a distinct node; concurrent batches cannot contend on the same resource, making batch scheduling unnecessary.
 
+.Importing nodes without batch scheduling
+// tag::subqueries_in_transactions_deadlock_prevention_disjoint_by_none[]
 [source, cypher]
 ----
 LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/movies.csv' AS line
@@ -1252,10 +1258,9 @@ CALL (line) {
 } IN CONCURRENT TRANSACTIONS
   DISJOINT BY NONE
 ----
+// end::subqueries_in_transactions_deadlock_prevention_disjoint_by_none[]
 
 ====
-
-// Below: relevant for users who are not on 2026.06 or later
 [[task-division]]
 === Deadlock prevention by task division
 
@@ -1264,7 +1269,7 @@ In the below example, nodes and properties are created in a concurrent subquery,
 This method benefits from the performance of concurrent transactions while avoiding deadlocks.
 
 .Avoiding deadlocks by dividing an import task into a data-independent concurrent subquery followed by a data-dependent serial subquery
-// tag::subqueries_in_transactions_deadlock_example_2[]
+// tag::subqueries_in_transactions_deadlock_prevention_task_division[]
 [source, cypher]
 ----
 LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/movies.csv' AS row
@@ -1281,13 +1286,9 @@ RETURN nodeStatus.transactionId as nodeTransaction,
        relationshipStatus.transactionId as relationshipTransaction,
        relationshipStatus.committed AS successfulRelationshipTransaction
 ----
-// end::subqueries_in_transactions_deadlock_example_2[]
+// end::subqueries_in_transactions_deadlock_prevention_task_division[]
 
 ==
-
-
-
-
 
 [[restrictions]]
 == Restrictions
