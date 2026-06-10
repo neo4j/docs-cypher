@@ -12,6 +12,12 @@ Showing a graph type requires the link:{neo4j-docs-base-uri}/operations-manual/c
 [[examples]]
 == Examples
 
+* xref:schema/graph-types/list-graph-types.adoc#graph-type-as-string[]
+* xref:schema/graph-types/list-graph-types.adoc#graph-type-as-graph[]
+* xref:schema/graph-types/list-graph-types.adoc#composable-show-graph-types[]
+
+The graph type used for the examples are:
+
 .Set graph type
 [source, cypher]
 ----
@@ -32,6 +38,9 @@ ALTER CURRENT GRAPH TYPE SET {
    CONSTRAINT stayed_in_endDate FOR ()-[r:STAYED_IN]->() REQUIRE (r.endDate) IS :: DATE
 }
 ----
+
+[[graph-type-as-string]]
+=== Show full graph type as a string
 
 .Show the full graph type as a string
 // tag::schema_graph_types_show[]
@@ -72,13 +81,31 @@ SHOW CURRENT GRAPH TYPE
 [NOTE]
 Regardless of which syntax was used to define a property uniqueness or key constraint, they are all shown in the `specification` returned by `SHOW CURRENT GRAPH TYPE` using the `CONSTRAINT … FOR … REQUIRE` syntax.
 
-.Show the full graph type as a virtual graph label:new[Introduced in Neo4j 2026.06]
+[role=label--new-Neo4j-2026.06]
+[[graph-type-as-graph]]
+=== Show full graph type as a virtual graph
+
+.Show the full graph type as a virtual graph
 // tag::schema_graph_types_show_as_graph[]
 [source, cypher]
 ----
 SHOW CURRENT GRAPH TYPE AS GRAPH
 ----
 // end::schema_graph_types_show_as_graph[]
+
+The query returns two columns: `nodes` and `relationships`.
+The `nodes` column contains a list of virtual nodes representing the node element types and node labels defined in the graph type.
+The `relationships` column contains a list of virtual relationships representing the relationship element types, relationship constraints not belonging to any relationship element type, and label implications in node element types.
+
+Four entities in the result are worth noting:
+
+* `NodeElementType`: a virtual node representing a node element type in the graph type.
+* `NodeLabel`: a virtual node representing a node label in the graph type.
+* `AnyLabel`: relationship element types with unconstrained endpoints are represented by a virtual any-node with the label `AnyLabel` and no properties.
+Each relationship gets its own `AnyLabel` node.
+* `IMPLIES`: when a node element type implies another label, the two are connected by a relationship of type `IMPLIES` with no properties.
+
+For more information, see xref:schema/graph-types/list-graph-types.adoc#virtual-nodes[virtual nodes] and ref:schema/graph-types/list-graph-types.adoc#virtual-relationships[virtual relationships] below.
 
 .Result
 [source, "queryresult"]
@@ -103,7 +130,7 @@ SHOW CURRENT GRAPH TYPE AS GRAPH
 +--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 
-These lists form the graph:
+Together, these two lists form the following graph:
 [source]
 ----
 (city:NodeElementType {label: "City", properties: ["name :: STRING NOT NULL", "population :: INTEGER"], constraints: []}),
@@ -230,20 +257,23 @@ They are returned by default.
 | `LIST<RELATIONSHIP NOT NULL>`
 |===
 
+[[virtual-nodes]]
 ==== Virtual nodes
 
 There are three different virtual nodes used to represent parts of the graph type.
 
-- _Node element type virtual nodes_: these represent a node element type in the graph type.
-They contain information around the identifying label, property specifications and any key or uniqueness constraints tied to the node element type.
-- _Node constraint virtual nodes_: these represent node constraints that are not tied to any node element type.
-They are collected per label, so there is not one such node per constraint but per group of constraints sharing a label.
-They contain information around the label and constraints belonging to it.
-- _Empty relationship endpoint virtual nodes_: these represent the empty endpoints of relationships.
+* _Node element type virtual nodes_ represent a node element type in the graph type.
+They contain the identifying label, property specifications, and any key or uniqueness constraints tied to the node element type.
+* _Node constraint virtual nodes_ represent node labels that are not identifying a node element type.
+Either node constraints that are not tied to any node element type, labels that are implied on node element types, or labels used as endpoints on relationship element types.
+The constraints are collected per label, meaning there is one node per group of constraints sharing a label, not one per constraint.
+They contain the label and any constraints belonging to it.
+* _Empty relationship endpoint virtual nodes_ represent the empty endpoints of relationships.
 Either an unconstrained endpoint of a relationship element type or the empty end point of a relationship constraint not belonging to a relationship element type.
 They contain no additional information.
 
-The node element type virtual nodes all have the label `NodeElementType` and then the information about them is stored in their properties:
+Node element type virtual nodes all have the label `NodeElementType`, with their information stored in their properties.
+For example, `(:NodeElementType {label: "Person", properties: ["name :: STRING", "ssn :: INTEGER"], constraints: ["CONSTRAINT constraint_5d8979dd FOR (n:Person \=>) REQUIRE (n.name, n.ssn) IS KEY"]})`.
 
 .Node element type virtual node properties
 [cols="3*", options="header"]
@@ -267,7 +297,8 @@ The constraints are represented by their string descriptions in the graph type d
 | `LIST<STRING NOT NULL>`
 |===
 
-The node constraint virtual nodes all have the label `NodeLabel` and then the information about them is stored in their properties:
+Node constraint virtual nodes all have the label `NodeLabel`, with their information stored in their properties.
+For example, `(:NodeLabel {label: "Animal", constraints: ["CONSTRAINT animal_id FOR (n:Animal) REQUIRE n.id IS UNIQUE"]})` and `(:NodeLabel {label: "Machine", constraints: []})`.
 
 .Node constraint virtual nodes properties
 [cols="3*", options="header"]
@@ -277,7 +308,7 @@ The node constraint virtual nodes all have the label `NodeLabel` and then the in
 | Type
 
 | `label`
-| The label of the node constraints.
+| The label of the node constraints or being referenced in an element type.
 | `STRING`
 
 | `constraints`
@@ -286,21 +317,23 @@ The constraints are represented by their string descriptions in the graph type d
 | `LIST<STRING NOT NULL>`
 |===
 
-The empty relationship endpoint virtual nodes have the label `AnyLabel` and no properties, as they store no additional information.
+Empty relationship endpoint virtual nodes have the label `AnyLabel` and no properties, as they store no additional information.
 
+[[virtual-relationships]]
 ==== Virtual relationships
 
 There are three different virtual relationships used to represent parts of the graph type.
 
-- _Relationship element type virtual relationships_: these represent a relationship element type in the graph type.
-They contain information around the identifying relationship type, property specifications and any key or uniqueness constraints tied to the relationship element type.
-- _Relationship constraint virtual relationships_: these represent relationship constraints that are not tied to any relationship element type.
-They are collected per relationship type, so there is not one such relationship per constraint but per group of constraints sharing a relationship type.
-They contain information around the relationship type and constraints belonging to it.
-- _Label implication virtual relationships_: these represent a label implication of a node element type.
+* _Relationship element type virtual relationships_ represent a relationship element type in the graph type.
+They contain the identifying relationship type, property specifications and any key or uniqueness constraints tied to the relationship element type.
+* _Relationship constraint virtual relationships_ represent relationship constraints that are not tied to any relationship element type.
+They are collected per relationship type, meaning there is one relationship per group of constraints sharing a relationship type, not one per constraint.
+They contain the relationship type and constraints belonging to it.
+* _Label implication virtual relationships_ represent a label implication of a node element type.
 They contain no additional information.
 
-The relationship element type virtual relationships all have the relationship type `RELATIONSHIP_ELEMENT_TYPE` and then the information about them is stored in their properties:
+Relationship element type virtual relationships all have the relationship type `RELATIONSHIP_ELEMENT_TYPE`, with their information stored in their properties.
+For example, `[:RELATIONSHIP_ELEMENT_TYPE {relationshipType: "LIVES_IN", properties: ["since :: ANY NOT NULL"], constraints: []}]`.
 
 .Relationship element type virtual relationship properties
 [cols="3*", options="header"]
@@ -324,7 +357,8 @@ The constraints are represented by their string descriptions in the graph type d
 | `LIST<STRING NOT NULL>`
 |===
 
-The relationship constraint virtual relationships all have the relationship type `RELATIONSHIP_TYPE` and then the information about them is stored in their properties:
+Relationship constraint virtual relationships all have the relationship type `RELATIONSHIP_TYPE`, with their information stored in their properties.
+For example, `[:RELATIONSHIP_TYPE {relationshipType: "STAYED_IN", constraints: ["CONSTRAINT stayed_in_endDate FOR ()-[r:STAYED_IN]\->() REQUIRE r.endDate IS :: DATE", "CONSTRAINT stayed_in_startDateExistence FOR ()-[r:STAYED_IN]\->() REQUIRE r.startDate IS NOT NULL", "CONSTRAINT stayed_in_startDateType FOR ()-[r:STAYED_IN]\->() REQUIRE r.startDate IS :: DATE"]}]`.
 
 .Relationship constraint virtual relationship properties
 [cols="3*", options="header"]
@@ -343,7 +377,7 @@ The constraints are represented by their string descriptions in the graph type d
 | `LIST<STRING NOT NULL>`
 |===
 
-The label implication virtual relationships have relationship type `IMPLIES` and no properties, as they store no additional information.
+Label implication virtual relationships have relationship type `IMPLIES` and no properties, as they store no additional information.
 
 [[constraints-in-show-current-graph-type]]
 == Constraints in `SHOW CURRENT GRAPH TYPE`
@@ -398,6 +432,16 @@ SHOW CURRENT GRAPH TYPE YIELD specification
 SHOW CURRENT GRAPH TYPE AS GRAPH YIELD nodes, relationships
 ----
 
+Four entities in the result are worth noting:
+
+* `NodeElementType`: a virtual node representing a node element type in the graph type.
+* `NodeLabel`: a virtual node representing a node label in the graph type.
+* `AnyLabel`: relationship element types with unconstrained endpoints are represented by a virtual any-node with the label `AnyLabel` and no properties.
+Each relationship gets its own `AnyLabel` node.
+* `IMPLIES`: when a node element type implies another label, the two are connected by a relationship of type `IMPLIES` with no properties.
+
+For more information, see xref:schema/graph-types/list-graph-types.adoc#virtual-nodes[Show graph types -> Virtual nodes] and ref:schema/graph-types/list-graph-types.adoc#virtual-relationships[Virtual relationships].
+
 .Result
 [source, "queryresult"]
 ----
@@ -422,7 +466,7 @@ SHOW CURRENT GRAPH TYPE AS GRAPH YIELD nodes, relationships
 +--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 
-These lists form the graph:
+Together, these two lists form the following graph:
 [source]
 ----
 (city:NodeElementType {label: "City", properties: ["name :: STRING NOT NULL", "population :: INTEGER"], constraints: []}),
