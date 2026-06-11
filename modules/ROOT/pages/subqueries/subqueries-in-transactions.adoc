@@ -1140,8 +1140,6 @@ For example, if `dbms.cypher.transactions.default_subquery_batch_strategy` is se
 
 The expressions must use only variables imported from the outer query, since they are evaluated before the subquery runs; for example, `elementId(n)` or `n.id`, where `n` is an imported variable.
 They act as constraints on batch composition: the xref:planning-and-tuning/runtimes/index.adoc[runtime] ensures that no two concurrent batches share a value for any of the declared expressions.
-The first expression acts as the primary grouping key, meaning rows with the same value for it are grouped into the same batch.
-Choosing a low-cardinality first expression therefore leads to better batch grouping, though the order does not affect correctness.
 
 For example, given `DISJOINT BY (n.id, n.category)`, two batches are scheduled concurrently only if they share no values for either `n.id` or `n.category`.
 Any row in one batch that shares a value for either expression with a row in another batch causes those batches to be run sequentially.
@@ -1153,13 +1151,14 @@ With a batch size of `2` (i.e. `IN CONCURRENT TRANSACTIONS OF 2 ROWS DISJOINT BY
 row 1: id=1, category=A
 row 2: id=2, category=A
 row 3: id=3, category=A
-row 4: id=4, category=B
+row 4: id=4, category=A
 row 5: id=5, category=B
+row 6: id=6, category=B
 
 Batches:
   Batch A: rows 1, 2  (category=A)
-  Batch B: row  3     (category=A)
-  Batch C: rows 4, 5  (category=B)
+  Batch B: rows 3, 4  (category=A)
+  Batch C: rows 5, 6  (category=B)
 
 Execution:
   Batch A ------->
@@ -1175,8 +1174,8 @@ No automatic lock expression inference is performed when using `DISJOINT BY (<ex
 ====
 
 This example imports movies and their release years from a CSV file, creating `Movie` and `Year` nodes and `RELEASED_IN` relationships between them.
-For this import, xref:schema/constraints/create-constraints.adoc#create-key-constraints[key constraints] are in place to ensure the existence of unique `movieId` properties for `Movie` nodes and `value` properties for `Year` nodes.
-With these constraints, two concurrent batches attempting to `MERGE` the same `Movie` or `Year` node simultaneously will contend on the key constraint lock, causing a deadlock.
+For this import, xref:schema/constraints/create-constraints.adoc#create-key-constraints[key constraints] are in place to ensure the existence of unique `movieId` properties for `Movie` nodes and `value` properties for `Year` nodes, and for those properties to be indexed (key constraints are xref:schema/constraints/create-constraints.adoc#constraints-and-backing-indexes[backed by indexes]).
+With these constraints and indexes, two concurrent batches attempting to `MERGE` the same `Movie` or `Year` node simultaneously will contend on the key constraint lock, causing a deadlock.
 
 .Create node key constraints
 [source, cypher]
@@ -1201,7 +1200,6 @@ CALL (line) {
 // end::subqueries_in_transactions_deadlock_prevention_disjoint_by_lock_expression[]
 
 `DISJOINT BY (line.year, line.movieId)` declares that `line.year` and `line.movieId` identify the locked resources for each batch.
-`line.year` is the primary grouping key; since many movies share the same release year, it is low-cardinality and leads to efficient batch grouping.
 
 `ON ERROR RETRY THEN CONTINUE` provides a fallback for transient errors.
 
@@ -1213,13 +1211,16 @@ CALL (line) {
 
 `DISJOINT BY AUTO` instructs the runtime to infer lock expressions automatically from the subquery body, without requiring the user to declare them explicitly.
 This is useful when the locked resources are straightforward to infer statically; for example, `MERGE` patterns on uniquely constrained properties.
+Indexes on the merged properties are required in order for `DISJOINT BY AUTO` to infer locking expressions.
 If the runtime cannot infer any lock expressions, the subquery executes with no scheduling restriction.
+
+To see which lock expressions (if any) were inferred by the planner, prepend the statement with xref:planning-and-tuning/execution-plans.adoc#reading-explain-and-profile-query-plans[`EXPLAIN`].
 
 .`DISJOINT BY AUTO`: importing actors and movies
 ====
 
 This example imports actors and their roles from a CSV file, creating `Person` and `Movie` nodes and `ACTS_IN` relationships between them.
-With key constraints on `Person.name` and `Movie.title`, the runtime infers the lock expressions automatically from the `MERGE` patterns — the same expressions a user would write manually with `DISJOINT BY (line.person, line.movie)`.
+With key constraints (and backing indexes) on the `name` properties of `Person` nodes and the `title` properties of `Movie` nodes, the runtime infers the lock expressions `(line.person, line.movie)` automatically from the `MERGE` patterns as can be seen in the `TransactionForEach` operator `Details` column in the query plan produced by prepending the statement with `EXPLAIN` (the same expressions a user would write manually with `DISJOINT BY (line.person, line.movie)`).
 
 ////
 [source, cypher, role=test-setup]
@@ -1241,6 +1242,7 @@ CREATE CONSTRAINT movie_title IF NOT EXISTS FOR (m:Movie) REQUIRE m.title IS KEY
 // tag::subqueries_in_transactions_deadlock_prevention_disjoint_by_auto[]
 [source, cypher]
 ----
+EXPLAIN
 LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/intro/movies/actors.csv' AS line
 CALL (line) {
   MERGE (p:Person {name: line.person})
@@ -1250,6 +1252,30 @@ CALL (line) {
   DISJOINT BY AUTO
 ----
 // end::subqueries_in_transactions_deadlock_prevention_disjoint_by_auto[]
+
+.Query plan
+[role="queryplan"]
+----
++----------------------+----+---------------------------------------------------------------------------------------------+----------------+
+| Operator             | Id | Details                                                                                     | Estimated Rows |
++----------------------+----+---------------------------------------------------------------------------------------------+----------------+
+| +ProduceResults      |  0 |                                                                                             |             10 |
+| |                    +----+---------------------------------------------------------------------------------------------+----------------+
+| +EmptyResult         |  1 |                                                                                             |             10 |
+| |                    +----+---------------------------------------------------------------------------------------------+----------------+
+| +TransactionForeach  |  2 | IN CONCURRENT TRANSACTIONS OF 1000 ROWS DISJOINT BY (line.person, line.movie) ON ERROR FAIL |             10 |
+| |\                   +----+---------------------------------------------------------------------------------------------+----------------+
+| | +Create            |  3 | (p)-[anon_0:ACTS_IN {role: line.roles}]->(m)                                                |             10 |
+| | |                  +----+---------------------------------------------------------------------------------------------+----------------+
+| | +Apply             |  4 |                                                                                             |             10 |
+| | |\                 +----+---------------------------------------------------------------------------------------------+----------------+
+| | | +MergeUniqueNode |  5 | UNIQUE m:Movie(title) WHERE title = line.movie,                                             |             10 |
+| | |                  +----+---------------------------------------------------------------------------------------------+----------------+
+| | +MergeUniqueNode   |  6 | UNIQUE p:Person(name) WHERE name = line.person,                                             |             10 |
+| |                    +----+---------------------------------------------------------------------------------------------+----------------+
+| +LoadCSV             |  7 | line                                                                                        |             10 |
++----------------------+----+---------------------------------------------------------------------------------------------+----------------+
+----
 
 ====
 
