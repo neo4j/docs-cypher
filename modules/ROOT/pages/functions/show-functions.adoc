@@ -1,0 +1,235 @@
+:description: Information about the `SHOW FUNCTIONS` command.
+= Show functions
+
+Showing the available functions can be done with `SHOW FUNCTIONS`.
+For general information about the `SHOW` command, see the xref:clauses/show.adoc[`SHOW`] page.
+
+
+[[syntax]]
+== Syntax
+
+For full details about the syntax descriptions, see the link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/syntax/#administration-syntax-reading[Operations Manual -> Administration command syntax].
+
+[options="header", width="100%", cols="1,5a"]
+|===
+| Action | Syntax
+
+| Show functions, either all or only built-in or user-defined
+
+a|
+[source, syntax]
+----
+SHOW [ALL\|BUILT IN\|USER DEFINED] FUNCTION[S]
+[YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+[WHERE expression]
+[RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+----
+
+| Show functions that the current user can execute
+a|
+[source, syntax]
+----
+SHOW [ALL\|BUILT IN\|USER DEFINED] FUNCTION[S] EXECUTABLE [BY CURRENT USER]
+[YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+[WHERE expression]
+[RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+----
+
+| Show functions that a specified user can execute
+a|
+[source, syntax]
+----
+SHOW [ALL\|BUILT IN\|USER DEFINED] FUNCTION[S] EXECUTABLE BY username
+[YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+[WHERE expression]
+[RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+----
+
+[NOTE]
+====
+Requires the link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/dbms-administration/dbms-user-management-privileges/[`SHOW USER`] privilege.
+This command cannot be used for LDAP users.
+====
+
+|===
+
+[NOTE]
+====
+When using the `RETURN` clause, the `YIELD` clause is mandatory and must not be omitted.
+====
+
+[[Return-columns]]
+== Return columns
+
+`SHOW FUNCTIONS` will produce a table with the following columns:
+
+.Show functions output
+[options="header", cols="4,6,2"]
+|===
+| Column | Description | Type
+
+m| name
+a| The name of the function. label:default-output[]
+m| STRING
+
+m| category
+a| The function category, for example `scalar` or `string`. label:default-output[]
+m| STRING
+
+m| description
+a| The function description. label:default-output[]
+m| STRING
+
+m| signature
+a| The signature of the function.
+m| STRING
+
+m| isBuiltIn
+a| Whether the function is built-in or user-defined.
+m| BOOLEAN
+
+m| argumentDescription
+a| List of the arguments for the function, as map of strings and booleans with `name`, `type`, `default`, `isDeprecated`, and `description`.
+m| LIST<MAP>
+
+m| returnDescription
+a| The return value type.
+m| STRING
+
+m| aggregating
+a| Whether the function is aggregating or not.
+m| BOOLEAN
+
+m| rolesExecution
+a|
+List of roles permitted to execute this function.
+Is `null` without the link:https://neo4j.com/docs/operations-manual/current/authentication-authorization/dbms-administration/dbms-role-management-privileges/#_grant_privilege_to_show_roles[`SHOW ROLE`] privilege.
+m| LIST<STRING>
+
+m| rolesBoostedExecution
+a|
+List of roles permitted to use boosted mode when executing this function.
+Is `null` without the link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/dbms-administration/dbms-role-management-privileges/#_grant_privilege_to_show_roles[`SHOW ROLE`] privilege.
+m| LIST<STRING>
+
+m| isDeprecated
+a| Whether the function is deprecated.
+
+m| BOOLEAN
+
+m| deprecatedBy
+a| The replacement function to use in case of deprecation; otherwise `null`.
+
+m| STRING
+
+|===
+
+[[examples]]
+== Examples
+
+.Show all functions returning default columns
+// tag::functions_show_functions[]
+[source, cypher]
+----
+SHOW FUNCTIONS
+----
+// end::functions_show_functions[]
+
+.Show all procedures and return all columns
+[source, cypher]
+----
+SHOW FUNCTIONS YIELD *
+----
+
+.Show all functions and return specific columns only
+[source, cypher]
+----
+SHOW FUNCTIONS YIELD name, signature
+----
+
+
+.Filter `SHOW FUNCTIONS` using `WHERE`
+[source, cypher]
+----
+SHOW FUNCTIONS YIELD name
+WHERE name CONTAINS 'vector'
+RETURN count(name) AS numVectorFunctions
+----
+
+`SHOW FUNCTIONS` can also be filtered with the `BUILT IN` and `USER DEFINED` keywords.
+
+.Filter `SHOW FUNCTIONS` using `WHERE` and the `BUILT IN` keyword
+// tag::functions_show_functions_builtin[]
+[source, cypher]
+----
+SHOW BUILT IN FUNCTIONS YIELD name, isBuiltIn
+WHERE name STARTS WITH 'a'
+----
+// end::functions_show_functions_builtin[]
+
+Functions can also be filtered on whether a user can execute them.
+This filtering is only available through the `EXECUTABLE` clause and not through the `WHERE` clause.
+This is due to using the user's privileges instead of filtering on the available output columns.
+
+There are two options, how to use the `EXECUTABLE` clause.
+The first option, is to filter for the current user:
+
+.Show all functions executable by the current user
+// tag::functions_show_functions_executable_current_user[]
+[source, cypher, role=test-result-skip]
+----
+SHOW FUNCTIONS EXECUTABLE BY CURRENT USER YIELD name, category, description, rolesExecution, rolesBoostedExecution
+LIMIT 5
+----
+// end::functions_show_functions_executable_current_user[]
+
+.Result
+[role="queryresult",options="header,footer",cols="5*<m"]
+|===
+| name | category | description | rolesExecution | rolesBoostedExecution
+
+| "abs"
+| "Numeric"
+| "Returns the absolute value of an `INTEGER` or `FLOAT`."
+| <null>
+| <null>
+
+| "acos"
+| "Trigonometric"
+| "Returns the arccosine of a `FLOAT` in radians."
+| <null>
+| <null>
+
+| "all"
+| "Predicate"
+| "Returns true if the predicate holds for all elements in the given `LIST<ANY>`."
+| <null>
+| <null>
+
+| "allReduce"
+| "Predicate"
+| "Evaluates `expression` against each element of `LIST<ANY>`, with the result stored in `accumulator`. Returns true if `predicate` holds for each iteration of `accumulator`."
+| <null>
+| <null>
+
+
+| "any"
+| "Predicate"
+| "Returns true if the predicate holds for at least one element in the given `LIST<ANY>`."
+| <null>
+| <null>
+
+5+d|Rows: 5
+|===
+
+Notice that the two `roles` columns are empty due to missing the link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/manage-roles/[`SHOW ROLE`] privilege.
+
+The second option, is to filter for a specific user:
+
+.Show all functions executable by a specific user
+// tag::functions_show_functions_executable_specific_user[]
+[source, cypher, role=test-result-skip]
+----
+SHOW FUNCTIONS EXECUTABLE BY jake
+----
+// end::functions_show_functions_executable_specific_user[]
