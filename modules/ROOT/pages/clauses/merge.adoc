@@ -8,9 +8,11 @@ When merging a pattern:
 * If the exact pattern is found, nothing is created; `MERGE` acts like `MATCH` and binds the found pattern.
 * If the exact pattern is not found, `MERGE` acts like `CREATE` and creates the pattern.
 
-`MERGE` also allows for specific actions depending on whether the specified pattern was matched (`ON MATCH`) or created (`ON CREATE`).
+`MERGE` also allows for specific actions depending on whether the specified pattern was xref:clauses/merge.adoc#on-match-and-on-create[matched (`ON MATCH`) or created (`ON CREATE`)].
 
 It is recommended to create constraints prior to merging data: they provide index-backed performance improvements (in the case of property uniqueness and key constraints) while also preventing the creation of data that differ in unintended ways from pre-existing data.
+For more information, see xref:clauses/merge.adoc#merge-with-constraints[] below.
+
 
 [[example-graph]]
 == Example graph
@@ -123,7 +125,7 @@ link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/22G03/[22G03]
 == `MERGE` new patterns
 
 If `MERGE` cannot match the exact pattern given in the query, it will create the pattern instead.
-To prevent the unintended creation of nodes or relationships that differ in unintended ways from existing ones, it is therefore recommended to use constraints when merging data.
+To prevent the creation of nodes or relationships that differ in unintended ways from existing ones, it is therefore recommended to use constraints when merging data.
 For more information, see xref:clauses/merge.adoc#merge-with-constraints[Using `MERGE` with constraints] below.
 
 .`MERGE` a new node with labels and properties
@@ -284,7 +286,7 @@ The second `MERGE` creates a `BORN_IN` relationship between each person and thei
 
 `MERGE` can also create both a new node and a relationship in a single clause:
 
-.`MERGE` a relationship between an existing node and a merged node derived from a node property
+.`MERGE` a new node and relationship connected to an existing node
 [source, cypher]
 ----
 MATCH (person:Person)
@@ -296,16 +298,15 @@ RETURN startNode(r) AS startNode,
 ORDER BY newChauffeurNode
 ----
 
-As the graph contains no `Chauffeur` nodes and no `HAS_CHAUFFEUR` relationships, `MERGE` creates six `Chauffeur` nodes, each with a `name` corresponding to the matched `Person` node's `chauffeurName` property, and a `HAS_CHAUFFEUR` relationship between each pair.
-Also note that the query removes the existing `chauffeurName` properties on any `Person` nodes.
+As the graph contains no `Chauffeur` nodes and no `HAS_CHAUFFEUR` relationships, `MERGE` creates six `Chauffeur` nodes, each with a `name` corresponding to the matched `Person` node's `chauffeurName` property, and a `HAS_CHAUFFEUR` relationship between each pair. 
 
-Because `Charlie Sheen` and `Michael Douglas` share a chauffeur name (`John Brown`), two separate `Chauffeur` nodes are created.
-This differs from the `Location` example above, where `MERGE` bound existing nodes to prevent duplicates.
+This differs from the `Location` example above, where a preceding `MERGE` bound the `Location` nodes before the relationship was created.
+Here, `MERGE` matches on the full pattern including the relationship, so for each `Person` node it finds no existing match and creates a new `Chauffeur` node, even if one with the same name already exists.
 
 .Result
 [role="queryresult",options="header",cols="3*<m"]
 |===
-| name
+| startNode
 | newRel
 | newChauffeurNode
 
@@ -609,7 +610,7 @@ They also protect against duplicate creation under concurrent loads, where `MERG
 === Enforce property existence and uniqueness with key constraints
 
 There are two ways to ensure the uniqueness of a property value in a database: xref:schema/constraints/create-constraints.adoc#create-property-uniqueness-constraints[property uniqueness constraints] and xref:schema/constraints/create-constraints.adoc#create-key-constraints[key constraints].
-Both are backed by indexes, which mean they provide significant performance improvements.
+Both are xref:schema/constraints/create-constraints.adoc#constraints-and-backing-indexes[backed by indexes], which provide significant performance improvements.
 Key constraints are the preferred option, however, since they both guarantee the existence and uniqueness of a property.
 
 .Create key constraint
@@ -618,7 +619,7 @@ Key constraints are the preferred option, however, since they both guarantee the
 CREATE CONSTRAINT FOR (n:Product) REQUIRE n.id IS NODE KEY
 ----
 
-.`MERGE` a node that abides to key constraint
+.`MERGE` a node that complies with key constraint
 [source, cypher]
 ----
 MERGE (n:Product {id: 12, category: 'Electronics', type: 'Laptop'})
@@ -666,7 +667,7 @@ xref:schema/constraints/create-constraints.adoc#create-property-type-constraints
 CREATE CONSTRAINT FOR (n:Product) REQUIRE n.id IS :: INTEGER
 ----
 
-.`MERGE` a node that abides to property type constraint
+.`MERGE` a node that complies with property type constraint
 [source, cypher]
 ----
 MERGE (n:Product {id: 13, category: 'Electronics', type: 'Laptop'})
@@ -694,7 +695,7 @@ Cypher offers the following functions to cast data while merging:
 * xref:functions/list.adoc#functions-tobooleanlist[`toBooleanList()`], xref:functions/list.adoc#functions-tofloatlist[`toFloatList()`], xref:functions/list.adoc#functions-tointegerlist[`toIntegerList()`], xref:functions/list.adoc#functions-tostringlist[`toStringList()`]
 * xref:functions/vector.adoc#functions-vector[`vector()`]
 
-.`MERGE` a node that casts data type and abides to property type constraint 
+.`MERGE` a node that casts data type and complies with property type constraint 
 [source, cypher]
 ----
 MERGE (n:Product {id: toInteger("14"), category: 'Electronics', type: 'Laptop'})
