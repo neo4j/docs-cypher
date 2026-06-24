@@ -45,6 +45,10 @@ In the result, the column for the similarity scores will be called `score_alias`
 - The `SEARCH` clause puts some restrictions on which `pattern` the enclosing `MATCH` or `OPTIONAL MATCH` clause is allowed to have.
 For more information, see xref::clauses/search.adoc#limitations[Limitations of the `SEARCH` clause].
 
+The `SCORE` value is a vector similarity score from the vector index query.
+When combining `SEARCH` results with full-text results or other scored sources, rank each source independently rather than comparing raw score values directly.
+For a worked example, see link:https://neo4j.com/developer/genai-ecosystem/vector-search/#_hybrid_search[Developer Guide -> Hybrid full-text and vector search].
+
 
 [[search-example-graph]]
 == Example graph and vector index
@@ -82,7 +86,7 @@ OPTIONS {
   indexConfig: {
     `vector.similarity_function`: 'cosine',
     `vector.dimensions`: 3,
-    `vector.quantization.enabled`: false
+    `vector.quantization.type`: 'none'
   }
 }
 ----
@@ -474,8 +478,12 @@ RETURN movie.title AS title, movie.releaseDate.year AS year, movie.rating AS rat
 
 [[vector-search-filtering-predicates]]
 === Predicates for vector search with filters
-The optional `WHERE` subclause used to do _vector search with filters_ is a restricted version of the normal Cypher xref::clauses/where.adoc[`WHERE` clause] and only allows certain types of predicates.
-The predicate must be a property predicate or several property predicates with `AND` between them.
+
+When used within `SEARCH`, xref:clauses/where.adoc[`WHERE`] is limited to filtering the following predicates:
+
+* Property predicates
+* Property predicates separated by the xref::expressions/predicates/boolean-operators.adoc[`AND`] operator
+* Property predicates followed by the xref::expressions/predicates/list-operators.adoc[`IN`] operator label:new[Introduced in Neo4j 2026.06]
 
 .Vector search with filter with an AND predicate on the same property
 ====
@@ -549,6 +557,44 @@ RETURN movie.title AS title, movie.releaseDate.year AS year, movie.rating AS rat
 If the `LIMIT` in the `SEARCH` clause is larger than the total number of indexed vectors fulfilling the predicate, the vector search will return fewer results.
 In the example above, only three nodes are returned despite the `LIMIT` being four.
 Due to the approximate nature of vector search, this can also happen if the `LIMIT` is smaller than but close to the total number of indexed vectors fulfilling the predicate.
+====
+
+
+.Vector search with filter using `IN` label:new[Introduced in Neo4j 2026.06]
+====
+.Query
+// tag::clauses_search_filter_in[]
+[source, cypher]
+----
+MATCH (movie:Movie)
+  SEARCH movie IN (
+    VECTOR INDEX moviePlots
+    FOR vector([1, 2, 3], 3, INTEGER)
+    WHERE movie.rating IN [7.4, 7.7, 8.5]
+    LIMIT 4
+  )
+RETURN movie.title AS title, movie.rating AS rating
+----
+// end::clauses_search_filter_in[]
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| title | rating
+
+| "Frozen"        | 7.4
+| "Mulan"         | 7.7
+| "Lilo & Stitch" | 7.4
+| "Lion King"     | 8.5
+
+2+|Rows: 4
+|===
+====
+
+[NOTE]
+====
+When the property in an `IN` predicate is of a numeric or string type, the list can be of any size.
+For other supported types, the list is limited to 256 elements.
 ====
 
 The variable in the property predicate must be the same as the binding variable in the `SEARCH` clause.
@@ -637,6 +683,7 @@ RETURN movie.title AS title
 ====
 If the vector index has no configured dimension, the query succeeds.
 However, if there are no vectors in the index of the same dimension as the query vector, the result of the query will be empty.
+For this reason, it is recommended to configure `vector.dimensions` when xref::indexes/syntax.adoc#create-vector-index[creating vector indexes].
 ====
 
 === Using a query vector which evaluates to null
@@ -801,11 +848,6 @@ For example, given that `seen` has been added as an additional property for filt
 
 `WHERE movie.rating > 8 OR movie.releaseDate \<= date("2000")`
 |
-
-| The predicate cannot include a xref::expressions/predicates/list-operators.adoc[list operator].
-| `WHERE movie.rating IN [7, 7.5, 8]`
-|
-
 
 | The predicate cannot include a xref::expressions/predicates/string-operators.adoc[string operator].
 | `WHERE movie.rating STARTS WITH '8'`

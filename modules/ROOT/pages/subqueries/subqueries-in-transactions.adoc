@@ -26,6 +26,7 @@ CALL {
     subQuery
 } IN [[concurrency] CONCURRENT] TRANSACTIONS
 [OF batchSize ROW[S]]
+[DISJOINT BY {NONE | AUTO | (<expr>, ...)}]
 [REPORT STATUS AS statusVar]
 [ON ERROR {CONTINUE | BREAK | FAIL | RETRY [FOR] [duration SEC[OND[S]]] [THEN {CONTINUE | BREAK | FAIL}]}]
 ----
@@ -220,6 +221,17 @@ For larger data sets, you might want to use larger batch sizes, such as `10000 R
 [[composite-databases]]
 == Composite databases
 
+////
+[source, cypher, test-setup]
+----
+CREATE OR REPLACE COMPOSITE DATABASE `composite`;
+CREATE OR REPLACE DATABASE `remoteGraph1`;
+CREATE OR REPLACE DATABASE `remoteGraph2`;
+CREATE ALIAS `composite.remoteGraph1` FOR DATABASE `remoteGraph1`;
+CREATE ALIAS `composite.remoteGraph2` FOR DATABASE `remoteGraph2`;
+----
+////
+
 `CALL { ... } IN TRANSACTIONS` can be used with link:{neo4j-docs-base-uri}/operations-manual/current/scalability/composite-databases/concepts/[composite databases].
 
 Even though composite databases allow accessing multiple graphs in a single query, only one graph can be modified in a single transaction.
@@ -227,6 +239,11 @@ Even though composite databases allow accessing multiple graphs in a single quer
 
 While the previous examples are generally valid for composite databases, there's a few extra factors that come into play when working with composite databases in subqueries.
 The following examples show how you can use `CALL { ... } IN TRANSACTIONS` on a composite database.
+
+[IMPORTANT]
+====
+Your application needs to be connected to the composite database when submitting queries involving its constituents. Select the composite database in UI tools or when running queries via client libraries.
+====
 
 .Import a CSV file on all constituents
 ====
@@ -241,11 +258,11 @@ The following examples show how you can use `CALL { ... } IN TRANSACTIONS` on a 
 ----
 
 .Create `Person` nodes on all constituents, drawing data from friends.csv
-[source, cypher, test-skip]
+[source, cypher, test-database=composite]
 ----
 UNWIND graph.names() AS graphName
 LOAD CSV FROM 'file:///friends.csv' AS line
-CALL (*) {
+CALL (graphName, line) {
   USE graph.byName( graphName )
   CREATE (:Person {name: line[1], age: toInteger(line[2])})
 } IN TRANSACTIONS
@@ -255,15 +272,15 @@ CALL (*) {
 .Remove all nodes and relationships from all constituents
 ====
 .Query
-[source, cypher, test-skip]
+[source, cypher, test-database=composite]
 ----
 UNWIND graph.names() AS graphName
-CALL {
+CALL (graphName) {
   USE graph.byName( graphName )
   MATCH (n)
   RETURN elementId(n) AS id
 }
-CALL {
+CALL (graphName, id) {
   USE graph.byName( graphName )
   WITH id
   MATCH (n)
@@ -278,7 +295,6 @@ That is why the nodes are matched in a subquery _preceding_ the one that actuall
 If the `MATCH` clause were inside the second subquery, the data deletion would run as one single transaction.
 
 ====
-
 
 [NOTE]
 ====
@@ -308,7 +324,7 @@ The next example assumes the existence of two constituents `remoteGraph1` and `r
 While the declared batch size is 3, only the first 2 rows act on `composite.remoteGraph1`, so the batch size for the first transaction is 2. That is followed by 3 rows on `composite.remoteGraph2`, 1 on `composite.remoteGraph2` and finally 2 on `composite.remoteGraph1`.
 
 .Query
-[source, cypher, test-skip]
+[source, cypher, test-database=composite]
 ----
 WITH ['composite.remoteGraph1', 'composite.remoteGraph2'] AS graphs
 UNWIND [0, 0, 1, 1, 1, 1, 0, 0] AS i
@@ -319,6 +335,7 @@ CALL (g) {
 } IN TRANSACTIONS OF 3 ROWS
 ----
 ====
+
 
 [[error-behavior]]
 == Error behavior
@@ -873,7 +890,7 @@ Deadlock detection and transaction retries can be time-consuming.
 When importing data that includes a significant number of relationships to be merged between the same nodes but processed in different batches, increasing the concurrency may not enhance performance.
 On the contrary, it could slow down the import process.
 
-.Dealing with deadlocks
+.Finding and retrying deadlocked transactions
 =====
 
 The following query tries to create `Movie` and `Year` nodes connected by a `RELEASED_IN` relationship.
@@ -1074,13 +1091,233 @@ The result shows that all transactions are now successful:
 +-------------------------------------------------+
 ----
 
-Deadlock resolution and transaction retries are time-consuming, making deadlock avoidance a preferred strategy.
-This can be achieved by dividing a task into two distinct subqueries: a data-independent subquery run in parallel with maximum concurrency, and a data-dependent subquery executed serially (i.e.  one transaction at a time) to avoid deadlocks.
+=====
+
+Deadlock resolution and transaction retries are time-consuming, however.
+The preferred strategy for dealing with deadlocks should instead be one of prevention.
+
+
+////
+[source, cypher, role=test-setup]
+----
+MATCH (n)
+DETACH DELETE n;
+----
+////
+
+[role=label--new-Neo4j-2026.06 label--cypher-25-only]
+[[disjoint-by]]
+=== Batch scheduling and deadlock prevention with `DISJOINT BY`
+
+Batch scheduling prevents deadlocks in concurrent transactions by ensuring that batches sharing resources never run at the same time, while batches that do not share resources run concurrently.
+This can be particularly useful when importing relationships.
+
+The default batch scheduling strategy for all queries run against a database can be configured with the link:{neo4j-docs-base-uri}/operations-manual/current/configuration/configuration-settings/#config_dbms.cypher.transactions.default_subquery_batch_strategy[`dbms.cypher.transactions.default_subquery_batch_strategy`] setting.
+Accepted values for this setting are `NONE` (no scheduling), `AUTO` (automatic inference), and `DEFAULT` (the product default, currently `NONE`).
+
+Alternatively, `DISJOINT BY` can be added to individual `CALL { ... } IN CONCURRENT TRANSACTIONS` statements to control batch scheduling at the query level.
+
+There are three forms of `DISJOINT BY`:
+
+* xref:subqueries/subqueries-in-transactions.adoc#lock-expressions[`DISJOINT BY (<expr>, ...)`]: declares lock-prone resources explicitly per row.
+* xref:subqueries/subqueries-in-transactions.adoc#automatic-inference[`DISJOINT BY AUTO`]: the runtime infers lock-prone resources automatically.
+* xref:subqueries/subqueries-in-transactions.adoc#disabled-inference[`DISJOINT BY NONE`]: disables scheduling explicitly, overriding any database-level default.
+
+[NOTE]
+====
+
+* `DISJOINT BY` overrides the database-wide setting.
+For example, if `dbms.cypher.transactions.default_subquery_batch_strategy` is set to `AUTO`, a query with `DISJOINT BY NONE` will run without batch scheduling.
+
+* `DISJOINT BY` can only be run together with concurrent transactions; it is not valid in a regular `CALL { ... } IN TRANSACTIONS` subquery.
+
+====
+
+[[lock-expressions]]
+==== Declaring lock expressions with `DISJOINT BY`
+
+`DISJOINT BY (<expr>, ...)` allows you to declare the expressions identifying locked resources for a `CALL { ... } IN CONCURRENT TRANSACTIONS` statement.
+
+The expressions must use only variables imported from the outer query, since they are evaluated before the subquery runs; for example, `elementId(n)` or `n.id`, where `n` is an imported variable.
+They act as constraints on batch composition: the xref:planning-and-tuning/runtimes/index.adoc[runtime] ensures that no two concurrent batches share a value for any of the declared expressions.
+
+For example, given `DISJOINT BY (n.id, n.category)`, two batches are scheduled concurrently only if they share no values for either `n.id` or `n.category`.
+Any row in one batch that shares a value for either expression with a row in another batch causes those batches to be run sequentially.
+With a batch size of `2` (i.e. `IN CONCURRENT TRANSACTIONS OF 2 ROWS DISJOINT BY (n.id, n.category)`), the batching and execution could look something like this:
+
+.Simplified batch scheduling model
+[source]
+----
+row 1: id=1, category=A
+row 2: id=2, category=A
+row 3: id=3, category=A
+row 4: id=4, category=A
+row 5: id=5, category=B
+row 6: id=6, category=B
+
+Batches:
+  Batch A: rows 1, 2  (category=A)
+  Batch B: rows 3, 4  (category=A)
+  Batch C: rows 5, 6  (category=B)
+
+Execution:
+  Batch A ------->
+                  Batch B -------->
+  Batch C ------------------------>
+----
+
+Batch A and Batch B share `category=A` and are therefore serialized; Batch C shares no values with either and runs concurrently throughout.
+
+No automatic lock expression inference is performed when using `DISJOINT BY (<expr>, ...)`; the supplied list is the entire lock expression set for that subquery.
+
+.`DISJOINT BY (<expr>, ...)`: importing nodes and relationships
+====
+
+This example imports movies and their release years from a CSV file, creating `Movie` and `Year` nodes and `RELEASED_IN` relationships between them.
+For this import, xref:schema/constraints/create-constraints.adoc#create-key-constraints[key constraints] are in place to ensure the existence of unique `movieId` properties for `Movie` nodes and `year` properties for `Year` nodes, and to provide index-backed lookups for these properties (key constraints are xref:schema/constraints/create-constraints.adoc#constraints-and-backing-indexes[backed by indexes]).
+
+With these constraints and indexes, two concurrent batches attempting to `MERGE` the same `Movie` or `Year` node simultaneously will contend on the key constraint lock, causing a deadlock.
+
+.Create node key constraints
+[source, cypher]
+----
+CREATE CONSTRAINT movie_id IF NOT EXISTS FOR (m:Movie) REQUIRE m.movieId IS KEY;
+CREATE CONSTRAINT year IF NOT EXISTS FOR (y:Year) REQUIRE y.year IS KEY;
+----
+
+.Import with explicit lock expressions
+// tag::subqueries_in_transactions_deadlock_prevention_disjoint_by_lock_expression[]
+[source, cypher]
+----
+LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/movies.csv' AS line
+CALL (line) {
+  MERGE (m:Movie {movieId: line.movieId})
+  MERGE (y:Year {year: line.year})
+  MERGE (m)-[:RELEASED_IN]->(y)
+} IN CONCURRENT TRANSACTIONS
+  DISJOINT BY (line.year, line.movieId)
+  ON ERROR RETRY THEN CONTINUE
+----
+// end::subqueries_in_transactions_deadlock_prevention_disjoint_by_lock_expression[]
+
+`DISJOINT BY (line.year, line.movieId)` declares that `line.year` and `line.movieId` identify the locked resources for each batch.
+
+`ON ERROR RETRY THEN CONTINUE` provides a fallback for transient errors.
+
+====
+
+
+[[automatic-inference]]
+==== Automatic lock inference with `DISJOINT BY AUTO`
+
+`DISJOINT BY AUTO` instructs the runtime to infer lock expressions automatically from the subquery body, without requiring the user to declare them explicitly.
+This is useful when the locked resources are straightforward to infer statically; for example, `MERGE` patterns on uniquely constrained properties.
+Indexes on the merged properties are required in order for `DISJOINT BY AUTO` to infer locking expressions.
+If the runtime cannot infer any lock expressions, the subquery executes with no scheduling restriction.
+
+To see which lock expressions (if any) were inferred by the planner, prepend the statement with xref:planning-and-tuning/execution-plans.adoc#reading-explain-and-profile-query-plans[`EXPLAIN`].
+
+.`DISJOINT BY AUTO`: importing actors and movies
+====
+
+This example imports actors and their roles from a CSV file, creating `Person` and `Movie` nodes and `ACTS_IN` relationships between them.
+With key constraints (and backing indexes) on the `name` properties of `Person` nodes and the `title` properties of `Movie` nodes, the runtime infers the lock expressions `(line.person, line.movie)` automatically from the `MERGE` patterns as can be seen in the `TransactionForEach` operator `Details` column in the query plan produced by prepending the statement with `EXPLAIN` (the same expressions a user would write manually with `DISJOINT BY (line.person, line.movie)`).
+
+////
+[source, cypher, role=test-setup]
+----
+MATCH (n)
+DETACH DELETE n;
+DROP CONSTRAINT movie_id;
+----
+////
+
+.Create node key constraints
+[source, cypher]
+----
+CREATE CONSTRAINT person_name IF NOT EXISTS FOR (p:Person) REQUIRE p.name IS KEY;
+CREATE CONSTRAINT movie_title IF NOT EXISTS FOR (m:Movie) REQUIRE m.title IS KEY;
+----
+
+.Import with automatic lock inference
+[source, cypher]
+----
+EXPLAIN
+LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/intro/movies/actors.csv' AS line
+CALL (line) {
+  MERGE (p:Person {name: line.person})
+  MERGE (m:Movie  {title: line.movie})
+  CREATE (p)-[:ACTS_IN {role: line.roles}]->(m)
+} IN CONCURRENT TRANSACTIONS
+  DISJOINT BY AUTO
+----
+
+.Query plan
+[role="queryplan"]
+----
++----------------------+----+---------------------------------------------------------------------------------------------+----------------+
+| Operator             | Id | Details                                                                                     | Estimated Rows |
++----------------------+----+---------------------------------------------------------------------------------------------+----------------+
+| +ProduceResults      |  0 |                                                                                             |             10 |
+| |                    +----+---------------------------------------------------------------------------------------------+----------------+
+| +EmptyResult         |  1 |                                                                                             |             10 |
+| |                    +----+---------------------------------------------------------------------------------------------+----------------+
+| +TransactionForeach  |  2 | IN CONCURRENT TRANSACTIONS OF 1000 ROWS DISJOINT BY (line.person, line.movie) ON ERROR FAIL |             10 |
+| |\                   +----+---------------------------------------------------------------------------------------------+----------------+
+| | +Create            |  3 | (p)-[anon_0:ACTS_IN {role: line.roles}]->(m)                                                |             10 |
+| | |                  +----+---------------------------------------------------------------------------------------------+----------------+
+| | +Apply             |  4 |                                                                                             |             10 |
+| | |\                 +----+---------------------------------------------------------------------------------------------+----------------+
+| | | +MergeUniqueNode |  5 | UNIQUE m:Movie(title) WHERE title = line.movie,                                             |             10 |
+| | |                  +----+---------------------------------------------------------------------------------------------+----------------+
+| | +MergeUniqueNode   |  6 | UNIQUE p:Person(name) WHERE name = line.person,                                             |             10 |
+| |                    +----+---------------------------------------------------------------------------------------------+----------------+
+| +LoadCSV             |  7 | line                                                                                        |             10 |
++----------------------+----+---------------------------------------------------------------------------------------------+----------------+
+----
+
+====
+
+[[disabled-inference]]
+==== Disabling batch scheduling with `DISJOINT BY NONE`
+
+`DISJOINT BY NONE` explicitly disables batch scheduling, overriding `dbms.cypher.transactions.default_subquery_batch_strategy`.
+
+////
+[source, cypher, role=test-setup]
+----
+MATCH (n)
+DETACH DELETE n;
+DROP CONSTRAINT movie_title;
+----
+////
+
+.`DISJOINT BY NONE`: importing independent nodes
+====
+
+This example imports movies from a CSV file, creating `Movie` nodes.
+With a key constraint on the `movieId` property of `Movie` nodes, each row is guaranteed to operate on a distinct node; concurrent batches cannot contend on the same resource, making batch scheduling unnecessary.
+
+.Importing nodes without batch scheduling
+[source, cypher]
+----
+LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/movies.csv' AS line
+CALL (line) {
+  MERGE (m:Movie {movieId: line.movieId})
+} IN CONCURRENT TRANSACTIONS
+  DISJOINT BY NONE
+----
+
+====
+[[task-division]]
+=== Deadlock prevention by task division
+
+Deadlock prevention can also be achieved by dividing a task into two distinct subqueries: a data-independent subquery run in parallel with maximum concurrency, and a data-dependent subquery executed serially (i.e.  one transaction at a time) to avoid deadlocks.
 In the below example, nodes and properties are created in a concurrent subquery, while the relationships connecting those nodes are created in a serial subquery.
 This method benefits from the performance of concurrent transactions while avoiding deadlocks.
 
 .Avoiding deadlocks by dividing an import task into a data-independent concurrent subquery followed by a data-dependent serial subquery
-// tag::subqueries_in_transactions_deadlock_example_2[]
+// tag::subqueries_in_transactions_deadlock_prevention_task_division[]
 [source, cypher]
 ----
 LOAD CSV WITH HEADERS FROM 'https://data.neo4j.com/importing-cypher/movies.csv' AS row
@@ -1097,9 +1334,7 @@ RETURN nodeStatus.transactionId as nodeTransaction,
        relationshipStatus.transactionId as relationshipTransaction,
        relationshipStatus.committed AS successfulRelationshipTransaction
 ----
-// end::subqueries_in_transactions_deadlock_example_2[]
-
-=====
+// end::subqueries_in_transactions_deadlock_prevention_task_division[]
 
 [[restrictions]]
 == Restrictions

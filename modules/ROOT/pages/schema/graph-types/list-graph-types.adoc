@@ -3,9 +3,20 @@
 = Show graph types
 
 The `SHOW CURRENT GRAPH TYPE` command allows you to show the graph type specification for the current database.
+It can either be shown as a string representation or, as of Neo4j 2026.06, a virtual graph representation.
+For general information about the `SHOW` command, see the xref:clauses/show.adoc[`SHOW`] page.
 
 [NOTE]
 Showing a graph type requires the link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-constraints[`SHOW CONSTRAINTS` privilege].
+
+[[examples]]
+== Examples
+
+* xref:schema/graph-types/list-graph-types.adoc#graph-type-as-string[]
+* xref:schema/graph-types/list-graph-types.adoc#graph-type-as-graph[]
+* xref:schema/graph-types/list-graph-types.adoc#composable-show-graph-types[]
+
+The graph type used for the examples are:
 
 .Set graph type
 [source, cypher]
@@ -21,11 +32,17 @@ ALTER CURRENT GRAPH TYPE SET {
    (:Person)-[:WORKS_FOR => {role :: STRING}]->(:Company),
    CONSTRAINT company_name FOR (c:Company) REQUIRE c.name IS KEY,
    CONSTRAINT animal_id FOR (a:Animal) REQUIRE a.id IS UNIQUE,
-   CONSTRAINT resident_address FOR (resident:Resident) REQUIRE resident.address :: STRING
+   CONSTRAINT resident_address FOR (resident:Resident) REQUIRE resident.address :: STRING,
+   CONSTRAINT stayed_in_startDateExistence FOR ()-[r:STAYED_IN]->() REQUIRE (r.startDate) IS NOT NULL,
+   CONSTRAINT stayed_in_startDateType FOR ()-[r:STAYED_IN]->() REQUIRE (r.startDate) IS :: DATE,
+   CONSTRAINT stayed_in_endDate FOR ()-[r:STAYED_IN]->() REQUIRE (r.endDate) IS :: DATE
 }
 ----
 
-.Show the full graph type
+[[graph-type-as-string]]
+=== Show full graph type as a string
+
+.Show the full graph type as a string
 // tag::schema_graph_types_show[]
 [source, cypher]
 ----
@@ -36,39 +53,181 @@ SHOW CURRENT GRAPH TYPE
 .Result
 [source, "queryresult"]
 ----
-+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| specification                                                                                                                                                           |
-+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| "{                                                                                                                                                                      |
-|    (:`City` => {`name` :: STRING NOT NULL, `population` :: INTEGER}),                                                                                                   |
-|    (:`Company` => {`address` :: STRING, `name` :: STRING}),                                                                                                             |
-|    (:`Person` => :`Resident` {`name` :: STRING, `ssn` :: INTEGER}),                                                                                                     |
-|    (:`Pet` => :`Animal`&`Resident` {`healthCertificate` :: STRING, `insuranceNumber` :: INTEGER, `name` :: STRING}),                                                    |
-|    (:`Robot` => :`Machine`&`Resident` {`application` :: STRING NOT NULL, `id` :: INTEGER NOT NULL}),                                                                    |
-|    (:`Resident`)-[:`LIVES_IN` => {`since` :: ANY NOT NULL}]->(:`City` =>),                                                                                              |
-|    (:`Person` =>)-[:`WORKS_FOR` => {`role` :: STRING}]->(:`Company` =>),                                                                                                |
-|    CONSTRAINT `constraint_d7524c38` FOR (`n`:`Company` =>) REQUIRE (`n`.`address`) IS UNIQUE,                                                                           |
-|    CONSTRAINT `company_name` FOR (`n`:`Company` =>) REQUIRE (`n`.`name`) IS KEY,                                                                                        |
-|    CONSTRAINT `constraint_bb1018eb` FOR (`n`:`Person` =>) REQUIRE (`n`.`name`, `n`.`ssn`) IS KEY,                                                                       |
-|    CONSTRAINT `constraint_302a3693` FOR (`n`:`Pet` =>) REQUIRE (`n`.`healthCertificate`) IS UNIQUE,                                                                     |
-|    CONSTRAINT `constraint_aa881a72` FOR (`n`:`Pet` =>) REQUIRE (`n`.`insuranceNumber`) IS KEY,                                                                          |
-|    CONSTRAINT `animal_id` FOR (`n`:`Animal`) REQUIRE (`n`.`id`) IS UNIQUE,                                                                                              |
-|    CONSTRAINT `resident_address` FOR (`n`:`Resident`) REQUIRE (`n`.`address`) IS :: STRING                                                                              |
-| }"                                                                                                                                                                      |
-+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
++------------------------------------------------------------------------------------------------------------------------------+
+| specification                                                                                                                |
++------------------------------------------------------------------------------------------------------------------------------+
+| "{                                                                                                                           |
+|    (:`City` => {`name` :: STRING NOT NULL, `population` :: INTEGER}),                                                        |
+|    (:`Company` => {`address` :: STRING, `name` :: STRING}),                                                                  |
+|    (:`Person` => :`Resident` {`name` :: STRING, `ssn` :: INTEGER}),                                                          |
+|    (:`Pet` => :`Animal`&`Resident` {`healthCertificate` :: STRING, `insuranceNumber` :: INTEGER, `name` :: STRING}),         |
+|    (:`Robot` => :`Machine`&`Resident` {`application` :: STRING NOT NULL, `id` :: INTEGER NOT NULL}),                         |
+|    (:`Resident`)-[:`LIVES_IN` => {`since` :: ANY NOT NULL}]->(:`City` =>),                                                   |
+|    (:`Person` =>)-[:`WORKS_FOR` => {`role` :: STRING}]->(:`Company` =>),                                                     |
+|    CONSTRAINT `constraint_d7524c38` FOR (`n`:`Company` =>) REQUIRE (`n`.`address`) IS UNIQUE,                                |
+|    CONSTRAINT `company_name` FOR (`n`:`Company` =>) REQUIRE (`n`.`name`) IS KEY,                                             |
+|    CONSTRAINT `constraint_bb1018eb` FOR (`n`:`Person` =>) REQUIRE (`n`.`name`, `n`.`ssn`) IS KEY,                            |
+|    CONSTRAINT `constraint_302a3693` FOR (`n`:`Pet` =>) REQUIRE (`n`.`healthCertificate`) IS UNIQUE,                          |
+|    CONSTRAINT `constraint_aa881a72` FOR (`n`:`Pet` =>) REQUIRE (`n`.`insuranceNumber`) IS KEY,                               |
+|    CONSTRAINT `animal_id` FOR (`n`:`Animal`) REQUIRE (`n`.`id`) IS UNIQUE,                                                   |
+|    CONSTRAINT `resident_address` FOR (`n`:`Resident`) REQUIRE (`n`.`address`) IS :: STRING,                                  |
+|    CONSTRAINT `stayed_in_endDate` FOR ()-[`r`:`STAYED_IN`]->() REQUIRE (`r`.`endDate`) IS :: DATE,                           |
+|    CONSTRAINT `stayed_in_startDateExistence` FOR ()-[`r`:`STAYED_IN`]->() REQUIRE (`r`.`startDate`) IS NOT NULL,             |
+|    CONSTRAINT `stayed_in_startDateType` FOR ()-[`r`:`STAYED_IN`]->() REQUIRE (`r`.`startDate`) IS :: DATE                    |
+| }"                                                                                                                           |
++------------------------------------------------------------------------------------------------------------------------------+
 ----
 
 [NOTE]
 Regardless of which syntax was used to define a property uniqueness or key constraint, they are all shown in the `specification` returned by `SHOW CURRENT GRAPH TYPE` using the `CONSTRAINT … FOR … REQUIRE` syntax.
 
+[role=label--new-Neo4j-2026.06]
+[[graph-type-as-graph]]
+=== Show full graph type as a virtual graph
+
+.Show the full graph type as a virtual graph
+// tag::schema_graph_types_show_as_graph[]
+[source, cypher]
+----
+SHOW CURRENT GRAPH TYPE AS GRAPH
+----
+// end::schema_graph_types_show_as_graph[]
+
+The following graph is returned:
+
+image::graph-show-current-graph-type-as-graph.svg[Result of SHOW CURRENT GRAPH TYPE AS GRAPH command,width=700,role=popup]
+
+The following table is returned:
+
+.Result
+[source, "queryresult"]
+----
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| nodes                                                                                                            | relationships                                                                                                                             |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| [(:AnyLabel {}), (:NodeElementType {label: "City", properties: ["name :: STRING NOT NULL",                       | [[:IMPLIES {}], [:IMPLIES {}], [:IMPLIES {}], [:IMPLIES {}], [:IMPLIES {}], [:RELATIONSHIP_ELEMENT_TYPE {relationshipType: "LIVES_IN",    |
+| "population :: INTEGER"], constraints: []}), (:NodeElementType {label: "Company",                                | properties: ["since :: ANY NOT NULL"], constraints: []}], [:RELATIONSHIP_ELEMENT_TYPE {relationshipType: "WORKS_FOR", properties:         |
+| properties: ["address :: STRING", "name :: STRING"], constraints: [                                              | ["role :: STRING"], constraints: []}], [:RELATIONSHIP_TYPE {relationshipType: "STAYED_IN", constraints: [                                 |
+| "CONSTRAINT constraint_d7524c38 FOR (n:Company =>) REQUIRE n.address IS UNIQUE",                                 | "CONSTRAINT stayed_in_endDate FOR ()-[r:STAYED_IN]->() REQUIRE r.endDate IS :: DATE",                                                     |
+| "CONSTRAINT company_name FOR (n:Company =>) REQUIRE n.name IS KEY"]}), (:NodeElementType                         | "CONSTRAINT stayed_in_startDateExistence FOR ()-[r:STAYED_IN]->() REQUIRE r.startDate IS NOT NULL",                                       |
+| {label: "Person", properties: ["name :: STRING", "ssn :: INTEGER"], constraints: [                               | "CONSTRAINT stayed_in_startDateType FOR ()-[r:STAYED_IN]->() REQUIRE r.startDate IS :: DATE"]}]]                                          |
+| "CONSTRAINT constraint_bb1018eb FOR (n:Person =>) REQUIRE (n.name, n.ssn) IS KEY"]}), (:NodeElementType          |                                                                                                                                           |
+| {label: "Pet", properties: ["healthCertificate :: STRING", "insuranceNumber :: INTEGER", "name :: STRING"],      |                                                                                                                                           |
+| constraints: ["CONSTRAINT constraint_302a3693 FOR (n:Pet =>) REQUIRE n.healthCertificate IS UNIQUE",             |                                                                                                                                           |
+| "CONSTRAINT constraint_aa881a72 FOR (n:Pet =>) REQUIRE n.insuranceNumber IS KEY"]}), (:NodeElementType           |                                                                                                                                           |
+| {label: "Robot", properties: ["application :: STRING NOT NULL", "id :: INTEGER NOT NULL"], constraints: []}),    |                                                                                                                                           |
+| (:NodeLabel {label: "Animal", constraints: ["CONSTRAINT animal_id FOR (n:Animal) REQUIRE n.id IS UNIQUE"]}),     |                                                                                                                                           |
+| (:NodeLabel {label: "Machine", constraints: []}), (:NodeLabel {label: "Resident", constraints: [                 |                                                                                                                                           |
+| "CONSTRAINT resident_address FOR (n:Resident) REQUIRE n.address IS :: STRING"]})]                                |                                                                                                                                           |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
+
+The `nodes` column contains a list of virtual nodes representing the node element types and node labels defined in the graph type.
+The `relationships` column contains a list of virtual relationships representing the relationship element types, relationship constraints not belonging to any relationship element type, and label implications in node element types.
+
+Four entities in the result are worth noting:
+
+* `NodeElementType`: a virtual node representing a node element type in the graph type.
+* `NodeLabel`: a virtual node representing a node label in the graph type.
+* `AnyLabel`: relationship element types with unconstrained endpoints are represented by a virtual any-node with the label `AnyLabel` and no properties.
+Each relationship gets its own `AnyLabel` node.
+* `IMPLIES`: when a node element type implies another label, the two are connected by a relationship of type `IMPLIES` with no properties.
+
+For more information, see xref:schema/graph-types/list-graph-types.adoc#virtual-nodes[virtual nodes] and xref:schema/graph-types/list-graph-types.adoc#virtual-relationships[virtual relationships] below.
+
+Together, the two lists returned in the `nodes` and `relationships` columns form the following graph:
+
+[source]
+----
+(city:NodeElementType {label: "City", properties: ["name :: STRING NOT NULL", "population :: INTEGER"], constraints: []}),
+(company:NodeElementType {label: "Company", properties: ["address :: STRING", "name :: STRING"], constraints: ["CONSTRAINT constraint_d7524c38 FOR (n:Company =>) REQUIRE n.address IS UNIQUE", "CONSTRAINT company_name FOR (n:Company =>) REQUIRE n.name IS KEY"]}),
+(person:NodeElementType {label: "Person", properties: ["name :: STRING", "ssn :: INTEGER"], constraints: ["CONSTRAINT constraint_bb1018eb FOR (n:Person =>) REQUIRE (n.name, n.ssn) IS KEY"]}),
+(pet:NodeElementType {label: "Pet", properties: ["healthCertificate :: STRING", "insuranceNumber :: INTEGER", "name :: STRING"], constraints: ["CONSTRAINT constraint_302a3693 FOR (n:Pet =>) REQUIRE n.healthCertificate IS UNIQUE", "CONSTRAINT constraint_aa881a72 FOR (n:Pet =>) REQUIRE n.insuranceNumber IS KEY"]}),
+(robot:NodeElementType {label: "Robot", properties: ["application :: STRING NOT NULL", "id :: INTEGER NOT NULL"], constraints: []}),
+(animal:NodeLabel {label: "Animal", constraints: ["CONSTRAINT animal_id FOR (n:Animal) REQUIRE n.id IS UNIQUE"]}),
+(machine:NodeLabel {label: "Machine", constraints: []}),
+(resident:NodeLabel {label: "Resident", constraints: ["CONSTRAINT resident_address FOR (n:Resident) REQUIRE n.address IS :: STRING"]}),
+(any:AnyLabel {}),
+(person)-[:IMPLIES {}]->(resident),
+(pet)-[:IMPLIES {}]->(animal),
+(pet)-[:IMPLIES {}]->(resident),
+(robot)-[:IMPLIES {}]->(machine),
+(robot)-[:IMPLIES {}]->(resident),
+(resident)-[:RELATIONSHIP_ELEMENT_TYPE {relationshipType: "LIVES_IN", properties: ["since :: ANY NOT NULL"], constraints: []}]->(city),
+(person)-[:RELATIONSHIP_ELEMENT_TYPE {relationshipType: "WORKS_FOR", properties: ["role :: STRING"], constraints: []}]->(company),
+(any)-[:RELATIONSHIP_TYPE {relationshipType: "STAYED_IN", constraints: ["CONSTRAINT stayed_in_endDate FOR ()-[r:STAYED_IN]->() REQUIRE r.endDate IS :: DATE", "CONSTRAINT stayed_in_startDateExistence FOR ()-[r:STAYED_IN]->() REQUIRE r.startDate IS NOT NULL", "CONSTRAINT stayed_in_startDateType FOR ()-[r:STAYED_IN]->() REQUIRE r.startDate IS :: DATE"]}]->(any)
+----
+
+[role=label--new-Neo4j-2026.05]
+[[composable-show-graph-types]]
+=== Combine `SHOW CURRENT GRAPH TYPE` with other Cypher clauses
+
+The `SHOW CURRENT GRAPH TYPE` command can be combined with general Cypher clauses in a single query.
+
+For example, splitting the graph type specification into separate strings.
+
+.Return separate strings for each part of the graph type
+[source, cypher]
+----
+SHOW CURRENT GRAPH TYPE
+YIELD specification
+FILTER specification <> '{}' // <1>
+WITH split(specification, '\r\n') AS specificationLines // <2>
+WITH specificationLines[1..-1] AS elementLines // <3>
+WITH [line IN elementLines | rtrim(trim(line), ',')] AS graphTypeLines // <4>
+
+UNWIND graphTypeLines AS graphTypeElement
+RETURN graphTypeElement
+----
+
+<1> Filter out the empty graph type.
+<2> Split `STRING` definition into separate lines.
+<3> Remove the opening and closing lines of the graph type (`{` and `}`).
+<4> Remove leading indention and trailing commas.
+
+.Result
+[queryresult]
+----
++--------------------------------------------------------------------------------------------------------------------+
+| graphTypeElement                                                                                                   |
++--------------------------------------------------------------------------------------------------------------------+
+| "(:`City` => {`name` :: STRING NOT NULL, `population` :: INTEGER})"                                                |
+| "(:`Company` => {`address` :: STRING, `name` :: STRING})"                                                          |
+| "(:`Person` => :`Resident` {`name` :: STRING, `ssn` :: INTEGER})"                                                  |
+| "(:`Pet` => :`Animal`&`Resident` {`healthCertificate` :: STRING, `insuranceNumber` :: INTEGER, `name` :: STRING})" |
+| "(:`Robot` => :`Machine`&`Resident` {`application` :: STRING NOT NULL, `id` :: INTEGER NOT NULL})"                 |
+| "(:`Resident`)-[:`LIVES_IN` => {`since` :: ANY NOT NULL}]->(:`City` =>)"                                           |
+| "(:`Person` =>)-[:`WORKS_FOR` => {`role` :: STRING}]->(:`Company` =>)"                                             |
+| "CONSTRAINT `constraint_1324d6fc` FOR (`n`:`Company` =>) REQUIRE (`n`.`address`) IS UNIQUE"                        |
+| "CONSTRAINT `company_name` FOR (`n`:`Company` =>) REQUIRE (`n`.`name`) IS KEY"                                     |
+| "CONSTRAINT `constraint_5d8979dd` FOR (`n`:`Person` =>) REQUIRE (`n`.`name`, `n`.`ssn`) IS KEY"                    |
+| "CONSTRAINT `constraint_bbcb9835` FOR (`n`:`Pet` =>) REQUIRE (`n`.`healthCertificate`) IS UNIQUE"                  |
+| "CONSTRAINT `constraint_550b510e` FOR (`n`:`Pet` =>) REQUIRE (`n`.`insuranceNumber`) IS KEY"                       |
+| "CONSTRAINT `animal_id` FOR (`n`:`Animal`) REQUIRE (`n`.`id`) IS UNIQUE"                                           |
+| "CONSTRAINT `resident_address` FOR (`n`:`Resident`) REQUIRE (`n`.`address`) IS :: STRING"                          |
++--------------------------------------------------------------------------------------------------------------------+
+14 rows
+----
+
+[NOTE]
+====
+When combining `SHOW CURRENT GRAPH TYPE` with other clauses, the `YIELD` clause is mandatory and must not be omitted.
+`YIELD` must explicitly list the yielded columns.
+`YIELD *` is not permitted.
+The query must also end with a valid last clause (like a `RETURN` or an updating clause).
+====
 
 [[result-columns]]
-== Result columns for `SHOW CURRENT GRAPH TYPE`
+== Return columns
 
-There are two return columns for `SHOW CURRENT GRAPH TYPE`: `type` and `specification`.
-Both are returned by default.
+The columns returned by `SHOW CURRENT GRAPH TYPE` and `SHOW CURRENT GRAPH TYPE AS GRAPH` are different.
 
-.Listing graph types output
+=== `SHOW CURRENT GRAPH TYPE` columns
+
+There is one return column for `SHOW CURRENT GRAPH TYPE`: `specification`.
+It is returned by default.
+
+.Show current graph type output
 [cols="3*", options="header"]
 |===
 | Column
@@ -80,6 +239,157 @@ Both are returned by default.
 This can be used in an `ALTER CURRENT GRAPH TYPE SET` command to recreate the same graph type. label:default-output[]
 | `STRING`
 |===
+
+[role=label--new-Neo4j-2026.06]
+[[result-columns-as-graph]]
+=== `SHOW CURRENT GRAPH TYPE AS GRAPH` columns
+
+There are two return columns for `SHOW CURRENT GRAPH TYPE AS GRAPH`: `nodes` and `relationships`.
+They are returned by default.
+
+.Show current graph type as graph output
+[cols="3*", options="header"]
+|===
+| Column
+| Description
+| Type
+
+| `nodes`
+| A list of virtual nodes representing the node element types, separate node labels, node constraints not belonging to any node element type, and nodes used to represent empty endpoints on relationships. label:default-output[]
+| `LIST<NODE NOT NULL>`
+
+| `relationships`
+| A list of virtual relationships representing the relationship element types, relationship constraints not belonging to any relationship element type, and label implications in node element types. label:default-output[]
+| `LIST<RELATIONSHIP NOT NULL>`
+|===
+
+[NOTE]
+The graph returned by `SHOW CURRENT GRAPH TYPE AS GRAPH` is a virtual graph.
+A virtual graph is a graph projection that exists only for the duration of a query.
+Virtual nodes and relationships are constructed purely to represent data in a graph-shaped format, are not persisted, and should not be written to.
+Nodes and relationships in a virtual graph have negative IDs.
+
+[[virtual-nodes]]
+==== Virtual nodes
+
+There are three different virtual nodes used to represent parts of the graph type.
+
+* *_Node element type virtual nodes_* represent a node element type in the graph type.
+They contain the identifying label, property specifications, and any key or uniqueness constraints tied to the node element type.
+* *_Node label virtual nodes_* represent node labels that are not identifying a node element type.
+Either node constraints that are not tied to any node element type, labels that are implied on node element types, or labels used as endpoints on relationship element types.
+The constraints are collected per label, meaning there is one node per group of constraints sharing a label, not one per constraint.
+They contain the label and any constraints belonging to it.
+* *_Empty relationship endpoint virtual nodes_* represent the empty endpoints of relationships.
+Either an unconstrained endpoint of a relationship element type or the empty end point of a relationship constraint not belonging to a relationship element type.
+They contain no additional information.
+
+Node element type virtual nodes all have the label `NodeElementType`, with their information stored in their properties.
+For example, `(:NodeElementType {label: "Person", properties: ["name :: STRING", "ssn :: INTEGER"], constraints: ["CONSTRAINT constraint_5d8979dd FOR (n:Person \=>) REQUIRE (n.name, n.ssn) IS KEY"]})`.
+
+.Node element type virtual node properties
+[cols="3*", options="header"]
+|===
+| Property
+| Description
+| Type
+
+| `label`
+| The identifying label of the node element type.
+| `STRING`
+
+| `properties`
+| Any properties defined on the node element type, otherwise an empty list.
+The format of the strings are the same as given in the graph type definition, for example `"prop :: STRING NOT NULL"`.
+| `LIST<STRING NOT NULL>`
+
+| `constraints`
+| Any key or uniqueness constraints belonging to the node element type, otherwise an empty list.
+The constraints are represented by their string descriptions in the graph type definition.
+| `LIST<STRING NOT NULL>`
+|===
+
+Node label virtual nodes all have the label `NodeLabel`, with their information stored in their properties.
+For example, `(:NodeLabel {label: "Animal", constraints: ["CONSTRAINT animal_id FOR (n:Animal) REQUIRE n.id IS UNIQUE"]})` and `(:NodeLabel {label: "Machine", constraints: []})`.
+
+.Node label virtual nodes properties
+[cols="3*", options="header"]
+|===
+| Property
+| Description
+| Type
+
+| `label`
+| The label of the node constraints or being referenced in an element type.
+| `STRING`
+
+| `constraints`
+| Any constraints belonging to the label, otherwise an empty list.
+The constraints are represented by their string descriptions in the graph type definition.
+| `LIST<STRING NOT NULL>`
+|===
+
+Empty relationship endpoint virtual nodes have the label `AnyLabel` and no properties, as they store no additional information.
+
+[[virtual-relationships]]
+==== Virtual relationships
+
+There are three different virtual relationships used to represent parts of the graph type.
+
+* *_Relationship element type virtual relationships_* represent a relationship element type in the graph type.
+They contain the identifying relationship type, property specifications and any key or uniqueness constraints tied to the relationship element type.
+* *_Relationship constraint virtual relationships_* represent relationship constraints that are not tied to any relationship element type.
+They are collected per relationship type, meaning there is one relationship per group of constraints sharing a relationship type, not one per constraint.
+They contain the relationship type and constraints belonging to it.
+* *_Label implication virtual relationships_* represent a label implication of a node element type.
+They contain no additional information.
+
+Relationship element type virtual relationships all have the relationship type `RELATIONSHIP_ELEMENT_TYPE`, with their information stored in their properties.
+For example, `[:RELATIONSHIP_ELEMENT_TYPE {relationshipType: "LIVES_IN", properties: ["since :: ANY NOT NULL"], constraints: []}]`.
+
+.Relationship element type virtual relationship properties
+[cols="3*", options="header"]
+|===
+| Property
+| Description
+| Type
+
+| `relationshipType`
+| The identifying relationship type of the relationship element type.
+| `STRING`
+
+| `properties`
+| Any properties defined on the relationship element type, otherwise an empty list.
+The format of the strings are the same as given in the graph type definition, for example `"prop :: STRING NOT NULL"`.
+| `LIST<STRING NOT NULL>`
+
+| `constraints`
+| Any key or uniqueness constraints belonging to the relationship element type, otherwise an empty list.
+The constraints are represented by their string descriptions in the graph type definition.
+| `LIST<STRING NOT NULL>`
+|===
+
+Relationship constraint virtual relationships all have the relationship type `RELATIONSHIP_TYPE`, with their information stored in their properties.
+For example, `[:RELATIONSHIP_TYPE {relationshipType: "STAYED_IN", constraints: ["CONSTRAINT stayed_in_endDate FOR ()-[r:STAYED_IN]\->() REQUIRE r.endDate IS :: DATE", "CONSTRAINT stayed_in_startDateExistence FOR ()-[r:STAYED_IN]\->() REQUIRE r.startDate IS NOT NULL", "CONSTRAINT stayed_in_startDateType FOR ()-[r:STAYED_IN]\->() REQUIRE r.startDate IS :: DATE"]}]`.
+
+.Relationship constraint virtual relationship properties
+[cols="3*", options="header"]
+|===
+| Property
+| Description
+| Type
+
+| `relationshipType`
+| The relationship type of the relationship constraints.
+| `STRING`
+
+| `constraints`
+| Any constraints belonging to the relationship, otherwise an empty list.
+The constraints are represented by their string descriptions in the graph type definition.
+| `LIST<STRING NOT NULL>`
+|===
+
+Label implication virtual relationships have relationship type `IMPLIES` and no properties, as they store no additional information.
 
 [[constraints-in-show-current-graph-type]]
 == Constraints in `SHOW CURRENT GRAPH TYPE`
@@ -102,27 +412,93 @@ SHOW CURRENT GRAPH TYPE YIELD specification
 .Result
 [source, "queryresult"]
 ----
-+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| specification                                                                                                                                                           |
-+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| "{                                                                                                                                                                      |
-|    (:`City` => {`name` :: STRING NOT NULL, `population` :: INTEGER}),                                                                                                   |
-|    (:`Company` => {`address` :: STRING, `name` :: STRING}),                                                                                                             |
-|    (:`Person` => :`Resident` {`name` :: STRING, `ssn` :: INTEGER}),                                                                                                     |
-|    (:`Pet` => :`Animal`&`Resident` {`healthCertificate` :: STRING, `insuranceNumber` :: INTEGER, `name` :: STRING}),                                                    |
-|    (:`Robot` => :`Machine`&`Resident` {`application` :: STRING NOT NULL, `id` :: INTEGER NOT NULL}),                                                                    |
-|    (:`Resident`)-[:`LIVES_IN` => {`since` :: ANY NOT NULL}]->(:`City` =>),                                                                                              |
-|    (:`Person` =>)-[:`WORKS_FOR` => {`role` :: STRING}]->(:`Company` =>),                                                                                                |
-|    CONSTRAINT `constraint_d7524c38` FOR (`n`:`Company` =>) REQUIRE (`n`.`address`) IS UNIQUE,                                                                           |
-|    CONSTRAINT `company_name` FOR (`n`:`Company` =>) REQUIRE (`n`.`name`) IS KEY,                                                                                        |
-|    CONSTRAINT `constraint_bb1018eb` FOR (`n`:`Person` =>) REQUIRE (`n`.`name`, `n`.`ssn`) IS KEY,                                                                       |
-|    CONSTRAINT `constraint_302a3693` FOR (`n`:`Pet` =>) REQUIRE (`n`.`healthCertificate`) IS UNIQUE,                                                                     |
-|    CONSTRAINT `constraint_aa881a72` FOR (`n`:`Pet` =>) REQUIRE (`n`.`insuranceNumber`) IS KEY,                                                                          |
-|    CONSTRAINT `animal_id` FOR (`n`:`Animal`) REQUIRE (`n`.`id`) IS UNIQUE,                                                                                              |
-|    CONSTRAINT `car_constraint` FOR (`n`:`Car`) REQUIRE (`n`.`licensePlate`) IS UNIQUE,                                                                                  |
-|    CONSTRAINT `resident_address` FOR (`n`:`Resident`) REQUIRE (`n`.`address`) IS :: STRING                                                                              |
-| }"                                                                                                                                                                      |
-+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
++--------------------------------------------------------------------------------------------------------------------------+
+| specification                                                                                                            |
++--------------------------------------------------------------------------------------------------------------------------+
+| "{                                                                                                                       |
+|    (:`City` => {`name` :: STRING NOT NULL, `population` :: INTEGER}),                                                    |
+|    (:`Company` => {`address` :: STRING, `name` :: STRING}),                                                              |
+|    (:`Person` => :`Resident` {`name` :: STRING, `ssn` :: INTEGER}),                                                      |
+|    (:`Pet` => :`Animal`&`Resident` {`healthCertificate` :: STRING, `insuranceNumber` :: INTEGER, `name` :: STRING}),     |
+|    (:`Robot` => :`Machine`&`Resident` {`application` :: STRING NOT NULL, `id` :: INTEGER NOT NULL}),                     |
+|    (:`Resident`)-[:`LIVES_IN` => {`since` :: ANY NOT NULL}]->(:`City` =>),                                               |
+|    (:`Person` =>)-[:`WORKS_FOR` => {`role` :: STRING}]->(:`Company` =>),                                                 |
+|    CONSTRAINT `constraint_d7524c38` FOR (`n`:`Company` =>) REQUIRE (`n`.`address`) IS UNIQUE,                            |
+|    CONSTRAINT `company_name` FOR (`n`:`Company` =>) REQUIRE (`n`.`name`) IS KEY,                                         |
+|    CONSTRAINT `constraint_bb1018eb` FOR (`n`:`Person` =>) REQUIRE (`n`.`name`, `n`.`ssn`) IS KEY,                        |
+|    CONSTRAINT `constraint_302a3693` FOR (`n`:`Pet` =>) REQUIRE (`n`.`healthCertificate`) IS UNIQUE,                      |
+|    CONSTRAINT `constraint_aa881a72` FOR (`n`:`Pet` =>) REQUIRE (`n`.`insuranceNumber`) IS KEY,                           |
+|    CONSTRAINT `animal_id` FOR (`n`:`Animal`) REQUIRE (`n`.`id`) IS UNIQUE,                                               |
+|    CONSTRAINT `car_constraint` FOR (`n`:`Car`) REQUIRE (`n`.`licensePlate`) IS UNIQUE,                                   |
+|    CONSTRAINT `resident_address` FOR (`n`:`Resident`) REQUIRE (`n`.`address`) IS :: STRING,                              |
+|    CONSTRAINT `stayed_in_endDate` FOR ()-[`r`:`STAYED_IN`]->() REQUIRE (`r`.`endDate`) IS :: DATE,                       |
+|    CONSTRAINT `stayed_in_startDateExistence` FOR ()-[`r`:`STAYED_IN`]->() REQUIRE (`r`.`startDate`) IS NOT NULL,         |
+|    CONSTRAINT `stayed_in_startDateType` FOR ()-[`r`:`STAYED_IN`]->() REQUIRE (`r`.`startDate`) IS :: DATE                |
+| }"                                                                                                                       |
++--------------------------------------------------------------------------------------------------------------------------+
+----
+
+.Show the full graph type as a virtual graph label:new[Introduced in Neo4j 2026.06]
+[source, cypher]
+----
+SHOW CURRENT GRAPH TYPE AS GRAPH YIELD nodes, relationships
+----
+
+Four entities in the result are worth noting:
+
+* `NodeElementType`: a virtual node representing a node element type in the graph type.
+* `NodeLabel`: a virtual node representing a node label in the graph type.
+* `AnyLabel`: relationship element types with unconstrained endpoints are represented by a virtual any-node with the label `AnyLabel` and no properties.
+Each relationship gets its own `AnyLabel` node.
+* `IMPLIES`: when a node element type implies another label, the two are connected by a relationship of type `IMPLIES` with no properties.
+
+For more information, see xref:schema/graph-types/list-graph-types.adoc#virtual-nodes[Show graph types -> Virtual nodes] and xref:schema/graph-types/list-graph-types.adoc#virtual-relationships[Virtual relationships].
+
+.Result
+[source, "queryresult"]
+----
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| nodes                                                                                                                  | relationships                                                                                                                             |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| [(:AnyLabel {}), (:NodeElementType {label: "City", properties: ["name :: STRING NOT NULL",                             | [[:IMPLIES {}], [:IMPLIES {}], [:IMPLIES {}], [:IMPLIES {}], [:IMPLIES {}], [:RELATIONSHIP_ELEMENT_TYPE {relationshipType: "LIVES_IN",    |
+| "population :: INTEGER"], constraints: []}), (:NodeElementType {label: "Company",                                      | properties: ["since :: ANY NOT NULL"], constraints: []}], [:RELATIONSHIP_ELEMENT_TYPE {relationshipType: "WORKS_FOR", properties:         |
+| properties: ["address :: STRING", "name :: STRING"], constraints: [                                                    | ["role :: STRING"], constraints: []}], [:RELATIONSHIP_TYPE {relationshipType: "STAYED_IN", constraints: [                                 |
+| "CONSTRAINT constraint_d7524c38 FOR (n:Company =>) REQUIRE n.address IS UNIQUE",                                       | "CONSTRAINT stayed_in_endDate FOR ()-[r:STAYED_IN]->() REQUIRE r.endDate IS :: DATE",                                                     |
+| "CONSTRAINT company_name FOR (n:Company =>) REQUIRE n.name IS KEY"]}), (:NodeElementType                               | "CONSTRAINT stayed_in_startDateExistence FOR ()-[r:STAYED_IN]->() REQUIRE r.startDate IS NOT NULL",                                       |
+| {label: "Person", properties: ["name :: STRING", "ssn :: INTEGER"], constraints: [                                     | "CONSTRAINT stayed_in_startDateType FOR ()-[r:STAYED_IN]->() REQUIRE r.startDate IS :: DATE"]}]]                                          |
+| "CONSTRAINT constraint_bb1018eb FOR (n:Person =>) REQUIRE (n.name, n.ssn) IS KEY"]}), (:NodeElementType                |                                                                                                                                           |
+| {label: "Pet", properties: ["healthCertificate :: STRING", "insuranceNumber :: INTEGER", "name :: STRING"],            |                                                                                                                                           |
+| constraints: ["CONSTRAINT constraint_302a3693 FOR (n:Pet =>) REQUIRE n.healthCertificate IS UNIQUE",                   |                                                                                                                                           |
+| "CONSTRAINT constraint_aa881a72 FOR (n:Pet =>) REQUIRE n.insuranceNumber IS KEY"]}), (:NodeElementType                 |                                                                                                                                           |
+| {label: "Robot", properties: ["application :: STRING NOT NULL", "id :: INTEGER NOT NULL"], constraints: []}),          |                                                                                                                                           |
+| (:NodeLabel {label: "Animal", constraints: ["CONSTRAINT animal_id FOR (n:Animal) REQUIRE n.id IS UNIQUE"]}),           |                                                                                                                                           |
+| (:NodeLabel {label: "Car", constraints: ["CONSTRAINT car_constraint FOR (n:Car) REQUIRE n.licensePlate IS UNIQUE"]}),  |                                                                                                                                           |
+| (:NodeLabel {label: "Machine", constraints: []}), (:NodeLabel {label: "Resident", constraints: [                       |                                                                                                                                           |
+| "CONSTRAINT resident_address FOR (n:Resident) REQUIRE n.address IS :: STRING"]})]                                      |                                                                                                                                           |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
+
+Together, these two lists form the following graph:
+[source]
+----
+(city:NodeElementType {label: "City", properties: ["name :: STRING NOT NULL", "population :: INTEGER"], constraints: []}),
+(company:NodeElementType {label: "Company", properties: ["address :: STRING", "name :: STRING"], constraints: ["CONSTRAINT constraint_d7524c38 FOR (n:Company =>) REQUIRE n.address IS UNIQUE", "CONSTRAINT company_name FOR (n:Company =>) REQUIRE n.name IS KEY"]}),
+(person:NodeElementType {label: "Person", properties: ["name :: STRING", "ssn :: INTEGER"], constraints: ["CONSTRAINT constraint_bb1018eb FOR (n:Person =>) REQUIRE (n.name, n.ssn) IS KEY"]}),
+(pet:NodeElementType {label: "Pet", properties: ["healthCertificate :: STRING", "insuranceNumber :: INTEGER", "name :: STRING"], constraints: ["CONSTRAINT constraint_302a3693 FOR (n:Pet =>) REQUIRE n.healthCertificate IS UNIQUE", "CONSTRAINT constraint_aa881a72 FOR (n:Pet =>) REQUIRE n.insuranceNumber IS KEY"]}),
+(robot:NodeElementType {label: "Robot", properties: ["application :: STRING NOT NULL", "id :: INTEGER NOT NULL"], constraints: []}),
+(animal:NodeLabel {label: "Animal", constraints: ["CONSTRAINT animal_id FOR (n:Animal) REQUIRE n.id IS UNIQUE"]}),
+(car:NodeLabel {label: "Car", constraints: ["CONSTRAINT car_constraint FOR (n:Car) REQUIRE n.licensePlate IS UNIQUE"]}),
+(machine:NodeLabel {label: "Machine", constraints: []}),
+(resident:NodeLabel {label: "Resident", constraints: ["CONSTRAINT resident_address FOR (n:Resident) REQUIRE n.address IS :: STRING"]}),
+(any:AnyLabel {}),
+(person)-[:IMPLIES {}]->(resident),
+(pet)-[:IMPLIES {}]->(animal),
+(pet)-[:IMPLIES {}]->(resident),
+(robot)-[:IMPLIES {}]->(machine),
+(robot)-[:IMPLIES {}]->(resident),
+(resident)-[:RELATIONSHIP_ELEMENT_TYPE {relationshipType: "LIVES_IN", properties: ["since :: ANY NOT NULL"], constraints: []}]->(city),
+(person)-[:RELATIONSHIP_ELEMENT_TYPE {relationshipType: "WORKS_FOR", properties: ["role :: STRING"], constraints: []}]->(company),
+(any)-[:RELATIONSHIP_TYPE {relationshipType: "STAYED_IN", constraints: ["CONSTRAINT stayed_in_endDate FOR ()-[r:STAYED_IN]->() REQUIRE r.endDate IS :: DATE", "CONSTRAINT stayed_in_startDateExistence FOR ()-[r:STAYED_IN]->() REQUIRE r.startDate IS NOT NULL", "CONSTRAINT stayed_in_startDateType FOR ()-[r:STAYED_IN]->() REQUIRE r.startDate IS :: DATE"]}]->(any)
 ----
 
 [[graph-type-elements-in-show-constraints]]
@@ -155,7 +531,7 @@ The `classification` describes the status of a constraint in a graph type, with 
 | xref:schema/graph-types/set-graph-types.adoc#constraints-on-non-identifying-labels-and-types[Property existence and property type constraints on non-identifying node labels or relationship types].
 |===
 
-For more information, see xref:schema/constraints/list-constraints.adoc#list-constraints-result-columns[Result columns for listing constraints].
+For more information, see xref:schema/constraints/list-constraints.adoc#show-constraints-result-columns[Show constraints -> Return columns].
 
 .Show constraints
 [source, cypher]

@@ -29,33 +29,37 @@ CREATE CONSTRAINT bookRecommendations FOR (book:Book) REQUIRE (book.recommend) I
 ----
 ////
 
-Listing indexes can be done with `SHOW INDEXES`.
+Showing indexes can be done with `SHOW INDEXES`.
+For general information about the `SHOW` command, see the xref:clauses/show.adoc[`SHOW`] page.
 
 [NOTE]
 ====
-Listing indexes requires link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-index[the `SHOW INDEX` privilege].
+Showing indexes requires link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-index[the `SHOW INDEX` privilege].
 ====
 
 
-[[listing-indexes-examples]]
+[[show-indexes-examples]]
 == Examples
 
-* xref:indexes/search-performance-indexes/list-indexes.adoc#listing-all-indexes[]
-* xref:indexes/search-performance-indexes/list-indexes.adoc#listing-specific-columns[]
-* xref:indexes/search-performance-indexes/list-indexes.adoc#listing-indexes-with-filtering[]
+* xref:indexes/search-performance-indexes/list-indexes.adoc#show-all-indexes[]
+* xref:indexes/search-performance-indexes/list-indexes.adoc#specific-return-columns[]
+* xref:indexes/search-performance-indexes/list-indexes.adoc#show-indexes-with-filtering[]
+* xref:indexes/search-performance-indexes/list-indexes.adoc#composable-show-indexes[]
 
 
-[[listing-all-indexes]]
-=== Listing all indexes
+[[show-all-indexes]]
+=== Show all indexes
 
-To list all indexes with the default output columns, the `SHOW INDEXES` command can be used.
+To show all indexes with the default output columns, the `SHOW INDEXES` command can be used.
 If all columns are required, use `SHOW INDEXES YIELD *`.
 
-.Showing all indexes
+.Show all indexes
+// tag::indexes_search_performance_show[]
 [source, cypher, role=test-result-skip]
 ----
 SHOW INDEXES
 ----
+// end::indexes_search_performance_show[]
 
 // SHOW INDEXES default outputs
 // 4.4: id, name, state, populationPercent, uniqueness, type, entityType, labelsOrTypes, properties, indexProvider
@@ -93,11 +97,10 @@ One of the output columns from `SHOW INDEXES` is the name of the index.
 This can be used to drop the index with the xref:indexes/search-performance-indexes/drop-indexes.adoc[`DROP INDEX` command].
 
 
-[[listing-specific-columns]]
-=== Listing specific columns
+[[specific-return-columns]]
+=== Return specific columns
 
 It is possible to return only specific columns of the available indexes using the `YIELD` clause:
-
 
 .Returning specific columns for all indexes
 [source, cypher, role=test-result-skip]
@@ -134,8 +137,8 @@ Note that `YIELD` is mandatory if the `RETURN` clause is used.
 `RETURN` is not, however, mandatory when the YIELD clause is used.
 
 
-[[listing-indexes-with-filtering]]
-=== Listing indexes with filtering
+[[show-indexes-with-filtering]]
+=== Show indexes with filtering
 
 The `SHOW INDEX` command can be filtered in various ways.
 
@@ -146,11 +149,13 @@ An example is to only show indexes not belonging to constraints.
 
 To show only range indexes that does not belong to a constraint we can combine the filtering versions.
 
-.Showing range indexes
+.Show range indexes
+// tag::indexes_search_performance_show_type_filter[]
 [source, cypher, role=test-result-skip]
 ----
 SHOW RANGE INDEXES WHERE owningConstraint IS NULL
 ----
+// end::indexes_search_performance_show_type_filter[]
 
 .Result
 [queryresult]
@@ -177,12 +182,51 @@ To get all columns, use:
 SHOW RANGE INDEXES YIELD * WHERE owningConstraint IS NULL
 ----
 
-[[listing-indexes-result-columns]]
-== Result columns for listing indexes
+[role=label--cypher-25-only label--new-Neo4j-2026.05]
+[[composable-show-indexes]]
+=== Combine `SHOW INDEXES` with other Cypher clauses
 
-The below table contains the full information about all columns returned by the `SHOW INDEXES YIELD *` command:
+The `SHOW INDEXES` command can be combined with general Cypher clauses in a single query.
 
-.List indexes output
+For example, returning a string of drop index commands for all indexes except token lookup indexes and indexes backing constraints.
+
+.Return commands to drop all indexes as a single string
+[source, cypher, role=test-result-skip]
+----
+SHOW INDEXES
+YIELD name, type, owningConstraint
+WHERE type <> 'LOOKUP' AND owningConstraint IS NULL
+WITH "DROP INDEX `" + name + "`;" AS dropCommand
+WITH collect(dropCommand) AS dropCommands
+RETURN reduce(acc = head(dropCommands), dc IN tail(dropCommands) | acc + " " + dc) AS result
+----
+
+.Result
+[queryresult]
+----
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "DROP INDEX `composite_range_node_index_name`; DROP INDEX `composite_range_rel_index_name`; DROP INDEX `example_index`; DROP INDEX `indexOnBooks`; DROP INDEX `node_point_index_name`; DROP INDEX `node_range_index_name`; DROP INDEX `node_text_index_nickname`; DROP INDEX `point_index_param`; DROP INDEX `point_index_with_config`; DROP INDEX `range_index_param`; DROP INDEX `rel_point_index_name`; DROP INDEX `rel_range_index_name`; DROP INDEX `rel_text_index_name`; DROP INDEX `text_index_param`;" |
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+1 row
+----
+
+[NOTE]
+====
+When combining `SHOW INDEXES` with other clauses, the `YIELD` clause is mandatory and must not be omitted.
+`YIELD` must explicitly list the yielded columns.
+`YIELD *` is not permitted.
+The query must also end with a valid last clause (like a `RETURN` or an updating clause).
+====
+
+[[show-indexes-result-columns]]
+== Return columns
+
+The below table contains the full information about all columns returned by the `SHOW INDEXES YIELD *` command.
+Any returned statistics are local to each instance and may differ for each member in a cluster.
+
+.Show indexes output
 [options="header", cols="4,6,2"]
 |===
 | Column | Description | Type
@@ -231,8 +275,7 @@ For vector indexes the vector property is the first element of the list, followe
 
 | `lastRead`
 | The last time the index was used for reading.
-Returns `null` if the index has not been read since `trackedSince`, or if the statistics are not tracked.
-label:default-output[]
+Returns `null` if the index has not been read since `trackedSince`, or if the statistics are not tracked. label:default-output[]
 
 | `ZONED DATETIME`
 

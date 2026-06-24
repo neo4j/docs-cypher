@@ -8,7 +8,29 @@
 //Cross Mark
 :cross-mark: icon:times[]
 
-This section contains reference material for looking up the syntax and semantics of specific elements of graph pattern matching.
+This page contains reference material for looking up the syntax and semantics of specific elements of graph pattern matching.
+It includes the following sections:
+
+* xref:patterns/reference.adoc#node-patterns[Node patterns]
+* xref:patterns/reference.adoc#relationship-patterns[Relationship patterns]
+* xref:patterns/reference.adoc#label-expressions[Label expressions]
+* xref:patterns/reference.adoc#property-key-value-expressions[Property key-value expressions]
+* xref:patterns/reference.adoc#path-patterns[Path patterns]
+* xref:patterns/reference.adoc#quantified-path-patterns[Quantified path patterns]
+* xref:patterns/reference.adoc#quantified-relationships[Quantified relationships]
+* xref:patterns/reference.adoc#quantifiers[Quantifiers]
+* xref:patterns/reference.adoc#variable-length-relationships[Variable-length relationships]
+* xref:patterns/reference.adoc#shortest-paths[Shortest paths]
+* xref:patterns/reference.adoc#shortest-functions[The `shortestPath()` and `allShortestPaths()` functions]
+* xref:patterns/reference.adoc#graph-patterns[Graph patterns]
+* xref:patterns/reference.adoc#match-modes[Match modes]
+* xref:patterns/reference.adoc#path-modes[Path modes]
+* xref:patterns/reference.adoc#node-pattern-pairs[Node pattern pairs]
+
+
+
+
+
 
 [[node-patterns]]
 == Node patterns
@@ -16,7 +38,7 @@ This section contains reference material for looking up the syntax and semantics
 A node pattern is a pattern that matches a single node.
 It can be used on its own in a clause such as `MATCH` or `EXIST`, or form part of a xref:patterns/reference.adoc#path-patterns[path pattern].
 
-See also xref:patterns/fixed-length-patterns.adoc#node-patterns[node pattern concepts].
+See also xref:patterns/fixed-length-paths.adoc#node-patterns[node pattern concepts].
 
 [[node-patterns-syntax]]
 === Syntax
@@ -86,7 +108,7 @@ It can only be used with node patterns on either side of it.
 
 A relationship pattern followed immediately by a quantifier is an abbreviated xref::patterns/reference.adoc#quantified-path-patterns[quantified path pattern] called a xref::patterns/reference.adoc#quantified-relationships[quantified relationship].
 
-See also xref:patterns/fixed-length-patterns.adoc#relationship-patterns[relationship pattern concepts].
+See also xref:patterns/fixed-length-paths.adoc#relationship-patterns[relationship pattern concepts].
 
 [[relationship-patterns-syntax]]
 === Syntax 
@@ -186,6 +208,8 @@ The following applies to both the label expressions of node patterns and the typ
 A label expression is a boolean predicate composed from label names and a wildcard symbol using disjunction, conjunction, negation and grouping.
 A label expression returns true when it matches the set of labels for a node.
 
+The same grammar appears in xref:expressions/predicates/label-expression-predicates.adoc[label expression predicates] in expression context: the colon form `element:labelExpression`, and as of Neo4j 2026.04, `element IS [NOT] LABELED labelExpression` (see xref:expressions/predicates/label-expression-predicates.adoc#is-labeled-predicate[`IS [NOT] LABELED`]).
+
 Although relationships have a type rather than labels, the syntax for expressions matching a relationship type is identical to that of label expressions.
 
 [[label-expressions-syntax]]
@@ -193,7 +217,10 @@ Although relationships have a type rather than labels, the syntax for expression
 
 [source, syntax, role=noheader]
 ----
-labelExpression ::= ":" labelTerm
+labelExpression ::= 
+    ":" labelTerm
+  | "IS" [ "NOT" ] "LABELED" labelTerm
+  | "IS NOT" labelTerm
 
 labelTerm ::=
     labelIdentifier
@@ -1077,9 +1104,8 @@ RETURN a = c, b = d, size(r)
 
 |===
 
-Because Cypher's default match mode, `DIFFERENT RELATIONSHIPS`, only allows paths to traverse a relationship once, repeating a variable-length relationship in the same graph pattern will yield no results.
-(The same is not true for the `REPEATABLE ELEMENTS` match mode.
-For more information, see xref::patterns/match-modes.adoc[Match modes]).
+By default, only allows paths to traverse a relationship once, repeating a variable-length relationship in the same graph pattern will yield no results.
+(The same is not true if a query uses xref:patterns/repeatable-node-and-relationship-paths.adoc[`REPEATABLE ELEMENTS`]).
 For example, this `MATCH` clause will never pass on any intermediate results to subsequent clauses:
 
 [source, role=noheader]
@@ -1339,6 +1365,32 @@ For example, the following two `MATCH` clauses are equivalent:
 ----
 MATCH ALL SHORTEST PATHS (n:A) (()-->(:B))+
 MATCH ALL SHORTEST (n:A) (()-->(:B))+
+----
+
+[[shortest-paths-rules-match-modes-and-path-modes]]
+==== Match modes and path modes
+
+When combined with a xref:patterns/reference.adoc#match-modes[match mode] such as `REPEATABLE ELEMENTS`, `SHORTEST` selective path selectors are placed after the specified match mode.
+This is because a match mode applies to the whole graph pattern match.
+
+.Combine `SHORTEST` with the `REPEATABLE ELEMENTS` match mode
+[source]
+----
+MATCH REPEATABLE ELEMENTS p = SHORTEST 1 (:A)--{,20}(:B)--{,20}(:C)
+----
+
+[NOTE]
+`SHORTEST 1` returns only a single path.
+However, because `REPEATABLE ELEMENTS` can generate an infinite number of paths due to its ability to re-traverse relationships, and because a predicate that no path satisfies would therefore cause the search to never halt, an upper quantifier bound is required when combining `SHORTEST` selective path selectors and `REPEATABLE ELEMENTS`.
+
+When combined with a xref:patterns/reference.adoc#path-modes[path mode] such as `ACYCLIC`, `SHORTEST` selective path selectors are placed before the path mode.
+This is because, although the selective path selector and path mode keywords are written left-to-right, they are evaluated right-to-left.
+In the below example, `ACYCLIC` pre-filters paths to only valid ones and then `SHORTEST 1` selects among those.
+
+.Combine `SHORTEST` with the `ACYCLIC` path mode
+[source]
+----
+MATCH p = SHORTEST 1 ACYCLIC (:A)--{,20}(:B)
 ----
 
 [[shortest-paths-examples]]
@@ -1893,15 +1945,14 @@ RETURN [n IN nodes(p) | n.q] AS nodes
 
 Path modes define the uniqueness constraints for nodes and relationships within a single path pattern.
 This contrasts with match modes which constrain relationship uniqueness across an entire `MATCH` clause.
-For more information, see xref:patterns/match-modes.adoc[].
 
 Cypher supports three path modes:
 
 * `WALK`: no constraints imposed; both nodes and relationships can be repeated within the path.
 * `TRAIL`: relationships cannot be repeated, but nodes can be repeated within the path.
-* `ACYCLIC`: nodes cannot be repeated within a path. A node can be repeated across paths, enabling equijoins to be formed.
+* `ACYCLIC`: nodes cannot be repeated within a path. A node can be repeated across paths, enabling the formation of xref:patterns/non-linear-paths.adoc#equijoins[equijoins].
 
-
+[[path-modes-syntax]]
 === Syntax
 
 [source, syntax, role=noheader]
@@ -1913,9 +1964,63 @@ pathMode ::= WALK | TRAIL | ACYCLIC
 pathKeywords ::= PATH | PATHS
 ----
 
-
+[[path-modes-rules]]
 === Rules
 
+The table below shows the effective uniqueness constraint for each combination of match mode and path mode.
+
+.Effective uniqueness constraints for match mode and path mode combinations
+[cols="2a,a,2a,2a", options="header"]
+|===
+| Match mode | Path mode | Effective uniqueness constraint | Notes
+
+| `DIFFERENT RELATIONSHIPS`
+| `WALK`
+| Relationship uniqueness
+| Constraint enforced by match mode.
+
+| `DIFFERENT RELATIONSHIPS`
+| `TRAIL`
+| Relationship uniqueness
+| Path mode does not alter the constraint imposed by the match mode.
+
+| `DIFFERENT RELATIONSHIPS`
+| `ACYCLIC`
+| Node uniqueness and relationship uniqueness
+| Path mode constraint stricter than match mode; prevents node repetition.
+
+| `REPEATABLE ELEMENTS`
+| `WALK`
+| No uniqueness
+| Both match mode and path mode allow repetitions of nodes and relationships.
+|===
+
+Note that `TRAIL` and `ACYCLIC` cannot be combined with the `REPEATABLE ELEMENTS` match mode.
+
+In practice, the syntax needed to achieve each uniqueness constraint is:
+
+.Path pattern uniqueness constraints and the corresponding syntax
+[cols="a,a,a", options="header"]
+|===
+| Desired constraint | Syntax | Notes
+
+| No uniqueness constraint
+| `MATCH REPEATABLE ELEMENTS ...`
+|
+
+| Relationship uniqueness
+| No keywords required
+|
+
+| Node uniqueness
+| `MATCH ACYCLIC ...`
+| `ACYCLIC` must be specified at the start of each path pattern.
+|===
+
+As the above tables show, `ACYCLIC` is the only path mode that alters the effective uniqueness constraint of the path pattern match.
+For more information about `ACYCLIC`, see xref:patterns/acyclic-paths.adoc[].
+
+[[all-path-modes-in-a-match-must-be-the-same]]
 ==== All path modes in a `MATCH` must be the same
 
 All path patterns in a single `MATCH` clause must use the same path mode.
@@ -1935,10 +2040,10 @@ RETURN p, q
 link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]: error: syntax error or access rule violation - invalid syntax
 |===
 
-
+[[only-walk-can-be-combined-with-repeatable-elements]]
 ==== Only `WALK` can be combined with the `REPEATABLE ELEMENTS` match mode
 
-Explicit path modes like `ACYCLIC` or `TRAIL` cannot be used with the xref:patterns/match-modes.adoc#repeatable-elements[`REPEATABLE ELEMENTS`] match mode.
+Explicit path modes like `ACYCLIC` or `TRAIL` cannot be used with the xref:patterns/repeatable-node-and-relationship-paths.adoc[`REPEATABLE ELEMENTS`] match mode.
 For example:
 
 [source, cypher, role=test-fail]
@@ -1955,28 +2060,60 @@ RETURN p
 link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]: error: syntax error or access rule violation - invalid syntax
 |===
 
+[[mixing-restrictive-path-selectors-and-explicit-path-modes]]
+==== Mixing restrictive path selectors and explicit path modes
 
-==== Mixing restrictive path selectors and explicit path modes is not allowed
+.Neo4j versions and rules for mixing restrictive path selectors and explicit path modes
+[%header,cols="a,5a"]
+|===
+| Neo4j versions | Behavior
 
-Explicit path modes cannot currently be combined with restrictive path selectors (e.g., `ANY`, `SHORTEST`) or legacy shortest path functions like `shortestPath()`.
-For example:
+| 2026.03 - 2026.4
+| Explicit path modes cannot be combined with restrictive path selectors (e.g., `ANY`, `SHORTEST`) or with xref:patterns/reference.adoc#shortest-functions[legacy shortest path functions] like `shortestPath()`.
 
+| 2026.5 - current
+a| Explicit path modes can be combined with restrictive path selectors, but not with legacy shortest path functions.
+
+.Supported
+[source, cypher]
+----
+MATCH p = ANY SHORTEST ACYCLIC (a:A)-->+(b:!A)
+RETURN p
+----
+
+|===
+
+[[path-modes-and-variable-length-paths]]
+==== Path modes and variable-length paths
+
+Explicit path modes cannot be used with the xref:patterns/reference.adoc#variable-length-relationships[variable-length relationships syntax] (e.g., `+-[*]->+`).
+Use xref:patterns/reference.adoc#quantified-path-patterns[quantified path patterns] or xref:patterns/reference.adoc#quantified-relationships[quantified relationships] instead.
+
+.Supported -- explicit path mode with quantified relationship syntax
+[source, cypher]
+----
+MATCH ACYCLIC (start)-[:R]->{4,7}(target)
+RETURN start, target
+----
+
+.Not supported -- explicit path mode with variable-length relationship syntax
 [source, cypher, role=test-fail]
 ----
-MATCH p = ANY ACYCLIC (start)-->(target)
-RETURN p
+MATCH ACYCLIC (start)-[*4..7]->(target)
+RETURN start, target
 ----
 
 .GQLSTATUS error chain
 [role="queryresult",stripes="all",cols="1"]
 |===
-| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/51N26/[51N26]: error: system configuration or operation exception - not supported in this version. Using `SHORTEST` together with explicit path mode `ACYCLIC` is not available. This implementation of Cypher does not support SHORTEST with path mode `ACYCLIC`.
+| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/51N26/[51N26]: error: system configuration or operation exception - not supported in this version. Using explicit path modes on a pattern containing a variable-length relationship is not available. This implementation of Cypher does not support `ACYCLIC` on variable-length relationships.
 
 link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]: error: syntax error or access rule violation - invalid syntax
 |===
 
 
-==== Path modes can't be applied to `MERGE` clauses
+[[path-modes-cannot-be-applied-to-merge]]
+==== Path modes cannot be applied to `MERGE` clauses
 
 For example, this is not allowed:
 
@@ -1993,60 +2130,48 @@ MERGE ACYCLIC (robert:Critic)-[:P]->(c:Critic)
 link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]: error: syntax error or access rule violation - invalid syntax
 |===
 
+[[repeated-node-variables-within-a-path-pattern-result-in-no-matches]]
 ==== Repeated node variables within a path pattern result in no matches
 
 Declaring a node variable more than once within a single restrictive path pattern (like `ACYCLIC`) results in no matches.
 Because the variable must bind to the same node element and the path mode forbids repeated nodes, there is no solution.
+The below query finds no matches because the node `x` is repeated.
 
 [source, cypher]
 ----
-// This query returns 0 results because the node 'x' is repeated
 MATCH p = ACYCLIC (x:Router)-[:LINK]->(x)
 RETURN p
 ----
 
-
-==== Repeated node variables within a path pattern result in no matches
-
-Declaring a node variable more than once within a single restrictive path pattern (like `ACYCLIC`) results in no matches.
-
-[source, cypher]
-----
-// This query will return 0 results because node 'x' is repeated
-MATCH p = ACYCLIC (x:Router)-[:LINK]->+(x)
-RETURN p
-----
-
-
+[[repeated-node-variables-across-different-path-patterns-specify-an-equijoin]]
 ==== Repeated node variables across different path patterns specify an equijoin
 
-When a node variable is repeated in separate path patterns within the same `MATCH` clause, it specifies an xref:patterns/non-linear-patterns.adoc#equijoins[equijoin].
+When a node variable is repeated in separate path patterns within the same `MATCH` clause, it specifies an xref:patterns/non-linear-paths.adoc#equijoins[equijoin].
+In the below example, `x` is repeated across `p` and `q`, creating an `equijoin` between two acyclic paths.
+This is allowed because each individual path pattern remains acyclic.
+
 
 [source, cypher]
 ----
-// 'x' is repeated across p and q, creating an equijoin between two acyclic paths.
-// This is allowed because each individual path pattern remains acyclic.
 MATCH p = ACYCLIC (a:Router)-[:LINK]->+(x:Router),
   q = ACYCLIC (x)-[:LINK]->+(z:Router)
 RETURN p, q
 ----
 
-
+[[path-mode-scope-in-subqueries]]
 ==== Path mode scope in subqueries
 
 The path mode of a xref:subqueries/index.adoc[subquery] (such as an `EXISTS` or `COUNT` expression) is independent of the path mode in the outer query.
 This allows you to perform secondary checks with different uniqueness constraints.
+In the below example, the outer query finds path using relationship uniqueness (default `WALK` path mode + default match mode `DIFFERENT RELATIONSHIPS`).
+The subquery then checks for the existence of an `ACYCLIC` path connecting `a` and `b`.
 
 [source, cypher]
 ----
-// The outer query finds paths using relationship uniqueness (default WALK +
-// DIFFERENT RELATIONSHIPS). The subquery checks for the existence of an ACYCLIC
-// path connecting a and b.
 MATCH p = (a:Router {name: 'A'})-[:LINK]->+(b:Router {name: 'D'})
   WHERE EXISTS { MATCH ACYCLIC (a)-[:LINK]->+(b) }
 RETURN [n IN nodes(p) | n.name] AS route
 ----
-
 
 [[node-pattern-pairs]]
 == Node pattern pairs
