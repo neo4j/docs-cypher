@@ -7,8 +7,8 @@
 
 `GROUP BY` is a subclause that allows you to group the results of a `RETURN` or `WITH` clause.
 
-`GROUP BY` arranges identical data into groups based on one or more columns.
-It lends itself to be used with aggregate functions like xref:functions/aggregating.adoc#functions-count[count()] or xref:functions/aggregating.adoc#functions-avg[avg()] to perform calculations on each group of data.
+`GROUP BY` arranges identically structured data into groups based on one or more columns.
+For this reason, it combines well with aggregate functions like xref:functions/aggregating.adoc#functions-count[count()] or xref:functions/aggregating.adoc#functions-avg[avg()] to perform calculations on each group of data.
 
 Cypher's `GROUP BY` functions similarly to SQL's `GROUP BY` and it is also xref:appendix/gql-conformance/supported-optional.adoc#gq15[GQL-compliant].
 
@@ -18,19 +18,26 @@ Cypher's `GROUP BY` functions similarly to SQL's `GROUP BY` and it is also xref:
 
 The following graph is used for the examples below:
 
-// TODO: replace image
-image::graph-limit-clause.svg[Example graph with a Person node,width=600,role=popup]
+image::graph-group-by-clause.svg[Example graph for GROUP BY examples,role=popup]
 
 To recreate it, run the following query against an empty Neo4j database:
 
 [source, cypher, role=test-setup]
 ----
-CREATE (alice:Person {name: 'Alice', age: 30}),
-       (bob:Person {name: 'Bob', age: 30}),
-       (charlie1:Person {name: 'Charlie', age: 45}),
-       (charlie2:Person {name: 'Charlie', age: 45}),
-       (david:Person {name: 'David', age: 28}),
-       (eve:Person {name: 'Eve', age: 22})
+CREATE
+  (jessica:Person {name: 'Jessica Chastain'}),
+  (missSloane:Movie {title: 'Miss Sloane', genre: 'Drama', rating: 4.5, year: 2016}),
+  (mollysGame:Movie {title: "Molly's Game", genre: 'Drama', rating: 4.4, year: 2017}),
+  (darkPhoenix:Movie {title: 'X-Men: Dark Phoenix', genre: 'Action', rating: 3.5, year: 2019}),
+  (it2:Movie {title: 'It: Chapter Two', genre: 'Horror', rating: 3.6, year: 2019}),
+  (armageddon:Movie {title: 'Armageddon Time', genre: 'Drama', rating: 3.8, year: 2022}),
+  (goodnurse:Movie {title: 'The Good Nurse', genre: 'Drama', rating: 4.2, year: 2022}),
+  (jessica)-[:ACTED_IN]->(missSloane),
+  (jessica)-[:ACTED_IN]->(mollysGame),
+  (jessica)-[:ACTED_IN]->(darkPhoenix),
+  (jessica)-[:ACTED_IN]->(it2),
+  (jessica)-[:ACTED_IN]->(armageddon),
+  (jessica)-[:ACTED_IN]->(goodnurse)
 ----
 
 
@@ -61,23 +68,23 @@ WITH <return statement body>
 =====
 [source, cypher]
 ----
-MATCH (p: Person)
-RETURN p.name AS name, collect(p.name) AS names, sum(p.age) AS totalAge 
-  GROUP BY name
+MATCH (p: Person)-[:ACTED_IN]->(m:Movie)
+RETURN m.genre AS genre, avg(m.rating) AS averageRating
+  GROUP BY genre
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols="3*<m"]
+[role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| name      | names                  | totalAge 
+| genre    | averageRating 
 
-| "Bob"     | ["Bob"]                | 30       
-| "Charlie" | ["Charlie", "Charlie"] | 90       
-| "David"   | ["David"]              | 28       
-| "Eve"     | ["Eve"]                | 22       
-| "Alice"   | ["Alice"]              | 30       
-3+d|Rows: 5
+| "Drama"  | 4.225          
+| "Action" | 3.5           
+| "Horror" | 3.6           
+2+d|Rows: 3
 |===
+
+The four drama movies have an average rating of `4.225`.
 =====
 
 
@@ -85,23 +92,27 @@ RETURN p.name AS name, collect(p.name) AS names, sum(p.age) AS totalAge
 =====
 [source, cypher]
 ----
-MATCH (p: Person)
-RETURN p.name AS name, p.age AS age, sum(p.age) AS totalAge 
-  GROUP BY name, age
+MATCH (p: Person)-[:ACTED_IN]->(m:Movie)
+RETURN m.genre AS genre, m.year AS year, avg(m.rating) AS averageRating
+  GROUP BY genre, year
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="3*<m"]
 |===
-| name      | age | totalAge 
+| genre    | year | averageRating 
 
-| "Bob"     | 30  | 30       
-| "Charlie" | 45  | 90       
-| "David"   | 28  | 28       
-| "Eve"     | 22  | 22       
-| "Alice"   | 30  | 30            
+| "Drama"  | 2017 | 4.4           
+| "Action" | 2019 | 3.5           
+| "Horror" | 2019 | 3.6           
+| "Drama"  | 2022 | 4.0           
+| "Drama"  | 2016 | 4.5           
+        
 3+d|Rows: 5
 |===
+
+Grouping by genre and year, the drama movies have three entries.
+For 2022, the average is calculated for the two movies that were released that year.
 =====
 
 
