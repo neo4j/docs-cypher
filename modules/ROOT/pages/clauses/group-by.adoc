@@ -12,7 +12,6 @@ For this reason, it combines well with aggregate functions like xref:functions/a
 
 Cypher's `GROUP BY` functions similarly to SQL's `GROUP BY` and it is also xref:appendix/gql-conformance/supported-optional.adoc#gq15[GQL-compliant].
 
-
 [[example-graph]]
 == Example graph
 
@@ -30,6 +29,7 @@ CREATE
   (mollysGame:Movie {title: "Molly's Game", genre: 'Drama', rating: 4.4, year: 2017}),
   (darkPhoenix:Movie {title: 'X-Men: Dark Phoenix', genre: 'Action', rating: 3.5, year: 2019}),
   (it2:Movie {title: 'It: Chapter Two', genre: 'Horror', rating: 3.6, year: 2019}),
+  (midsommar:Movie {title: 'Midsommar', genre: 'Horror', rating: 3.6, year: 2019}),
   (armageddon:Movie {title: 'Armageddon Time', genre: 'Drama', rating: 3.8, year: 2022}),
   (goodnurse:Movie {title: 'The Good Nurse', genre: 'Drama', rating: 4.2, year: 2022}),
   (jessica)-[:ACTED_IN]->(missSloane),
@@ -116,23 +116,27 @@ For 2022, the average is calculated for the two movies that were released that y
 =====
 
 
-.GROUP BY with no columns
+.GROUP BY with no grouping keys
 =====
 [source, cypher]
 ----
-MATCH (p: Person)
-RETURN collect(p.name) AS names, sum(p.age) AS totalAge 
+MATCH (p: Person)-[:ACTED_IN]->(m:Movie)
+RETURN collect(m.title) AS movieTitles, avg(m.rating) AS globalAverageRating
   GROUP BY ()
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| names                                                  | totalAge 
+| movieTitles                                                                                                    | globalAverageRating
 
-| ["Bob", "Charlie", "David", "Eve", "Charlie", "Alice"] | 200      
+| ["Molly's Game", "X-Men: Dark Phoenix", "It: Chapter Two", "Armageddon Time", "The Good Nurse", "Miss Sloane"] | 4.0   
 2+d|Rows: 1
 |===
+
+When using `GROUP BY` with `()`, you explicitly state that there are no grouping keys.
+This means that there can be no direct projections of returned entities.
+However, aggregations still work like in the showcased query.
 =====
 
 
@@ -140,23 +144,27 @@ RETURN collect(p.name) AS names, sum(p.age) AS totalAge
 =====
 [source, cypher]
 ----
-MATCH (p: Person)
-RETURN p.name AS name, collect(p.name) AS names, sum(p.age) AS totalAge 
-  GROUP BY ALL
+MATCH (p: Person)-[:ACTED_IN]->(m:Movie)
+RETURN m.genre AS genre, m.year AS year, avg(m.rating) AS averageRating
+  GROUP BY genre, year
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="3*<m"]
 |===
-| name      | names                  | totalAge 
+| genre    | year | averageRating 
 
-| "Bob"     | ["Bob"]                | 30       
-| "Charlie" | ["Charlie", "Charlie"] | 90       
-| "David"   | ["David"]              | 28       
-| "Eve"     | ["Eve"]                | 22       
-| "Alice"   | ["Alice"]              | 30       
+| "Drama"  | 2017 | 4.4           
+| "Action" | 2019 | 3.5           
+| "Horror" | 2019 | 3.6           
+| "Drama"  | 2022 | 4.0           
+| "Drama"  | 2016 | 4.5           
+        
 3+d|Rows: 5
 |===
+
+`GROUP BY ALL` uses all projected expressions as grouping keys.
+In this case, the query above is equivalent to the query above using two columns.
 =====
 
 
@@ -166,53 +174,57 @@ RETURN p.name AS name, collect(p.name) AS names, sum(p.age) AS totalAge
 =====
 [source, cypher]
 ----
-MATCH (p: Person)
-WITH p.name AS name, p.age AS age
-RETURN name, age 
-  GROUP BY name, age
+MATCH (m: Movie)
+RETURN m.year as year, m.rating as rating
+  GROUP BY year, rating
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| age | name 
+| year | rating 
 
-| 30  | "Bob"     
-| 45  | "Charlie" 
-| 28  | "David"   
-| 22  | "Eve"     
-| 30  | "Alice"   
-2+d|Rows: 5
+| 2017 | 4.4    
+| 2019 | 3.5    
+| 2019 | 3.6    
+| 2022 | 3.8    
+| 2022 | 4.2    
+| 2016 | 4.5    
+2+d|Rows: 6
 |===
 
-In this query the GROUP BY is equivalent to xref:clauses/return.adoc#return-unique-results[`DISTINCT`].
+In this query, `GROUP BY` is equivalent to xref:clauses/return.adoc#return-unique-results[`DISTINCT`].
+Two movies with a rating of `3.6` exist for the year 2019, but the entry is not repeated.
 =====
 
 
-.GROUP BY with unaliased return item
+.GROUP BY and aliasing
 =====
 
 [source, cypher]
 ----
-MATCH (p: Person)
-LET name = p.name
-RETURN name, p.age AS age, sum(p.age) AS totalAge 
-  GROUP BY name, p.age
-  ORDER BY name
+MATCH (m: Movie)
+LET year = m.year
+RETURN year, m.rating as rating
+  GROUP BY year, rating
 ----
 
 .Result
-[role="queryresult",options="header,footer",cols="3*<m"]
+[role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| name      | age | totalAge 
+| year | rating 
 
-| "Alice"   | 30  | 30       
-| "Bob"     | 30  | 30       
-| "Charlie" | 45  | 90       
-| "David"   | 28  | 28       
-| "Eve"     | 22  | 22       
-3+d|Rows: 5
+| 2017 | 4.4    
+| 2019 | 3.5    
+| 2019 | 3.6    
+| 2022 | 3.8    
+| 2022 | 4.2    
+| 2016 | 4.5    
+    
+2+d|Rows: 6
 |===
+
+You can alias expressions with `LET` and use the alias in the `RETURN` (or `WITH`) clause as well as the `GROUP BY` clause.
 =====
 
 
@@ -220,49 +232,28 @@ RETURN name, p.age AS age, sum(p.age) AS totalAge
 =====
 [source, cypher]
 ----
-MATCH (p: Person)
-LET name = p.name
-RETURN p.age AS age, sum(p.age) AS totalAge 
-  GROUP BY name, age
-  ORDER BY name
+MATCH (m: Movie)
+LET title = m.title
+RETURN m.year as year, m.rating as rating
+  GROUP BY title, year, rating
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| age | totalAge 
+| year | rating 
 
-| 30  | 30       
-| 30  | 30       
-| 45  | 90       
-| 28  | 28       
-| 22  | 22            
-2+d|Rows: 5
+| 2017 | 4.4    
+| 2019 | 3.5    
+| 2019 | 3.6    
+| 2022 | 3.8    
+| 2022 | 4.2    
+| 2016 | 4.5    
+| 2019 | 3.6    
+2+d|Rows: 7
 |===
-=====
 
-
-.GROUP BY with property access
-=====
-[source, cypher]
-----
-MATCH (p: Person)
-RETURN DISTINCT p.name AS name, p.age AS age 
-  GROUP BY p.name, age
-----
-
-.Result
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| name      | age
-
-| "Bob"     | 30  
-| "Charlie" | 45  
-| "David"   | 28  
-| "Eve"     | 22  
-| "Alice"   | 30             
-2+d|Rows: 5
-|===
+`title` is not returned, but still used as a grouping key.
 =====
 
 
