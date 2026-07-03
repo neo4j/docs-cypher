@@ -1,0 +1,399 @@
+:description: Reference material for Cypher's shortest paths.
+= Shortest paths
+
+[[shortest-paths]]
+== Shortest paths
+
+Path selectors are modes that are specified at the path pattern level.
+There are five types of path selectors:
+
+* `SHORTEST k`
+* `ALL SHORTEST`
+* `SHORTEST k GROUPS`
+* `ANY k`
+* `ALL`
+
+The first three are shortest path selectors, and they specify which shortest paths should be returned, with the exact method of selection depending on the path selector type and the value of `k`.
+
+See xref:patterns/reference/path-patterns-and-graph-patterns.adoc#path-patterns[path patterns] for details on where in the path pattern to include the path selector.
+
+[[shortest-paths-syntax]]
+=== Syntax
+
+[source, syntax, role=noheader]
+----
+shortestPathSelector ::= 
+  { allPathSearch | anyPathSearch | shortestPathSearch }
+
+
+shortestPathSearch ::= 
+  { allShortest | anyShortest | countedShortestPaths | 
+     countedShortestGroups }
+
+
+allShortest ::= "ALL SHORTEST" [ pathOrPaths ]
+
+
+anyShortest ::= "ANY SHORTEST" [ pathOrPaths ]
+
+
+countedShortestPaths ::= 
+  "SHORTEST" numberOfPaths [ pathOrPaths ]
+
+
+countedShortestGroups ::= 
+  "SHORTEST" [ numberOfGroups ] [ pathOrPaths ] { "GROUP" | "GROUPS" }
+
+
+allPathSearch ::= "ALL" [ pathOrPaths ]
+
+
+anyPathSearch ::= "ANY" [ numberOfPaths ] [ pathOrPaths ]
+
+
+pathOrPaths ::= { "PATH" | "PATHS" }
+
+
+numberOfPaths ::= unsignedDecimalInteger | parameter
+
+
+numberOfGroups ::= unsignedDecimalInteger | parameter
+----
+
+[NOTE]
+====
+The `unsignedDecimalInteger` must not be larger than the Java constant `Long.MAX_VALUE` (2^63^-1).
+====
+
+[[shortest-paths-rules]]
+=== Rules
+
+[[shortest-paths-rules-selective]]
+==== Selective path selectors
+
+The following path selector types are _selective_ path selectors:
+
+* `SHORTEST k`
+* `SHORTEST k GROUPS`
+* `ALL SHORTEST`
+* `ANY k`
+
+This means that they reduce the number of matches produced by the path pattern.
+`ALL` returns all matches produced, and so is not selective.
+
+[[shortest-paths-rules-path-order-selection]]
+==== Order of path selection
+
+When a path selector is specified, the following steps are followed to find solutions to the path pattern:
+
+1. All paths matching the path pattern are found.
+2. Any paths not satisfying the predicates contained in the path pattern are removed.
+This is a _pre_-filter.
+3. Paths are selected according to the path selector specified.
+4. Any paths not satisfying the predicates in the graph pattern `WHERE` clause are removed.
+This is a _post_-filter.
+
+.Examples of pre-filters
+[source]
+----
+// node pattern WHERE clause
+MATCH p = SHORTEST 2 (a WHERE a.p < 42)--+()
+
+// relationship pattern property key-value expression
+MATCH p = SHORTEST 2 (a)-[{p: 42}]-+()
+
+// label and type expressions
+MATCH p = SHORTEST 2 (:A)-[:R]-+(:B)
+
+// quantified path pattern
+MATCH SHORTEST 2 ((a)--(b) WHERE a.p < b.p)+
+
+// parenthesized path pattern expression
+// note the position of the parentheses!
+MATCH SHORTEST 2 ( p = ()--+() WHERE any(n IN nodes(p) WHERE n.p < 42) )
+----
+
+.Examples of post-filters
+[source]
+----
+// graph pattern WHERE clause
+MATCH p = SHORTEST 2 (a)--+()
+WHERE all(n IN nodes(p) WHERE n.p < 42)
+----
+
+[[shortest-paths-rules-partitions]]
+==== Partitions
+
+If there are multiple start and end nodes matching a path pattern, then, when a selective path selector is specified, the paths matched by the path pattern are partitioned by distinct pairs of start and end nodes.
+Within each partition, they are put in ascending order of path length.
+The partitioned paths are then selected according to the specified path selector as follows:
+
+[options="header",cols="a,3a"]
+|===
+
+| Selective path selector | Partitioning
+
+| `SHORTEST k`
+| First `k` paths, starting with the shortest.
+Where more than one path could be picked for a given length, there is no particular order in which that selection is done.
+If `k` is greater than the number of paths in the partition, then all of the paths in that partition are returned.
+
+`ANY SHORTEST` is equivalent to `SHORTEST 1`.
+
+| `SHORTEST k GROUPS`
+| The paths are further grouped by path length, and those groups are put in ascending order by path length.
+Then the paths from the first `k` groups are selected.
+If `k` is greater than the number of path length groups within a partition, then all paths in that partition are returned.
+`GROUP` and `GROUPS` can be used interchangeably.
+
+| `ALL SHORTEST`
+| All paths tied for the shortest.
+Equivalent to `SHORTEST 1 GROUP`.
+
+| `ANY k`
+| Any `k` paths are returned.
+`ANY` is the same as `ANY 1`.
+This is useful to determine the reachability of nodes.
+
+| `ALL`
+| All paths are returned.
+This is the same as not specifying any path selector.
+
+|===
+
+For a selective path selector, if `k` is greater than `N`, the number of paths matching the path pattern, then all `N` paths are returned.
+
+[[shortest-paths-rules-one-path-pattern]]
+==== Only one path pattern allowed
+
+When a _selective_ shortest path selector is specified for a path pattern, it must be the only path pattern in the graph pattern.
+
+.Not allowed
+[source]
+----
+MATCH p = SHORTEST 2 (:A)--+(a)--+(:B), q = ANY 2 (a)-->{,2}(:C)
+RETURN p, q
+
+MATCH ALL SHORTEST (n:A) (()-->(:B))+, (:X)--(n)--(:Y)
+RETURN n
+----
+
+.Allowed
+[source]
+----
+MATCH p = SHORTEST 2 (:A)--+(a)--+(:B)
+MATCH q = ANY 2 (a)-->{,2}(:C)
+RETURN p, q
+
+MATCH ALL SHORTEST (n:A) (()-->(:B))+
+MATCH (:X)--(n)--(:Y)
+RETURN n
+
+MATCH ALL (n:A) (()-->(:B))+, (:X)--(n)--(:Y)
+RETURN n
+----
+
+[[shortest-paths-rules-path-paths]]
+==== `PATH`/`PATHS`
+
+The keywords `PATH` and `PATHS` are optional and can be added to the end of the path selector (but before `GROUP` or `GROUPS`).
+Including either of them does not change path selection.
+For example, the following two `MATCH` clauses are equivalent:
+
+[source, role=noheader]
+----
+MATCH ALL SHORTEST PATHS (n:A) (()-->(:B))+
+MATCH ALL SHORTEST (n:A) (()-->(:B))+
+----
+
+[[shortest-paths-rules-match-modes-and-path-modes]]
+==== Match modes and path modes
+
+When combined with a xref:patterns/reference/match-modes-and-path-modes.adoc#match-modes[match mode] such as `REPEATABLE ELEMENTS`, `SHORTEST` selective path selectors are placed after the specified match mode.
+This is because a match mode applies to the whole graph pattern match.
+
+.Combine `SHORTEST` with the `REPEATABLE ELEMENTS` match mode
+[source]
+----
+MATCH REPEATABLE ELEMENTS p = SHORTEST 1 (:A)--{,20}(:B)--{,20}(:C)
+----
+
+[NOTE]
+`SHORTEST 1` returns only a single path.
+However, because `REPEATABLE ELEMENTS` can generate an infinite number of paths due to its ability to re-traverse relationships, and because a predicate that no path satisfies would therefore cause the search to never halt, an upper quantifier bound is required when combining `SHORTEST` selective path selectors and `REPEATABLE ELEMENTS`.
+
+When combined with a xref:patterns/reference/match-modes-and-path-modes.adoc#path-modes[path mode] such as `ACYCLIC`, `SHORTEST` selective path selectors are placed before the path mode.
+This is because, although the selective path selector and path mode keywords are written left-to-right, they are evaluated right-to-left.
+In the below example, `ACYCLIC` pre-filters paths to only valid ones and then `SHORTEST 1` selects among those.
+
+.Combine `SHORTEST` with the `ACYCLIC` path mode
+[source]
+----
+MATCH p = SHORTEST 1 ACYCLIC (:A)--{,20}(:B)
+----
+
+[[shortest-paths-examples]]
+=== Examples
+
+Return a single shortest path for each distinct pair of nodes matching `(:A)` and `(:B)`:
+
+[source, role=noheader]
+----
+MATCH SHORTEST 1 (:A)-[:R]->{0,10}(:B)
+----
+
+Return any two paths connecting each distinct pair of nodes matching `(:A)` and `(:B)`:
+
+[source, role=noheader]
+----
+MATCH p = ANY 2 (:A)-[:R]->{0,10}(:B)
+----
+
+Return all paths equal to the shortest path length for each distinct pair of nodes matching `(:A)` and `(:B)`:
+
+[source, role=noheader]
+----
+MATCH ALL SHORTEST (:A)-[:R]->{0,10}(:B)
+----
+
+Return all paths equal to the two shortest path lengths for each distinct pair of nodes matching `(:A)` and `(:B)`:
+
+[source, role=noheader]
+----
+MATCH SHORTEST 2 GROUPS (:A)-[:R]->{0,10}(:B)
+----
+
+Return a single shortest path for each distinct pair of nodes, where the path length is an even number:
+
+[source, role=noheader]
+----
+MATCH SHORTEST 1 (p = ()--+() WHERE length(p) % 2 = 0)
+----
+
+For every single shortest path connecting each distinct pair of nodes, only return those that have path length that is an even number (so fewer results than the previous example):
+
+[source, role=noheader]
+----
+MATCH p = SHORTEST 2 ()--+()
+WHERE length(p) % 2 = 0
+----
+
+[[shortest-functions]]
+== The `shortestPath()` and `allShortestPaths()` functions
+
+Prior to the introduction of keyword-based specification of shortest path selection, the only available syntax for shortest paths were the functions `shortestPath()` and `allShortestPaths()`.
+They are similar to `SHORTEST 1` and `ALL SHORTEST`, but with several differences:
+
+* The path pattern is passed as an argument to the functions.
+* The path pattern is limited to a single relationship pattern.
+* To return results where the first and last node in the path are the same requires a change to the configuration setting link:{neo4j-docs-base-uri}/operations-manual/current/configuration/configuration-settings/#config_dbms.cypher.forbid_shortestpath_common_nodes[`dbms.cypher.forbid_shortestpath_common_nodes`].
+* The minimum path length, also called the lower bound of the variable-length relationship pattern, should be 0 or 1.
+
+Both functions will continue to be available, but they are not xref:appendix/gql-conformance/index.adoc[GQL conformant].
+
+[[shortest-functions-syntax]]
+=== Syntax
+
+[source, syntax, role=noheader]
+----
+pathSelectorFunction ::= 
+  { shortestPathFunction | allShortestPathsFunction }
+
+shortestPathFunction ::= 
+  "shortestPath(" + oneHopPathPatternExpression + ")"
+
+allShortestPathsFunction ::= 
+  "allShortestPaths(" + oneRelPathPatternExpression + ")"
+
+oneRelPathPatternExpression ::= 
+  nodePattern varLengthRelationship nodePattern
+----
+
+Note that it is possible to pass a fixed-length path pattern (with a single relationship) to the path selector function, but doing so would not serve any purpose in discovering a shortest path.
+
+[[shortest-functions-rules]]
+=== Rules
+
+[[shortest-functions-rules-var-length-restriction]]
+==== Restricted to variable-length relationships
+
+The pattern in the path selector function must be a variable-length relationship and not a quantified path pattern.
+
+.Not allowed
+[source]
+----
+shortestPath(((a)-[:R]-(b)){1,5})
+
+shortestPath((:A)-->+(:B))
+----
+
+[[shortest-functions-rules-path-pattern-length]]
+==== Path pattern length
+
+There must be exactly one relationship pattern in the path pattern, and the lower bound should be 0 or 1.
+
+.Allowed
+[source]
+----
+shortestPath((a)-[:R*1..5]-(b))
+----
+
+.Not allowed
+[source]
+----
+shortestPath((a)-[:R*1..5]-(b)-->(:X))
+
+shortestPath((a)-[:R*2..5]-(b))
+
+shortestPath((:A))
+
+allShortestPaths((a:A)-[:S*]->(:B), (a)-[:R*1..3]->(:C))
+----
+
+[[shortest-functions-rules-filtering]]
+==== Pre and post filtering
+
+If the `MATCH` clause of the `shortestPath()` function includes a `WHERE` clause, this condition will act as a pre-filter: paths satisfying the `WHERE` clause are first found, and from those paths the shortest path is selected.
+
+.Examples of pre-filters:
+[source]
+----
+MATCH p = shortestPath(()-[*]-())
+WHERE all(n in nodes(p) WHERE n.p < 42)
+
+MATCH p = shortestPath(()-[*]-())
+WHERE all(r in relationships(p) WHERE r.p < 42)
+----
+
+These contrast with `WHERE` clauses that are not part of the same `MATCH` clause.
+
+.Example of post-filters
+[source]
+----
+MATCH p = shortestPath(()-[*]-())
+WITH nodes(p) AS N
+WHERE all(n in N WHERE n.p < 42)
+----
+
+[[shortest-functions-rules-non-determinism]]
+==== Non-determinism
+
+If there is more than one path with minimum length, then `shortestPath()` function will return one of those paths non-deterministically.
+As `allShortestPaths()` would return all of those paths, its results are deterministic.
+
+[[shortest-functions-examples]]
+=== Examples
+
+Return a single shortest path for each distinct pair of nodes matching `(:A)` and `(:B)`:
+
+[source, role=noheader]
+----
+MATCH shortestPath((:A)-[:R*0..10]->(:B))
+----
+
+Return all paths equal to the shortest path length for each distinct pair of nodes matching `(:A)` and `(:B)`:
+
+[source, role=noheader]
+----
+MATCH allShortestPaths((:A)-[:R*0..10]->(:B))
+----
