@@ -83,7 +83,7 @@ A vector index allows you to retrieve a neighborhood of nodes or relationships b
 
 A vector index is a single-label, single-property index for nodes or a single-relationship-type, single-property index for relationships.
 It can be used to index nodes or relationships by `LIST<INTEGER | FLOAT>` properties valid to the dimensions and vector similarity function of the index.
-Note that the available vector index providers (`vector-2.0` (default) and `vector-1.0` (deprecated)) support different index schemas, property value types, and vector dimensions.
+Note that the available vector index providers (`vector-2026.0` (default), `vector-3.0`, `vector-2.0`, and `vector-1.0` (deprecated)) support different index schemas, property value types, and vector dimensions.
 For more information, see xref:indexes/semantic-indexes/vector-indexes.adoc#vector-index-providers[].
 
 A vector index is created by using the `CREATE VECTOR INDEX [index_name]` command.
@@ -165,7 +165,29 @@ To read more about the available similarity functions, see xref:indexes/semantic
 Accepted values::: `STRING`: `'cosine'`, `'euclidean'`.
 Default value::: `'cosine'`. The setting was mandatory prior to Neo4j 5.23.
 
-[role=label--new-5.23]
+
+[role=label--preview-Neo4j-2026.06]
+[[config-vector.default_search_expansion_factor]]
+==== `vector.default_search_expansion_factor`
+
+Scales the number of nearest neighbors to query the vector index, while returning the originally requested number of nearest neighbors.
+Setting this value above `1.0` can increase accuracy at the cost of query time.
+
+Accepted values::: `FLOAT`: between `1.0` and `10_000.0` _inclusive_.
+Default values::: Dependent upon the value of xref:indexes/semantic-indexes/vector-indexes.adoc#config-vector.quantization.type[].
+
+[%header,cols="m,m"]
+|===
+| Value of xref:indexes/semantic-indexes/vector-indexes.adoc#config-vector.quantization.type[]
+| Default value xref:indexes/semantic-indexes/vector-indexes.adoc#config-vector.default_search_expansion_factor[]
+
+| 'none' | 1.0
+| 'scalar' | 1.5
+| 'binary' label:preview[] | 2.0
+|===
+
+
+[role=label--new-5.23 label--deprecated-2026.06]
 [[config-vector.quantization.enabled]]
 ==== `vector.quantization.enabled`
 
@@ -176,6 +198,22 @@ Vector indexes created prior to Neo4j 5.23 have this setting effectively set to 
 
 Accepted values::: `BOOLEAN`: `true`, `false`.
 Default value::: `true`
+
+[role=label--new-2026.06]
+[[config-vector.quantization.type]]
+==== `vector.quantization.type`
+
+Quantization is a technique to reduce the size of vector representations.
+Setting a quantization type can accelerate search performance but decrease accuracy.
+Binary quantization is a more aggressive form of Scalar quantization, reducing each dimension to a single bit.
+If xref:indexes/semantic-indexes/vector-indexes.adoc#config-vector.default_search_expansion_factor[] is set larger than `1.0`, and the quantization type is not `'none'`, the returned nearest neighbors are rescored with their unquantized vector values to increase accuracy.
+It is recommended to use quantization on machines with limited memory.
+
+Accepted values::: `STRING`: `'none'`, `'scalar'`, `'binary'`.
+Default value::: `'scalar'`
+
+[NOTE]
+The `'binary'` value is currently in preview.
 
 [discrete]
 [[config-advanced]]
@@ -212,7 +250,7 @@ To query a node vector index, use the link:{neo4j-docs-base-uri}/operations-manu
 An index cannot be used while its `state` is `POPULATING`, which occurs immediately after it is created.
 To check the `state` of a vector index -- whether it is `ONLINE` (usable) or `POPULATING` (still being built; the `populationPercent` column shows the progress of the index creation) -- run the following command: `SHOW VECTOR INDEXES`.
 
-.Signature for `db.index.vector.queryNodes()`
+.Signature for `db.index.vector.queryNodes()` label:deprecated[Deprecated in Neo4j 2026.04]
 [source,syntax]
 ----
 db.index.vector.queryNodes(indexName :: STRING, numberOfNearestNeighbours :: INTEGER, query :: ANY) :: (node :: NODE, score :: FLOAT)
@@ -241,10 +279,10 @@ RETURN movie.title AS title, movie.plot AS plot, score
 | title                      | plot                                                                                                                                                                                                                     | score              |
 +----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 | "Godfather, The"           | "The aging patriarch of an organized crime dynasty transfers control of his clandestine empire to his reluctant son."                                                                                                    | 1.0                |
-| "Godfather: Part III, The" | "In the midst of trying to legitimize his business dealings in New York and Italy in 1979, aging Mafia don Michael Corleone seeks to avow for his sins while taking a young protégé under his wing."                     | 0.9648237228393555 |
-| "Godfather: Part II, The"  | "The early life and career of Vito Corleone in 1920s New York is portrayed while his son, Michael, expands and tightens his grip on his crime syndicate stretching from Lake Tahoe, Nevada to pre-revolution 1958 Cuba." | 0.9547788500785828 |
-| "Goodfellas"               | "Henry Hill and his friends work their way up through the mob hierarchy."                                                                                                                                                | 0.9300689697265625 |
-| "Scarface"                 | "An ambitious and near insanely violent gangster climbs the ladder of success in the mob, but his weaknesses prove to be his downfall."                                                                                  | 0.9367183446884155 |
+| "Godfather: Part III, The" | "In the midst of trying to legitimize his business dealings in New York and Italy in 1979, aging Mafia don Michael Corleone seeks to avow for his sins while taking a young protégé under his wing."                     | 0.9643230438232422 |
+| "Godfather: Part II, The"  | "The early life and career of Vito Corleone in 1920s New York is portrayed while his son, Michael, expands and tightens his grip on his crime syndicate stretching from Lake Tahoe, Nevada to pre-revolution 1958 Cuba." | 0.954361081123352  |
+| "Jane Austen's Mafia!"     | "Takeoff on the Godfather with the son of a mafia king taking over for his dying father"                                                                                                                                 | 0.9361231327056885 |
+| "Scarface"                 | "An ambitious and near insanely violent gangster climbs the ladder of success in the mob, but his weaknesses prove to be his downfall."                                                                                  | 0.9360706806182861 |
 +----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 
@@ -254,7 +292,7 @@ If the query vector itself is not wanted, adding the predicate `WHERE score < 1`
 
 To query a relationship vector index, use the link:{neo4j-docs-base-uri}/operations-manual/current/procedures/#procedure_db_index_vector_queryRelationships[`db.index.vector.queryRelationships()`] procedure.
 
-.Signature for `db.index.vector.queryRelationships()` label:new[Introduced in 5.18]
+.Signature for `db.index.vector.queryRelationships()` label:new[Introduced in 5.18] label:deprecated[Deprecated in Neo4j 2026.04]
 [source,syntax]
 ----
 db.index.vector.queryRelationships(indexName :: STRING, numberOfNearestNeighbours :: INTEGER, query :: ANY) :: (relationship :: RELATIONSHIP, score :: FLOAT)
@@ -303,11 +341,11 @@ SHOW VECTOR INDEXES
 .Result
 [source, role=queryresult]
 ----
-+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| id | name         | state    | populationPercent | type     | entityType | labelsOrTypes | properties        | indexProvider | owningConstraint | lastRead                 | readCount |
-+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| 2  | "moviePlots" | "ONLINE" | 100.0             | "VECTOR" | "NODE"     | ["Movie"]     | ["embedding"]     | "vector-2.0"  | NULL             | 2024-05-07T09:19:09.225Z | 47        |
-+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| id | name         | state    | populationPercent | type     | entityType | labelsOrTypes | properties    | indexProvider    | owningConstraint | lastRead                 | readCount |
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 20 | "moviePlots" | "ONLINE" | 100.0             | "VECTOR" | "NODE"     | ["Movie"]     | ["embedding"] | "vector-2026.06" | NULL             | 2026-06-29T07:49:36.993Z | 3         |
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 ====
 
@@ -327,11 +365,11 @@ SHOW VECTOR INDEXES YIELD *
 .Result
 [source, role=queryresult]
 ----
-+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| id | name        | state    | populationPercent | type     | entityType | labelsOrTypes | properties        | indexProvider | owningConstraint| lastRead                  | readCount | trackedSince              | options                                                                                                                                                                                                       | failureMessage | createStatement                                                                                                                                                                                                                                              |
-+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| 2  | "moviePlots"| "ONLINE" | 100.0             | "VECTOR" | "NODE"     | ["Movie"]     | ["embedding"]     | "vector-2.0"  | NULL            | 2024-05-07T09:19:09.225Z  | 47        | 2024-05-07T08:26:19.072Z  | {indexConfig: {`vector.dimensions`: 1536, `vector.hnsw.m`: 16, `vector.quantization.enabled`: TRUE, `vector.similarity_function`: "COSINE", `vector.hnsw.ef_construction`: 100}, indexProvider: "vector-2.0"} | ""             | "CREATE VECTOR INDEX `moviePlots` FOR (n:`Movie`) ON (n.`embedding`) OPTIONS {indexConfig: {`vector.dimensions`: 1536,`vector.hnsw.ef_construction`: 100,`vector.hnsw.m`: 16,`vector.quantization.enabled`: true,`vector.similarity_function`: 'COSINE'}}"   |
-+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| id | name         | state    | populationPercent | type     | entityType | labelsOrTypes | properties    | indexProvider    | owningConstraint | lastRead                 | readCount | trackedSince             | options                                                                                                                                                                                                                                                           | failureMessage | createStatement                                                                                                                                                                                                                                                                                           |
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 20 | "moviePlots" | "ONLINE" | 100.0             | "VECTOR" | "NODE"     | ["Movie"]     | ["embedding"] | "vector-2026.06" | NULL             | 2026-06-29T07:49:36.993Z | 3         | 2026-06-22T12:38:16.144Z | {indexConfig: {`vector.dimensions`: 1536, `vector.default_search_expansion_factor`: 1.5, `vector.hnsw.m`: 16, `vector.quantization.type`: "SCALAR", `vector.similarity_function`: "COSINE", `vector.hnsw.ef_construction`: 100}, indexProvider: "vector-2026.06"} | ""             | "CREATE VECTOR INDEX `moviePlots` FOR (n:`Movie`) ON (n.`embedding`) OPTIONS {indexConfig: {`vector.default_search_expansion_factor`: 1.5,`vector.dimensions`: 1536,`vector.hnsw.ef_construction`: 100,`vector.hnsw.m`: 16,`vector.quantization.type`: 'SCALAR',`vector.similarity_function`: 'COSINE'}}" |
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 
 To return only specific details, specify the desired column name(s) after the `YIELD` clause.
@@ -371,18 +409,154 @@ DROP INDEX moviePlots
 [[vector-index-providers]]
 == Vector index providers for compatibility
 
-As of Neo4j 5.18, the default index provider is `vector-2.0`.
-As of Neo4j 5.26, it is no longer possible to specify an index provider when creating indexes.
-Instead, Neo4j selects the most performant provider (currently `vector-2.0`).
+Neo4j selects the most feature-rich provider (`vector-2026.06` for vector indexes as of Neo4j 2026.06).
+Previously created `vector-1.0`, `vector-2.0`, and `vector-3.0` indexes will continue to function.
 
-Previously created `vector-1.0` indexes will continue to function.
+.Identify the provider used by vector indexes in a database
+[source, cypher]
+----
+SHOW VECTOR INDEXES YIELD name, type, indexProvider
+----
 
-.Learn more about vector index provider differences
+.Learn more about the `vector-2026.06` provider (default) label:new[Introduced in Neo4j 2026.06]
 [%collapsible]
 ====
-[%header,cols="d,d,d"]
+[%header,cols="d,d"]
 |===
-| Supported | `vector-1.0` | `vector-2.0`
+| Feature | Capability
+
+| Index schema
+| multi-label, multi-property index for nodes.
+
+{nbsp}
+
+multi-type, multi-property index for relationships.
+
+{nbsp}
+
+Only one vector property can be stored per node or relationship.
+Any additional properties included in the index must be one of the following types:
+`INTEGER`, `FLOAT`, `STRING`, `BOOLEAN`, `DATE`, `ZONED DATETIME`, `LOCAL DATETIME`, `ZONED TIME`, `LOCAL TIME` or `DURATION`.
+
+| Indexed property value type
+| `VECTOR` or `LIST<INTEGER \| FLOAT>`.
+
+| Indexed vector dimension
+| `INTEGER` between `1` and `4096` _inclusive_.
+
+| Indexed vector quantization
+| Scalar and binary quantization supported.
+Binary quantization is currently in preview.
+
+| Indexed hnsw settings
+| Supported
+
+| xref:indexes/semantic-indexes/vector-indexes.adoc#similarity-functions[Cosine similarity vector validity]
+| All vector components can be represented finitely in IEEE 754 *_double_* precision.
+
+{nbsp}
+
+Its {l2-norm} is non-zero and can be represented finitely in IEEE 754 *_double_* precision.
+
+{nbsp}
+
+The ratio of each vector component with its {l2-norm} can be represented finitely in IEEE 754 *_single_* precision.
+
+|===
+====
+
+.Learn more about the `vector-3.0` provider label:new[Introduced in Neo4j 2025.09]
+[%collapsible]
+====
+[%header,cols="d,d"]
+|===
+| Feature | Capability
+
+| Index schema
+| multi-label, multi-property index for nodes.
+
+{nbsp}
+
+multi-type, multi-property index for relationships.
+
+{nbsp}
+
+Only one vector property can be stored per node or relationship.
+Any additional properties included in the index must be one of the following types:
+`INTEGER`, `FLOAT`, `STRING`, `BOOLEAN`, `DATE`, `ZONED DATETIME`, `LOCAL DATETIME`, `ZONED TIME`, `LOCAL TIME` or `DURATION`.
+
+| Indexed property value type
+| `VECTOR` or `LIST<INTEGER \| FLOAT>`
+
+| Indexed vector dimension
+| `INTEGER` between `1` and `4096` _inclusive_.
+
+| Indexed vector quantization
+| Scalar quantization supported.
+
+| Indexed hnsw settings
+| Supported
+
+| xref:indexes/semantic-indexes/vector-indexes.adoc#similarity-functions[Cosine similarity vector validity]
+| All vector components can be represented finitely in IEEE 754 *_double_* precision.
+
+{nbsp}
+
+Its {l2-norm} is non-zero and can be represented finitely in IEEE 754 *_double_* precision.
+
+{nbsp}
+
+The ratio of each vector component with its {l2-norm} can be represented finitely in IEEE 754 *_single_* precision.
+
+|===
+====
+
+.Learn more about the `vector-2.0` provider label:new[Introduced in Neo4j 5.18]
+[%collapsible]
+====
+[%header,cols="d,d"]
+|===
+| Feature | Capability
+
+| Index schema
+| Single-label, single-property index for nodes.
+
+{nbsp}
+
+Single-type, single-property index for relationships.
+
+| Indexed property value type
+| `VECTOR` or `LIST<INTEGER \| FLOAT>`
+
+| Indexed vector dimension
+| `INTEGER` between `1` and `4096` _inclusive_.
+
+| Indexed vector quantization
+| Scalar quantization supported.
+
+| Indexed hnsw settings
+| Supported
+
+| xref:indexes/semantic-indexes/vector-indexes.adoc#similarity-functions[Cosine similarity vector validity]
+| All vector components can be represented finitely in IEEE 754 *_double_* precision.
+
+{nbsp}
+
+Its {l2-norm} is non-zero and can be represented finitely in IEEE 754 *_double_* precision.
+
+{nbsp}
+
+The ratio of each vector component with its {l2-norm} can be represented finitely in IEEE 754 *_single_* precision.
+
+|===
+====
+
+.Learn more about the `vector-1.0` provider label:new[Introduced in Neo4j 5.11]
+[%collapsible]
+====
+[%header,cols="d,d"]
+|===
+| Feature | Capability
 
 | Index schema
 | Single-label, single-property index for nodes.
@@ -399,11 +573,15 @@ Single-type, single-property index for relationships.
 
 | Indexed property value type
 | `LIST<FLOAT>`
-| `LIST<INTEGER \| FLOAT>`
 
 | Indexed vector dimension
 | `INTEGER` between `1` and `2048` _inclusive_.
-| `INTEGER` between `1` and `4096` _inclusive_.
+
+| Indexed vector quantization
+| Not supported
+
+| Indexed hnsw settings
+| Not supported
 
 | xref:indexes/semantic-indexes/vector-indexes.adoc#similarity-functions[Cosine similarity vector validity]
 | All vector components can be represented finitely in IEEE 754 *_single_* precision.
@@ -547,7 +725,13 @@ The following table lists the issues and, if fixed, the version in which they we
 |===
 | Known issues | Fixed in
 
-| The creation of a vector index using the legacy procedure link:{neo4j-docs-base-uri}/operations-manual/current/procedures/#procedure_db_index_vector_createNodeIndex[`db.index.vector.createNodeIndex()`] may fail with an error in Neo4j 5.18 and later if the database was last written to with a version prior to Neo4j 5.11, and the legacy procedure is the first write operation used on the newer version.
+| In Neo4j 2026.06, the deprecated setting `vector.quantization.enabled` cannot be set to `false` without also setting `vector.quantization.type: 'none'`.
+To use  unquantized vectors in a vector index, set only `vector.quantization.type: 'none'`.
+
+| This will be fixed in Neo4j 2026.07.
+
+
+| The creation of a vector index using the legacy procedure link:{neo4j-docs-base-uri}/operations-manual/current/procedures/built-in-procedures/#procedure_db_index_vector_createNodeIndex[`db.index.vector.createNodeIndex()`] may fail with an error in Neo4j 5.18 and later if the database was last written to with a version prior to Neo4j 5.11, and the legacy procedure is the first write operation used on the newer version.
 In Neo4j 5.20, the error was clarified.
 [TIP]
 --
