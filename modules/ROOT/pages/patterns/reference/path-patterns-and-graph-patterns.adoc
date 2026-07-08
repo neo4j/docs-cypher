@@ -1,0 +1,290 @@
+:description: Reference material for Cypher's path patterns and graph patterns.
+= Path patterns and graph patterns
+
+[[path-patterns]]
+== Path patterns
+
+A path pattern is the top level pattern that is matched against paths in a graph.
+
+[[path-patterns-syntax]]
+=== Syntax
+
+[source, syntax, role=noheader]
+----
+pathPattern ::= [ pathVariableDeclaration ] [ pathPatternPrefix ] pathPatternExpression
+
+pathVariableDeclaration ::= pathVariable "="
+
+pathPatternPrefix ::= pathModePrefix | shortestPathSelector
+
+pathPatternExpression ::= { parenthesizedPathPatternExpression | pathPatternPhrase }
+
+parenthesizedPathPatternExpression ::=
+  "("
+    [ subpathVariableDeclaration ]
+    pathPatternExpression
+    [ parenthesizedPathPatternWhereClause ]
+")"
+
+subpathVariableDeclaration ::= pathVariable "="
+
+pathPatternPhrase ::= [{ simplePathPattern | quantifiedPathPattern }]+
+
+simplePathPattern ::= nodePattern
+  [ { relationshipPattern | quantifiedRelationship } nodePattern ]*
+
+parenthesizedPathPatternWhereClause ::= "WHERE" booleanExpression
+----
+
+See the related section for each of the syntax rules:
+
+[cols="a,a"]
+|===
+
+| `shortestPathSelector` | xref:patterns/reference/shortest-paths.adoc#shortest-paths[Shortest paths]
+| `quantifiedPathPattern` | xref:patterns/reference/variable-length-paths.adoc#quantified-path-patterns[Quantified path patterns]
+| `nodePattern` | xref:patterns/reference/node-and-relationship-patterns.adoc#node-patterns[Node patterns]
+| `relationshipPattern` | xref:patterns/reference/node-and-relationship-patterns.adoc#relationship-patterns[Relationship patterns]
+| `quantifiedRelationship` | xref:patterns/reference/variable-length-paths.adoc#quantified-relationships[Quantified relationships]
+
+|===
+
+[[path-patterns-rules]]
+=== Rules
+
+The minimum number of elements in the path pattern must be greater than zero.
+For example, a path pattern that is a quantified path pattern with a quantifier that has a lower bound of zero is not allowed:
+
+.Not allowed
+[source]
+----
+((n)-[r]->(m)){0,10}
+----
+
+A path pattern must always begin and end with a node pattern.
+
+.Not allowed
+[source]
+----
+(n)-[r]->(m)-[s]-
+----
+
+A path pattern may be composed of a concatenation of simple and quantified path patterns.
+Two simple path patterns, however, may not be placed next to each other.
+
+.Not allowed
+[source]
+----
+(a)<-[s]-(b) (c)-[t]->(d)
+----
+
+When a path pattern is matched to paths in a graph, nodes can be revisited but relationships cannot.
+
+A subpath variable (a path variable declared inside a parenthesized path pattern expression) can only be used if a xref:patterns/reference/shortest-paths.adoc#shortest-paths[shortest paths] mode is also specified.
+
+.Allowed
+[source]
+----
+MATCH SHORTEST 1 (p = (a)-[r]->+(b) WHERE length(p) > 3)
+----
+
+.Not allowed
+[source]
+----
+MATCH (:A)-[:S]->(:B) (p = ((a)-[r]->(b))+)
+----
+
+See xref::patterns/reference/path-patterns-and-graph-patterns.adoc#graph-patterns[graph patterns] for rules on declaring variables multiple times.
+
+[[path-patterns-examples]]
+=== Examples
+
+A single node pattern is allowed as it has at least one element:
+
+[source, role=noheader]
+----
+(n)
+----
+
+A simple path pattern with more than one element:
+
+[source, role=noheader]
+----
+(a:A)<-[{p: 30}]-(b)-[t WHERE t.q > 0]->(c:C)
+----
+
+A quantified path pattern can have a lower bound of zero in its quantifier as long as it abuts other patterns that have at least one element:
+
+[source, role=noheader]
+----
+(:A) ((:X)-[:R]-()){0,10} (:B)
+----
+
+A quantified relationship can also have a lower bound of zero as long as the overall path pattern has at least one element:
+
+[source, role=noheader]
+----
+(:A)-[:R]->{0,10}(:B)
+----
+
+A concatenation of simple and quantified path patterns:
+
+[source, role=noheader]
+----
+(a)<-[s]-(b)-[t]->(c) ((n)-[r]->(m)){0,10} (:X)
+----
+
+Referencing non-local node variable in a simple path pattern:
+
+[source, role=noheader]
+----
+(a)<-[s:X WHERE a.p = s.p]-(b)
+----
+
+Referencing a non-local relationship variable within a quantified path pattern:
+
+[source, role=noheader]
+----
+(:A) ((a)<-[s:X WHERE a.p = s.p]-(b)){,5}
+----
+
+A variable that was introduced in a previous clause can be referenced as long as that variable was defined outside of a quantified path pattern:
+
+[source, role=noheader]
+----
+MATCH (n)
+MATCH ()-[r WHERE r.q = n.q]-() (()<-[s:X WHERE n.p = s.p]-()){2,3}
+----
+
+Paths matched by the path pattern can be assigned to a variable:
+
+[source, role=noheader]
+----
+MATCH p = ()-[r WHERE r.q = n.q]-()
+----
+
+[[graph-patterns]]
+== Graph patterns
+
+A graph pattern is a comma separated list of one or more path patterns.
+It is the top level construct provided to `MATCH`.
+
+image::patterns_graph_pattern_reference.svg[Cypher example of a graph pattern including path patterns,width=600,role=popup]
+
+[[graph-patterns-syntax]]
+=== Syntax
+
+[source, role=noheader]
+----
+graphPattern ::= 
+  pathPattern [ "," pathPattern ]* [ graphPatternWhereClause ]
+
+graphPatternWhereClause ::= "WHERE" booleanExpression
+----
+
+[[graph-patterns-rules]]
+=== Rules
+
+The rules for xref:patterns/reference/path-patterns-and-graph-patterns.adoc#path-patterns[path patterns] apply to each constituent path pattern of a graph pattern.
+
+[[graph-patterns-rules-variable-references]]
+==== Variable references
+
+If a variable is declared inside a quantified path pattern, then it can be treated as a singleton only from within the quantified path pattern it was declared in.
+Outside of that quantified path pattern, it must be treated as a group variable.
+
+.Allowed
+[source]
+----
+((n)-[r]->(m WHERE r.p = m.q))+
+----
+
+.Allowed
+[source]
+----
+(n)-[r]->+(m WHERE all(rel in r WHERE rel.q > m.q))
+----
+
+.Not allowed
+[source]
+----
+(n)-[r]->+(m WHERE r.p = m.q)
+----
+
+[[graph-patterns-rules-equijoin]]
+==== Equijoin
+
+If a node variable is declared more than once in a path pattern, it is expressing an equijoin.
+This is an operation that requires that each node pattern with the same node variable be bound to the same node.
+For example, the following pattern refers to the same node twice with the variable `a`, forming a cycle:
+
+[source, role=noheader]
+----
+(a)-->(b)-->(c)-->(a)
+----
+
+The following pattern refers to the same node with variable `b` in different path patterns of the same graph pattern, forming a "T" shaped pattern:
+
+[source, role=noheader]
+----
+(a)-->(b)-->(c), (b)-->(e)
+----
+
+Equijoins can only be made using variables outside of quantified path patterns.
+The following would not be a valid equijoin:
+
+.Not allowed
+[source]
+----
+(a)-->(b)-->(c), ((b)-->(e))+ (:X)
+----
+
+If no equijoin exists between path patterns in a graph pattern, then a Cartesian join is formed from the sets of matches for each path pattern.
+An equijoin can be expressed between relationship patterns by declaring a relationship variable multiple times.
+However, as relationships can only be traversed once in a given match, no solutions would be returned.
+
+[[graph-patterns-examples]]
+=== Examples
+
+The `WHERE` clause can refer to variables inside and outside of quantified path patterns:
+
+[source, role=noheader]
+----
+(a)-->(b)-->(c), (b) ((d)-->(e))+ WHERE any(n in d WHERE n.p = a.p)
+----
+
+An equijoin can be formed to match "H" shaped graphs:
+
+[source, role=noheader]
+----
+(:A)-->(x)--(:B), (x)-[:R]->+(y), (:C)-->(y)-->(:D)
+----
+
+With no variables in common, this graph pattern will result in a Cartesian join between the sets of matches for the two path patterns:
+
+[source, role=noheader]
+----
+(a)-->(b)-->(c), ((d)-->(e))+
+----
+
+Multiple equijoins can be formed between path patterns:
+
+[source, role=noheader]
+----
+(:X)-->(a:A)-[!:R]->+(b:B)-->(:Y), (a)-[:R]->+(b)
+----
+
+Variables declared in a previous `MATCH` can be referenced inside of a quantified path pattern:
+
+[source, role=noheader]
+----
+MATCH (n {p = 'ABC'})
+MATCH (n)-->(m:A)-->(:B), (m) (()-[r WHERE r.p <> n.p]->())+ (:C)
+----
+
+The repetition of a relationship variable in the following yields no solutions due to Cypher enforcing relationship uniqueness within a match for a graph pattern:
+
+[source, role=noheader]
+----
+MATCH ()-[r]->()-->(), ()-[r]-()
+----
