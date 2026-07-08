@@ -24,6 +24,164 @@ Any new Cypher features introduced in Neo4j 2025.06 or later will be exclusively
 Features removed in Cypher 25 are still available on Neo4j 2025.06+ databases either by prepending a query with `CYPHER 5` or by having Cypher 5 as the default language for the database.
 For more information, see xref:queries/select-version.adoc[].
 
+[[cypher-deprecations-additions-removals-2026.06]]
+== Neo4j 2026.06
+
+=== Deprecations
+
+[cols="2", options="header"]
+|===
+| Feature
+| Details
+
+a|
+label:deprecated[]
+[source, cypher, role="noheader"]
+----
+CREATE VECTOR INDEX moviePlots IF NOT EXISTS
+FOR (m:Movie) ON m.embedding
+WITH [m.releaseDate, m.rating]
+OPTIONS {
+  indexConfig: {
+    `vector.similarity_function`: 'cosine',
+    `vector.dimensions`: 3,
+    `vector.quantization.enabled`: false
+  }
+}
+----
+
+| The vector index configuration setting xref:indexes/semantic-indexes/vector-indexes.adoc#config-vector.quantization.enabled[`vector.quantization.enabled`] has been deprecated in favor of xref:indexes/semantic-indexes/vector-indexes.adoc#config-vector.quantization.type[`vector.quantization.type`].
+The latter allows you to specify quantization types (`'none'`, `'scalar`, and `'binary'`).
+
+|===
+
+=== Updates
+
+[cols="2", options="header"]
+|===
+| Feature
+| Details
+
+a|
+label:updated[]
+[source, cypher, role="noheader"]
+----
+LOAD CSV WITH HEADERS FROM $csv AS line
+CALL (line) {
+  MERGE (a:Person {id: line.actorId})
+  MERGE (m:Movie  {id: line.movieId})
+  CREATE (a)-[:ACTS_IN {name: line.roleName}]->(m)
+} IN CONCURRENT TRANSACTIONS OF 500 ROWS
+  DISJOINT BY AUTO
+----
+
+a| `CALL {...} IN CONCURRENT TRANSACTIONS` now accepts an optional `DISJOINT BY` clause.
+This adds optional deadlock prevention scheduling to concurrent transactions.
+The runtime schedules batches that share resources serially and batches that do not concurrently, preventing deadlocks rather than recovering from them.
+This is particularly useful when importing relationships.
+
+`DISJOINT BY` has three forms:
+
+* `DISJOINT BY (<expr>, ...)`: declares lock-prone resources explicitly per row.
+* `DISJOINT BY AUTO`: the runtime infers lock-prone resources automatically.
+* `DISJOINT BY NONE`: disables scheduling explicitly, overriding any database-level default.
+
+For more information, see xref:subqueries/subqueries-in-transactions.adoc#disjoint-by[`CALL` subqueries in transactions -> Batch scheduling with `DISJOINT BY`].
+
+a|
+label:functionality[]
+label:updated[]
+[source, cypher, role="noheader"]
+----
+MATCH (movie:Movie)
+  SEARCH movie IN (
+    VECTOR INDEX moviePlots
+    FOR [1, 2, 3]
+    WHERE movie.rating IN [7.6, 7.7, 8.0]
+    LIMIT 10
+  )
+RETURN movie
+----
+| `WHERE` predicates inside a xref:clauses/search.adoc#vector-search-filtering[vector `SEARCH`] now support the `IN` operator.
+For more information, see xref:clauses/search.adoc#vector-search-filtering-predicates[Predicates for vector search with filters].
+
+a|
+label:updated[]
+[source, cypher, role="noheader"]
+----
+ALTER CURRENT GRAPH TYPE SET {
+    (:Person => :Resident {name :: STRING NOT NULL}),
+    (:Pet => :Resident&Animal {healthCertificate :: STRING, name :: STRING}),
+    (:City => {name :: STRING NOT NULL, population :: INTEGER}),
+    (:Resident)-[:LIVES_IN => {since :: DATE NOT NULL}]->(:City)
+}
+----
+a| xref:schema/graph-types/index.adoc[Graph types] are now generally available.
+This includes the ability to:
+
+* xref:schema/graph-types/set-graph-types.adoc[Set a graph type]
+* xref:schema/graph-types/alter-element-types.adoc[Alter elements in a graph type]
+* xref:schema/graph-types/extend-graph-types.adoc[Extend a graph type]
+* xref:schema/graph-types/drop-graph-type-elements.adoc[Drop elements in a graph type]
+* xref:schema/graph-types/list-graph-types.adoc[Show a graph type]
+
+Prior to this release, the feature was in preview.
+
+a|
+label:updated[]
+[source, cypher, role="noheader"]
+----
+SHOW CURRENT GRAPH TYPE AS GRAPH
+----
+| In addition to returning the graph type as a string, show current graph type can now return the graph type as a virtual graph.
+For more information, see xref:schema/graph-types/list-graph-types.adoc#result-columns-as-graph[Show graph types -> `SHOW CURRENT GRAPH TYPE AS GRAPH` columns].
+
+a|
+label:updated[]
+label:preview[]
+[source, cypher, role="noheader"]
+----
+CREATE VECTOR INDEX moviePlots IF NOT EXISTS
+FOR (m:Movie) ON m.embedding
+WITH [m.releaseDate, m.rating]
+OPTIONS {
+  indexConfig: {
+    `vector.similarity_function`: 'cosine',
+    `vector.dimensions`: 3,
+    `vector.quantization.type`: 'binary',
+    `vector.default_search_expansion_factor`: 2.0
+  }
+}
+----
+| Vector indexes now support binary quantization (`vector.quantization.type: 'binary'`) and a search expansion factor (`vector.default_search_expansion_factor`), both currently in preview, for tuning the trade-off between accuracy and query time.
+
+For more details, see xref:indexes/semantic-indexes/vector-indexes.adoc#config-vector.default_search_expansion_factor[Vector index configuration settings -> `config-vector.default_search_expansion_factor`] and xref:indexes/semantic-indexes/vector-indexes.adoc#config-vector.quantization.type[`config-vector.quantization.type`].
+|===
+
+
+=== New
+
+[cols="2", options="header"]
+|===
+| Feature
+| Details
+
+a|
+label:new[]
+[source, cypher, role="noheader"]
+----
+CREATE AUTH RULE nativeAdminRule
+SET CONDITION 'admin' IN abac.native.user_tags()
+----
+
+| Introduction of the security function xref:functions/security.adoc#functions-security-native-user-tags[`abac.native.user_tags()`], which returns the list of tags for the native user.
+
+This function cannot be called directly in queries.
+It can only be used in the condition of a `CREATE AUTH RULE` or `ALTER AUTH RULE` command.
+For more information about defining auth rules and more extensive examples, see link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/attribute-based-access-control/[Operations Manual -> Attribute-based access control].
+
+|===
+
 [[cypher-deprecations-additions-removals-2026.05]]
 == Neo4j 2026.05
 
@@ -195,6 +353,21 @@ label:new[]
 `currentQueryProgress` column for `SHOW TRANSACTIONS`
 
 | A new column `currentQueryProgress` has been added to the output table of `SHOW TRANSACTIONS`. See the link:{neo4j-docs-base-uri}/operations-manual/current/database-internals/show-and-terminate-transactions/[Operations Manual -> Show and terminate transactions] for details.
+
+
+a|
+label:new[]
+[source, cypher, role="noheader"]
+----
+CREATE AUTH RULE nativeAdminRule
+SET CONDITION 'admin' IN abac.native.user_tags()
+----
+
+| Introduction of the security function xref:functions/security.adoc#functions-security-oidc-user-attribute[`abac.oidc.user_attribute()`], which returns the value of the specified user attribute from the OIDC claims.
+
+This function cannot be called directly in queries.
+It can only be used in the condition of a `CREATE AUTH RULE` or `ALTER AUTH RULE` command.
+For more information about defining auth rules and more extensive examples, see link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/attribute-based-access-control/[Operations Manual -> Attribute-based access control].
 
 |===
 
