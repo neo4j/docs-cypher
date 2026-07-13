@@ -478,8 +478,15 @@ RETURN movie.title AS title, movie.releaseDate.year AS year, movie.rating AS rat
 
 [[vector-search-filtering-predicates]]
 === Predicates for vector search with filters
-The optional `WHERE` subclause used to do _vector search with filters_ is a restricted version of the normal Cypher xref::clauses/where.adoc[`WHERE` clause] and only allows certain types of predicates.
-The predicate must be a property predicate or several property predicates with `AND` between them.
+
+When used within `SEARCH`, xref:clauses/where.adoc[`WHERE`] supports the following predicates:
+
+* Property predicates
+* Multiple supported property predicates joined by the xref::expressions/predicates/boolean-operators.adoc[`AND`] operator
+* Property predicates using the xref::expressions/predicates/list-operators.adoc[`IN`] operator label:new[Introduced in Neo4j 2026.06]
+
+`IN` is supported in vector search filter predicates from Neo4j 2026.06.
+Earlier versions do not support `IN` within the `WHERE` subclause of `SEARCH`.
 
 .Vector search with filter with an AND predicate on the same property
 ====
@@ -553,6 +560,45 @@ RETURN movie.title AS title, movie.releaseDate.year AS year, movie.rating AS rat
 If the `LIMIT` in the `SEARCH` clause is larger than the total number of indexed vectors fulfilling the predicate, the vector search will return fewer results.
 In the example above, only three nodes are returned despite the `LIMIT` being four.
 Due to the approximate nature of vector search, this can also happen if the `LIMIT` is smaller than but close to the total number of indexed vectors fulfilling the predicate.
+====
+
+.Vector search with filter using `IN`
+====
+label:new[Introduced in Neo4j 2026.06]
+
+.Query
+// tag::clauses_search_filter_in[]
+[source, cypher]
+----
+MATCH (movie:Movie)
+  SEARCH movie IN (
+    VECTOR INDEX moviePlots
+    FOR vector([1, 2, 3], 3, INTEGER)
+    WHERE movie.rating IN [7.4, 7.7, 8.5]
+    LIMIT 4
+  )
+RETURN movie.title AS title, movie.rating AS rating
+----
+// end::clauses_search_filter_in[]
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| title | rating
+
+| "Frozen"        | 7.4
+| "Mulan"         | 7.7
+| "Lilo & Stitch" | 7.4
+| "Lion King"     | 8.5
+
+2+|Rows: 4
+|===
+====
+
+[NOTE]
+====
+When the property in an `IN` predicate is of a numeric or string type, the list can be of any size.
+For other supported types, the list is limited to 256 elements.
 ====
 
 The variable in the property predicate must be the same as the binding variable in the `SEARCH` clause.
@@ -807,9 +853,9 @@ For example, given that `seen` has been added as an additional property for filt
 `WHERE movie.rating > 8 OR movie.releaseDate \<= date("2000")`
 |
 
-| The predicate cannot include a xref::expressions/predicates/list-operators.adoc[list operator].
+| Before Neo4j 2026.06, the predicate cannot include the xref::expressions/predicates/list-operators.adoc[`IN` operator].
 | `WHERE movie.rating IN [7, 7.5, 8]`
-|
+| Neo4j 2026.06
 
 
 | The predicate cannot include a xref::expressions/predicates/string-operators.adoc[string operator].
@@ -828,7 +874,8 @@ For example, given that `seen` has been added as an additional property for filt
 | `WHERE movie.rating < vector([8.2, 8.5], 2, FLOAT)`
 |
 
-| The expression in the predicate cannot be of type `LIST`.
+| A `LIST` expression cannot be used with a xref::expressions/predicates/comparison-operators.adoc[comparison operator].
+Lists are supported only as the right-hand operand of `IN`.
 | `WHERE movie.rating < [8, 8.5]`
 |
 
