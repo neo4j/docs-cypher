@@ -40,6 +40,8 @@ To recreate it, run the following query against an empty Neo4j database:
 ----
 CREATE
   (jessica:Person {name: 'Jessica Chastain'}),
+  (james:Person {name: 'James McAvoy'}),
+  (eddie:Person {name: 'Eddie Redmayne'}),
   (missSloane:Movie {title: 'Miss Sloane', genre: 'Drama', rating: 4.5, year: 2016}),
   (mollysGame:Movie {title: "Molly's Game", genre: 'Drama', rating: 4.4, year: 2017}),
   (darkPhoenix:Movie {title: 'X-Men: Dark Phoenix', genre: 'Action', rating: 3.5, year: 2019}),
@@ -47,12 +49,14 @@ CREATE
   (midsommar:Movie {title: 'Midsommar', genre: 'Horror', rating: 3.6, year: 2019}),
   (armageddon:Movie {title: 'Armageddon Time', genre: 'Drama', rating: 3.8, year: 2022}),
   (goodnurse:Movie {title: 'The Good Nurse', genre: 'Drama', rating: 4.2, year: 2022}),
-  (jessica)-[:ACTED_IN]->(missSloane),
-  (jessica)-[:ACTED_IN]->(mollysGame),
-  (jessica)-[:ACTED_IN]->(darkPhoenix),
-  (jessica)-[:ACTED_IN]->(it2),
-  (jessica)-[:ACTED_IN]->(armageddon),
-  (jessica)-[:ACTED_IN]->(goodnurse)
+  (jessica)-[:ACTED_IN {role: 'Madeline Elizabeth Sloane'}]->(missSloane),
+  (jessica)-[:ACTED_IN {role: 'Molly Bloom'}]->(mollysGame),
+  (jessica)-[:ACTED_IN {role: 'Vuk'}]->(darkPhoenix),
+  (jessica)-[:ACTED_IN {role: 'Beverly Marsh'}]->(it2),
+  (jessica)-[:ACTED_IN {role: 'Maryanne Trump'}]->(armageddon),
+  (jessica)-[:ACTED_IN {role: 'Amy Loughren'}]->(goodnurse),
+  (james)-[:ACTED_IN {role: 'Bill Denbrough'}]->(it2),
+  (eddie)-[:ACTED_IN {role: 'CHarlie Cullen'}]->(goodnurse)
 ----
 
 
@@ -83,7 +87,7 @@ WITH <return statement body>
 =====
 [source, cypher]
 ----
-MATCH (p: Person)-[:ACTED_IN]->(m:Movie)
+MATCH (m:Movie)
 RETURN m.genre AS genre, avg(m.rating) AS averageRating
   GROUP BY genre
 ----
@@ -93,9 +97,10 @@ RETURN m.genre AS genre, avg(m.rating) AS averageRating
 |===
 | genre    | averageRating 
 
-| "Drama"  | 4.225          
+| "Drama"  | 4.225         
 | "Action" | 3.5           
 | "Horror" | 3.6           
+        
 2+d|Rows: 3
 |===
 
@@ -107,27 +112,26 @@ The four drama movies have an average rating of `4.225`.
 =====
 [source, cypher]
 ----
-MATCH (p: Person)-[:ACTED_IN]->(m:Movie)
-RETURN m.genre AS genre, m.year AS year, avg(m.rating) AS averageRating
-  GROUP BY genre, year
+MATCH (p:Person)-[:ACTED_IN]->(m:Movie)
+RETURN p.name AS actor_name, m.genre AS genre, avg(m.rating) AS averageRating
+GROUP BY actor_name, genre;
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="3*<m"]
 |===
-| genre    | year | averageRating 
+| actor_name         | genre    | averageRating
 
-| "Drama"  | 2017 | 4.4           
-| "Action" | 2019 | 3.5           
-| "Horror" | 2019 | 3.6           
-| "Drama"  | 2022 | 4.0           
-| "Drama"  | 2016 | 4.5           
+| "Jessica Chastain" | "Drama"  | 4.225         
+| "Jessica Chastain" | "Action" | 3.5           
+| "Jessica Chastain" | "Horror" | 3.6           
+| "James McAvoy"     | "Horror" | 3.6           
+| "Eddie Redmayne"   | "Drama"  | 4.2                  
         
 3+d|Rows: 5
 |===
 
-Grouping by genre and year, the drama movies have three entries.
-For 2022, the average is calculated for the two movies that were released that year.
+Grouping by actor and genre, the drama and horror movies have three entries.
 =====
 
 
@@ -135,7 +139,7 @@ For 2022, the average is calculated for the two movies that were released that y
 =====
 [source, cypher]
 ----
-MATCH (p: Person)-[:ACTED_IN]->(m:Movie)
+MATCH (m:Movie)
 RETURN collect(m.title) AS movieTitles, avg(m.rating) AS globalAverageRating
   GROUP BY ()
 ----
@@ -143,9 +147,10 @@ RETURN collect(m.title) AS movieTitles, avg(m.rating) AS globalAverageRating
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| movieTitles                                                                                                    | globalAverageRating
+| movieTitles | globalAverageRating 
 
-| ["Molly's Game", "X-Men: Dark Phoenix", "It: Chapter Two", "Armageddon Time", "The Good Nurse", "Miss Sloane"] | 4.0   
+| ["Miss Sloane", "Molly's Game", "X-Men: Dark Phoenix", "It: Chapter Two", "Midsommar", "Armageddon Time", "The Good Nurse"] | 3.9428571428571426  
+
 2+d|Rows: 1
 |===
 
@@ -159,27 +164,28 @@ However, aggregations still work like in the showcased query.
 =====
 [source, cypher]
 ----
-MATCH (p: Person)-[:ACTED_IN]->(m:Movie)
-RETURN m.genre AS genre, m.year AS year, avg(m.rating) AS averageRating
-  GROUP BY genre, year
+MATCH (p:Person)-[:ACTED_IN]->(m:Movie)
+RETURN p.name AS actor_name, m.genre AS genre, m.year AS year, avg(m.rating) AS averageRating
+GROUP BY ALL
 ----
 
 .Result
 [role="queryresult",options="header,footer",cols="3*<m"]
 |===
-| genre    | year | averageRating 
+| actor_name         | genre    | year | averageRating 
 
-| "Drama"  | 2017 | 4.4           
-| "Action" | 2019 | 3.5           
-| "Horror" | 2019 | 3.6           
-| "Drama"  | 2022 | 4.0           
-| "Drama"  | 2016 | 4.5           
-        
+| "Jessica Chastain" | "Drama"  | 2016 | 4.5           
+| "Jessica Chastain" | "Drama"  | 2017 | 4.4           
+| "Jessica Chastain" | "Action" | 2019 | 3.5           
+| "Jessica Chastain" | "Horror" | 2019 | 3.6           
+| "Jessica Chastain" | "Drama"  | 2022 | 4.0           
+| "James McAvoy"     | "Horror" | 2019 | 3.6           
+| "Eddie Redmayne"   | "Drama"  | 2022 | 4.2           
 3+d|Rows: 5
 |===
 
 `GROUP BY ALL` uses all projected expressions as grouping keys.
-In this case, the query above is equivalent to the query above using two columns.
+In this case, only the two drama movies from 2022 starring Jessica Chastain actually calculate an average from two values.
 =====
 
 
@@ -274,65 +280,72 @@ RETURN m.year as year, m.rating as rating
 
 == Variable visibility
 
+
+=== RETURN
+
 Variable visibility in `RETURN` with `GROUP BY`:
 
 [source, cypher]
 ----
-MATCH (:Account)-[t:Transfers]->(account:Account)
-LET name = account.name
-RETURN account, t.name AS transfer_name, SUM(t.amount) AS total_incoming
-  GROUP BY account, transfer_name, name
-  ORDER BY t.name, name
+MATCH (p:Person)-[:ACTED_IN]->(m:Movie)
+LET actor_name = p.name
+RETURN actor_name, m.genre AS genre, m.year AS year, avg(m.rating) AS averageRating
+GROUP BY actor_name, genre, year
+ORDER BY actor_name, genre;
 ----
 
-Here is the list of variables which are visible to the different parts of the `RETURN` clause, a note on how the set is defined, as well as the return columns of the clause:
+Below is the list of variables which are visible to the different parts of the `RETURN` clause, a note on how the set is defined, as well as the return columns of the clause.
 
 
-* `RETURN`
-** Visible variables: `{ t, account, name }`
-** Result columns: `{ account, transfer_name, total_incoming }`
-* Non-Aggregating return items (`account` and `t.name AS transfer_name`)
-** Visible variables: `{ account, transfer_name name }`
-The non-aggregating return items see grouping key expressions. 
-* Aggregating return items (`SUM(t.amount) AS total_incoming`)
-** Visible variables: `{ t, account, name }`
-The aggregating return items see all incoming constants and variables.
-* Grouping Elements 
-** Visible variables: `{ t, account, name, transfer_name, t.name }`
-The grouping elements see all incoming constants and variables as well as grouping return item aliases.
-* Subclause expressions (`t.name` and `name` inside `ORDER BY`)
-** Visible variables: `{ account, name, total_incoming, t.name, transfer_name }`
+The `RETURN` clause:
+* Visible variables: `{ p, m, actor_name }`
+* Result columns: `{ actor_name, genre, year, averageRating }`
+
+Non-aggregating return items (`actor_name`, `m.genre AS genre` and `m.year AS year`):
+* Visible variables: `{ actor_name, genre, year }` - The non-aggregating return items see grouping key expressions.
+
+Aggregating return items (`avg(m.rating) AS averageRating`):
+* Visible variables: `{ p, m, actor_name }` - The aggregating return items see all incoming constants and variables.
+
+Grouping Elements:
+* Visible variables: `{ a, m, actor_name, genre, year }` - The grouping elements see all incoming constants and variables as well as grouping return item aliases.
+
+Subclause expressions (`actor_name` and `genre` inside `ORDER BY`):
+* Visible variables: `{ actor_name, genre, year, averageRating, m.genre, m.year }` - The sort keys see all return item aliases and grouping keys.
+
+
+=== WHERE
 
 Variable visibility in `WHERE` with `GROUP BY`:
 
 [source, cypher]
 ----
-MATCH (:Account)-[t:Transfers]->(account:Account)
-LET name = account.name
-WITH account, t.name AS transfer_name, SUM(t.amount) AS total_incoming
-  GROUP BY account, transfer_name, name
-  ORDER BY t.name, name
-  WHERE account.counter > 0
-RETURN transfer_name, total_incoming
+MATCH (p:Person)-[:ACTED_IN]->(m:Movie)
+LET actor_name = p.name
+WITH m.genre AS genre, m.year AS year, avg(m.rating) AS averageRating
+  GROUP BY actor_name, genre, year
+  ORDER BY actor_name, genre
+  WHERE actor_name = "Jessica Chastain"
+RETURN genre, year, averageRating
 ----
 
-Here is the list of variables which are visible to the different parts of the `WITH` clause, a note on how the set is defined, as well as the return columns of the clause:
+Below is the list of variables which are visible to the different parts of the `WITH` clause, a note on how the set is defined, as well as the return columns of the clause.
 
-* `WITH`
-** Visible variables: `{ t, account, name }`
-** Outgoing: `{ account, transfer_name, total_incoming }`
-* Non-Aggregating return items (`account` and `t.name AS transfer_name`)
-** Visible variables: `{ account, transfer_name name }``
-The non-aggregating return items see grouping key expressions.
-* Aggregating return items (`SUM(t.amount) AS total_incoming`)
-** Visible variables: `{ t, account, name }`
-The aggregating return items see all incoming constants and variables.
-* Grouping Elements 
-** Visible variables: `{ t, account, name, transfer_name, t.name }`
-The grouping elements see all incoming constants and variables as well as grouping return item aliases.
-* Subclause expressions
-** Visible variables: `{ account, name, total_incoming, t.name, transfer_name }`
-The sort keys see all return item aliases and grouping keys
+The `WITH` clause:
+* Visible variables: `{ p, m, actor_name }`
+* Outgoing: `{ genre, year, averageRating }`
+
+Non-Aggregating return items ():
+* Visible variables: `{ actor_name, genre, year }` - The non-aggregating return items see grouping key expressions.
+
+Aggregating return items ():
+* Visible variables: `{ p, m, actor_name }` - The aggregating return items see all incoming constants and variables.
+
+Grouping Elements:
+* Visible variables: `{ p, m, actor_name, genre, year }` - The grouping elements see all incoming constants and variables as well as grouping return item aliases.
+
+Subclause expressions:
+* Visible variables: `{ actor_name, genre, year, averageRating, m.genre, m.year }` - The sort keys see all return item aliases and grouping keys.
 
 
 == Errors
@@ -342,24 +355,25 @@ The sort keys see all return item aliases and grouping keys
 
 [source, cypher]
 ----
-MATCH (p: Person)
-LET name = p.name
-RETURN p.age AS age, sum(p.age) 
-  GROUP BY name
+MATCH (m:Movie)
+LET title = m.title
+RETURN m.rating AS rating, avg(m.rating) AS avg_rating
+GROUP BY title
 ----
 
-// TODO: GQL error code
 .GQLSTATUS error chain
 [role="queryresult",stripes="all", cols="1", ]
 |===
-| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42XXX/[42XXX]: error: syntax error or access rule violation - non-grouping key reference: The projection item `age` must only be dependent on grouping keys.
+| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42XXX/[42I18]: error: syntax error or access rule violation - reference to non-grouping sub-expression. The expression contains a non-grouping sub-expression `m`. In an aggregating context only grouping sub-expressions and constants are allowed.
 
 link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]: error: syntax error or access rule violation - invalid syntax
 |===
 
 =====
 
+This also applies to `GROUP BY ()` and when using `DISTINCT`.
 
+////
 .Missing grouping element in GROUP BY ()
 =====
 
@@ -403,15 +417,15 @@ link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]
 |===
 
 =====
-
+////
 
 .GROUP BY ALL does not allow complex grouping keys
 =====
 
 [source, cypher]
 ----
-MATCH (n) 
-RETURN n.age + 1, n.age + 1 + count(*) 
+MATCH (m) 
+RETURN m.year + 1, n.year + 1 + count(*) 
   GROUP BY ALL
 ----
 
