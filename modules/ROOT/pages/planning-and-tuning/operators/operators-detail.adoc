@@ -6705,8 +6705,7 @@ Total database accesses: 51, total allocated memory: 184
 
 [[query-plan-remote-batch-properties]]
 === Remote Batch Properties
-
-The `RemoveBatchProperties` operator is used when .
+The `RemoteBatchProperties` operator is used to fetch and cache properties from shards for batches of rows, so that they can be used by subsequent operators.
 
 .RemoteBatchProperties
 ======
@@ -6714,7 +6713,9 @@ The `RemoveBatchProperties` operator is used when .
 .Query
 [source, cypher]
 ----
-QUERY
+PROFILE
+MATCH (m:Movie) 
+RETURN m.title AS title
 ----
 
 .Query Plan
@@ -6726,15 +6727,21 @@ Runtime PIPELINED
 
 Runtime version {neo4j-version}
 
-Batch size 128
+Batch size 4
 
-+-----------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator        | Details  | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+-----------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++------------------------+----+-------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| Operator               | Id | Details                 | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline      |
++------------------------+----+-------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| +ProduceResults        |  0 | title                   |             10 |   10 |       0 |              0 |                    0/0 |     0.074 |               |
+| |                      +----+-------------------------+----------------+------+---------+----------------+------------------------+-----------+               |
+| +Projection            |  1 | cache[m.title] AS title |             10 |   10 |       0 |                |                    0/0 |     0.077 |               |
+| |                      +----+-------------------------+----------------+------+---------+----------------+------------------------+-----------+               |
+| +RemoteBatchProperties |  2 | cache[m.title]          |             10 |   10 |      10 |            376 |                    0/0 |   477.772 | In Pipeline 1 |
+| |                      +----+-------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| +NodeByLabelScan       |  3 | m:Movie                 |             10 |   10 |      11 |            376 |                    1/0 |     3.830 | In Pipeline 0 |
++------------------------+----+-------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
 
-+-----------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-Total database accesses: XXX, total allocated memory: YYY
+Total database accesses: 21, total allocated memory: 696
 ----
 
 ======
@@ -6742,8 +6749,8 @@ Total database accesses: XXX, total allocated memory: YYY
 
 [[query-plan-remote-batch-properties-with-filter]]
 === Remote Batch Properties With Filter
-
-The `RemoteBatchPropertiesWithFilter` operator is used when .
+The `RemoteBatchPropertiesWithFilter` operator is used to fetch and cache properties from shards for batches of rows, if they satisfy a predicate. The filtering of rows happens on the shards thereby reducing the number of rows processed on the graph shard.
+This is only planned if the predicate is applicable to the entity whose properties are being fetched and the expression doesn't depend on any other entities. 
 
 .RemoteBatchPropertiesWithFilter
 ======
@@ -6751,7 +6758,10 @@ The `RemoteBatchPropertiesWithFilter` operator is used when .
 .Query
 [source, cypher]
 ----
-QUERY
+PROFILE 
+MATCH (m:Movie) 
+WHERE m.released > 2000
+RETURN m.title AS title
 ----
 
 .Query Plan
@@ -6763,15 +6773,22 @@ Runtime PIPELINED
 
 Runtime version {neo4j-version}
 
-Batch size 128
+Batch size 4
 
-+-----------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator        | Details  | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+-----------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++----------------------------------+----+-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| Operator                         | Id | Details                                 | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline      |
++----------------------------------+----+-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| +ProduceResults                  |  0 | title                                   |              3 |    3 |       0 |              0 |                    0/0 |     0.063 |               |
+| |                                +----+-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+               |
+| +Projection                      |  1 | cache[m.title] AS title                 |              3 |    3 |       0 |                |                    0/0 |     0.052 |               |
+| |                                +----+-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+               |
+| +RemoteBatchPropertiesWithFilter |  2 | cache[m.title], m.released > $autoint_0 |              3 |    3 |       3 |            376 |                    0/0 |   515.105 | In Pipeline 1 |
+| |                                +----+-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
+| +NodeByLabelScan                 |  3 | m:Movie                                 |             10 |   10 |      11 |            376 |                    1/0 |     3.656 | In Pipeline 0 |
++----------------------------------+----+-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+
 
-+-----------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+Total database accesses: 14, total allocated memory: 696
 
-Total database accesses: XXX, total allocated memory: YYY
 ----
 
 ======
@@ -6780,7 +6797,7 @@ Total database accesses: XXX, total allocated memory: YYY
 [[query-plan-remote-node-index-seek]]
 === Remote Node Index Seek
 
-The `RemoteNodeIndexSeek` operator is used when .
+The `RemoteNodeIndexSeek` operator batches index seeks when applied within a loop.
 
 .RemoteNodeIndexSeek
 ======
@@ -6788,7 +6805,10 @@ The `RemoteNodeIndexSeek` operator is used when .
 .Query
 [source, cypher]
 ----
-QUERY
+PROFILE 
+MATCH (acc: Account {id: "foo"}), (purchase:Purchase) 
+WHERE acc.createdAt = purchase.transactedAt 
+RETURN *
 ----
 
 .Query Plan
@@ -6802,13 +6822,21 @@ Runtime version {neo4j-version}
 
 Batch size 128
 
-+-----------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator        | Details  | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+-----------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++------------------------+----+---------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+------------------------+
+| Operator               | Id | Details                                                                               | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline      | Indexes Used           |
++------------------------+----+---------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+------------------------+
+| +ProduceResults        |  0 | acc, purchase                                                                         |              0 |    0 |       0 |                |                    0/0 |     0.000 | In Pipeline 2 |                        |
+| |                      +----+---------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+------------------------+
+| +Apply                 |  1 |                                                                                       |              0 |    0 |       0 |                |                    0/0 |     0.014 |               |                        |
+| |\                     +----+---------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+------------------------+
+| | +RemoteNodeIndexSeek |  2 | RANGE INDEX purchase:Purchase(transactedAt) WHERE transactedAt = cache[acc.createdAt] |              0 |    0 |       0 |            128 |                    0/0 |     0.000 | In Pipeline 2 |                        |
+| |                      +----+---------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+------------------------+
+| +RemoteBatchProperties |  3 | cache[acc.createdAt]                                                                  |              0 |    0 |       0 |            328 |                    0/0 |     1.110 | In Pipeline 1 |                        |
+| |                      +----+---------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+------------------------+
+| +NodeUniqueIndexSeek   |  4 | UNIQUE acc:Account(id) WHERE id = $autostring_0                                       |              0 |    0 |       1 |            376 |                    0/0 |    25.825 | In Pipeline 0 | constraint_93192f92: 1 |
++------------------------+----+---------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+------------------------+
 
-+-----------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-Total database accesses: XXX, total allocated memory: YYY
+Total database accesses: 1, total allocated memory: 912
 ----
 
 ======
@@ -6816,7 +6844,7 @@ Total database accesses: XXX, total allocated memory: YYY
 [[query-plan-remote-unique-node-index-seek]]
 === Remote Unique Node Index Seek
 
-The `RemoteUniqueNodeIndexSeek` operator is used when .
+The `RemoteUniqueNodeIndexSeek` operator batches unique index seek within loops.
 
 .RemoteUniqueNodeIndexSeek
 ======
@@ -6824,7 +6852,12 @@ The `RemoteUniqueNodeIndexSeek` operator is used when .
 .Query
 [source, cypher]
 ----
-QUERY
+PROFILE
+MATCH (purchase:Purchase)
+WHERE  purchase.transactedAt > datetime('2019-01-01T00:00:00.000Z')
+MATCH (active: Account)
+WHERE active.id = purchase.accountId
+RETURN DISTINCT active
 ----
 
 .Query Plan
@@ -6838,13 +6871,24 @@ Runtime version {neo4j-version}
 
 Batch size 128
 
-+-----------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-| Operator        | Details  | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            |
-+-----------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
++------------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+-------------------+
+| Operator                     | Id | Details                                                                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline      | Indexes Used      |
++------------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+-------------------+
+| +ProduceResults              |  0 | active                                                                                               |              0 |    0 |       0 |                |                    0/0 |     0.000 |               |                   |
+| |                            +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+               +-------------------+
+| +Distinct                    |  1 | active                                                                                               |              0 |    0 |       0 |              0 |                    0/0 |     0.000 | In Pipeline 2 |                   |
+| |                            +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+-------------------+
+| +Apply                       |  2 |                                                                                                      |              0 |    0 |       0 |                |                    0/0 |     0.009 |               |                   |
+| |\                           +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+-------------------+
+| | +RemoteNodeUniqueIndexSeek |  3 | UNIQUE active:Account(id) WHERE id = cache[purchase.accountId]                                       |              0 |    0 |       0 |            128 |                    0/0 |     0.000 | In Pipeline 2 |                   |
+| |                            +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+-------------------+
+| +RemoteBatchProperties       |  4 | cache[purchase.accountId]                                                                            |              0 |    0 |       0 |            328 |                    0/0 |     1.019 | In Pipeline 1 |                   |
+| |                            +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+-------------------+
+| +NodeIndexSeekByRange        |  5 | RANGE INDEX purchase:Purchase(transactedAt) WHERE transactedAt > RuntimeConstant(datetime($autostrin |              0 |    0 |       1 |            376 |                    0/0 |    50.717 | In Pipeline 0 | index_64559e44: 1 |
+|                              |    | g_0))                                                                                                |                |      |         |                |                        |           |               |                   |
++------------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------+-------------------+
 
-+-----------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
-
-Total database accesses: XXX, total allocated memory: YYY
+Total database accesses: 1, total allocated memory: 912
 ----
 
 ======
