@@ -1,4 +1,4 @@
-:description: `GROUP BY` groups results by a grouping element or a list of grouping elements.
+:description: `GROUP BY` groups results by a grouping key or a list of grouping keys.
 :table-caption!:
 :page-role: new-neo4j-2026.07 cypher-25-only
 
@@ -6,6 +6,7 @@
 = GROUP BY
 
 `GROUP BY` is a subclause that allows you explicit control over the grouping keys of a `RETURN` or `WITH` clause.
+Cypher's implicit grouping stays the same.
 
 `GROUP BY` arranges identically structured data into groups based on one or more grouping keys.
 For this reason, it combines well with aggregate functions like xref:functions/aggregating.adoc#functions-count[count()] or xref:functions/aggregating.adoc#functions-avg[avg()] to perform calculations on each group of data.
@@ -25,6 +26,12 @@ The following rules apply to grouping keys:
 ** A sub-expression, where all operands are either a leaf or a sub-expression
 ** An exact grouping key, equal to a grouping key expression
 * Grouping keys which are not also return items are not projected to the output
+
+[NOTE]
+====
+Neo4j 2026.07 also features changes to the recognition of grouping keys.
+See xref:functions/aggregating.adoc#grouping-keys[Aggregating expressions and grouping keys] for details.
+====
 
 
 [[example-graph]]
@@ -114,7 +121,7 @@ The four drama movies have an average rating of `4.225`.
 ----
 MATCH (p:Person)-[:ACTED_IN]->(m:Movie)
 RETURN p.name AS actor_name, m.genre AS genre, avg(m.rating) AS averageRating
-GROUP BY actor_name, genre;
+GROUP BY actor_name, genre
 ----
 
 .Result
@@ -131,7 +138,7 @@ GROUP BY actor_name, genre;
 3+d|Rows: 5
 |===
 
-Grouping by actor and genre, the drama and horror movies have three entries.
+Grouping by actor and genre, the drama and horror movies have two entries each.
 =====
 
 
@@ -277,76 +284,6 @@ RETURN m.year as year, m.rating as rating
 `title` is not returned, but still used as a grouping key.
 =====
 
-////
-== Variable visibility
-
-
-=== RETURN
-
-Variable visibility in `RETURN` with `GROUP BY`:
-
-[source, cypher]
-----
-MATCH (p:Person)-[:ACTED_IN]->(m:Movie)
-LET actor_name = p.name
-RETURN actor_name, m.genre AS genre, m.year AS year, avg(m.rating) AS averageRating
-GROUP BY actor_name, genre, year
-ORDER BY actor_name, genre;
-----
-
-Below is the list of variables which are visible to the different parts of the `RETURN` clause, a note on how the set is defined, as well as the return columns of the clause.
-
-
-The `RETURN` clause:
-* Visible variables: `{ p, m, actor_name }`
-* Result columns: `{ actor_name, genre, year, averageRating }`
-
-Non-aggregating return items (`actor_name`, `m.genre AS genre` and `m.year AS year`):
-* Visible variables: `{ actor_name, genre, year }` - The non-aggregating return items see grouping key expressions.
-
-Aggregating return items (`avg(m.rating) AS averageRating`):
-* Visible variables: `{ p, m, actor_name }` - The aggregating return items see all incoming constants and variables.
-
-Grouping Elements:
-* Visible variables: `{ a, m, actor_name, genre, year }` - The grouping elements see all incoming constants and variables as well as grouping return item aliases.
-
-Subclause expressions (`actor_name` and `genre` inside `ORDER BY`):
-* Visible variables: `{ actor_name, genre, year, averageRating, m.genre, m.year }` - The sort keys see all return item aliases and grouping keys.
-
-
-=== WHERE
-
-Variable visibility in `WHERE` with `GROUP BY`:
-
-[source, cypher]
-----
-MATCH (p:Person)-[:ACTED_IN]->(m:Movie)
-LET actor_name = p.name
-WITH m.genre AS genre, m.year AS year, avg(m.rating) AS averageRating
-  GROUP BY actor_name, genre, year
-  ORDER BY actor_name, genre
-  WHERE actor_name = "Jessica Chastain"
-RETURN genre, year, averageRating
-----
-
-Below is the list of variables which are visible to the different parts of the `WITH` clause, a note on how the set is defined, as well as the return columns of the clause.
-
-The `WITH` clause:
-* Visible variables: `{ p, m, actor_name }`
-* Outgoing: `{ genre, year, averageRating }`
-
-Non-Aggregating return items ():
-* Visible variables: `{ actor_name, genre, year }` - The non-aggregating return items see grouping key expressions.
-
-Aggregating return items ():
-* Visible variables: `{ p, m, actor_name }` - The aggregating return items see all incoming constants and variables.
-
-Grouping Elements:
-* Visible variables: `{ p, m, actor_name, genre, year }` - The grouping elements see all incoming constants and variables as well as grouping return item aliases.
-
-Subclause expressions (the subclause being the `WHERE` clause):
-* Visible variables: `{ actor_name, genre, year, averageRating, m.genre, m.year }` - The sort keys see all return item aliases and grouping keys.
-////
 
 == Errors
 
@@ -369,95 +306,8 @@ GROUP BY title
 link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]: error: syntax error or access rule violation - invalid syntax
 |===
 
-=====
-
-This also applies to `GROUP BY ()` and when using `DISTINCT`.
-
-////
-.Missing grouping element in GROUP BY ()
-=====
-
-[source, cypher]
-----
-MATCH (p: Person)
-LET name = p.name
-RETURN p.age AS age, sum(p.age) 
-  GROUP BY ()
-----
-
-// TODO: GQL error code
-.GQLSTATUS error chain
-[role="queryresult",stripes="all", cols="1", ]
-|===
-| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42XXX/[42XXX]: error: syntax error or access rule violation - non-grouping key reference: The projection item `age` must only be dependent on grouping keys.
-
-link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]: error: syntax error or access rule violation - invalid syntax
-|===
-
-=====
-
-
-.Missing grouping element in GROUP BY when using DISTINCT
-=====
-
-[source, cypher]
-----
-MATCH (p: Person)
-RETURN DISTINCT p.name AS name, p.age AS age 
-  GROUP BY name
-----
-
-// TODO: GQL error code
-.GQLSTATUS error chain
-[role="queryresult",stripes="all", cols="1", ]
-|===
-| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42XXX/[42XXX]: error: syntax error or access rule violation - non-grouping key reference: The projection item `age` must only be dependent on grouping keys.
-
-link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]: error: syntax error or access rule violation - invalid syntax
-|===
-
-=====
-////
-
-.GROUP BY ALL does not allow complex grouping keys
-=====
-
-[source, cypher]
-----
-MATCH (m) 
-RETURN m.year + 1, m.year + 1 + count(*) 
-  GROUP BY ALL
-----
-
-.GQLSTATUS error chain
-[role="queryresult",stripes="all", cols="1", ]
-|===
-| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42I18/[42I18]: error: syntax error or access rule violation - invalid reference to implicitly grouped expressions. The aggregation column contains implicit grouping expressions referenced by the variables `n`. Implicit grouping expressions are variables not explicitly declared as grouping keys.
-
-link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]: error: syntax error or access rule violation - invalid syntax
-|===
-
-=====
-
-.GROUP BY with ambiguous references in grouping elements
-=====
-
-[source, cypher]
-----
-WITH {p: 1} AS a, 2 AS b 
-RETURN a.p AS a, sum(b) 
-  GROUP BY a.p
-----
-
-// TODO: GQL error code
-.GQLSTATUS error chain
-[role="queryresult",stripes="all", cols="1", ]
-|===
-| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42XXX/[42XXX]: error: error: syntax error or access rule violation - non-grouping key reference: The projection item `a` must only be dependent on grouping keys.
-
-link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]: error: syntax error or access rule violation - invalid syntax
-|===
-
+42I18 is technically not specific to `GROUP BY` but rather to grouping keys.
+For another example, see the error in example 28 in xref:functions/aggregating.adoc#grouping-key-examples[Aggregation expressions and grouping keys -> Examples].
 =====
 
 
@@ -466,16 +316,16 @@ link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]
 
 [source, cypher]
 ---- 
-WITH {p: 1} AS c, 2 AS b
-RETURN c AS a, sum(b) 
-  GROUP BY a.p
+MATCH (m)
+RETURN m as a
+GROUP BY a.year
 ----
 
 // TODO: GQL error code
 .GQLSTATUS error chain
 [role="queryresult",stripes="all", cols="1", ]
 |===
-| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42XXX/[42XXX]: error: error: syntax error or access rule violation - non-grouping key reference: The projection item `a` must only be dependent on grouping keys.
+| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42I80/[42I80]: error: syntax error or access rule violation - invalid grouping element. The grouping element 'a.year' is not a valid grouping key. A grouping element that references the projection item alias `a` must be a simple variable reference.
 
 link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]: error: syntax error or access rule violation - invalid syntax
 |===
