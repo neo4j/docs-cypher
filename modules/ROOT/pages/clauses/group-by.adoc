@@ -8,7 +8,7 @@
 `GROUP BY` is a subclause that gives explicit control over the grouping keys of a `RETURN` or `WITH` clause.
 Cypher's implicit grouping stays the same.
 
-`GROUP BY` arranges identically structured data into groups based on one or more grouping keys.
+`GROUP BY` arranges identically structured data into groups based on one or more xref:functions/aggregating.adoc#grouping-keys[grouping keys].
 For this reason, it combines well with aggregate functions like xref:functions/aggregating.adoc#functions-count[count()] or xref:functions/aggregating.adoc#functions-avg[avg()] to perform calculations on each group of data.
 
 Cypher's `GROUP BY` functions similarly to SQL's `GROUP BY` and it is also xref:appendix/gql-conformance/supported-optional.adoc#gq15[GQL-compliant].
@@ -19,10 +19,15 @@ Cypher's `GROUP BY` functions similarly to SQL's `GROUP BY` and it is also xref:
 The following rules apply to grouping keys:
 
 * A single grouping key or multiple grouping keys are possible
-* The set of grouping keys may also be empty
+* The set of grouping keys may be empty (`GROUP BY ()`)
 * `GROUP BY ALL` makes every non-aggregating return item a grouping key
 * If a projection clause contains a `GROUP BY` clause, then every projection item must be:
-** A leaf, that is an aggregation function, constant, parameter, local variable or a grouping key expression
+** A leaf, that is:
+*** An aggregation function like `sum(x)`
+*** A constant like `0.1`
+*** A parameter like `$param`
+*** A local variable like the `x` in `count(*) + size([x IN range(1,10) | x ])`
+*** A grouping key expression, that is a projected expression that doesn't contain an aggregation function
 ** A sub-expression, where all operands are either a leaf or a sub-expression
 ** An exact grouping key, equal to a grouping key expression
 * Grouping keys which are not also return items are not projected to the output
@@ -193,14 +198,6 @@ In this case, only the two drama movies from 2022 starring Jessica Chastain actu
 
 == GROUP BY and ORDER BY
 
-[NOTE]
-====
-Neo4j 2026.07 features changes to the visibility of expressions in `WHERE` and `ORDER BY` clauses when using `GROUP BY`:
-
-Variables named with `AS` in `RETURN` and `WITH` clauses are called _projected aliases_.
-Projected aliases make variables defined prior to `RETURN` or `WITH` in accessible, if these variables share the same names.
-====
-
 .GROUP BY and ORDER BY
 =====
 [source, cypher]
@@ -228,6 +225,14 @@ ORDER BY genre
 The results are ordered by genre after being grouped.
 =====
 
+[NOTE]
+====
+Neo4j 2026.07 features changes to the visibility of expressions in `WHERE` and `ORDER BY` clauses when using `GROUP BY`:
+
+Variables named with `AS` in `RETURN` and `WITH` clauses are called _projected aliases_.
+Projected aliases make variables defined prior to `RETURN` or `WITH` in accessible, if these variables share the same names.
+====
+
 
 == Special cases
 
@@ -236,7 +241,7 @@ The results are ordered by genre after being grouped.
 [source, cypher]
 ----
 MATCH (m: Movie)
-RETURN m.year as year, m.rating as rating
+RETURN m.year AS year, m.rating AS rating
   GROUP BY year, rating
 ----
 
@@ -266,7 +271,7 @@ Two movies with a rating of `3.6` exist for the year 2019, but the entry is not 
 ----
 MATCH (m: Movie)
 LET year = m.year
-RETURN year, m.rating as rating
+RETURN year, m.rating AS rating
   GROUP BY year, rating
 ----
 
@@ -285,7 +290,7 @@ RETURN year, m.rating as rating
 2+d|Rows: 6
 |===
 
-You can alias expressions with `LET` and use the alias in the `RETURN` (or `WITH`) clause as well as the `GROUP BY` clause.
+You can group by aliased and unaliased return items (`year` is not aliased, `rating` is aliased).
 =====
 
 
@@ -295,7 +300,7 @@ You can alias expressions with `LET` and use the alias in the `RETURN` (or `WITH
 ----
 MATCH (m: Movie)
 LET title = m.title
-RETURN m.year as year, m.rating as rating
+RETURN m.year AS year, m.rating AS rating
   GROUP BY title, year, rating
 ----
 
@@ -339,7 +344,7 @@ GROUP BY title
 link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]: error: syntax error or access rule violation - invalid syntax
 |===
 
-`title` cannot be used as a grouping key because the query aggregates with `avg()` which requires grouping keys to be projected expressions or constants.
+`m` in `m.rating AS rating` is not a grouping key since it is not listed in the `GROUP BY` clause.
 
 For more examples of aggregation errors, see xref:functions/aggregating.adoc#grouping-key-examples[Aggregation expressions and grouping keys -> Examples].
 =====
@@ -350,7 +355,7 @@ For more examples of aggregation errors, see xref:functions/aggregating.adoc#gro
 [source, cypher]
 ----
 MATCH (p:Person)-[:ACTED_IN]->(m:Movie)
-RETURN p as person
+RETURN p AS person
 GROUP BY person
 ORDER BY m.year;
 ----
