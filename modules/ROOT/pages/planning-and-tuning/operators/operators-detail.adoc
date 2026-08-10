@@ -1001,7 +1001,7 @@ CREATE CONSTRAINT team_id IF NOT EXISTS FOR (t:Team) REQUIRE (t.id) IS UNIQUE
 ----
 ////
 
-The `AssertingMultiNodeIndexSeek` operator is used to ensure that no xref:schema/constraints/create-constraints.adoc#create-property-uniqueness-constraints[property uniqueness constraints] are violated.
+The `AssertingMultiNodeIndexSeek` operator is used to ensure that no xref:schema/constraints/create-constraints.adoc#create-property-uniqueness-constraints[property uniqueness constraints] are violated when creating nodes.
 The example looks for the presence of a team with the supplied name and id, and if one does not exist, it will be created.
 Owing to the existence of two property uniqueness constraints on `:Team(name)` and `:Team(id)`, any node that would be found by the `UniqueIndexSeek` operator must be the very same node or the constraints would be violated.
 
@@ -1044,6 +1044,42 @@ Total database accesses: 4, total allocated memory: 184
 
 ======
 
+
+[[query-plan-asserting-multi-relationship-index-seek]]
+=== Asserting Multi Relationship Index Seek
+
+The `AssertingMultiRelationshipIndexSeek` operator is used to ensure that no xref:schema/constraints/create-constraints.adoc#create-property-uniqueness-constraints[property uniqueness constraints] are violated when creating relationships.
+The example looks for the presence of a relationship with specified `name` and `id` properties.
+
+.AssertingMultiRelationshipIndexSeek
+======
+
+.Query
+[source, cypher]
+----
+PROFILE
+MERGE (person)-[work:WORKS_IN {id: 0, badgeNumber: 4332}]->(location)
+----
+
+.Query Plan
+[role="queryplan", subs="attributes+"]
+----
++--------------------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+-------------------------------------------+
+| Operator                             | Id | Details                                                                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Pipeline            | Indexes Used                              |
++--------------------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+-------------------------------------------+
+| +ProduceResults                      |  0 |                                                                                                      |              1 |    0 |       0 |              0 |                        |           |                     |                                           |
+| |                                    +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     +-------------------------------------------+
+| +EmptyResult                         |  1 |                                                                                                      |              1 |    0 |       0 |                |                        |           |                     |                                           |
+| |                                    +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     +-------------------------------------------+
+| +Merge                               |  2 | CREATE (person), (location), (person)-[work:WORKS_IN {id: $autoint_0, badgeNumber: $autoint_1}]->(lo |              1 |    1 |       0 |                |                        |           |                     |                                           |
+| |                                    |    | cation)                                                                                              |                |      |         |                |                        |           |                     |                                           |
+| |                                    +----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           |                     +-------------------------------------------+
+| +AssertingMultiRelationshipIndexSeek |  3 | RANGE INDEX (person)-[work:WORKS_IN(id)]->(location) WHERE id = $autoint_0,                          |              0 |    2 |       4 |            248 |                    3/0 |     0,393 | Fused in Pipeline 0 | constraint_WORKS_IN_badgeNumber_unique: 1 |
+|                                      |    | RANGE INDEX (person)-[work:WORKS_IN(badgeNumber)]->(location) WHERE badgeNumber = $autoint_1         |                |      |         |                |                        |           |                     | constraint_WORKS_IN_id_unique: 1          |
++--------------------------------------+----+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+-------------------------------------------+
+----
+
+======
 
 [[query-plan-node-index-seek-by-range]]
 === Node Index Seek By Range
@@ -2979,6 +3015,8 @@ The `SemiApply` operator tests for the presence of a pattern predicate, and is a
 If the right-hand side operator yields at least one row, the row from the left-hand side operator is yielded by the `SemiApply` operator.
 This makes `SemiApply` a filtering operator, used mostly for pattern predicates in queries.
 
+`SemiApply` is only applied by the xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-slotted-runtime[slotted runtime].
+In the xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-pipelined-runtime[pipelined runtime], the task of `SemiApply` is instead performed by the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`] and xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-limit[`Limit`] operators.
 
 .SemiApply
 ======
@@ -3033,6 +3071,9 @@ Total database accesses: 142, total allocated memory: 64
 The `AntiSemiApply` operator tests for the absence of a pattern, and is a variation of the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`] operator.
 If the right-hand side operator yields no rows, the row from the left-hand side operator is yielded by the `AntiSemiApply` operator.
 This makes `AntiSemiApply` a filtering operator, used for pattern predicates in queries.
+
+`AntiSemiApply` is only applied by the xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-slotted-runtime[slotted runtime].
+In the xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-pipelined-runtime[pipelined runtime], the task of `AntiSemiApply` is instead performed by the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-anti[`Anti`], xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`], and xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-limit[`Limit`] operators.
 
 .AntiSemiApply
 ======
@@ -3093,11 +3134,14 @@ Total database accesses: 166, total allocated memory: 976
 The `LetSemiApply` operator tests for the presence of a pattern predicate, and is a variation of the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`] operator.
 When a query contains multiple pattern predicates separated with `OR`, `LetSemiApply` will be used to evaluate the first of these.
 It will record the result of evaluating the predicate but will leave any filtering to another operator.
-In the example, `LetSemiApply` will be used to check for the presence of the `FRIENDS_WITH` relationship from each person.
 
+`LetSemiApply` is only applied by the xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-slotted-runtime[slotted runtime].
+In the xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-pipelined-runtime[pipelined runtime], the task of `LetSemiApply` is instead performed by the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-anti[`Apply`], xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-eager-aggregation[`EagerAggregation`], and xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-limit[`Limit`] operators.
 
 .LetSemiApply
 ======
+
+In the example, `LetSemiApply` will be used to check for the presence of the `FRIENDS_WITH` relationship from each person.
 
 .Query
 [source, cypher]
@@ -3156,11 +3200,14 @@ Total database accesses: 165, total allocated memory: 64
 The `LetAntiSemiApply` operator tests for the absence of a pattern, and is a variation of the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`] operator.
 When a query contains multiple negated pattern predicates -- i.e. predicates separated with `OR`, where at least one predicate contains `NOT` -- `LetAntiSemiApply` will be used to evaluate the first of these.
 It will record the result of evaluating the predicate but will leave any filtering to another operator.
-In the example, `LetAntiSemiApply` will be used to check for the absence of the `FRIENDS_WITH` relationship from each person.
 
+`LetAntiSemiApply` is only applied by the xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-slotted-runtime[slotted runtime].
+In the xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-pipelined-runtime[pipelined runtime], the task of `LetAntiSemiApply` is instead performed by the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-anti[`Apply`], xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-eager-aggregation[`EagerAggregation`], and xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-limit[`Limit`] operators.
 
 .LetAntiSemiApply
 ======
+
+In the example, `LetAntiSemiApply` will be used to check for the absence of the `FRIENDS_WITH` relationship from each person.
 
 .Query
 [source, cypher]
@@ -3335,6 +3382,8 @@ Total database accesses: 136, total allocated memory: 4208
 The `LetSelectOrSemiApply` operator is planned for pattern predicates that are combined with other predicates using `OR`.
 This is a variation of the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`] operator.
 
+`LetSelectOrSemiApply` is only applied by the xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-slotted-runtime[slotted runtime].
+In the xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-pipelined-runtime[pipelined runtime], the task of `LetSelectOrSemiApply` is instead performed by the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-select-or-semi-apply[`SelectOrSemiApply`], xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-eager-aggregation[`EagerAggregation`], xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-limit[`Limit`], and xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-projection[`Projection`] operators.
 
 .LetSelectOrSemiApply
 ======
@@ -3396,6 +3445,8 @@ Total database accesses: 179, total allocated memory: 64
 The `LetSelectOrAntiSemiApply` operator is planned for negated pattern predicates -- i.e. pattern predicates preceded with `NOT` -- that are combined with other predicates using `OR`.
 This operator is a variation of the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`] operator.
 
+`LetSelectOrAntiSemiApply` is only applied by the xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-slotted-runtime[slotted runtime].
+In the xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-pipelined-runtime[pipelined runtime], the task of `LetSelectOrAntiSemiApply` is instead performed by the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-select-or-semi-apply[`SelectOrSemiApply`], xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-eager-aggregation[`EagerAggregation`], xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-limit[`Limit`], and xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-projection[`Projection`] operators.
 
 .LetSelectOrAntiSemiApply
 ======
@@ -3456,6 +3507,8 @@ Total database accesses: 208, total allocated memory: 64
 The `RollUpApply` operator is used to execute an expression which takes as input a pattern, and returns a list with content from the matched pattern; for example, when using a pattern expression or pattern comprehension in a query.
 This operator is a variation of the xref::planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`] operator.
 
+`RollUpApply` is only applied by the xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-slotted-runtime[slotted runtime].
+In the xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-pipelined-runtime[pipelined runtime], the task of `RollUpApply` is instead performed by the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`] and xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-eager-aggregation[`EagerAggregation`] operators. 
 
 .RollUpApply
 ======
@@ -4697,11 +4750,14 @@ CREATE RANGE INDEX range_person_name FOR (p:Person) ON (p.name);
 
 The `TriadicSelection` operator is used to solve triangular queries, such as the very common 'find my friends-of-friends that are not already my friend'.
 It does so by putting all the friends into a set, and uses the set to check if the friends-of-friends are already connected to me.
-The example finds the names of all friends of my friends that are not already my friends.
 
+`TriadicSelection` is only applied by the xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-slotted-runtime[slotted runtime].
+In the xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-pipelined-runtime[pipelined runtime], the task of `TriadicSelection` is instead performed by the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-triadic-build[`TriadicBuild`], xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-apply[`Apply`], and xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-triadic-filter[`TriadicFilter`] operators.
 
 .TriadicSelection
 ======
+
+The example finds the names of all friends of my friends that are not already my friends.
 
 .Query
 [source, cypher]
@@ -5277,6 +5333,9 @@ Total database accesses: 15, total allocated memory: 184
 === Empty Row
 
 The `EmptyRow` operator returns a single row with no columns.
+
+`EmptyRow` is only applied by the xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-slotted-runtime[slotted runtime].
+In the xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-pipelined-runtime[pipelined runtime], the task of `EmptyRow` is instead performed by the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-projection[`Projection`] operator.
 
 .EmptyRow
 ======
@@ -6487,7 +6546,7 @@ FOREACH (value IN [1,2,3] | CREATE (:Person {age: value}))
 ----
 Planner COST
 
-Runtime SLOTTED
+Runtime PIPELINED
 
 Runtime version {neo4j-version}
 
@@ -7193,13 +7252,14 @@ Total database accesses: 17, total allocated memory: 4184
 [[query-plan-assert-same-node]]
 === Assert Same Node
 
-The `AssertSameNode` operator is used to ensure that no node property uniqueness constraints are violated in the slotted and interpreted runtime.
-The example looks for the presence of a team node with the supplied name and id, and if one does not exist, it will be created.
-Owing to the existence of two node property uniqueness constraints on `:Team(name)` and `:Team(id)`, any node that would be found by the `UniqueIndexSeek` operator must be the very same node or the constraints would be violated.
-
+The `AssertSameNode` operator is used to ensure that no node property uniqueness constraints are violated in the xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-slotted-runtime[slotted] and interpreted runtime.
 
 .AssertSameNode
 ======
+
+The example looks for the presence of a team node with the supplied name and id, and if one does not exist, it will be created.
+Owing to the existence of two node property uniqueness constraints on `:Team(name)` and `:Team(id)`, any node that would be found by the `UniqueIndexSeek` operator must be the very same node or the constraints would be violated.
+Had the query been run with the xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-pipelined-runtime[pipelined runtime], the task of `AssertSameNode` would have been performed by the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-asserting-multi-node-index-seek[`AssertingMultiNodeIndexSeek`] operator.
 
 .Query
 [source, cypher]
@@ -7243,14 +7303,17 @@ Total database accesses: 2, total allocated memory: 64
 [[query-plan-assert-same-relationship]]
 === Assert Same Relationship
 
-The `AssertSameRelationship` operator is used to ensure that no relationship property uniqueness constraints are violated in the slotted and interpreted runtime.
-The example looks for the presence of a `WORKS_IN` relationship with the supplied  `id` and `badgeNumber`.
-If it can't be found, then it will be created.
-Owing to the existence of two property uniqueness constraints on `:WORKS_IN(id)` and `:WORKS_IN(badgeNumber)`, any relationship that would be found by the `DirectedRelationshipUniqueIndexSeek` operator must be the very same relationship or the constraints would be violated.
+The `AssertSameRelationship` operator is used to ensure that no relationship property uniqueness constraints are violated in the xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-slotted-runtime[slotted] and interpreted runtime.
 
 
 .AssertSameRelationship
 ======
+
+The example looks for the presence of a `WORKS_IN` relationship with the supplied  `id` and `badgeNumber`.
+If it can't be found, then it will be created.
+Owing to the existence of two property uniqueness constraints on `:WORKS_IN(id)` and `:WORKS_IN(badgeNumber)`, any relationship that would be found by the `DirectedRelationshipUniqueIndexSeek` operator must be the very same relationship or the constraints would be violated.
+
+Had the query been run with the xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-pipelined-runtime[pipelined runtime], the task of `AssertRelationship` would have been performed by the xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-asserting-multi-relationship-index-seek[`AssertingMultiRelationshipIndexSeek`] operator.
 
 .Query
 [source, cypher]
