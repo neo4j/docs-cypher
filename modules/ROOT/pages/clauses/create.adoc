@@ -3,14 +3,15 @@
 [[query-create]]
 = CREATE
 
-== Introduction
-
 The `CREATE` clause allows you to create nodes and relationships.
 To define these entities, `CREATE` uses a syntax similar to that of xref::clauses/match.adoc[`MATCH`].
 However, while xref::patterns/index.adoc[patterns] only need to evaluate to either true or false, the syntax for `CREATE` needs to specify exactly what nodes and relationships to create.
 
+Unlike xref:clauses/merge.adoc[`MERGE`], which first checks for a match and only creates anything if nothing is found, `CREATE` always creates the given pattern, regardless of whether matching ones exist.
+For more information, see xref:clauses/create.adoc#comparing-create-and-merge[Comparing `CREATE` and `MERGE`] below.
+
 [[create-nodes]]
-== Syntax for nodes
+== Create nodes
 
 The `CREATE` clause allows you to create one or more nodes.
 Each node can be assigned labels and properties.
@@ -38,7 +39,7 @@ Both of the above queries create two nodes, bound to the variables `charlie` and
 The node representing Charlie Sheen also has the label `Actor` while the node representing Oliver Stone is assigned the label `Director`.
 
 [[create-relationships]]
-== Syntax for relationships
+== Create relationships
 
 Relationships can also be created using the `CREATE` clause.
 Unlike nodes, relationships always need exactly one relationship type and a direction.
@@ -52,6 +53,59 @@ CREATE (charlie:Person:Actor {name: 'Charlie Sheen'})-[:ACTED_IN {role: 'Bud Fox
 
 This query creates the `Person` nodes for Charlie Sheen and Oliver Stone and the `Movie` node for Wall Street.
 It also created the relationships of the types `ACTED_IN` and `DIRECTED` between them.
+
+[[comparing-create-and-merge]]
+== Comparing `CREATE` and `MERGE`
+
+`CREATE` and `MERGE` are both used to add nodes and relationships to the graph, but they differ in how they handle existing data.
+
+`CREATE` unconditionally creates a new node or relationship, without checking whether a matching one already exists.
+Running the same `CREATE` statement multiple times will therefore produce duplicate entries.
+
+.Two identical `CREATE` statements will create two separate but identical entities
+[source, cypher]
+----
+CREATE (:Person {name: "Alice"})
+CREATE (:Person {name: "Alice"})
+----
+
+`CREATE` does not check for existing matches, so it will create duplicates unless a xref:schema/constraints/create-constraints.adoc#create-property-uniqueness-constraints[uniqueness constraint]/xref:schema/constraints/create-constraints.adoc#create-key-constraints[key constraint]key prevents it.
+With a uniqueness constraint on `:Person(name)`, the second `CREATE` statement above would fail instead.
+
+`MERGE` first attempts to match an existing pattern in the graph.
+If a match is found, it uses the existing node or relationship; if not, it creates a new one.
+This makes `MERGE` idempotent; running it repeatedly with the same pattern will not create duplicates.
+
+.Two identical `MERGE` statements will result in only one entity, as the second matches the first
+[source, cypher]
+----
+MERGE (:Person {name: "John"})
+MERGE (:Person {name: "John"})
+----
+
+.When to use `CREATE` and `MERGE`
+[cols="1,2,2", options="header"]
+|===
+| 
+| `CREATE` 
+|`MERGE`
+
+| *Duplicates*
+| Always creates new data.
+| Creates only if no match exists; safe for incremental imports and re-runs.
+
+| *Performance*
+| Fast — no lookup required
+| Requires a lookup per row; without an xref:indexes/search-performance-indexes/index.adoc[index], this means a full label scan for every row.
+
+| *Best for*
+a|
+* Loading into a fresh database with data you're certain is clean.
+* IDs guaranteed unique, import won't be re-run.
+a|
+* Incremental imports or re-runnable jobs.
+* Ensuring uniqueness when data may already exist.
+|===
 
 [[reusing-variables]]
 == Reusing variables
@@ -213,7 +267,7 @@ Properties set: 4
 |===
 
 [[dynamic-create]]
-== CREATE using dynamic node labels and relationship types
+== Create using dynamic node labels and relationship types
 
 Node labels and relationship types can be referenced dynamically in expressions, parameters, and variables when creating nodes and relationships.
 This allows for more flexible queries and mitigates the risk of Cypher injection.
@@ -281,3 +335,9 @@ INSERT (tom:Person&Actor&Director {name: 'Tom Hanks'})
 
 Creates a node, bound to the variable `tom`, with the labels `Person`, `Actor`, and `Director` and a `name` property.
 
+[[create-and-concurrent-transactions]]
+== `CREATE` and concurrent transactions
+
+Checking whether a node or relationship already exists before running `CREATE` does not prevent duplicates under link:{neo4j-docs-base-uri}/operations-manual/current/database-internals/concurrent-data-access/[concurrent transactions]: concurrent transactions can each perform the check, find no existing node or relationship, and both go on to create one.
+
+To reliably create an entity only if it does not already exist, use `MERGE` instead, combined with a xref:schema/constraints/create-constraints.adoc#create-property-uniqueness-constraints[uniqueness constraint] on the merged property when merging nodes (this forces an index lock), or with both endpoint nodes bound by a preceding `MATCH` when merging relationships (forces a locking merge with locks taken on both endpoints).
