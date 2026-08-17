@@ -366,8 +366,9 @@ RETURN t AS teams, players
 * Just as when using a variable scope clause, a subquery using an importing `WITH` clause cannot return a variable name which already exists in the outer scope.
 To return imported variables they must be renamed.
 
-* The importing `WITH` clause must the first clause of a subquery (or the second clause, if directly following a `USE` clause).
+* The importing `WITH` clause must be the first clause of a subquery (or the second clause, if directly following a `USE` clause).
 * It is not possible to follow an importing `WITH` clause with any of the following clauses: `DISTINCT`, `ORDER BY`, `WHERE`, `SKIP`, and `LIMIT`.
+* When using a `UNION [ALL]` directly within the `CALL` any imported variables must be imported per `UNION` branch.
 
 Attempting any of the above, will throw an error.
 For example, the following query using a `WHERE` clause after an importing `WITH` clause will throw an error:
@@ -419,6 +420,60 @@ RETURN largeLists
 | [1, 2, 3, 4, 5]
 1+d|Rows: 2
 
+|===
+
+Attempting to use an outer variable only imported into the first `UNION` branch in the second throws an error:
+
+.Not Allowed
+[source, cypher, role=test-fail]
+----
+WITH "Team A" AS teamName
+CALL {
+  WITH teamName
+  MATCH (p:Player)-[:PLAYS_FOR]->(t {name: teamName})
+  RETURN p.name AS associatedName, "Player" AS relationshipType
+  UNION
+  MATCH (t {name: teamName})-[:OWES]->(other:Team)
+  RETURN other.name AS associatedName, "Owed Team" AS relationshipType
+}
+RETURN teamName, associatedName, relationshipType 
+----
+
+.GQLSTATUS error chain
+[role="queryresult",stripes="all",cols="1"]
+|===
+| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42N62/[42N62]: error: syntax error or access rule violation - variable not defined. Variable `teamName` not defined.
+
+link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]: error: syntax error or access rule violation - invalid syntax
+|===
+
+To fix this, import the needed variables separately using an importing `WITH` in all branches.
+
+.Allowed
+[source, cypher]
+----
+WITH "Team A" AS teamName
+CALL {
+  WITH teamName // Import teamName here
+  MATCH (p:Player)-[:PLAYS_FOR]->(t {name: teamName})
+  RETURN p.name AS associatedName, "Player" AS relationshipType
+  UNION
+  WITH teamName // Import teamName here as well
+  MATCH (t {name: teamName})-[:OWES]->(other:Team)
+  RETURN other.name AS associatedName, "Owed Team" AS relationshipType
+}
+RETURN teamName, associatedName, relationshipType 
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| teamName | associatedName | relationshipType
+| "Team A" | "Player A"     | "Player"
+| "Team A" | "Player B"     | "Player"
+| "Team A" | "Team B"       | "Owed Team"
+
+3+d|Rows: 3
 |===
 
 ====
