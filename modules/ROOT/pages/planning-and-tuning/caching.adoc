@@ -1,0 +1,228 @@
+:description: Information about the Cypher query caches, including configuration and query size limit.
+= Query caches
+
+Translating a Cypher query string into an executable query plan can be an expensive operation.
+To avoid repeating this work, Neo4j caches query plans when possible so that when the same query is submitted again, the planning step can be skipped and the cached plan reused directly.
+
+By default, the set of query caches is *per database*.
+That means that a new set of caches is initialized for each new database.
+
+[[how-the-query-cache-works]]
+== How the query cache works
+
+When a Cypher statement is submitted, Neo4j first computes a hash of the raw
+query string and checks whether a plan already exists for that exact text.
+If a match is found, the cached plan is reused immediately and
+`executableQueryCacheHit` is reported as `true`.
+
+If no match is found, the query is parsed into an abstract syntax tree (AST).
+The AST is normalized. For example, inline predicates such as `{id:101}` are
+rewritten as an equivalent `WHERE` clause, and literal values are converted
+into parameters. A second cache lookup is then performed, keyed on this
+normalized AST. This allows queries that are textually different but
+structurally equivalent to share the same cached plan.
+
+Neo4j reports cache status through two fields in the JSON query log:
+
+`executableQueryCacheHit`:: Whether the exact-text cache was hit, keyed on
+the literal query string.
+`logicalPlanCacheHit`:: Whether the normalized-AST cache was hit, keyed on
+the query's structure after parsing and normalization.
+
+[NOTE]
+`logicalPlanCacheHit` is only present in the log when it is `false`.
+The field is omitted once `executableQueryCacheHit` is `true`, since the
+logical-plan cache is not consulted when the exact-text cache already
+provides a hit.
+
+.The same query run twice
+[source]
+----
++----------------------------------------------+-----------+-----------+----------+
+| Query                                        | Hash      | Cache Hit | Planning |
++----------------------------------------------+-----------+-----------+----------+
+| CREATE (:Person {id: 789, name: 'John'});    | 18270B26  | false     | 25 ms    |
+| MATCH (n:Person) WHERE n.id = 789 RETURN n;  | D4DE3B34  | false     | 22 ms    |
+| MATCH (n:Person) WHERE n.id = 789 RETURN n;  | D4DE3B34  | true      | 0 ms     |
++----------------------------------------------+-----------+-----------+----------+
+----
+
+The two identical `MATCH` queries share the same `executionPlanCacheKeyHash`
+and are matched via the exact-text cache, since both use identical query
+strings: the first misses the cache (22ms planning), the second hits (0ms
+planning). Same query, same hash. The second run skips planning entirely
+because the cache already has a plan for that hash.
+
+.Two textually different, structurally equivalent queries
+[source]
+----
++----------------------------------------------+-----------+-----------+----------+
+| Query                                        | Hash      | Cache Hit | Planning |
++----------------------------------------------+-----------+-----------+----------+
+| MATCH (n:Person) WHERE n.id = 789 RETURN n;  | BDAF71B3  | true      | 1 ms     |
+| MATCH (n:Person {id: 789}) RETURN n;         | BDAF71B3  | false     | 63 ms    |
++----------------------------------------------+-----------+-----------+----------+
+----
+
+Both queries share the same `executionPlanCacheKeyHash`, confirming they
+resolve to the same plan.
+But the second query does not benefit from the first's cached plan on its first run: the exact-text cache is keyed on the literal query string, so a different string always misses.
+Only once that exact query has been run before does it hit its own exact-text cache entry.
+
+[[parameter-types-and-cache-key]]
+== Parameter types and the cache key
+
+The cache key includes the type of each parameter.
+Two executions of the same query text with a differently-typed parameter (for example, an
+`INTEGER` in one call and a `STRING` in another) are treated as separate cache entries.
+
+Internally, each parameter is represented as a `ParameterTypeInfo`, capturing both its type and a size category.
+For example, a `STRING` is represented with its type and a size bucket, e.g. `ParameterTypeInfo(String, ExactSize(1))` for a single-character string.
+
+.Same query text, different parameter types
+[source]
+----
++----------------------------------------------+------------------+---------+-----------+-----------+----------+
+| Query                                         | Parameter        | Type    | Hash      | Cache Hit | Planning |
++----------------------------------------------+------------------+---------+-----------+-----------+----------+
+| MATCH (n:Person) WHERE n.id = $id RETURN n;   | id: 789          | INTEGER | 855E6DCD  | false     | 56 ms    |
+| MATCH (n:Person) WHERE n.id = $id RETURN n;   | id: '789'        | STRING  | 855E6DCD  | false     | 30 ms    |
+| MATCH (n:Person) WHERE n.id = $id RETURN n;   | id: null         | ANY     | 855E6DCD  | false     | 23 ms    |
+| MATCH (n:Person) WHERE n.id = $id RETURN n;   | id: 999          | INTEGER | 855E6DCD  | true      | 0 ms     |
++----------------------------------------------+------------------+---------+-----------+-----------+----------+
+----
+
+[NOTE]
+====
+* `null` is treated as `ANY`, so it does not reuse the cache entry created by the first query with an integer parameter.
+
+* All four rows share the same `executionPlanCacheKeyHash`, since the resulting plan is identical regardless of the parameter's type or value.
+The separate cache entries described above exist at the exact-text + parameter-type level, not at the plan-hash level.
+====
+
+Each distinct `ParameterTypeInfo` gets its own cache entry.
+The fourth query reuses the entry created by the first, since both use an `INTEGER` parameter; the `STRING` and `null` parameters in between each created
+their own separate entries and did not interfere with this reuse.
+
+Therefore, if an application occasionally sends `null` for a parameter and a concrete
+value at other times, this results in at least two cache entries for what
+may otherwise look like a single, unchanging query.
+
+[[caching-and-schema-changes]]
+== Caching and schema changes
+
+Creating an xref:indexes/index.adoc[index] or a xref:schema/index.adoc[constraint/graph type] causes the next execution of an affected query to be replanned, even if the query text is unchanged.
+This is because the hash reflects the resulting plan rather than the query text alone, so once the new index or constraint changes the optimal plan, the same query text produces a different hash.
+
+.Comparing the same query cache before and after a schema change
+[source]
+----
++------------------------------------------------+-----------+-----------+----------+
+| Query                                          | Hash      | Cache Hit | Planning |
++------------------------------------------------+-----------+-----------+----------+
+| MATCH (n:Person) WHERE n.id = 789 RETURN n;    | D4DE3B34  | false     | 31 ms    |
+| CREATE INDEX idx06 FOR (n:Person) ON (n.id);   |           |           |          |
+| MATCH (n:Person) WHERE n.id = 789 RETURN n;    | BDAF71B3  | false     | 27 ms    |
+| MATCH (n:Person) WHERE n.id = 789 RETURN n;    | BDAF71B3  | true      | 0 ms     |
++------------------------------------------------+-----------+-----------+----------+
+----
+
+
+[role=label--new-Neo4j-2026.04]
+[[caching-notifications]]
+== Notifications when a cached plan is not used
+
+Neo4j writes a message to `debug.log` whenever a cached plan is not used for a query, along with a brief explanation of why.
+This requires no configuration and provides a way to notice unexpected replanning without inspecting query log internals.
+
+.Example message, captured after repeated executions of the same query:
+[source]
+----
+Cached query plan is not used because recompilation with expression code generation is triggered.
+----
+
+This particular trigger occurs when a query has been executed enough times that Neo4j recompiles it with more aggressive expression code generation, replacing the previously cached plan.
+
+[[configuring-query-caches]]
+== Configuring query caches
+
+The maximum number of entries per cache is configured using `server.memory.query_cache.per_db_cache_num_entries`.
+It determines the cache size only when `server.memory.query_cache.sharing_enabled` is set to `false`.
+
+Query caches may consume a lot of memory, especially when running many active databases.
+To tackle this and improve predictability on memory consumption, you can configure the DBMS to use only one set of caches for all databases.
+For more information, see xref:planning-and-tuning/caching.adoc#unifying-query-caches[Unifying query caches].
+
+The following is a summary of the query cache configurations.
+For more information, see link:{neo4j-docs-base-uri}/operations-manual/current/configuration/configuration-settings/[Operations Manual -> Configuration settings].
+
+.Query cache configurations
+[options="header", width="100%", cols="4m,3a,1m"]
+|===
+| Setting
+| Description
+| Default
+
+| link:{neo4j-docs-base-uri}/operations-manual/current/configuration/configuration-settings/#config_server.memory.query_cache.sharing_enabled[server.memory.query_cache.sharing_enabled]
+| Enable sharing cache space between different databases.
+With this option turned on, databases will share cache space, but not cache entries. label:enterprise-edition[Enterprise only]
+| false
+
+| link:{neo4j-docs-base-uri}/operations-manual/current/configuration/configuration-settings/#config_server.memory.query_cache.shared_cache_num_entries[server.memory.query_cache.shared_cache_num_entries]
+|The number of cached queries for all databases.
+This setting is only deciding cache size when `server.memory.query_cache.sharing_enabled` is set to `true`. label:enterprise-edition[]
+| 1000
+
+| link:{neo4j-docs-base-uri}/operations-manual/current/configuration/configuration-settings/#config_server.memory.query_cache.per_db_cache_num_entries[server.memory.query_cache.per_db_cache_num_entries]
+| The number of cached queries per database.
+This setting is only deciding cache size when `server.memory.query_cache.sharing_enabled` is set to `false`.
+| 1000
+|===
+
+[role=enterprise-edition]
+[[unifying-query-caches]]
+== Unifying query caches
+
+To enable the unified query caches, set the option `server.memory.query_cache.sharing_enabled=true`.
+
+.Unified query cache configurations
+[options="header", width="100%", cols="4m,3a,1m"]
+|===
+| Setting
+| Description
+| Default
+
+| link:{neo4j-docs-base-uri}/operations-manual/current/configuration/configuration-settings/#config_server.memory.query_cache.sharing_enabled[server.memory.query_cache.sharing_enabled]
+| Enable sharing cache space between different databases. With this option turned on, databases will share cache space, but not cache entries. label:enterprise-edition[] 
+| false
+
+| link:{neo4j-docs-base-uri}/operations-manual/current/configuration/configuration-settings/#config_server.memory.query_cache.shared_cache_num_entries[server.memory.query_cache.shared_cache_num_entries]
+| The number of cached queries for all databases. This setting is only deciding cache size when
+`server.memory.query_cache.sharing_enabled` is set to `true`. label:enterprise-edition[]
+| 1000
+|===
+
+When this feature is enabled, all databases use only one set of query caches.
+A database may store and retrieve entries from the shared cache, but it may not retrieve entries produced by another database.
+
+[NOTE]
+While databases use the same set of caches, a database may not observe entries originating from other databases.
+
+
+The database may, however, evict entries from other databases as necessary, according to the constrained cache size and cache eviction policy.
+In essence, databases may compete for cache space, but may not observe each other's entries.
+
+When this option is turned on, the cache space available to all databases is configured using the setting `server.memory.query_cache.shared_cache_num_entries`.
+
+[[query-size-limit]]
+[role=label--new-2026.01]
+== Query size limit
+
+The default query size limit for a query to be considered for query caching is 128 KiB of query text.
+
+This limit prevents large generated query text strings from occupying too much memory in the query cache.
+Such query strings often contain inlined data, and are unlikely to be reusable before xref:syntax/parameters.adoc#cypher-parameters-auto-parameterization[auto-parameterization of literals] is applied.
+
+To circumvent the default of 128 KiB, you can prefix a query with either `CYPHER cache=force` to always cache it, or with `CYPHER cache=skip` to never cache it and skip the query cache lookup.
+
+As a best practice, avoid passing data in the query text string and use parameters instead.
