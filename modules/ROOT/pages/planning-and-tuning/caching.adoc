@@ -91,22 +91,31 @@ Therefore, if an application occasionally sends `null` for a parameter and a con
 [[caching-and-schema-changes]]
 == Caching and schema changes
 
-Creating an xref:indexes/index.adoc[index] or a xref:schema/index.adoc[constraint/graph type] causes the next execution of an affected query to be replanned, even if the query text is unchanged.
-This is because the hash reflects the resulting plan rather than the query text alone, so once the new index or constraint changes the optimal plan, the same query text produces a different hash.
+Creating an xref:indexes/index.adoc[index] or a xref:schema/index.adoc[constraint] clears the executable query cache and the logical plan cache for the database, forcing *every query* to go through logical planning again on its next execution.
+The execution plan cache, further down the pipeline, is not cleared, however: if logical planning for a given query produces the same plan as before, its execution plan cache entry is still hit.
 
-.Comparing the same query cache before and after a schema change
+.Comparing two unrelated queries before and after an index is created on one of them
 [source]
 ----
-+------------------------------------------------+-----------+-----------+----------+
-| Query                                          | Hash      | Cache Hit | Planning |
-+------------------------------------------------+-----------+-----------+----------+
-| MATCH (n:Person) WHERE n.id = 789 RETURN n;    | D4DE3B34  | false     | 31 ms    |
-| CREATE INDEX idx06 FOR (n:Person) ON (n.id);   |           |           |          |
-| MATCH (n:Person) WHERE n.id = 789 RETURN n;    | BDAF71B3  | false     | 27 ms    |
-| MATCH (n:Person) WHERE n.id = 789 RETURN n;    | BDAF71B3  | true      | 0 ms     |
-+------------------------------------------------+-----------+-----------+----------+
++------+-----------------------------------------------+-----------+-----------+----------+
+| Step | Query / Action                                | Hash      | Cache Hit | Planning |
++------+-----------------------------------------------+-----------+-----------+----------+
+| 1    | MATCH (n:A) WHERE n.val = 1 RETURN n          | A746F892  | false     | 31 ms    |
+| 2    | MATCH (n:B) WHERE n.val = 1 RETURN n          | CC8AAF69  | false     | 20 ms    |
+| 3    | CREATE INDEX idx_a_val FOR (n:A) ON (n.val);  |           |           | 10 ms    |
+| 4    | CALL db.awaitIndexes();                       |           |           | 12 ms    |
+| 5    | MATCH (n:A) WHERE n.val = 1 RETURN n          | 4505044A  | false     | 20 ms   |
+| 6    | MATCH (n:B) WHERE n.val = 1 RETURN n          | CC8AAF69  | false     | 17 ms    |
++------+-----------------------------------------------+-----------+-----------+----------+
 ----
 
+Both queries show `executableQueryCacheHit: false` after the index creation (step 5 and step 6), even though `:B` is completely unaffected by the new index.
+This is because the index update clears the executable query cache broadly, so neither query can take the fast, top-level shortcut on its next run.
+
+However, the two queries diverge after that point.
+For `:A`, the new index gives the planner a better access path, so logical planning produces a *different* plan, and its `executionPlanCacheKeyHash` changes (step 1 to step 5).
+For `:B`, logical planning produces the *same* plan as before, since nothing about the new index is relevant to it.
+As a result, its execution plan cache entry is still hit, and the hash stays identical (step 2 equals step 6), even though the top-level executable query cache was missed.
 
 [role=label--new-Neo4j-2026.04]
 [[caching-notifications]]
