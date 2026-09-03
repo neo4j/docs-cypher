@@ -10,30 +10,20 @@ That means that a new set of caches is initialized for each new database.
 [[how-the-query-cache-works]]
 == How the query cache works
 
-When a Cypher statement is submitted, Neo4j first computes a hash of the raw
-query string and checks whether a plan already exists for that exact text.
-If a match is found, the cached plan is reused immediately and
-`executableQueryCacheHit` is reported as `true`.
+Neo4j caches a query at several stages:
 
-If no match is found, the query is parsed into an abstract syntax tree (AST).
-The AST is normalized. For example, inline predicates such as `{id:101}` are
-rewritten as an equivalent `WHERE` clause, and literal values are converted
-into parameters. A second cache lookup is then performed, keyed on this
-normalized AST. This allows queries that are textually different but
-structurally equivalent to share the same cached plan.
+* Query string -> abstract syntax tree (AST) (parsing) 
+* AST -> logical plan (logical planning, reported in the link:{neo4j-docs-base-uri}/operations-manual/current/monitoring/logging/[JSON query log] as `logicalPlanCacheHit`)
+* Logical plan -> physical execution plan (execution planning)
+* Query string -> physical execution plan (executable query cache, reported in JSON query log as `executableQueryCacheHit`)
 
-Neo4j reports cache status through two fields in link:{neo4j-docs-base-uri}/operations-manual/current/monitoring/logging/[JSON query log]:
+The fastest path is the last one: if `executableQueryCacheHit` is true, the exact same query string (and parameter types) has been seen before, and the previously computed plan is reused directly, with no reparsing or replanning.
 
-`executableQueryCacheHit`:: Whether the exact-text cache was hit, keyed on
-the literal query string.
-`logicalPlanCacheHit`:: Whether the normalized-AST cache was hit, keyed on
-the query's structure after parsing and normalization.
+If the query string is new, `executableQueryCacheHit` is `false`, and Neo4j falls back through the earlier stages (parsing, then logical planning) each of which can still be reused if that particular stage's input has been seen before, even if the overall query text is new.
+This is why two differently-worded but structurally equivalent queries can still hit the logical plan cache and avoid some replanning work, without getting the full benefit of an exact executable-query-cache hit.
 
-[NOTE]
-`logicalPlanCacheHit` is only present in the log when it is `false`.
-The field is omitted once `executableQueryCacheHit` is `true`, since the
-logical-plan cache is not consulted when the exact-text cache already
-provides a hit.
+Logical planning is typically the most expensive of these stages, so its outcome tends to have the largest impact on planning time.
+Parsing can also take meaningful time, but since it depends on the exact query text, it sometimes cannot be avoided when the query string itself is new.
 
 .The same query run twice
 [source]
@@ -47,11 +37,8 @@ provides a hit.
 +----------------------------------------------+-----------+-----------+----------+
 ----
 
-The two identical `MATCH` queries share the same `executionPlanCacheKeyHash`
-and are matched via the exact-text cache, since both use identical query
-strings: the first misses the cache (22ms planning), the second hits (0ms
-planning). Same query, same hash. The second run skips planning entirely
-because the cache already has a plan for that hash.
+The two identical `MATCH` queries have identical query strings, so the second hits the executable query cache and skips planning entirely (0ms).
+Both happen to share the same `executionPlanCacheKeyHash`, confirming they resolved to the same plan, but it is the identical query string, not the hash, that determines the hit.
 
 .Two textually different, structurally equivalent queries
 [source]
@@ -64,20 +51,17 @@ because the cache already has a plan for that hash.
 +----------------------------------------------+-----------+-----------+----------+
 ----
 
-Both queries share the same `executionPlanCacheKeyHash`, confirming they
-resolve to the same plan.
-But the second query does not benefit from the first's cached plan on its first run: the exact-text cache is keyed on the literal query string, so a different string always misses.
-Only once that exact query has been run before does it hit its own exact-text cache entry.
+These two queries have different query strings, so the second misses the executable query cache regardless of the first query's result, and pays real planning time.
+Both end up with the same `executionPlanCacheKeyHash`, showing that despite the miss, they resolved to the same execution plan (this is only confirmed after planning, not something used to skip it).
 
 [[parameter-types-and-cache-key]]
-== Parameter types and the cache key
+== Parameter types and the executable query cache
 
-The cache key includes the type of each parameter.
-Two executions of the same query text with a differently-typed parameter (for example, an
-`INTEGER` in one call and a `STRING` in another) are treated as separate cache entries.
+The executable query cache's key includes the type of each parameter.
+Two executions of the same query text with a differently-typed parameter (for example, an `INTEGER` in one call and a `STRING` in another) are treated as separate cache entries.
 
-Internally, each parameter is represented as a `ParameterTypeInfo`, capturing both its type and a size category.
-For example, a `STRING` is represented with its type and a size bucket, e.g. `ParameterTypeInfo(String, ExactSize(1))` for a single-character string.
+Internally, each parameter is represented as a `ParameterTypeInfo`,
+capturing both its type and a size category. For example, a `STRING` is represented with its type and a size bucket, e.g. `ParameterTypeInfo(String, ExactSize(1))` for a single-character string.
 
 .Same query text, different parameter types
 [source]
@@ -97,16 +81,12 @@ For example, a `STRING` is represented with its type and a size bucket, e.g. `Pa
 * `null` is treated as `ANY`, so it does not reuse the cache entry created by the first query with an integer parameter.
 
 * All four rows share the same `executionPlanCacheKeyHash`, since the resulting plan is identical regardless of the parameter's type or value.
-The separate cache entries described above exist at the exact-text + parameter-type level, not at the plan-hash level.
+This confirms the four executions resolved to the same plan, but the hash is not what determines the hit, the executable query cache key (query text + parameter types) is.
 ====
 
-Each distinct `ParameterTypeInfo` gets its own cache entry.
-The fourth query reuses the entry created by the first, since both use an `INTEGER` parameter; the `STRING` and `null` parameters in between each created
-their own separate entries and did not interfere with this reuse.
+Each distinct `ParameterTypeInfo` gets its own executable query cache entry. The fourth query hits the entry created by the first, since both use an `INTEGER` parameter; the `STRING` and `null` parameters in between each created their own separate entries and did not interfere with this reuse.
 
-Therefore, if an application occasionally sends `null` for a parameter and a concrete
-value at other times, this results in at least two cache entries for what
-may otherwise look like a single, unchanging query.
+Therefore, if an application occasionally sends `null` for a parameter and a concrete value at other times, this results in at least two cache entries for what may otherwise look like a single, unchanging query.
 
 [[caching-and-schema-changes]]
 == Caching and schema changes
