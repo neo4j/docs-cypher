@@ -70,3 +70,130 @@ String literals can contain the following escape sequences:
 |`\\`|Backslash
 |`\uxxxx`|Unicode UTF-16 code point (4 hex digits must follow the `\u`)
 |===
+
+[[string-interpolation]]
+[role=label--new-Neo4j-2026.08 label--cypher-25-only]
+=== String interpolation
+
+String interpolation lets one or more expressions be embedded directly inside a string literal.
+Each embedded expression is evaluated and inserted into the resulting `STRING`, so the string does not need to be built up manually with the xref:expressions/string-operators.adoc[string concatenation operators].
+
+An interpolated string is written by prefixing a quoted string with `s` or `S`, and wrapping each expression to be evaluated in curly braces (`{` and `}`):
+
+* `s"Hello, {p.name}"`
+* `S'Hello, {p.name}'`
+
+Interpolated strings can be quoted with either single or double quotes, following the same quoting rules as xref:values-and-types/boolean-numeric-string.adoc#string[string literals], and may contain any number of `\{expression}` placeholders.
+
+Every embedded expression is automatically converted to a `STRING` using xref:functions/string.adoc#functions-tostring[`toString()`].
+Because `toString()` does not support them, expressions that evaluate to `MAP`, `LIST`, `NODE`, `PATH`, or `RELATIONSHIP` values cannot be used inside an interpolated expression.
+
+To include a literal curly brace in an interpolated string, escape it with a backslash: `\{` or `\}`.
+
+[NOTE]
+====
+Take care when using string interpolation to build Cypher strings that get passed into plugin procedures which execute dynamic Cypher, such as `apoc.cypher.run()`.
+Interpolating unsanitized values into such strings increases the risk of Cypher injection.
+Where possible, use xref:syntax/parameters.adoc[parameters] instead.
+====
+
+[[string-interpolation-examples]]
+==== Examples
+
+.Interpolating a node property
+// tag::values_and_types_string_interpolation_property[]
+[source, cypher]
+----
+CREATE (p:Person {name: 'Alice'})
+RETURN s"Hello, {p.name}!" AS greeting
+----
+// end::values_and_types_string_interpolation_property[]
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| greeting
+
+| "Hello, Alice!"
+
+1+d| Rows: 1
+|===
+
+.Multiple placeholders in a single interpolated string
+// tag::values_and_types_string_interpolation_multiple[]
+[source, cypher]
+----
+WITH 'Keanu' AS firstName, 'Reeves' AS lastName
+RETURN s"{firstName} {lastName}" AS fullName
+----
+// end::values_and_types_string_interpolation_multiple[]
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| fullName
+
+| "Keanu Reeves"
+
+1+d| Rows: 1
+|===
+
+Non-`STRING` values are automatically converted using `toString()`.
+
+.Interpolating a non-`STRING` value
+// tag::values_and_types_string_interpolation_tostring[]
+[source, cypher]
+----
+WITH 42 AS age
+RETURN s"Age: {age}" AS result
+----
+// end::values_and_types_string_interpolation_tostring[]
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| result
+
+| "Age: 42"
+
+1+d| Rows: 1
+|===
+
+.Escaping literal curly braces
+// tag::values_and_types_string_interpolation_escaping[]
+[source, cypher, role=test-result-skip]
+----
+RETURN s"Use \{curly\} braces" AS result
+----
+// end::values_and_types_string_interpolation_escaping[]
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| result
+
+| "Use \{curly} braces"
+
+1+d| Rows: 1
+|===
+
+Interpolated strings can be nested, since an embedded expression may itself be an interpolated string.
+
+.Nested string interpolation
+// tag::values_and_types_string_interpolation_nested[]
+[source, cypher]
+----
+WITH 'World' AS name
+RETURN s"Outer: {s'Inner, {name}!'}" AS result
+----
+// end::values_and_types_string_interpolation_nested[]
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| result
+
+| "Outer: Inner, World!"
+
+1+d| Rows: 1
+|===
