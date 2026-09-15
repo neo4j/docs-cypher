@@ -12,10 +12,16 @@ That means that a new set of caches is initialized for each new database.
 
 Neo4j caches a query at several stages:
 
+* Raw query string -> pre-parsed query string + query options, such as `CYPHER key=value`, `EXPLAIN`, and `PROFILE` (pre-parsing)
 * Query string -> abstract syntax tree (AST) (parsing) 
 * AST -> logical plan (logical planning, reported in the link:{neo4j-docs-base-uri}/operations-manual/current/monitoring/logging/[JSON query log] as `logicalPlanCacheHit`)
 * Logical plan -> physical execution plan (execution planning)
-* Query string -> physical execution plan (executable query cache, reported in JSON query log as `executableQueryCacheHit`)
+* Raw query string -> physical execution plan (executable query cache, reported in JSON query log as `executableQueryCacheHit`)
+
+[NOTE]
+Logging `logicalPlanCacheHit` and `executableQueryCacheHit` in the link:{neo4j-docs-base-uri}/operations-manual/current/monitoring/logging/[JSON query log] requires the configuration setting query log requires the configuration setting `internal.dbms.logs.query.query_cache_usage=true`.
+This is enabled by default on Neo4j Aura, but must be set explicitly for on-premises
+deployments.
 
 The fastest path is the last one: if `executableQueryCacheHit` is true, the exact same query string (and parameter types) has been seen before, and the previously computed plan is reused directly, with no reparsing or replanning.
 
@@ -54,6 +60,9 @@ Both happen to share the same `executionPlanCacheKeyHash`, confirming they resol
 These two queries have different query strings, so the second misses the executable query cache regardless of the first query's result, and pays real planning time.
 Both end up with the same `executionPlanCacheKeyHash`, showing that despite the miss, they resolved to the same execution plan (this is only confirmed after planning, not something used to skip it).
 
+[NOTE]
+For information about the metrics on query cache usage, refer to the link:{neo4j-docs-base-uri}/operations-manual/current/monitoring/metrics/reference/#cypher-metrics[Operations Manual -> Cypher planning and caching metrics].
+
 [[parameter-types-and-cache-key]]
 == Parameter types and the executable query cache
 
@@ -91,8 +100,9 @@ Therefore, if an application occasionally sends `null` for a parameter and a con
 [[caching-and-schema-changes]]
 == Caching and schema changes
 
-Creating an xref:indexes/index.adoc[index] or a xref:schema/index.adoc[constraint] clears the executable query cache and the logical plan cache for the database, forcing *every query* to go through logical planning again on its next execution.
-The execution plan cache, further down the pipeline, is not cleared, however: if logical planning for a given query produces the same plan as before, its execution plan cache entry is still hit.
+Creating an xref:indexes/index.adoc[index] or a xref:schema/index.adoc[constraint] clears the executable query cache, the logical plan cache, and the execution plan cache for the database, forcing every query to go through logical planning and execution planning again on its next execution.
+
+This means `executionPlanCacheKeyHash` is recomputed after a schema change, even for queries unrelated to it. The hash is tied to the logical plan produced for the query: if logical planning yields the same plan as before, the recomputed hash will be identical, so an unchanged hash does not necessarily mean the cache entry survived untouched (it may simply mean planning produced the same result again).
 
 .Comparing two unrelated queries before and after an index is created on one of them
 [source]
@@ -104,7 +114,7 @@ The execution plan cache, further down the pipeline, is not cleared, however: if
 | 2    | MATCH (n:B) WHERE n.val = 1 RETURN n          | CC8AAF69  | false     | 20 ms    |
 | 3    | CREATE INDEX idx_a_val FOR (n:A) ON (n.val);  |           |           | 10 ms    |
 | 4    | CALL db.awaitIndexes();                       |           |           | 12 ms    |
-| 5    | MATCH (n:A) WHERE n.val = 1 RETURN n          | 4505044A  | false     | 20 ms   |
+| 5    | MATCH (n:A) WHERE n.val = 1 RETURN n          | 4505044A  | false     | 20 ms    |
 | 6    | MATCH (n:B) WHERE n.val = 1 RETURN n          | CC8AAF69  | false     | 17 ms    |
 +------+-----------------------------------------------+-----------+-----------+----------+
 ----
@@ -114,8 +124,11 @@ This is because the index update clears the executable query cache broadly, so n
 
 However, the two queries diverge after that point.
 For `:A`, the new index gives the planner a better access path, so logical planning produces a *different* plan, and its `executionPlanCacheKeyHash` changes (step 1 to step 5).
-For `:B`, logical planning produces the *same* plan as before, since nothing about the new index is relevant to it.
-As a result, its execution plan cache entry is still hit, and the hash stays identical (step 2 equals step 6), even though the top-level executable query cache was missed.
+For `:B`, logical planning is redone but produces the *same* plan as before, since nothing about the new index is relevant to it.
+As a result, its recomputed hash is identical to before (step 2 equals step 6); not because the execution plan cache entry survived the schema change, but because planning it again produced the same result.
+
+[NOTE]
+In the case of `CREATE INDEX`, the cache is cleared when the index comes online, but with `CREATE CONSTRAINT` the cache is cleared immediately.
 
 [role=label--new-Neo4j-2026.04]
 [[caching-notifications]]
@@ -195,7 +208,6 @@ A database may store and retrieve entries from the shared cache, but it may not 
 
 [NOTE]
 While databases use the same set of caches, a database may not observe entries originating from other databases.
-
 
 The database may, however, evict entries from other databases as necessary, according to the constrained cache size and cache eviction policy.
 In essence, databases may compete for cache space, but may not observe each other's entries.
