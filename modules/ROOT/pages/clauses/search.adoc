@@ -10,7 +10,14 @@ In order to use the `SEARCH` clause, you must first have xref::indexes/semantic-
 
 == SEARCH clause syntax
 
-The `SEARCH` clause has the following syntax
+The `SEARCH` clause has the following syntax:
+
+.Select default Cypher version when creating a database
+[.tabbed-example]
+=====
+[.include-with-vector-search]
+======
+
 [source, syntax]
 ----
 [OPTIONAL] MATCH pattern
@@ -22,16 +29,36 @@ The `SEARCH` clause has the following syntax
   ) [SCORE AS score_alias]
 ----
 
+======
+[.include-with-fulltext-search]
+======
+
+[source, syntax]
+----
+[OPTIONAL] MATCH pattern
+  SEARCH binding_variable IN (
+    FULLTEXT INDEX index_name
+    FOR query_string [ WITH ANALYZER analyzer_string ]
+    [ SKIP | OFFSET skip_integer ]
+    LIMIT top_k
+  ) [SCORE AS score_alias]
+----
+
+======
+=====
+
 The `SEARCH` clause constrains the `pattern` from the enclosing `MATCH` or `OPTIONAL MATCH`, by only returning nodes or relationships included in the results of the ANN vector search as described by the `SEARCH` clause.
 Below follows a short description of the different parts of the syntax:
 
 - The `binding_variable` must be a node or relationship variable from the `pattern` of the enclosing `MATCH` or `OPTIONAL MATCH` clause.
 
-- The `index_name` must be an identifier that matches the name of an existing vector index in the Neo4j database.
-The vector index must be a node vector index if the `binding_variable` refers to a node and a relationship vector index if the `binding_variable` refers to a relationship.
+- The `index_name` must be an identifier that matches the name of an existing vector index or full-text index in the Neo4j database.
+The index must be a node vector index if the `binding_variable` refers to a node and a relationship vector index if the `binding_variable` refers to a relationship.
 
-- The `query_vector` can be any expression that evaluates to a `VECTOR` or `LIST<INTEGER NOT NULL | FLOAT NOT NULL>`, for example a literal, a parameter or a property.
+- For vector searches, the `query_vector` can be any expression that evaluates to a `VECTOR` or `LIST<INTEGER NOT NULL | FLOAT NOT NULL>`, for example a literal, a parameter or a property.
 The `SEARCH` clause returns a neighborhood of nodes or relationships based on the similarity between the `query_vector` the corresponding property of those nodes or relationships.
+
+- For fulltext searches, the `query_string` is of type `STRING`, `<skip_integer>` is of type `INTEGER` and the `<analyzer_string>` is of type `STRING`.
 
 - The optional `WHERE` subclause applies a filter to the vector index, and is a restricted version of the normal Cypher xref::clauses/where.adoc[`WHERE` clause].
 For more information, see xref::clauses/search.adoc#vector-search-filtering-predicates[Predicates for vector search with filters].
@@ -49,9 +76,10 @@ The `SCORE` value is a vector similarity score from the vector index query.
 When combining `SEARCH` results with full-text results or other scored sources, rank each source independently rather than comparing raw score values directly.
 For a worked example, see link:https://neo4j.com/developer/genai-ecosystem/vector-search/#_hybrid_search[Developer Guide -> Hybrid full-text and vector search].
 
+== Vector saerch
 
 [[search-example-graph]]
-== Example graph and vector index
+=== Example graph and vector index
 
 The following graph is used for the examples below:
 
@@ -93,9 +121,9 @@ OPTIONS {
 
 For more information about the creation of vector indexes, see xref::indexes/semantic-indexes/vector-indexes.adoc#create-vector-index[Create vector indexes].
 
-== Basic vector search
+=== Basic vector search
 
-=== Find the most similar nodes
+==== Find the most similar nodes
 In our example dataset, the movie with the title `Snow White` has the embedding `vector([1, 2, 3], 3, INTEGER)`.
 To find the 4 most similar movies to `Snow White`, you can run several different Cypher queries with the `SEARCH` clause.
 
@@ -239,7 +267,7 @@ The label predicate `:Movie` in the `MATCH` patterns above is not strictly requi
 As the vector index only contains nodes with label `:Movie`, the `SEARCH` clause adds this predicate implicitly.
 ====
 
-=== Find the most similar nodes with score
+==== Find the most similar nodes with score
 
 To return the four most similar movies to `Snow White` together with their similarity score, you can include the optional `SCORE` subclause in the `SEARCH` clause.
 
@@ -281,7 +309,7 @@ The movie `Snow White` has a similarity score of `1.0` as its `embedding` proper
 Similarity scores are calculated using the similarity function that was chosen when the vector index was created, the default is cosine similarity.
 For more information on similarity functions, see xref::indexes/semantic-indexes/vector-indexes.adoc#similarity-functions[Cosine and Euclidean similarity functions].
 
-=== Additional predicates in the MATCH pattern
+==== Additional predicates in the MATCH pattern
 
 The pattern in the `MATCH` or `OPTIONAL MATCH` can have label and property predicates on the node or relationship with the binding variable.
 
@@ -347,7 +375,7 @@ RETURN movie.title AS title
 ====
 
 [[vector-search-filtering]]
-== Vector search with filters
+=== Vector search with filters
 A `MATCH` or `OPTIONAL MATCH` clause can have both a `WHERE` subclause and `SEARCH` subclause.
 Regardless of their order, the `WHERE` clause will act as a post-filtering step to the vector search, further filtering down the results.
 
@@ -441,7 +469,7 @@ Because of this, you might want to set a higher `LIMIT` in the `SEARCH` clause a
 This approach is called over-fetching.
 ====
 
-=== Combining vector search with filters and post-filtering
+==== Combining vector search with filters and post-filtering
 
 Vector search with filters and a normal `WHERE` clause can be combined.
 The following query finds the four most similar movies to `Snow White` which were released after 1990, and then does post-filtering to discard any result with a rating worse than 7.5.
@@ -477,7 +505,7 @@ RETURN movie.title AS title, movie.releaseDate.year AS year, movie.rating AS rat
 ====
 
 [[vector-search-filtering-predicates]]
-=== Predicates for vector search with filters
+==== Predicates for vector search with filters
 
 When used within `SEARCH`, xref:clauses/where.adoc[`WHERE`] supports the following predicates:
 
@@ -656,9 +684,9 @@ RETURN movie.title AS title, movie.rating AS rating
 
 For further limitations on the `WHERE` predicate, see xref::clauses/search.adoc#limitations-where[Limitations of the `WHERE` predicate].
 
-== More on vector search
+=== More on vector search
 
-=== Using a query vector with different dimensions
+==== Using a query vector with different dimensions
 
 If the query vector has a different dimension than the configured dimension of the vector index, the query will fail.
 
@@ -690,7 +718,7 @@ However, if there are no vectors in the index of the same dimension as the query
 For this reason, it is recommended to configure `vector.dimensions` when xref::indexes/syntax.adoc#create-vector-index[creating vector indexes].
 ====
 
-=== Using a query vector which evaluates to null
+==== Using a query vector which evaluates to null
 If the query vector evaluates to `null`, for example because it refers to a non-existing property, a `SEARCH` clause inside a `MATCH` returns no results.
 
 .A query vector which evaluates to null
@@ -746,7 +774,7 @@ RETURN movie.title AS title
 |===
 ====
 
-=== Using a binding variable which is not from the enclosing clause
+==== Using a binding variable which is not from the enclosing clause
 
 The binding variable in a `SEARCH` clause must be a node or relationship variable from the pattern of the enclosing `MATCH` or `OPTIONAL MATCH` clause.
 Trying to refer to a variable from an earlier clause in the query or introducing a new variable will cause the query to fail.
@@ -799,6 +827,10 @@ link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]
 |===
 
 ====
+
+== Full-text search
+
+Blurp.
 
 [[limitations]]
 == Limitations of the SEARCH clause
