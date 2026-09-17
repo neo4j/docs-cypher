@@ -1,0 +1,250 @@
+import json
+import pathlib
+import re
+import sys
+
+from lark import Lark, Token, Transformer, Tree, v_args
+from lark.reconstruct import Reconstructor
+
+from diagrams import Diagrams
+
+PROJECT_NAME = "docs-cypher"
+
+try:
+    PROJECT_ROOT = next(
+        path for path in pathlib.Path(__file__).parents if path.name == PROJECT_NAME
+    )
+    PAGES_DIR = PROJECT_ROOT / "modules" / "ROOT" / "pages"
+    EXAMPLES_DIR = PROJECT_ROOT / "modules" / "ROOT" / "examples" / "syntax"
+    IMAGES_DIR = PROJECT_ROOT / "modules" / "ROOT" / "images" / "syntax"
+except StopIteration:
+    raise FileNotFoundError(f"Project root '{PROJECT_NAME}' not found")
+
+with open("bnf-grammar.bnf") as f:
+    BNF_GRAMMAR = f.read()
+
+with open("full-grammar.bnf") as f:
+    FULL_GRAMMAR = f.read()
+
+
+def preprocess_grammar(grammar):
+    # Remove one-line comments
+    grammar_fixed = re.sub(r"(#+|!!)[^\n]+\n", "", grammar)
+    # Remove multi-line comments
+    grammar_fixed = re.sub(r"/\*{3}.+\*{3}/", "", grammar_fixed, flags=re.DOTALL)
+    # Replace backslash
+    grammar_fixed = re.sub(r'"\\"', r'"\\\\"', grammar_fixed)
+    # Replace double quotes
+    grammar_fixed = re.sub(r'"""', r'"\""', grammar_fixed)
+
+    # A few hacks to prepare the grammar for cutting
+    # Remove non-grammar lines
+    grammar_fixed = re.sub(r"any character but:.+\s+\|", "", grammar_fixed)
+    # Remove unicode specs
+    grammar_fixed = re.sub("unicode: XID_START", '"unicode: XID_START"', grammar_fixed)
+    grammar_fixed = re.sub(
+        "unicode: XID_CONTINUE", '"unicode: XID_CONTINUE"', grammar_fixed
+    )
+    # Remove push/pop/check
+    grammar_fixed = re.sub(r"push\('\)", r'"PUSH_SINGLE_QUOTE"', grammar_fixed)
+    grammar_fixed = re.sub(r'push\("\)', r'"PUSH_DOUBLE_QUOTE"', grammar_fixed)
+    grammar_fixed = re.sub(r"pop\(\)", r'"POP_SINGLE_QUOTE"', grammar_fixed)
+    grammar_fixed = re.sub(r"check\('\)", r'"CHECK_SINGLE_QUOTE"', grammar_fixed)
+    grammar_fixed = re.sub(r'check\("\)', r'"CHECK_DOUBLE_QUOTE"', grammar_fixed)
+
+    return grammar_fixed
+
+
+def get_rule_name_and_def(tree: Tree):
+    # rule
+    #   lhs
+    #     ruleid      "<" ID ">"
+    #   rhs
+    #     alternatives
+    #       alternative
+    #           ruleid      "<" ID ">"
+    #       ...
+
+    lhs, rhs = tree.children
+
+    assert len(lhs.children) == 1
+    ruleid: Tree = lhs.children[0]
+    assert len(ruleid.children) == 1
+    id_: Token | Tree[Token] = ruleid.children[0]
+    assert isinstance(id_, Token)
+    assert id_.type == "ID"
+
+    return id_.value, rhs
+
+
+def find_definitions(tree: Tree):
+    rules = {}
+
+    for rule in tree.find_data("rule"):
+        rule_name, _ = get_rule_name_and_def(rule)
+        rules[rule_name] = rule
+
+    return rules
+
+
+def find_used_nonterms(tree: Tree, nonterms):
+    for rule in tree.find_data("rule"):
+        _, rule_def = get_rule_name_and_def(rule)
+
+        for ruleid in rule_def.find_data("ruleid"):
+            nonterms.add(ruleid.children[0].value)
+
+    return nonterms
+
+
+def filter_by_nonterms(tree: Tree, nonterms, exclude=None):
+    # used_nonterms = find_used_nonterms(tree, nonterm)
+    used_nonterms = set(nonterms)
+    if exclude is not None and isinstance(exclude, set):
+        used_nonterms = used_nonterms.difference(exclude)
+
+    rules = []
+
+    for rule in tree.find_data("rule"):
+        rule_name, _ = get_rule_name_and_def(rule)
+
+        if rule_name in used_nonterms:
+            rules.append(rule)
+
+    pruned_tree = Tree(tree.data, rules)
+    return pruned_tree
+
+
+def remove_nonterms(tree: Tree, nonterms):
+    rules = []
+
+    for rule in tree.find_data("rule"):
+        rule_name, _ = get_rule_name_and_def(rule)
+
+        if rule_name not in nonterms:
+            rules.append(rule)
+
+    pruned_tree = Tree(tree.data, rules)
+    return pruned_tree
+
+
+def find_terminals(tree: Tree, terms):
+    definitions = find_definitions(tree)
+    rules = {}
+
+    for term in terms:
+        if term in definitions:
+            for rule in definitions[term].find_data("text"):
+                rules[term] = rule
+
+    return rules
+
+
+def reconstruct_grammar(tree: Tree):
+    nonterm = re.compile(r"(<[^>]+>)")
+    rulehead = re.compile(r"(<[^>]+>\s*::=\s*)")
+    term = re.compile(r'("[^"]+")')
+
+    new_g = Reconstructor(parser).reconstruct(tree, insert_spaces=True)
+
+    return re.sub(
+        " {2,}",
+        " ",
+        term.sub(r" \1 ", rulehead.sub(r"\n\1 ", nonterm.sub(r" \1 ", new_g))),
+    ).strip()
+
+
+class Inliner(Transformer):
+    @v_args(tree=True)
+    def ruleid(self, ruleid):
+        if (
+            len(ruleid.children) == 1
+            and ruleid.children[0].value in inline_elements_trees
+        ):
+            return inline_elements_trees[ruleid.children[0].value]
+        else:
+            return ruleid
+
+
+if __name__ == "__main__":
+    # `maybe_placeholders=False` needed for reconstruction
+    parser = Lark(BNF_GRAMMAR, start="rulelist", maybe_placeholders=False)
+    tree_full = parser.parse(preprocess_grammar(FULL_GRAMMAR))
+
+    with open("customization.json") as f:
+        try:
+            customizations = json.load(f)
+        except json.JSONDecodeError:
+            print(
+                "Issues in the customization file. Check that the JSON is complete and correct."
+            )
+            sys.exit(-1)
+
+    patterns = customizations["patterns"]
+    inline_literals = customizations["inline_literals"]
+    links = customizations["links"]
+
+    for pattern in patterns:
+        pattern_name = pattern["name"]
+        pattern_category = pattern["category"]
+        start_nonterm = pattern["start_nonterm"]
+        exclude = set(pattern["exclude"])
+
+        print(f"Updating snippet: '{pattern_name}'")
+
+        filtered_tree = filter_by_nonterms(tree_full, {start_nonterm}, exclude=exclude)
+
+        defs = set(find_definitions(filtered_tree).keys())
+        used_defs = find_used_nonterms(filtered_tree, {start_nonterm})
+
+        MAX_ITER = 100
+        num_iter = 0
+
+        while defs != used_defs and num_iter <= MAX_ITER:
+            filtered_tree = filter_by_nonterms(tree_full, used_defs, exclude=exclude)
+
+            defs = set(find_definitions(filtered_tree).keys())
+            used_defs = find_used_nonterms(filtered_tree, used_defs).difference(exclude)
+
+            num_iter += 1
+
+        if num_iter > MAX_ITER:
+            print("Max iterations exceeded. Check the grammar and the code.")
+
+        inline_elements = set(inline_literals)
+        inline_elements_trees = find_terminals(filtered_tree, inline_literals)
+
+        transformed_tree = Inliner().transform(
+            remove_nonterms(filtered_tree, inline_elements)
+        )
+        reconstructed = reconstruct_grammar(transformed_tree)
+
+        ### Diag
+        diag = Diagrams(transformed_tree, {})
+        svg = diag.get_svg()
+
+        svg_path = IMAGES_DIR / pattern_category
+        svg_path.mkdir(exist_ok=True)
+        svg_file = f"{pattern_name}.svg"
+        with open(svg_path / svg_file, "w") as fw:
+            fw.write(svg)
+
+        bnf_path = EXAMPLES_DIR / pattern_category
+        bnf_path.mkdir(exist_ok=True)
+        processed_grammar_file = f"{pattern_name}.bnf"
+        with open(bnf_path / processed_grammar_file, "w") as fw:
+            for link in links:
+                xref, symbol, exclusions = (
+                    link["xref"],
+                    link["symbol"],
+                    link["exclusions"],
+                )
+                symbol_defined = re.search(f"^{symbol}", reconstructed, re.MULTILINE)
+
+                # If the symbol appears as a nonterminal definition, do not replace with link
+                if processed_grammar_file not in exclusions and symbol_defined is None:
+                    reconstructed = re.sub(
+                        f"{link['symbol']}", f"xref:{xref}[{symbol}]", reconstructed
+                    )
+
+            fw.write(reconstructed)
