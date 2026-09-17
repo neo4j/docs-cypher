@@ -12,7 +12,7 @@ In order to use the `SEARCH` clause, you must first have xref::indexes/semantic-
 
 The `SEARCH` clause has the following syntax:
 
-.Select default Cypher version when creating a database
+.`SEARCH` clause syntax for vector and full-text search
 [.tabbed-example]
 =====
 [.include-with-vector-search]
@@ -58,10 +58,14 @@ The index must be a node vector index if the `binding_variable` refers to a node
 - For vector searches, the `query_vector` can be any expression that evaluates to a `VECTOR` or `LIST<INTEGER NOT NULL | FLOAT NOT NULL>`, for example a literal, a parameter or a property.
 The `SEARCH` clause returns a neighborhood of nodes or relationships based on the similarity between the `query_vector` the corresponding property of those nodes or relationships.
 
-- For fulltext searches, the `query_string` is of type `STRING`, `<skip_integer>` is of type `INTEGER` and the `<analyzer_string>` is of type `STRING`.
-
-- The optional `WHERE` subclause applies a filter to the vector index, and is a restricted version of the normal Cypher xref::clauses/where.adoc[`WHERE` clause].
+- The optional `WHERE` subclause is only allowed in vector searches. It applies a filter to the vector index, and is a restricted version of the normal Cypher xref::clauses/where.adoc[`WHERE` clause].
 For more information, see xref::clauses/search.adoc#vector-search-filtering-predicates[Predicates for vector search with filters].
+
+- For full-text searches, the `query_string` is of type `STRING`.
+
+- The optional `WITH ANALYZER` part is only allowed in full-text searches. The `<analyzer_string>` is of type `STRING` add may not be null.
+
+- The optional `SKIP` or `OFFSET` clause is only allowed in full-text searches. The `<skip_integer>` is of type `INTEGER`, may not be null and must be `0` or positive.
 
 - The `LIMIT` clause sets the number of approximate nearest neighbor nodes or relationships returned by the `SEARCH` clause.
 The `top_k` must be of type `INTEGER NOT NULL` and in the interval `0 \<= top_k \<= 2147483647` footnote:[2147483647 is the `Integer.MAX_VALUE` from Java].
@@ -76,7 +80,9 @@ The `SCORE` value is a vector similarity score from the vector index query.
 When combining `SEARCH` results with full-text results or other scored sources, rank each source independently rather than comparing raw score values directly.
 For a worked example, see link:https://neo4j.com/developer/genai-ecosystem/vector-search/#_hybrid_search[Developer Guide -> Hybrid full-text and vector search].
 
-== Vector saerch
+
+[[vector-search]]
+== Vector search
 
 [[search-example-graph]]
 === Example graph and vector index
@@ -120,6 +126,7 @@ OPTIONS {
 ----
 
 For more information about the creation of vector indexes, see xref::indexes/semantic-indexes/vector-indexes.adoc#create-vector-index[Create vector indexes].
+
 
 === Basic vector search
 
@@ -828,9 +835,301 @@ link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]
 
 ====
 
+
+[role=label--new-Neo4j-2026.09 label--cypher-25-only]
+[[full-text-search]]
 == Full-text search
 
-Blurp.
+[[full-text-search-example-graph]]
+=== Example graph and full-text indexes
+
+The following graph is used for the examples below:
+
+image::full-text-graph.svg[Example graph connecting an employee node to a manager node via an emailed relationship with the message as a property,width=600,role=popup]
+
+To recreate it, run the following query against an empty Neo4j database:
+
+[source, cypher, role=test-setup]
+----
+CREATE (nilsE:Employee {name: "Nils-Erik Karlsson", position: "Engineer", team: "Kernel", peerReviews: ['Nils-Erik is difficult to work with.', 'Nils-Erik is often late for work.']}),
+(lisa:Manager {name: "Lisa Danielsson", position: "Engineering manager"}),
+(nils:Employee {name: "Nils Johansson", position: "Engineer", team: "Operations"}),
+(maya:Employee {name: "Maya Tanaka", position: "Senior Engineer", team:"Operations"}),
+(lisa)-[:REVIEWED {message: "Nils-Erik is reportedly difficult to work with."}]->(nilsE),
+(maya)-[:EMAILED {message: "I have booked a team meeting tomorrow."}]->(nils)
+----
+
+The examples use the following full-text indexes:
+
+[source, cypher, role=test-setup]
+----
+CREATE FULLTEXT INDEX namesAndTeams IF NOT EXISTS
+FOR (n:Employee|Manager) ON EACH [n.name, n.team]
+
+CREATE FULLTEXT INDEX communications FOR ()-[r:REVIEWED|EMAILED]-() ON EACH [r.message]
+OPTIONS {
+  indexConfig: {
+    `fulltext.analyzer`: 'english'
+  }
+}
+
+CREATE FULLTEXT INDEX reviews FOR (n:Employee|Manager) ON EACH [n.peerReviews]
+----
+
+For more information about the creation of full-text indexes, see xref::indexes/semantic-indexes/full-text-indexes.adoc#create-full-text-indexes[Create full-text indexes].
+
+[[full-text-search-examples]]
+=== Full-text search examples
+
+This query uses the `namesAndTeams` full-text index to look for "nils" among the employee and manager nodes:
+
+.Query a full-text index for a node property
+// tag::clauses_search_fulltext_node[]
+[source, cypher]
+----
+MATCH (node)
+  SEARCH node IN (
+    FULLTEXT INDEX namesAndTeams
+    FOR "nils"
+    LIMIT 5
+  )
+  SCORE AS score
+RETURN node.name, score
+----
+// tag::clauses_search_fulltext_node[]
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| node.name | score
+
+| "Nils Johansson" | 0.3300700783729553
+| "Nils-Erik Karlsson" | 0.27725890278816223
+
+2+d|Rows: 2
+|===
+
+This query uses the `communications` full-text index for any `message` containing "meeting":
+
+.Query a full-text index for a relationship property
+[source, cypher]
+// tag::clauses_search_fulltext_relationship[]
+[source, cypher]
+----
+MATCH ()-[relationship]-()
+  SEARCH relationship IN (
+    FULLTEXT INDEX communications
+    FOR "meeting"
+    LIMIT 5
+  )
+  SCORE AS score
+RETURN type(relationship), relationship.message, score
+----
+// tag::clauses_search_fulltext_relationship[]
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| type(relationship) | relationship.message | score
+
+| "EMAILED" | "I have booked a team meeting tomorrow." | 0.3239005506038666
+
+3+d|Rows: 1
+|===
+
+.Query a full-text index for exact matches
+[source, cypher]
+// tag::clauses_search_fulltext_exact_match[]
+[source, cypher]
+----
+MATCH (node)
+  SEARCH node IN (
+    FULLTEXT INDEX namesAndTeams
+    FOR '"Nils-Erik"'
+    LIMIT 5
+  )
+  SCORE AS score
+RETURN node.name, score
+----
+// tag::clauses_search_fulltext_exact_match[]
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| node.name | score
+| "Nils-Erik Karlsson" | 0.7588480710983276
+2+d|Rows: 1
+|===
+
+queryparsersyntax.html#Boolean%20operators[Lucene boolean operators] (`AND`, `OR`, `NOT`, `+`, `-`):
+
+.Query a full-text index using logical operators
+[source, cypher]
+// tag::clauses_search_fulltext_logical_operators[]
+[source, cypher]
+----
+MATCH (node)
+  SEARCH node IN (
+    FULLTEXT INDEX namesAndTeams
+    FOR 'nils AND kernel'
+    LIMIT 5
+  )
+  SCORE AS score
+RETURN node.name, node.team, score
+----
+// tag::clauses_search_fulltext_logical_operators[]
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+
+| node.name | node.team | score
+| "Nils-Erik Karlsson" | "Kernel" | 0.723090410232544
+3+d|Rows: 1
+
+|===
+
+It is possible to limit the search to specific properties, by prefixing `<propertyName>:` to the query string.
+
+.Query a full-text index for specific properties
+[source, cypher]
+// tag::clauses_search_fulltext_specific_properties[]
+[source, cypher]
+----
+MATCH (node)
+  SEARCH node IN (
+    FULLTEXT INDEX namesAndTeams
+    FOR 'team:"Operations"'
+    LIMIT 5
+  )
+  SCORE AS score
+RETURN node.name, node.team, score
+----
+// tag::clauses_search_fulltext_specific_properties[]
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+
+| node.name | node.team | score
+| "Nils Johansson" | "Operations" | 0.21363800764083862
+| "Maya Tanaka"   | "Operations" | 0.21363800764083862
+3+d|Rows: 2
+
+|===
+
+[[string-list-properties]]
+==== Lists of `STRING` values
+
+If the indexed property contains a list of `STRING` values, each entry is analyzed independently and all produced tokens are associated to the same property name.
+This means that when querying such an indexed node or relationship, there is a match if any of the list elements matches the query string.
+For scoring purposes, the full-text index treats it as a single-property value, and the score represents how close the query is to matching the entire list.
+
+.Query a full-text index for content present in a list of `STRING` properties
+[source, cypher]
+// tag::clauses_search_fulltext_list_of_strings[]
+[source, cypher]
+----
+MATCH (node)
+  SEARCH node IN (
+    FULLTEXT INDEX reviews
+    FOR 'late'
+    LIMIT 5
+  )
+  SCORE AS score
+RETURN node.name, node.peerReviews, score
+----
+// tag::clauses_search_fulltext_list_of_strings[]
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+
+| node.name | node.peerReviews| score
+| "Nils-Erik Karlsson" | ["Nils-Erik is difficult to work with.", "Nils-Erik is often late for work."] | 0.13076457381248474
+|===
+
+[[analyzers]]
+==== Using an analyzer
+
+You can query full-text indexes with `SEARCH` and use an analyzer with `WITH ANALYZER`:
+
+.Query a full-text index using an analyzer
+[source, cypher]
+// tag::clauses_search_fulltext_with_analyzer[]
+[source, cypher]
+----
+MATCH ()-[relationship]-()
+  SEARCH relationship IN (
+    FULLTEXT INDEX communications
+    FOR "reportedly" WITH ANALYZER "english"
+    LIMIT 5
+  )
+  SCORE AS score
+RETURN type(relationship), relationship.message, score
+----
+// tag::clauses_search_fulltext_with_analyzer[]
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| type(relationship) | relationship.message | score
+
+| "REVIEWED" | "Nils-Erik is reportedly difficult to work with." | 0.3239005506038666
+
+3+d|Rows: 1
+|===
+
+See xref::indexes/semantic-indexes/full-text-indexes.adoc#tokenization-analyzers[tokenization and analyzers] for more information on analyzers.
+
+
+== Vector and full-text searches and their index counterparts
+
+Trying to query a vector index with `FULLTEXT INDEX` syntax and vice versa results in an error.
+
+.Not allowed -- Trying to query a full-text index with `VECTOR INDEX` syntax
+====
+.Query
+[source, cypher, role=test-fail]
+----
+MATCH (m:Movie {title:'Matrix, The'})
+MATCH (movie:Movie)
+  SEARCH movie IN (
+    VECTOR INDEX namesAndTeams
+    FOR m.embedding
+    LIMIT 5
+  )
+RETURN movie.title AS title 
+----
+
+.GQLSTATUS error chain
+[role="queryresult",stripes="all",cols="1"]
+|===
+| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/22NCG/[22NCG]: error: data exception - wrong index type. Expected the index `namesAndTeams` to be a vector index but was a fulltext index.
+|===
+
+
+.Not allowed -- Trying to query a vector index with `FULLTEXT INDEX` syntax
+====
+.Query
+[source, cypher, role=test-fail]
+----
+MATCH (node)
+  SEARCH node IN (
+    FULLTEXT INDEX moviePlots
+    FOR "nils"
+    LIMIT 5
+  )
+  SCORE AS score
+RETURN node.name, score
+----
+
+.GQLSTATUS error chain
+[role="queryresult",stripes="all",cols="1"]
+|===
+| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/22NCG/[22NCG]: error: data exception - wrong index type. Expected the index `moviePlots` to be a fulltext index but was a vector index.
+|===
+
 
 [[limitations]]
 == Limitations of the SEARCH clause
