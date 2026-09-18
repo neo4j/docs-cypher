@@ -141,17 +141,22 @@ def find_terminals(tree: Tree, terms):
 
 
 def reconstruct_grammar(tree: Tree):
-    nonterm = re.compile(r"(<[^>]+>)")
-    rulehead = re.compile(r"(<[^>]+>\s*::=\s*)")
+    nonterm = re.compile(r'(<[^>"]+>)')
+    rulehead = re.compile(r'(<[^>"]+>\s*::=\s*)')
     term = re.compile(r'("[^"]+")')
 
     new_g = Reconstructor(parser).reconstruct(tree, insert_spaces=True)
 
-    return re.sub(
-        " {2,}",
-        " ",
-        term.sub(r" \1 ", rulehead.sub(r"\n\1 ", nonterm.sub(r" \1 ", new_g))),
-    ).strip()
+    # Add spaces around nonterminals
+    new_g = nonterm.sub(r" \1 ", new_g)
+    # Add newlines to definitions
+    new_g = rulehead.sub(r"\n\1 ", new_g)
+    # Add spaces around terminals
+    new_g = term.sub(r" \1 ", new_g)
+    # Remove spurious spaces
+    new_g = re.sub(" {2,}", " ", new_g).strip()
+
+    return new_g
 
 
 class Inliner(Transformer):
