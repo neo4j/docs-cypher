@@ -2,6 +2,7 @@ import json
 import pathlib
 import re
 import sys
+from collections import OrderedDict
 
 from lark import Lark, Token, Transformer, Tree, v_args
 from lark.reconstruct import Reconstructor
@@ -78,7 +79,7 @@ def get_rule_name_and_def(tree: Tree):
 
 
 def find_definitions(tree: Tree):
-    rules = {}
+    rules = OrderedDict()
 
     for rule in tree.find_data("rule"):
         rule_name, _ = get_rule_name_and_def(rule)
@@ -87,31 +88,33 @@ def find_definitions(tree: Tree):
     return rules
 
 
-def find_used_nonterms(tree: Tree, nonterms):
+def find_used_nonterms(tree: Tree, nonterms: list, exclude: set):
+    used_nonterms = list(nonterms)
+
     for rule in tree.find_data("rule"):
         _, rule_def = get_rule_name_and_def(rule)
 
         for ruleid in rule_def.find_data("ruleid"):
-            nonterms.add(ruleid.children[0].value)
+            nonterm_name = ruleid.children[0].value
+            if nonterm_name not in exclude:
+                used_nonterms.append(nonterm_name)
 
-    return nonterms
+    return used_nonterms
 
 
-def filter_by_nonterms(tree: Tree, nonterms, exclude=None):
-    # used_nonterms = find_used_nonterms(tree, nonterm)
-    used_nonterms = set(nonterms)
-    if exclude is not None and isinstance(exclude, set):
-        used_nonterms = used_nonterms.difference(exclude)
+def filter_by_nonterms(tree: Tree, nonterms: list, exclude=None) -> Tree:
+    if exclude is None:
+        exclude = set()
 
-    rules = []
+    rules: dict[str, Tree] = OrderedDict.fromkeys(nonterms, Tree("", []))
 
     for rule in tree.find_data("rule"):
         rule_name, _ = get_rule_name_and_def(rule)
 
-        if rule_name in used_nonterms:
-            rules.append(rule)
+        if rule_name in nonterms and rule_name not in exclude:
+            rules[rule_name] = rule
 
-    pruned_tree = Tree(tree.data, rules)
+    pruned_tree: Tree = Tree(tree.data, list(rules.values()))
     return pruned_tree
 
 
@@ -189,7 +192,7 @@ if __name__ == "__main__":
     inline_literals = customizations["inline_literals"]
     links = customizations["links"]
 
-    for pattern in patterns:
+    for pattern in patterns[-3:-2]:
         pattern_name = pattern["name"]
         pattern_category = pattern["category"]
         start_nonterm = pattern["start_nonterm"]
@@ -197,19 +200,23 @@ if __name__ == "__main__":
 
         print(f"Updating snippet: '{pattern_name}'")
 
-        filtered_tree = filter_by_nonterms(tree_full, {start_nonterm}, exclude=exclude)
+        filtered_tree = filter_by_nonterms(tree_full, [start_nonterm], exclude=exclude)
 
-        defs = set(find_definitions(filtered_tree).keys())
-        used_defs = find_used_nonterms(filtered_tree, {start_nonterm})
+        defs = find_definitions(filtered_tree).keys()
+        used_defs = find_used_nonterms(filtered_tree, [start_nonterm], exclude=exclude)
+
+        print("Defs", defs, "Used defs", used_defs)
 
         MAX_ITER = 100
         num_iter = 0
 
-        while defs != used_defs and num_iter <= MAX_ITER:
+        while set(defs) != set(used_defs) and num_iter <= MAX_ITER:
             filtered_tree = filter_by_nonterms(tree_full, used_defs, exclude=exclude)
 
-            defs = set(find_definitions(filtered_tree).keys())
-            used_defs = find_used_nonterms(filtered_tree, used_defs).difference(exclude)
+            defs = find_definitions(filtered_tree).keys()
+            used_defs = find_used_nonterms(filtered_tree, used_defs, exclude=exclude)
+
+            print("Defs", defs, "Used defs", used_defs)
 
             num_iter += 1
 
