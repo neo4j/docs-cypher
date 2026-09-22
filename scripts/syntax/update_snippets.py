@@ -192,7 +192,7 @@ if __name__ == "__main__":
     inline_literals = customizations["inline_literals"]
     links = customizations["links"]
 
-    for pattern in patterns[-3:-2]:
+    for pattern in patterns:
         pattern_name = pattern["name"]
         pattern_category = pattern["category"]
         start_nonterm = pattern["start_nonterm"]
@@ -205,7 +205,7 @@ if __name__ == "__main__":
         defs = find_definitions(filtered_tree).keys()
         used_defs = find_used_nonterms(filtered_tree, [start_nonterm], exclude=exclude)
 
-        print("Defs", defs, "Used defs", used_defs)
+        # print("Defs", defs, "Used defs", used_defs)
 
         MAX_ITER = 100
         num_iter = 0
@@ -216,7 +216,7 @@ if __name__ == "__main__":
             defs = find_definitions(filtered_tree).keys()
             used_defs = find_used_nonterms(filtered_tree, used_defs, exclude=exclude)
 
-            print("Defs", defs, "Used defs", used_defs)
+            # print("Defs", defs, "Used defs", used_defs)
 
             num_iter += 1
 
