@@ -78,7 +78,7 @@ def get_rule_name_and_def(tree: Tree):
     return id_.value, rhs
 
 
-def find_definitions(tree: Tree):
+def find_definitions(tree: Tree) -> OrderedDict:
     rules = OrderedDict()
 
     for rule in tree.find_data("rule"):
@@ -135,7 +135,7 @@ def remove_nonterms(tree: Tree, nonterms):
 
 def find_terminals(tree: Tree, terms):
     definitions = find_definitions(tree)
-    rules = {}
+    rules = OrderedDict()
 
     for term in terms:
         if term in definitions:
