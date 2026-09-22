@@ -88,8 +88,10 @@ def find_definitions(tree: Tree):
     return rules
 
 
-def find_used_nonterms(tree: Tree, nonterms: list, exclude: set):
-    used_nonterms = list(nonterms)
+def find_used_nonterms(tree: Tree, exclude: set) -> list:
+    # Extract all nonterminals from a given tree excluding the ones in
+    # the `exclude` set
+    used_nonterms = []
 
     for rule in tree.find_data("rule"):
         _, rule_def = get_rule_name_and_def(rule)
@@ -203,7 +205,7 @@ if __name__ == "__main__":
         filtered_tree = filter_by_nonterms(tree_full, [start_nonterm], exclude=exclude)
 
         defs = find_definitions(filtered_tree).keys()
-        used_defs = find_used_nonterms(filtered_tree, [start_nonterm], exclude=exclude)
+        used_defs = [start_nonterm] + find_used_nonterms(filtered_tree, exclude=exclude)
 
         # print("Defs", defs, "Used defs", used_defs)
 
@@ -214,7 +216,7 @@ if __name__ == "__main__":
             filtered_tree = filter_by_nonterms(tree_full, used_defs, exclude=exclude)
 
             defs = find_definitions(filtered_tree).keys()
-            used_defs = find_used_nonterms(filtered_tree, used_defs, exclude=exclude)
+            used_defs += find_used_nonterms(filtered_tree, exclude=exclude)
 
             # print("Defs", defs, "Used defs", used_defs)
 
