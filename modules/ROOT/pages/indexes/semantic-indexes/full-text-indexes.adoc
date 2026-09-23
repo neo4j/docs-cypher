@@ -138,14 +138,53 @@ For more information on how to configure full-text indexes, refer to the link:{n
 [[query-full-text-indexes]]
 == Query full-text indexes
 
-Unlike xref:indexes/search-performance-indexes/index.adoc[], full-text indexes are not automatically used by the xref:planning-and-tuning/execution-plans.adoc[Cypher query planner].
-To query a full-text index, use either the link:{neo4j-docs-base-uri}/operations-manual/current/procedures/built-in-procedures/#procedure_db_index_fulltext_queryNodes[`db.index.fulltext.queryNodes()`] or the link:{neo4j-docs-base-uri}/operations-manual/current/procedures/built-in-procedures/#procedure_db_index_fulltext_queryRelationships[`db.index.fulltext.queryRelationships()`] procedure.
+Unlike search-performance xref:indexes/search-performance-indexes/create-indexes.adoc#create-text-index[text indexes], full-text indexes capture the semantic meaning or context of the data in a database.
+This is done by returning an approximation score, which indicates the similarity between a query string and the data in a database.
+
+As of Neo4j 2026.09, the preferred way of querying full-text indexes is by using the xref::clauses/search.adoc[SEARCH] clause.
+As an alternative, use either the link:{neo4j-docs-base-uri}/operations-manual/current/procedures/built-in-procedures/#procedure_db_index_fulltext_queryNodes[`db.index.fulltext.queryNodes()`] or the link:{neo4j-docs-base-uri}/operations-manual/current/procedures/built-in-procedures/#procedure_db_index_fulltext_queryRelationships[`db.index.fulltext.queryRelationships()`] procedure.
 
 [NOTE]
 An index cannot be used while its `state` is `POPULATING`, which occurs immediately after it is created.
 To check the `state` of a full-text index -- whether it is `ONLINE` (usable) or `POPULATING` (still being built; the `populationPercent` column shows the progress of the index creation) -- run the following command: `SHOW FULLTEXT INDEXES`.
 
-This query uses the `db.index.fulltext.queryNodes()` procedure to look for `nils` in the previously created full-text index `namesAndTeams`:
+[role=label--new-Neo4j-2026.09 label--cypher-25-only]
+[[query-full-text-search]]
+=== Querying a full-text index using the SEARCH clause
+
+This query uses the previously created full-text index `namesAndTeams` to look for "nils" among the employee and manager nodes:
+
+.Query a full-text index for a node property
+// tag::clauses_search_fulltext_node[]
+[source, cypher]
+----
+MATCH (node)
+  SEARCH node IN (
+    FULLTEXT INDEX namesAndTeams
+    FOR "nils"
+    LIMIT 5
+  )
+  SCORE AS score
+RETURN node.name, score
+----
+// tag::clauses_search_fulltext_node[]
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| node.name | score
+
+| "Nils Johansson" | 0.3300700783729553
+| "Nils-Erik Karlsson" | 0.27725890278816223
+
+2+d|Rows: 2
+|===
+
+
+[[query-full-text-procedure]]
+=== Querying a full-text index using the db.index.vector.queryNodes() procedure
+
+This query uses the previously created full-text index `namesAndTeams` to look for "nils" among the employee and manager nodes:
 
 .Query a full-text index for a node property
 // tag::indexes_semantic_fulltext_query[]
@@ -182,6 +221,10 @@ The `score` results are always returned in _descending score order_, where the b
 Full-text scores are meaningful within the result set from a full-text query.
 When combining full-text results with vector results or other scored sources, rank each source independently rather than comparing raw score values directly.
 For a worked example, see link:https://neo4j.com/developer/genai-ecosystem/vector-search/#_hybrid_search[Developer Guide -> Hybrid full-text and vector search].
+
+=== Querying a relationship full-search index
+
+To query a relationship full-text index, use the Cypher xref::clauses/search.adoc[SEARCH] clause or the link:{neo4j-docs-base-uri}/operations-manual/current/procedures/built-in-procedures/#procedure_db_index_vector_queryRelationships[`db.index.vector.queryRelationships`] procedure in a similar manner as shown for node full-text indexes above.
 
 This query uses the `db.index.fulltext.queryRelationships()` procedure to query the previously created `communications` full-text index for any `message` containing "meeting":
 
@@ -263,7 +306,7 @@ A complete description of the Lucene query syntax can be found in the link:https
 
 
 [[string-list-properties]]
-=== Lists of `STRING` values
+==== Lists of `STRING` values
 
 If the indexed property contains a list of `STRING` values, each entry is analyzed independently and all produced tokens are associated to the same property name.
 This means that when querying such an indexed node or relationship, there is a match if any of the list elements matches the query string.
