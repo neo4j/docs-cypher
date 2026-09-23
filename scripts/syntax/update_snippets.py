@@ -252,7 +252,7 @@ if __name__ == "__main__":
             for link in links:
                 xref, symbol, exclusions = (
                     link["xref"],
-                    link["symbol"],
+                    f'<{link["symbol"]}>',
                     link["exclusions"],
                 )
                 symbol_defined = re.search(f"^{symbol}", reconstructed, re.MULTILINE)
@@ -260,12 +260,12 @@ if __name__ == "__main__":
                 # If the symbol appears as a nonterminal definition, do not replace with link
                 if processed_grammar_file not in exclusions and symbol_defined is None:
                     reconstructed = re.sub(
-                        f"{link['symbol']}", f"xref:{xref}[{symbol}]", reconstructed
+                        f"{symbol}", f"xref:{xref}[{symbol}]", reconstructed
                     )
 
             fw.write(reconstructed)
 
-        all_links = {link["symbol"].strip("<").strip(">") for link in links}
+        all_links = {link["symbol"] for link in links}
         missing_links = exclude.difference(all_links)
         if missing_links:
             print(" * Missing links:", missing_links)
