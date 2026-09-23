@@ -194,6 +194,8 @@ if __name__ == "__main__":
     inline_literals = customizations["inline_literals"]
     links = customizations["links"]
 
+    all_missing_links = set()
+
     for pattern in patterns:
         pattern_name = pattern["name"]
         pattern_category = pattern["category"]
@@ -262,3 +264,12 @@ if __name__ == "__main__":
                     )
 
             fw.write(reconstructed)
+
+        all_links = {link["symbol"].strip("<").strip(">") for link in links}
+        missing_links = exclude.difference(all_links)
+        if missing_links:
+            print(" * Missing links:", missing_links)
+            all_missing_links.update(missing_links)
+
+    if all_missing_links:
+        print(f"There are {len(all_missing_links)} missing links")
