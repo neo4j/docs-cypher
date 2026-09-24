@@ -1,0 +1,258 @@
+:description: The `DEFINE` clause lets users define a named procedure or function that can be used in the same query.
+:page-role: new-neo4j-yyyy.mm cypher-25-only
+= DEFINE
+
+The `DEFINE` clause lets users define named procedures or functions local to the query in which they are defined.
+
+This allows a piece of logic, expressed as a function or a procedure, to be defined once and invoked multiple times within the same query, instead of duplicating it.
+Reducing duplication in this way improves readability and lowers the risk of inconsistency when that logic needs to change.
+
+[[example-graph]]
+== Example graph
+
+A graph with the following schema is used for the examples below:
+
+image::let-graph.svg[Example graph connecting suppliers, products, and customers,width=600,role=popup]
+
+To recreate the graph, run the following query against an empty Neo4j database.
+
+[source, cypher, role=test-setup]
+----
+CREATE (techCorp:Supplier {name: 'TechCorp', email: 'contact@techcorp.com'}),
+       (foodies:Supplier {name: 'Foodies Inc.', email: 'info@foodies.com'}),
+             
+       (laptop:Product {name: 'Laptop', price: 1000}),
+       (phone:Product {name: 'Phone', price: 500}),
+       (headphones:Product {name: 'Headphones', price: 250}),
+       (chocolate:Product {name: 'Chocolate', price: 5}),
+       (coffee:Product {name: 'Coffee', price: 10}),
+             
+       (amir:Customer {firstName: 'Amir', lastName: 'Rahman', email: 'amir.rahman@example.com', discount: 0.1}),
+       (keisha:Customer {firstName: 'Keisha', lastName: 'Nguyen', email: 'keisha.nguyen@example.com', discount: 0.2}),
+       (mateo:Customer {firstName: 'Mateo', lastName: 'Ortega', email: 'mateo.ortega@example.com', discount: 0.05}),
+       (hannah:Customer {firstName: 'Hannah', lastName: 'Connor', email: 'hannah.connor@example.com', discount: 0.15}),
+       (leila:Customer {firstName: 'Leila', lastName: 'Haddad', email: 'leila.haddad@example.com', discount: 0.1}),
+       (niko:Customer {firstName: 'Niko', lastName: 'Petrov', email: 'niko.petrov@example.com', discount: 0.25}),
+       (yusuf:Customer {firstName: 'Yusuf', lastName: 'Abdi', email: 'yusuf.abdi@example.com', discount: 0.1}),
+
+       (amir)-[:BUYS {date: date('2024-10-09')}]->(laptop),
+       (amir)-[:BUYS {date: date('2025-01-10')}]->(chocolate),
+       (keisha)-[:BUYS {date: date('2023-07-09')}]->(headphones),
+       (mateo)-[:BUYS {date: date('2025-03-05')}]->(chocolate),
+       (mateo)-[:BUYS {date: date('2025-03-05')}]->(coffee),
+       (mateo)-[:BUYS {date: date('2024-04-11')}]->(laptop),
+       (hannah)-[:BUYS {date: date('2023-12-11')}]->(coffee),
+       (hannah)-[:BUYS {date: date('2024-06-02')}]->(headphones),
+       (leila)-[:BUYS {date: date('2023-05-17')}]->(laptop),
+       (niko)-[:BUYS {date: date('2025-02-27')}]->(phone),
+       (niko)-[:BUYS {date: date('2024-08-23')}]->(headphones),
+       (niko)-[:BUYS {date: date('2024-12-24')}]->(coffee),
+       (yusuf)-[:BUYS {date: date('2024-12-24')}]->(chocolate),
+       (yusuf)-[:BUYS {date: date('2025-01-02')}]->(laptop),
+        
+       (techCorp)-[:SUPPLIES]->(laptop),
+       (techCorp)-[:SUPPLIES]->(phone),
+       (techCorp)-[:SUPPLIES]->(headphones),
+       (foodies)-[:SUPPLIES]->(chocolate),
+       (foodies)-[:SUPPLIES]->(coffee)
+----
+
+[[define-function]]
+== `DEFINE FUNCTION`
+
+A local function can be defined with either an expression body or a query body:
+
+[source, syntax]
+----
+DEFINE FUNCTION name ( [parameters] ) [ :: returnType ] = <expression>
+
+DEFINE FUNCTION name ( [parameters] ) [ :: returnType ] {
+<query>
+}
+----
+
+* `name`:  the function name.
+* `parameters`:  a comma-separated list of parameter declarations, described in xref:clauses/define.adoc#parameters[].
+* `returnType`: an optional, single type declaration for the value the function returns, described in xref:clauses/define.adoc#return-types[].
+* The `<expression>` form evaluates a single expression and returns its value.
+* The `<query>` form, enclosed in braces, can contain any sequence of Cypher clauses that a subquery can contain, and must conclude with a `RETURN` of a single value matching `returnType`, if declared.
+This is enforced using either `LIMIT 1` or a return item using an aggregating function.
+
+.Local function with expression body
+[source, cypher]
+----
+DEFINE FUNCTION isEven(num) = 
+  CASE WHEN num % 2 = 0 THEN true ELSE false END
+UNWIND range(1,4) AS x
+RETURN x, isEven(x)
+----
+
+.Result
+[role="queryresult",cols="2*<m"]
+|===
+| x | isEven(x)
+
+| 1 | false
+| 2 | true
+| 3 | false
+| 4 | true
+
+2+d|Rows: 4
+|===
+
+In the below example, the defined function `getSupplierName` looks up the supplier of a product, and is called once per product in the `UNWIND`.
+Note the use of `LIMIT 1` in the return body, which is necessary to guarantee that the query body returns at most one row.
+
+.Local function with query body
+[source, cypher]
+----
+DEFINE FUNCTION getSupplierName(productName) {
+  OPTIONAL MATCH (s:Supplier)-[:SUPPLIES]->(p:Product {name: productName})
+  RETURN s.name LIMIT 1
+}
+UNWIND ['Laptop', 'Chocolate', 'Umbrella', 'Coffee'] AS productName
+RETURN productName, getSupplierName(productName) AS supplier
+----
+
+.Result
+[role="queryresult",cols="2*<m"]
+|===
+| productName  | supplier
+
+| "Laptop"     | "TechCorp"
+| "Chocolate"  | "Foodies Inc."
+| "Umbrella"   | NULL
+| "Coffee"     | "Foodies Inc."
+
+2+d|Rows: 4
+|===
+
+In the below example, the defined function `getNumberOfPurchases` counts how many times a given product has been bought.
+Note the use of the aggregating function xref:functions/aggregating.adoc#functions-count[`count()`] in the return body, which guarantees that the query body returns at most one row, without needing `LIMIT 1`.
+
+.Local function with query body using an aggregating function
+[source, cypher]
+----
+DEFINE FUNCTION getNumberOfPurchases(productName) {
+  MATCH (:Customer)-[:BUYS]->(p:Product {name: productName})
+  RETURN count(p)
+}
+LET productName = 'Laptop'
+RETURN productName, getNumberOfPurchases(productName) AS numPurchases
+----
+
+.Result
+[role="queryresult",cols="2*<m"]
+|===
+| productName | numPurchases
+
+| "Laptop"    | 4
+
+2+d|Rows: 1
+|===
+
+In the below example, the function `isAffordable` is defined locally within a xref:subqueries/collect.adoc/[`COLLECT`] subquery, and is only in scope for that subquery.
+
+.Local function definition in a scalar subquery
+[source, cypher]
+----
+RETURN COLLECT {
+  DEFINE FUNCTION isAffordable(price) =
+    CASE WHEN price < 100 THEN true ELSE false END
+  MATCH (p:Product)
+  FILTER isAffordable(p.price)
+  RETURN p.name
+} AS affordableProducts
+----
+
+.Result
+[options="header"]
+|===
+| affordableProducts
+| ["Chocolate", "Coffee"]
+|===
+
+RETURN COLLECT {
+  DEFINE FUNCTION isEven(num) = 
+    CASE WHEN num % 2 = 0 THEN true ELSE false END
+  UNWIND range(1,4) AS x
+  FILTER isEven(x)
+  RETURN x
+} AS evens
+
+
+
+
+
+
+
+
+
+[[define-procedure]]
+=== `DEFINE PROCEDURE`
+
+[source, syntax]
+----
+DEFINE PROCEDURE name ( [parameters] ) [ :: ( [returnFields] ) ] {
+<query>
+}
+----
+
+* `name`: the procedure name.
+* `parameters`: a comma-separated list of parameter declarations, described in xref:clauses/define.adoc#parameters[].
+* `returnFields`: an optional, comma-separated list of named, typed return fields, described in xref:clauses/define.adoc#return-types[].
+If omitted, the procedure's output is inferred.
+* The `<query>` can contain any sequence of Cypher clauses that a xref:subqueries/index.adoc[subquery] can contain, and must conclude with a `RETURN` matching the declared `returnFields`, if any.
+
+[source, syntax]
+----
+DEFINE PROCEDURE name ( [parameters] ) [ :: ( [returnFields] ) ] {
+  ...
+}
+----
+
+* `name` and `parameters` are as for functions.
+* `returnFields` — an optional, comma-separated list of named, typed return fields, described in <<Return types>>. If omitted, the procedure's output is inferred.
+* The body, enclosed in braces, can contain any sequence of Cypher clauses that a subquery can contain, and must conclude with a `RETURN` (or `FINISH`) that matches the declared return fields, if any.
+
+
+[[basic-examples]]
+== Basic examples
+
+.User defined function with an expression body
+[source, cypher]
+----
+DEFINE FUNCTION square(num) = num * num
+UNWIND [1, 2, 3, 4] AS x
+RETURN x, square(x) AS squared
+----
+
+[[parameters]]
+== Parameters
+
+[[return-types]]
+== Return types
+
+[[rules]]
+== Rules
+
+`DEFINE` cannot be used to define procedures or functions available outside of the query in which they are defined.
+
+[[namespacing]]
+=== Namespacing
+
+Both procedure and function names can optionally include a namespace, using dot-separated segments.
+This mirrors the naming convention used by built-in and library procedures and functions.
+
+[source, cypher]
+----
+DEFINE FUNCTION foo.bar() = 123
+RETURN foo.bar()
+----
+
+[source, cypher]
+----
+DEFINE PROCEDURE foo.bar() { RETURN 123 AS abc }
+CALL foo.bar() YIELD abc
+RETURN abc
+----
