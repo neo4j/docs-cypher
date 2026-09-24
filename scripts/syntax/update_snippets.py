@@ -262,8 +262,7 @@ if __name__ == "__main__":
         processed_grammar_file = f"{pattern_name}.bnf"
         with open(bnf_path / processed_grammar_file, "w") as fw:
             for link in links:
-                xref, symbol, exclusions = (
-                    link["xref"],
+                symbol, exclusions = (
                     f'<{link["symbol"]}>',
                     link["exclusions"],
                 )
@@ -271,8 +270,15 @@ if __name__ == "__main__":
 
                 # If the symbol appears as a nonterminal definition, do not replace with link
                 if processed_grammar_file not in exclusions and symbol_defined is None:
+                    xref_or_link = link.get("xref")
+                    if xref_or_link is not None:
+                        xref_or_link = f"xref:{xref_or_link}[{symbol}]"
+                    else:
+                        xref_or_link = link["link"]
+                        xref_or_link = f"link:{xref_or_link}[{symbol}]"
+
                     reconstructed = re.sub(
-                        f"{symbol}", f"xref:{xref}[{symbol}]", reconstructed
+                        f"{symbol}", xref_or_link, reconstructed
                     )
 
             fw.write(reconstructed)
