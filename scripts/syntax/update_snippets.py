@@ -28,11 +28,18 @@ with open("full-grammar.bnf") as f:
     FULL_GRAMMAR = f.read()
 
 
-def preprocess_grammar(grammar):
+def clean_grammar(grammar):
     # Remove one-line comments
-    grammar_fixed = re.sub(r"(#+|!!)[^\n]+\n", "", grammar)
+    grammar_clean = re.sub(r"(#+|!!)[^\n]+\n+", "", grammar)
     # Remove multi-line comments
-    grammar_fixed = re.sub(r"/\*{3}.+\*{3}/", "", grammar_fixed, flags=re.DOTALL)
+    grammar_clean = re.sub(r"/\*{3}.+\*{3}/", "", grammar_clean, flags=re.DOTALL)
+
+    return grammar_clean
+
+
+def preprocess_grammar(grammar):
+    grammar_fixed = clean_grammar(grammar)
+
     # Replace backslash
     grammar_fixed = re.sub(r'"\\"', r'"\\\\"', grammar_fixed)
     # Replace double quotes
@@ -177,6 +184,11 @@ class Inliner(Transformer):
 
 
 if __name__ == "__main__":
+    with open(EXAMPLES_DIR / "full-grammar" / "full-grammar.bnf", "w") as fw:
+        print("Updating full grammar file")
+        full_grammar = clean_grammar(FULL_GRAMMAR)
+        fw.write(full_grammar)
+
     # `maybe_placeholders=False` needed for reconstruction
     parser = Lark(BNF_GRAMMAR, start="rulelist", maybe_placeholders=False)
     tree_full = parser.parse(preprocess_grammar(FULL_GRAMMAR))
