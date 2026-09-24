@@ -96,8 +96,8 @@ def find_definitions(tree: Tree) -> OrderedDict:
 
 
 def find_used_nonterms(tree: Tree, exclude: set) -> list:
-    # Extract all nonterminals from a given tree excluding the ones in
-    # the `exclude` set
+    # Extract all nonterminals from a given tree excluding the ones in
+    # the `exclude` set
     used_nonterms = []
 
     for rule in tree.find_data("rule"):
@@ -263,7 +263,7 @@ if __name__ == "__main__":
         with open(bnf_path / processed_grammar_file, "w") as fw:
             for link in links:
                 symbol, exclusions = (
-                    f'<{link["symbol"]}>',
+                    f"<{link['symbol']}>",
                     link["exclusions"],
                 )
                 symbol_defined = re.search(f"^{symbol}", reconstructed, re.MULTILINE)
@@ -277,9 +277,7 @@ if __name__ == "__main__":
                         xref_or_link = link["link"]
                         xref_or_link = f"link:{xref_or_link}[{symbol}]"
 
-                    reconstructed = re.sub(
-                        f"{symbol}", xref_or_link, reconstructed
-                    )
+                    reconstructed = re.sub(f"{symbol}", xref_or_link, reconstructed)
 
             fw.write(reconstructed)
 
