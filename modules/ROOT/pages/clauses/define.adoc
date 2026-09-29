@@ -30,11 +30,13 @@ DEFINE FUNCTION name ( [parameters] ) [ :: returnType ] {
 ----
 
 * `name`:  the function name.
-* `parameters`:  a comma-separated list of parameter declarations, described in xref:clauses/define.adoc#parameters[].
+* `parameters`:  a comma-separated list of parameter declarations.
 * `returnType`: an optional, single type declaration for the value the function returns, described in xref:clauses/define.adoc#return-types[].
 * The `<expression>` form evaluates a single expression and returns its value.
-* The `<query>` form, enclosed in braces, can contain any sequence of Cypher clauses that a  xref:subqueries/index.adoc[subquery] can contain, and must conclude with a `RETURN` of a single value matching `returnType`, if declared.
+* The `<query>` form enclosed in braces must conclude with a `RETURN` of a single value matching `returnType`, if declared.
 This is enforced using either `LIMIT 1` or a return item using an aggregating function.
+
+For more information, see xref:clauses/define.adoc#rules[] below.
 
 ======
 [.include-with-define-local-procedure]
@@ -51,10 +53,12 @@ DEFINE PROCEDURE name ( [parameters] ) [ :: ( [returnFields] ) ] {
 ----
 
 * `name`: the procedure name.
-* `parameters`: a comma-separated list of parameter declarations, described in xref:clauses/define.adoc#parameters[].
+* `parameters`: a comma-separated list of parameter declarations.
 * `returnFields`: an optional, comma-separated list of named, typed return fields, described in xref:clauses/define.adoc#return-types[].
 If omitted, the procedure's output is inferred.
-* `<query>`: can contain any sequence of Cypher clauses that a xref:subqueries/index.adoc[subquery] can contain, and must conclude with a `RETURN` matching the declared `returnFields`, if any.
+* `<query>`: must conclude with a `RETURN` matching the declared `returnFields`, if any.
+
+For more information, see xref:clauses/define.adoc#rules[] below.
 
 ======
 =====
@@ -109,11 +113,8 @@ CREATE (techCorp:Supplier {name: 'TechCorp', email: 'contact@techcorp.com'}),
        (foodies)-[:SUPPLIES]->(coffee)
 ----
 
-
-[[examples]]
-== Examples 
-
-=== Basic examples
+[[basic-examples]]
+== Basic examples
 
 .`DEFINE FUNCTION`
 =====
@@ -327,7 +328,7 @@ RETURN customer.firstName AS newCustomer, customer.discount AS discount
 =====
 
 [[multiple-invocations]]
-=== Multiple invocations
+== Multiple invocations
 
 A local function or procedure can be invoked more than once in the same query, with each invocation potentially using different arguments or building on the result of a previous one.
 
@@ -398,7 +399,7 @@ RETURN firstProduct, firstDate, secondProduct, secondDate
 
 
 [[multiple-definitions]]
-=== Multiple definitions
+== Multiple definitions
 
 A query can define multiple local functions and procedures, and they can be invoked several times in that same query.
 Local functions and procedures can also invoke one another; i.e. a local function or procedure can be built by composing other local functions or procedures, rather than duplicating their logic.
@@ -476,28 +477,268 @@ RETURN customer, gift
 
 =====
 
+[[combine-define-function-and-define-procedure]]
+== Combining local functions and procedures in the same query
 
-[[parameters]]
-== Parameters
+A single query can define and use both local functions and local procedures together: a function to compute or check a value, and a procedure to look up or write data based on it.
+
+.Combine `DEFINE FUNCTION` and `DEFINE PROCEDURE`
+=====
+
+.Combining a local function and a local procedure
+[source, cypher]
+----
+DEFINE FUNCTION getLoyaltyTier(discount) =
+  CASE WHEN discount >= 0.2 THEN 'gold'
+       WHEN discount >= 0.1 THEN 'silver'
+       ELSE 'bronze'
+  END
+DEFINE PROCEDURE tagCustomer(customer, tierName) {
+  MERGE (t:Tier {name: tierName})
+  CREATE (customer)-[:IN_TIER]->(t)
+  RETURN t AS tier
+}
+MATCH (c:Customer)
+CALL tagCustomer(c, getLoyaltyTier(c.discount)) YIELD tier
+RETURN c.firstName AS customer,
+       tier.name AS tier
+----
+
+.Result
+[role="queryresult",cols="2*<m"]
+|===
+| customer | tier
+
+| "Amir"   | "bronze"
+| "Keisha" | "gold"
+| "Mateo"  | "bronze"
+| "Hannah" | "silver"
+| "Leila"  | "bronze"
+| "Niko"   | "gold"
+| "Yusuf"  | "bronze"
+| "Oscar"  | "bronze"
+| "Priya"  | "bronze"
+
+2+d|Rows: 9
+|===
+
+
+.Local procedure and local function with the same name in arms of a `UNION`
+[source, cypher]
+----
+{
+  DEFINE PROCEDURE isEven(from, to) {
+    UNWIND range(from, to) AS x
+    RETURN x, x % 2 = 0 AS even
+  }
+  CALL isEven(1, 3) YIELD x, even
+  RETURN x, even
+} UNION {
+  DEFINE FUNCTION isEven(num) =
+    CASE WHEN num % 2 = 0 THEN true ELSE false END
+  UNWIND range(4, 6) AS x
+  RETURN x, isEven(x) AS even
+}
+----
+
+.Result
+[role="queryresult",cols="2*<m"]
+|===
+| x | even
+
+| 1 | false
+| 2 | true
+| 3 | false
+| 4 | true
+| 5 | false
+| 6 | true
+
+2+d|Rows: 6
+|===
+=====
+
+[[parameter-types]]
+== Parameter types
+
+Local functions and procedures can declare parameter types with optional default values.
+All xref:values-and-types/property-structural-constructed.adoc#types-synonyms[Cypher types] are allowed, except their `NOT NULL` variants.
+Attempting to invoke a local function or procedure with an argument of a different type than that assigned as the parameter type will cause a type mismatch error.
+
+.Declare typed parameters
+=====
+
+`isAffordable` declares its `price` parameter as a `FLOAT`.
+Calling it with an argument that isn't assignable to that type causes a type error, the same as calling any existing typed function.
+
+.Local function with a typed parameter
+[source, cypher]
+----
+DEFINE FUNCTION isAffordable(price :: FLOAT) =
+  price < 100
+
+UNWIND [5.0, 250.0, 1000.0] AS price
+RETURN price, isAffordable(price) AS affordable
+----
+
+.Result
+[role="queryresult",cols="2*<m"]
+|===
+| price  | affordable
+
+| 5.0    | true
+| 250.0  | false
+| 1000.0 | false
+
+2+d|Rows: 3
+|===
+
+.Local procedure with a typed parameter
+[source, cypher]
+----
+DEFINE PROCEDURE getProductsCheaperThan(maxPrice :: FLOAT) {
+  MATCH (p:Product)
+  WHERE p.price < maxPrice
+  RETURN p.name AS product,
+         p.price AS price
+}
+CALL getProductsCheaperThan(100.0) YIELD product, price
+RETURN product, price
+----
+
+.Result
+[role="queryresult",cols="2*<m"]
+|===
+| product | price
+
+| "Chocolate" | 5
+| "Coffee"    | 10
+
+2+d|Rows: 2
+|===
+
+=====
+
+.Declare parameters with type and optional default values
+=====
+
+`greet` declares `greeting` as a `STRING` parameter with a default value of `'Hello'`, used whenever the caller omits that argument.
+
+.Local function with a typed, defaulted parameter
+[source, cypher]
+----
+DEFINE FUNCTION greet(name :: STRING, greeting :: STRING = 'Hello') =
+  greeting + ', ' + name + '!'
+
+RETURN greet('Mateo') AS defaultGreeting,
+       greet('Mateo', 'Welcome') AS customGreeting
+----
+
+.Result
+[role="queryresult",cols="2*<m"]
+|===
+| defaultGreeting  | customGreeting
+
+| "Hello, Mateo!"  | "Welcome, Mateo!"
+
+2+d|Rows: 1
+|===
+
+=====
+
 
 [[return-types]]
 == Return types
 
-[[combining-local-functions-and-local-procedures]]
-== Combining local functions and local procedures
+Local functions and procedures can optionally declare a return type.
+All xref:values-and-types/property-structural-constructed.adoc#types-synonyms[Cypher types] are allowed, except their `NOT NULL` variants.
+The body's result must match the declared type, or the call fails with a type error.
 
 
+.Declare a return type
+=====
+
+`createCustomer` declares that it returns a single `NODE`, in the named field `customer`.
+
+.Local procedure with a return type
+[source, cypher]
+----
+DEFINE PROCEDURE createCustomer(firstName) :: (customer :: NODE)
+{
+  CREATE (c:Customer {firstName: firstName, discount: 0.0})
+  RETURN c AS customer
+}
+CALL createCustomer('Deniz') YIELD customer
+RETURN customer.firstName AS firstName
+----
+
+.Result
+[role="queryresult",cols="1*<m"]
+|===
+| firstName
+
+| "Deniz"
+
+1+d|Rows: 1
+|===
+
+`isAffordable` declares that it returns a `BOOLEAN`.
+
+.Local function with a return type
+[source, cypher]
+----
+DEFINE FUNCTION isAffordable(price) :: BOOLEAN =
+  price < 100
+
+RETURN isAffordable(50) AS affordable
+----
+
+.Result
+[role="queryresult",cols="1*<m"]
+|===
+| affordable
+
+| true
+
+1+d|Rows: 1
+|===
+
+=====
 
 [[rules]]
 == Rules
 
-`DEFINE` cannot be used to define procedures or functions available outside of the query in which they are defined.
+* `DEFINE` cannot be used to define procedures or functions available outside of the query in which they are defined.
++
+The following example fails, because `isAffordable` is defined inside the `CALL {}` subquery, and is out of scope once that subquery ends.
++
+.Local function out of scope outside its enclosing subquery
+[source, cypher, role=test-fail]
+----
+MATCH (p:Product)
+CALL (p) {
+  DEFINE FUNCTION isAffordable(price) = price < 100
+  RETURN isAffordable(p.price) AS affordable
+}
+RETURN p.name, isAffordable(p.price) AS affordableAgain
+----
++
+.Error
+[source, error]
+----
+The function isAffordable() was not found. Verify that the spelling is correct.
+----
+
+* A local function or procedure must be defined before it is called.
+* A local function or procedure can only be called from within the same procedure specification it is defined in, not from a more deeply nested one.
+* A local function or procedure cannot call itself, directly or indirectly (no recursion).
+* A local function cannot be invoked in a xref:clauses/use.adoc[`USE`] clause, with a set quantifier such as `DISTINCT`, or in xref:clauses/skip.adoc[`SKIP`] or xref:clauses/limit.adoc[`LIMIT`].
+* `DEFINE` cannot be combined with xref:subqueries/subqueries-in-transactions.adoc[`CALL { ... } IN TRANSACTIONS`].
+
 
 [[namespacing]]
-=== Namespacing
+== Namespacing
 
 Both procedure and function names can optionally include a namespace, using dot-separated segments.
-This mirrors the naming convention used by built-in and library procedures and functions.
 
 [source, cypher]
 ----
