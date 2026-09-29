@@ -1,11 +1,63 @@
-:description: The `DEFINE` clause lets users define a named procedure or function that can be used in the same query.
+:description: The `DEFINE` clause lets users define named functions or procedures that can be used in the same query.
 :page-role: new-neo4j-yyyy.mm cypher-25-only
 = DEFINE
 
-The `DEFINE` clause lets users define named procedures or functions local to the query in which they are defined.
+The `DEFINE` clause lets users define named functions or procedures local to the query in which they are defined.
 
 This allows a piece of logic, expressed as a function or a procedure, to be defined once and invoked multiple times within the same query, instead of duplicating it.
 Reducing duplication in this way improves readability and lowers the risk of inconsistency when that logic needs to change.
+
+== `DEFINE` clause template
+
+The `DEFINE` clause has the following templates:
+
+.`DEFINE` clause template for local functions and local procedures
+[.tabbed-example]
+=====
+[.include-with-define-local-function]
+======
+
+A local function can be defined with either an expression body or a query body:
+
+.`DEFINE FUNCTION`
+[source, syntax]
+----
+DEFINE FUNCTION name ( [parameters] ) [ :: returnType ] = <expression>
+
+DEFINE FUNCTION name ( [parameters] ) [ :: returnType ] {
+<query>
+}
+----
+
+* `name`:  the function name.
+* `parameters`:  a comma-separated list of parameter declarations, described in xref:clauses/define.adoc#parameters[].
+* `returnType`: an optional, single type declaration for the value the function returns, described in xref:clauses/define.adoc#return-types[].
+* The `<expression>` form evaluates a single expression and returns its value.
+* The `<query>` form, enclosed in braces, can contain any sequence of Cypher clauses that a  xref:subqueries/index.adoc[subquery] can contain, and must conclude with a `RETURN` of a single value matching `returnType`, if declared.
+This is enforced using either `LIMIT 1` or a return item using an aggregating function.
+
+======
+[.include-with-define-local-procedure]
+======
+
+A local procedure can be defined with a query body:
+
+.`DEFINE PROCEDURE` template
+[source, syntax]
+----
+DEFINE PROCEDURE name ( [parameters] ) [ :: ( [returnFields] ) ] {
+<query>
+}
+----
+
+* `name`: the procedure name.
+* `parameters`: a comma-separated list of parameter declarations, described in xref:clauses/define.adoc#parameters[].
+* `returnFields`: an optional, comma-separated list of named, typed return fields, described in xref:clauses/define.adoc#return-types[].
+If omitted, the procedure's output is inferred.
+* `<query>`: can contain any sequence of Cypher clauses that a xref:subqueries/index.adoc[subquery] can contain, and must conclude with a `RETURN` matching the declared `returnFields`, if any.
+
+======
+=====
 
 [[example-graph]]
 == Example graph
@@ -57,26 +109,14 @@ CREATE (techCorp:Supplier {name: 'TechCorp', email: 'contact@techcorp.com'}),
        (foodies)-[:SUPPLIES]->(coffee)
 ----
 
-[[define-function]]
-== `DEFINE FUNCTION`
 
-A local function can be defined with either an expression body or a query body:
+[[examples]]
+== Examples 
 
-[source, syntax]
-----
-DEFINE FUNCTION name ( [parameters] ) [ :: returnType ] = <expression>
+=== Basic examples
 
-DEFINE FUNCTION name ( [parameters] ) [ :: returnType ] {
-<query>
-}
-----
-
-* `name`:  the function name.
-* `parameters`:  a comma-separated list of parameter declarations, described in xref:clauses/define.adoc#parameters[].
-* `returnType`: an optional, single type declaration for the value the function returns, described in xref:clauses/define.adoc#return-types[].
-* The `<expression>` form evaluates a single expression and returns its value.
-* The `<query>` form, enclosed in braces, can contain any sequence of Cypher clauses that a subquery can contain, and must conclude with a `RETURN` of a single value matching `returnType`, if declared.
-This is enforced using either `LIMIT 1` or a return item using an aggregating function.
+.`DEFINE FUNCTION`
+=====
 
 .Local function with expression body
 [source, cypher]
@@ -153,12 +193,14 @@ RETURN productName, getNumberOfPurchases(productName) AS numPurchases
 
 In the below example, the function `isAffordable` is defined locally within a xref:subqueries/collect.adoc/[`COLLECT`] subquery, and is only in scope for that subquery.
 
-.Local function definition in a scalar subquery
+.Local function definition in a subquery
 [source, cypher]
 ----
 RETURN COLLECT {
   DEFINE FUNCTION isAffordable(price) =
-    CASE WHEN price < 100 THEN true ELSE false END
+    CASE WHEN price < 100 THEN true
+         ELSE false
+         END
   MATCH (p:Product)
   FILTER isAffordable(p.price)
   RETURN p.name
@@ -166,72 +208,285 @@ RETURN COLLECT {
 ----
 
 .Result
-[options="header"]
+[role="queryresult",cols="*<m"]
 |===
 | affordableProducts
+
 | ["Chocolate", "Coffee"]
+
+1+d|Rows: 1
 |===
-
-RETURN COLLECT {
-  DEFINE FUNCTION isEven(num) = 
-    CASE WHEN num % 2 = 0 THEN true ELSE false END
-  UNWIND range(1,4) AS x
-  FILTER isEven(x)
-  RETURN x
-} AS evens
+=====
 
 
+.`DEFINE PROCEDURE`
+=====
 
-
-
-
-
-
-
-[[define-procedure]]
-=== `DEFINE PROCEDURE`
-
-[source, syntax]
-----
-DEFINE PROCEDURE name ( [parameters] ) [ :: ( [returnFields] ) ] {
-<query>
-}
-----
-
-* `name`: the procedure name.
-* `parameters`: a comma-separated list of parameter declarations, described in xref:clauses/define.adoc#parameters[].
-* `returnFields`: an optional, comma-separated list of named, typed return fields, described in xref:clauses/define.adoc#return-types[].
-If omitted, the procedure's output is inferred.
-* The `<query>` can contain any sequence of Cypher clauses that a xref:subqueries/index.adoc[subquery] can contain, and must conclude with a `RETURN` matching the declared `returnFields`, if any.
-
-[source, syntax]
-----
-DEFINE PROCEDURE name ( [parameters] ) [ :: ( [returnFields] ) ] {
-  ...
-}
-----
-
-* `name` and `parameters` are as for functions.
-* `returnFields` — an optional, comma-separated list of named, typed return fields, described in <<Return types>>. If omitted, the procedure's output is inferred.
-* The body, enclosed in braces, can contain any sequence of Cypher clauses that a subquery can contain, and must conclude with a `RETURN` (or `FINISH`) that matches the declared return fields, if any.
-
-
-[[basic-examples]]
-== Basic examples
-
-.User defined function with an expression body
+.Local procedure with query body
 [source, cypher]
 ----
-DEFINE FUNCTION square(num) = num * num
-UNWIND [1, 2, 3, 4] AS x
-RETURN x, square(x) AS squared
+DEFINE PROCEDURE isEven(from, to) {
+  UNWIND range(from, to) AS x
+  RETURN x, x % 2 = 0 AS even
+}
+CALL isEven(1, 4) YIELD x, even
+RETURN x, even
 ----
+
+.Result
+[role="queryresult",cols="2*<m"]
+|===
+| x | even
+
+| 1 | false
+| 2 | true
+| 3 | false
+| 4 | true
+
+2+d|Rows: 4
+|===
+
+Unlike a function, a procedure's query body is not restricted to a single row: it can return any number of rows, which are exposed one at a time via `CALL ... YIELD`.
+In the below example, the defined procedure `getProductsForSupplier` returns one row per product supplied by a given supplier.
+
+.Local procedure returning multiple rows
+[source, cypher]
+----
+DEFINE PROCEDURE getProductsForSupplier(supplierName) {
+  MATCH (s:Supplier {name: supplierName})-[:SUPPLIES]->(p:Product)
+  RETURN p.name AS product, p.price AS price
+}
+CALL getProductsForSupplier('TechCorp') YIELD product, price
+RETURN product, price
+----
+
+.Result
+[role="queryresult",cols="2*<m"]
+|===
+| product | price
+
+| "Laptop" | 1000
+| "Phone" | 500
+| "Headphones" | 250
+
+2+d|Rows: 3
+|===
+
+In the below example, the procedure `getCheapProducts` is defined locally within a xref:subqueries/collect.adoc[`COLLECT`] subquery, and is only in scope for that subquery.
+
+.Local procedure definition in a subquery
+[source, cypher]
+----
+RETURN COLLECT {
+  DEFINE PROCEDURE getCheapProducts() {
+    MATCH (p:Product)
+    WHERE p.price < 100
+    RETURN p.name AS product
+  }
+  CALL getCheapProducts() YIELD product
+  RETURN product
+} AS cheapProducts
+----
+
+.Result
+[role="queryresult",cols="*<m"]
+|===
+| cheapProducts
+
+| ["Chocolate", "Coffee"]
+
+1+d|Rows: 1
+|===
+
+Unlike a function, a procedure's query body can also write to the graph.
+In the below example, the procedure `registerCustomer` creates a new `Customer` node for each name in the list.
+
+.Local procedure that writes to the graph
+[source, cypher]
+----
+DEFINE PROCEDURE registerCustomer(firstName) {
+  CREATE (c:Customer {firstName: firstName, discount: 0.0})
+  RETURN c AS customer
+}
+UNWIND ['Priya', 'Oscar'] AS firstName
+CALL registerCustomer(firstName) YIELD customer
+RETURN customer.firstName AS newCustomer, customer.discount AS discount
+----
+
+.Result
+[role="queryresult",cols="2*<m"]
+|===
+| newCustomer | discount
+
+| "Priya" | 0.0
+| "Oscar" | 0.0
+
+2+d|Rows: 2
+|===
+
+=====
+
+[[multiple-invocations]]
+=== Multiple invocations
+
+A local function or procedure can be invoked more than once in the same query, with each invocation potentially using different arguments or building on the result of a previous one.
+
+.`DEFINE FUNCTION`
+=====
+
+In this example, `getDiscountedPrice` is first applied to each of Mateo's purchases and summed into a subtotal, applying his personal customer discount per item.
+It is then called a second time on that subtotal to apply an additional 5% coupon, so the same discount logic is reused for both the per-item member discount and the cart-level coupon.
+
+.Local function used several times in the same query
+[source, cypher]
+----
+DEFINE FUNCTION getDiscountedPrice(price, discount) = price - (price * discount)
+MATCH (c:Customer {firstName: 'Mateo'})-[:BUYS]->(p:Product)
+WITH sum(getDiscountedPrice(p.price, c.discount)) AS subtotal
+RETURN subtotal,
+       getDiscountedPrice(subtotal, 0.05) AS totalWithCoupon
+----
+
+.Result
+[role="queryresult",cols="2*<m"]
+|===
+| subtotal | totalWithCoupon
+
+| 964.25   | 916.0375
+
+2+d|Rows: 1
+|===
+
+=====
+
+.`DEFINE PROCEDURE`
+=====
+
+The procedure `buyProduct` matches a customer and a product, and creates a `BUYS` relationship between them with a given date.
+It's called once to record Mateo buying a `Phone`.
+The query then reads back that purchase's date, and calls `buyProduct` a second time to record him also buying `Headphones` a week later, using the first purchase's date to calculate the second one.
+
+.Local procedure used several times in the same query
+[source, cypher]
+----
+DEFINE PROCEDURE buyProduct(customerName, productName, purchaseDate) {
+  MATCH (c:Customer {firstName: customerName})
+  MATCH (p:Product {name: productName})
+  CREATE (c)-[:BUYS {date: purchaseDate}]->(p)
+  RETURN p.name AS product, purchaseDate AS date
+}
+CALL buyProduct('Mateo', 'Phone', date('2025-05-01')) 
+YIELD product AS firstProduct,
+      date AS firstDate
+CALL buyProduct('Mateo', 'Headphones', firstDate + duration('P7D'))
+YIELD product AS secondProduct,
+      date AS secondDate
+RETURN firstProduct, firstDate, secondProduct, secondDate
+----
+
+.Result
+[role="queryresult",cols="4*<m"]
+|===
+| firstProduct | firstDate | secondProduct | secondDate
+
+| "Phone" | 2025-05-01 | "Headphones" | 2025-05-08
+
+4+d|Rows: 1
+|===
+
+=====
+
+
+[[multiple-definitions]]
+=== Multiple definitions
+
+A query can define multiple local functions and procedures, and they can be invoked several times in that same query.
+Local functions and procedures can also invoke one another; i.e. a local function or procedure can be built by composing other local functions or procedures, rather than duplicating their logic.
+
+.`DEFINE FUNCTION`
+=====
+
+
+`getLoyaltyTier` classifies a customer's discount rate into a loyalty tier, and `qualifiesForFreeShipping` calls it directly to decide whether that tier qualifies for free shipping.
+
+.Local function invoking another local function
+[source, cypher]
+----
+DEFINE FUNCTION getLoyaltyTier(discount) =
+  CASE WHEN discount >= 0.2 THEN 'gold'
+       WHEN discount >= 0.1 THEN 'silver'
+       ELSE 'bronze'
+  END
+DEFINE FUNCTION qualifiesForFreeShipping(discount) =
+  getLoyaltyTier(discount) = 'gold'
+MATCH (c:Customer)
+RETURN c.firstName AS customer,
+       qualifiesForFreeShipping(c.discount) AS freeShipping
+----
+
+.Result
+[role="queryresult",cols="2*<m"]
+|===
+| customer | freeShipping
+
+| "Amir"   | false
+| "Keisha" | true
+| "Mateo"  | false
+| "Hannah" | false
+| "Leila"  | false
+| "Niko"   | true
+| "Yusuf"  | false
+
+2+d|Rows: 7
+|===
+=====
+
+.`DEFINE PROCEDURE`
+=====
+
+`registerCustomer` creates a new `Customer` node on its own, useful whenever a customer signs up.
+`signUpWithFreeGift` reuses it for a promotional flow, registering a customer and giving them a free product as a welcome gift in one step.
+
+.Local procedure invoking another local procedure
+[source, cypher]
+----
+DEFINE PROCEDURE registerCustomer(firstName) {
+  CREATE (c:Customer {firstName: firstName, discount: 0.0})
+  RETURN c AS customer
+}
+DEFINE PROCEDURE signUpWithFreeGift(firstName, giftName) {
+  CALL registerCustomer(firstName) YIELD customer
+  MATCH (gift:Product {name: giftName})
+  CREATE (customer)-[:BUYS {date: date('2025-06-01'), price: 0}]->(gift)
+  RETURN customer.firstName AS customer, gift.name AS gift
+}
+CALL signUpWithFreeGift('Oscar', 'Headphones') YIELD customer, gift
+RETURN customer, gift
+----
+
+.Result
+[role="queryresult",cols="2*<m"]
+|===
+| customer | gift
+
+| "Oscar"  | "Headphones"
+
+2+d|Rows: 1
+|===
+
+=====
+
 
 [[parameters]]
 == Parameters
 
 [[return-types]]
 == Return types
+
+[[combining-local-functions-and-local-procedures]]
+== Combining local functions and local procedures
+
+
 
 [[rules]]
 == Rules
