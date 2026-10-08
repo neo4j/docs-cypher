@@ -1,12 +1,16 @@
-:description: The `SEARCH` clause is a subclause of a `MATCH` or `OPTIONAL MATCH` clause and is used to filter the results based on vector similarity.
+:description: The `SEARCH` clause is a subclause of a `MATCH` or `OPTIONAL MATCH` clause and is used to query vector and full-text indexes.
 :table-caption!:
 :page-role: new-neo4j-2026.01 cypher-25-only
 
 [[query-search]]
 = SEARCH
 
-The `SEARCH` clause is not a clause in its own right -- rather, it is a subclause used within xref:clauses/match.adoc[`MATCH`] and xref:clauses/optional-match.adoc[`OPTIONAL MATCH`] clauses to add constraints on their pattern based on approximate nearest neighbor (ANN) vector search.
-In order to use the `SEARCH` clause, you must first have xref::indexes/semantic-indexes/vector-indexes.adoc#create-vector-index[created a vector index].
+The `SEARCH` clause is a subclause used within xref:clauses/match.adoc[`MATCH`] and xref:clauses/optional-match.adoc[`OPTIONAL MATCH`] clauses to constrain their patterns using a Neo4j search index.
+Neo4j currently supports two types of search index: full-text indexes for lexical search and vector indexes for similarity search, commonly used for semantic search.
+See the xref::indexes/search-indexes/index.adoc[search indexes] documentation for details.
+
+Vector index queries with `SEARCH` are available from Neo4j 2026.01, and full-text index queries from Neo4j 2026.09.
+Before using `SEARCH`, you must create a xref::indexes/search-indexes/vector-indexes.adoc#create-vector-index[vector index] or xref::indexes/search-indexes/full-text-indexes.adoc#create-full-text-indexes[full-text index].
 
 == SEARCH clause template
 
@@ -29,16 +33,16 @@ The `SEARCH` clause has the following templates:
   ) [SCORE AS score_alias]
 ----
 
-The `SEARCH` clause constrains the `pattern` from the enclosing `MATCH` or `OPTIONAL MATCH`, by only returning nodes or relationships included in the results of the ANN vector search as described by the `SEARCH` clause.
+The `SEARCH` clause constrains the `pattern` from the enclosing `MATCH` or `OPTIONAL MATCH` by only returning nodes or relationships included in the results of the vector index query.
 Below follows a short description of the different parts of the template:
 
 - The `binding_variable` must be a node or relationship variable from the `pattern` of the enclosing `MATCH` or `OPTIONAL MATCH` clause.
 
-- The `index_name` must be an identifier that matches the name of an existing vector index or, as of Neo4j 2026.09, full-text index in the Neo4j database.
-The index must be a node vector/full-text index if the `binding_variable` refers to a node and a relationship vector/full-text index if the `binding_variable` refers to a relationship.
+- The `index_name` must be an identifier that matches the name of an existing vector index in the Neo4j database.
+The index must be a node vector index if the `binding_variable` refers to a node and a relationship vector index if the `binding_variable` refers to a relationship.
 
 - The `query_vector` can be any expression that evaluates to a `VECTOR` or `LIST<INTEGER NOT NULL | FLOAT NOT NULL>`, for example a literal, a parameter or a property.
-The `SEARCH` clause returns a neighborhood of nodes or relationships based on the similarity between the `query_vector` the corresponding property of those nodes or relationships.
+The `SEARCH` clause returns a neighborhood of nodes or relationships based on the similarity between the `query_vector` and the corresponding property of those nodes or relationships.
 
 - The optional `WHERE` subclause is only allowed in vector searches. It applies a filter to the vector index, and is a restricted version of the normal Cypher xref::clauses/where.adoc[`WHERE` clause].
 For more information, see xref::clauses/search.adoc#vector-search-filtering-predicates[Predicates for vector search with filters].
@@ -52,9 +56,10 @@ In the result, the column for the similarity scores will be called `score_alias`
 - The `SEARCH` clause puts some restrictions on which `pattern` the enclosing `MATCH` or `OPTIONAL MATCH` clause is allowed to have.
 For more information, see xref::clauses/search.adoc#limitations[Limitations of the `SEARCH` clause].
 
-The `SCORE` value is a vector similarity score from the vector index query.
-When combining `SEARCH` results with full-text results or other scored sources, rank each source independently rather than comparing raw score values directly.
-For a worked example, see link:https://neo4j.com/developer/genai-ecosystem/vector-search/#_hybrid_search[Developer Guide -> Hybrid full-text and vector search].
+The `SCORE` value is the vector similarity score from the vector index query.
+Vector scores are meaningful within the result set from a vector query.
+When combining vector results with full-text results or other scored sources, rank each source independently rather than comparing raw score values directly.
+For a worked example, see link:https://neo4j.com/developer/genai-ecosystem/hybrid-search/[Developer Guide -> Hybrid search].
 ======
 [.include-with-fulltext-search]
 ======
@@ -70,32 +75,39 @@ For a worked example, see link:https://neo4j.com/developer/genai-ecosystem/vecto
   ) [SCORE AS score_alias]
 ----
 
-The `SEARCH` clause constrains the `pattern` from the enclosing `MATCH` or `OPTIONAL MATCH`, by only returning nodes or relationships included in the results of the ANN vector search as described by the `SEARCH` clause.
+The `SEARCH` clause constrains the `pattern` from the enclosing `MATCH` or `OPTIONAL MATCH` by only returning nodes or relationships included in the results of the full-text index query.
 Below follows a short description of the different parts of the template:
 
 - The `binding_variable` must be a node or relationship variable from the `pattern` of the enclosing `MATCH` or `OPTIONAL MATCH` clause.
 
-- The `index_name` must be an identifier that matches the name of an existing vector index or, as of Neo4j 2026.09, full-text index in the Neo4j database.
-The index must be a node vector/full-text index if the `binding_variable` refers to a node and a relationship vector/full-text index if the `binding_variable` refers to a relationship.
+- The `index_name` must be an identifier that matches the name of an existing full-text index in the Neo4j database, or a parameter that evaluates to the index name.
+The index must be a node full-text index if the `binding_variable` refers to a node and a relationship full-text index if the `binding_variable` refers to a relationship.
 
-- For full-text searches, the `query_string` is of type `STRING`.
+- The `query_string` can be any expression that evaluates to a `STRING`, for example a literal, parameter, or property.
+The query string supports xref::clauses/search.adoc#full-text-search-examples[Lucene query syntax].
 
-- The optional `WITH ANALYZER` part is only allowed in full-text searches. The `<analyzer_string>` is of type `STRING NOT NULL`.
+- The optional `WITH ANALYZER` part selects the analyzer to use for the query.
+The `analyzer_string` must evaluate to a `STRING NOT NULL`.
 
-- The optional `SKIP` or `OFFSET` clause is only allowed in full-text searches. The `<skip_integer>` is of type `INTEGER NOT NULL`, and must be `0` or positive.
+- The optional `SKIP` or `OFFSET` clause skips results before applying `LIMIT`.
+The `skip_integer` must evaluate to an `INTEGER NOT NULL` that is `0` or positive.
 
-- The `LIMIT` clause sets the number of approximate nearest neighbor nodes or relationships returned by the `SEARCH` clause.
+- The `LIMIT` clause sets the maximum number of full-text results returned by the `SEARCH` clause.
 The `top_k` must be of type `INTEGER NOT NULL` and in the interval `0 \<= top_k \<= 2147483647` footnote:[2147483647 is the `Integer.MAX_VALUE` from Java].
 
-- The optional `SCORE` subclause makes the `SEARCH` clause return the similarity score for each node or relationship in addition to the node or relationship itself.
-In the result, the column for the similarity scores will be called `score_alias`.
+- The optional `SCORE` subclause makes the `SEARCH` clause return the Lucene relevance score for each node or relationship in addition to the node or relationship itself.
+In the result, the column for the relevance scores will be called `score_alias`.
+
+- Unlike vector search, full-text search does not support a `WHERE` subclause inside `SEARCH`.
+A `WHERE` subclause attached to the enclosing `MATCH` or `OPTIONAL MATCH` post-filters the full-text search results.
 
 - The `SEARCH` clause puts some restrictions on which `pattern` the enclosing `MATCH` or `OPTIONAL MATCH` clause is allowed to have.
 For more information, see xref::clauses/search.adoc#limitations[Limitations of the `SEARCH` clause].
 
-The `SCORE` value is a vector similarity score from the vector index query.
-When combining `SEARCH` results with full-text results or other scored sources, rank each source independently rather than comparing raw score values directly.
-For a worked example, see link:https://neo4j.com/developer/genai-ecosystem/vector-search/#_hybrid_search[Developer Guide -> Hybrid full-text and vector search].
+The `SCORE` value is the Lucene relevance score from the full-text index query.
+Full-text scores are meaningful within the result set from a full-text query.
+When combining full-text results with vector results or other scored sources, rank each source independently rather than comparing raw score values directly.
+For a worked example, see link:https://neo4j.com/developer/genai-ecosystem/hybrid-search/[Developer Guide -> Hybrid search].
 ======
 =====
 
@@ -141,7 +153,7 @@ OPTIONS {
 }
 ----
 
-For more information about the creation of vector indexes, see xref::indexes/semantic-indexes/vector-indexes.adoc#create-vector-index[Create vector indexes].
+For more information about the creation of vector indexes, see xref::indexes/search-indexes/vector-indexes.adoc#create-vector-index[Create vector indexes].
 
 
 === Basic vector search
@@ -330,7 +342,7 @@ The closer to `1.0` the score is, the more similar the indexed `embedding` prope
 The movie `Snow White` has a similarity score of `1.0` as its `embedding` property is identical to the query vector.
 
 Similarity scores are calculated using the similarity function that was chosen when the vector index was created, the default is cosine similarity.
-For more information on similarity functions, see xref::indexes/semantic-indexes/vector-indexes.adoc#similarity-functions[Cosine and Euclidean similarity functions].
+For more information on similarity functions, see xref::indexes/search-indexes/vector-indexes.adoc#similarity-functions[Cosine and Euclidean similarity functions].
 
 ==== Additional predicates in the MATCH pattern
 
@@ -890,7 +902,7 @@ OPTIONS {
 CREATE FULLTEXT INDEX reviews FOR (n:Employee|Manager) ON EACH [n.peerReviews];
 ----
 
-For more information about the creation of full-text indexes, see xref::indexes/semantic-indexes/full-text-indexes.adoc#create-full-text-indexes[Create full-text indexes].
+For more information about the creation of full-text indexes, see xref::indexes/search-indexes/full-text-indexes.adoc#create-full-text-indexes[Create full-text indexes].
 
 [[full-text-search-examples]]
 === Full-text search examples
@@ -926,7 +938,6 @@ RETURN node.name, score
 This query uses the `communications` full-text index for any `message` containing "meeting":
 
 .Query a full-text index for a relationship property
-[source, cypher]
 // tag::clauses_search_fulltext_relationship[]
 [source, cypher]
 ----
@@ -951,10 +962,10 @@ RETURN type(relationship), relationship.message, score
 3+d|Rows: 1
 |===
 
-To only obtain exact matches, quote the `STRING` you are searching for:
+To search for a sequence of terms as a phrase, enclose the phrase in double quotation marks.
+This matches the terms in order; it does not require the entire indexed property to equal the query string.
 
-.Query a full-text index for exact matches
-[source, cypher]
+.Query a full-text index for a phrase
 // tag::clauses_search_fulltext_exact_match[]
 [source, cypher]
 ----
@@ -977,10 +988,9 @@ RETURN node.name, score
 2+d|Rows: 1
 |===
 
-Query strings also support the use of the link:https://lucene.apache.org/core/2_9_4/queryparsersyntax.html#Boolean%20operators[Lucene boolean operators] (`AND`, `OR`, `NOT`, `+`, `-`):
+Query strings also support the use of the link:https://lucene.apache.org/core/10_5_1/queryparser/org/apache/lucene/queryparser/classic/package-summary.html#Boolean_operators[Lucene boolean operators] (`AND`, `OR`, `NOT`, `+`, `-`):
 
 .Query a full-text index using logical operators
-[source, cypher]
 // tag::clauses_search_fulltext_logical_operators[]
 [source, cypher]
 ----
@@ -1008,7 +1018,6 @@ RETURN node.name, node.team, score
 It is possible to limit the search to specific properties, by prefixing `<propertyName>:` to the query string.
 
 .Query a full-text index for specific properties
-[source, cypher]
 // tag::clauses_search_fulltext_specific_properties[]
 [source, cypher]
 ----
@@ -1042,7 +1051,6 @@ This means that when querying such an indexed node or relationship, there is a m
 For scoring purposes, the full-text index treats it as a single-property value, and the score represents how close the query is to matching the entire list.
 
 .Query a full-text index for content present in a list of `STRING` properties
-[source, cypher]
 // tag::clauses_search_fulltext_list_of_strings[]
 [source, cypher]
 ----
@@ -1071,7 +1079,6 @@ RETURN node.name, node.peerReviews, score
 You can query full-text indexes with `SEARCH` and use an analyzer with `WITH ANALYZER`:
 
 .Query a full-text index using an analyzer
-[source, cypher]
 // tag::clauses_search_fulltext_with_analyzer[]
 [source, cypher]
 ----
@@ -1096,7 +1103,7 @@ RETURN type(relationship), relationship.message, score
 3+d|Rows: 1
 |===
 
-See xref::indexes/semantic-indexes/full-text-indexes.adoc#tokenization-analyzers[tokenization and analyzers] for more information on analyzers.
+See xref::indexes/search-indexes/full-text-indexes.adoc#tokenization-analyzers[tokenization and analyzers] for more information on analyzers.
 
 
 [[limitations]]
