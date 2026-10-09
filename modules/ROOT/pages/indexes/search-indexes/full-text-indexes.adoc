@@ -32,11 +32,11 @@ CREATE (nilsE:Employee {name: "Nils-Erik Karlsson", position: "Engineer", team: 
 == Create full-text indexes
 
 Full-text indexes are created with the `CREATE FULLTEXT INDEX [index_name]` command.
-It is recommended to to give the index a name when it is created.
+It is recommended to give the index a name when it is created.
 If no name is given when created, a random name will be assigned to the full-text index.
 
 The `CREATE FULLTEXT INDEX` command is optionally idempotent.
-This mean that its default behavior is to throw an error if an attempt is made to create the same index twice.
+This means that its default behavior is to throw an error if an attempt is made to create the same index twice.
 If `IF NOT EXISTS` is appended to the command, no error is thrown and nothing happens should an index with the same name or a full-text index on the same schema already exist.
 Instead, an informational notification is returned showing the existing index which blocks the creation.
 The index name can also be given as a parameter, `CREATE FULLTEXT INDEX $name FOR ...`.
@@ -77,7 +77,7 @@ CREATE FULLTEXT INDEX communications FOR ()-[r:REVIEWED|EMAILED]-() ON EACH [r.m
 === Tokenization and analyzers
 
 Full-text indexes store individual words in a `STRING` property.
-This is achieved by _tokenizer_, which breaks up a stream of characters into individual tokens (usually individual words).
+This is achieved by a _tokenizer_, which breaks up a stream of characters into individual tokens (usually individual words).
 How a `STRING` is tokenized is determined by what _analyzer_ the full-text index is configured with.
 The default analyzer (`standard-no-stop-words`) analyzes both the indexed values and the query string.
 
@@ -143,7 +143,7 @@ They return a relevance score that indicates how closely the indexed terms match
 
 As of Neo4j 2026.09, the preferred way of querying full-text indexes is by using the xref::clauses/search.adoc[SEARCH] clause.
 As an alternative, use either the link:{neo4j-docs-base-uri}/operations-manual/current/procedures/built-in-procedures/#procedure_db_index_fulltext_queryNodes[`db.index.fulltext.queryNodes()`] or the link:{neo4j-docs-base-uri}/operations-manual/current/procedures/built-in-procedures/#procedure_db_index_fulltext_queryRelationships[`db.index.fulltext.queryRelationships()`] procedure.
-These procedures are deprecated as of Neo4j 2026.10.
+These procedures are deprecated in Cypher 25 as of Neo4j 2026.10.
 
 [NOTE]
 An index cannot be used while its `state` is `POPULATING`, which occurs immediately after it is created.
@@ -157,6 +157,7 @@ This query uses the previously created full-text index `namesAndTeams` to look f
 
 .Query a full-text index for a node property
 // tag::clauses_search_fulltext_node[]
+// tag::indexes_semantic_fulltext_query[]
 [source, cypher]
 ----
 MATCH (node)
@@ -168,7 +169,8 @@ MATCH (node)
   SCORE AS score
 RETURN node.name, score
 ----
-// tag::clauses_search_fulltext_node[]
+// end::indexes_semantic_fulltext_query[]
+// end::clauses_search_fulltext_node[]
 
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
@@ -181,33 +183,14 @@ RETURN node.name, score
 2+d|Rows: 2
 |===
 
+For Neo4j versions before 2026.09, or when using Cypher 5, use the link:{neo4j-docs-base-uri}/operations-manual/current/procedures/built-in-procedures/#procedure_db_index_fulltext_queryNodes[`db.index.fulltext.queryNodes()`] procedure:
 
-[[query-full-text-procedure]]
-=== Querying a full-text index using the db.index.vector.queryNodes() procedure
-
-This query uses the previously created full-text index `namesAndTeams` to look for "nils" among the employee and manager nodes:
-
-.Query a full-text index for a node property label:deprecated[Deprecated in Neo4j 2026.10]
-// tag::indexes_semantic_fulltext_query[]
+.Query a full-text index for a node property label:deprecated[Deprecated in Cypher 25 as of Neo4j 2026.10]
 [source, cypher]
 ----
 CALL db.index.fulltext.queryNodes("namesAndTeams", "nils") YIELD node, score
 RETURN node.name, score
 ----
-// end::indexes_semantic_fulltext_query[]
-
-
-.Result
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| node.name | score
-
-| "Nils Johansson" | 0.3300700783729553
-| "Nils-Erik Karlsson" | 0.27725890278816223
-
-2+d|Rows: 2
-
-|===
 
 [NOTE]
 Many full-text index analyzers (including Neo4j's default analyzer) normalize tokens to lower case.
@@ -223,16 +206,20 @@ Full-text scores are meaningful within the result set from a full-text query.
 When combining full-text results with vector results or other scored sources, rank each source independently rather than comparing raw score values directly.
 For a worked example, see link:https://neo4j.com/developer/genai-ecosystem/hybrid-search/[Developer Guide -> Hybrid search].
 
-=== Querying a relationship full-search index
+=== Querying a relationship full-text index
 
-To query a relationship full-text index, use the Cypher xref::clauses/search.adoc[SEARCH] clause or the link:{neo4j-docs-base-uri}/operations-manual/current/procedures/built-in-procedures/#procedure_db_index_vector_queryRelationships[`db.index.vector.queryRelationships`] procedure in a similar manner as shown for node full-text indexes above.
+This query uses the previously created `communications` full-text index to search for any `message` containing "meeting":
 
-This query uses the `db.index.fulltext.queryRelationships()` procedure to query the previously created `communications` full-text index for any `message` containing "meeting":
-
-.Query a full-text index for a relationship property label:deprecated[Deprecated in Neo4j 2026.10]
+.Query a full-text index for a relationship property
 [source, cypher]
 ----
-CALL db.index.fulltext.queryRelationships("communications", "meeting") YIELD relationship, score
+MATCH ()-[relationship]->()
+  SEARCH relationship IN (
+    FULLTEXT INDEX communications
+    FOR "meeting"
+    LIMIT 5
+  )
+  SCORE AS score
 RETURN type(relationship), relationship.message, score
 ----
 
@@ -247,12 +234,19 @@ RETURN type(relationship), relationship.message, score
 
 |===
 
-To only obtain exact matches, quote the `STRING` you are searching for:
+To search for a sequence of terms as a phrase, enclose the phrase in double quotation marks.
+This matches the terms in order; it does not require the entire indexed property to equal the query string.
 
-.Query a full-text index for exact matches label:deprecated[Deprecated in Neo4j 2026.10]
+.Query a full-text index for a phrase
 [source, cypher]
 ----
-CALL db.index.fulltext.queryNodes("namesAndTeams", '"Nils-Erik"') YIELD node, score
+MATCH (node)
+  SEARCH node IN (
+    FULLTEXT INDEX namesAndTeams
+    FOR '"Nils-Erik"'
+    LIMIT 5
+  )
+  SCORE AS score
 RETURN node.name, score
 ----
 
@@ -266,10 +260,16 @@ RETURN node.name, score
 
 Query strings also support the use of the link:https://lucene.apache.org/core/10_5_1/queryparser/org/apache/lucene/queryparser/classic/package-summary.html#Boolean_operators[Lucene boolean operators] (`AND`, `OR`, `NOT`, `+`, `-`):
 
-.Query a full-text index using logical operators label:deprecated[Deprecated in Neo4j 2026.10]
+.Query a full-text index using logical operators
 [source, cypher]
 ----
-CALL db.index.fulltext.queryNodes("namesAndTeams", 'nils AND kernel') YIELD node, score
+MATCH (node)
+  SEARCH node IN (
+    FULLTEXT INDEX namesAndTeams
+    FOR 'nils AND kernel'
+    LIMIT 5
+  )
+  SCORE AS score
 RETURN node.name, node.team, score
 ----
 
@@ -285,10 +285,16 @@ RETURN node.name, node.team, score
 
 It is possible to limit the search to specific properties, by prefixing `<propertyName>:` to the query string.
 
-.Query a full-text index for specific properties label:deprecated[Deprecated in Neo4j 2026.10]
+.Query a full-text index for specific properties
 [source, cypher]
 ----
-CALL db.index.fulltext.queryNodes("namesAndTeams", 'team:"Operations"') YIELD node, score
+MATCH (node)
+  SEARCH node IN (
+    FULLTEXT INDEX namesAndTeams
+    FOR 'team:"Operations"'
+    LIMIT 5
+  )
+  SCORE AS score
 RETURN node.name, node.team, score
 ----
 
@@ -313,7 +319,7 @@ If the indexed property contains a list of `STRING` values, each entry is analyz
 This means that when querying such an indexed node or relationship, there is a match if any of the list elements matches the query string.
 For scoring purposes, the full-text index treats it as a single-property value, and the score will represent how close the query is to matching the entire list.
 
-.Query a full-text index for content present in a list of `STRING` properties label:deprecated[Deprecated in Neo4j 2026.10]
+.Query a full-text index for content present in a list of `STRING` properties label:deprecated[Deprecated in Cypher 25 as of Neo4j 2026.10]
 [source, cypher]
 ----
 CALL db.index.fulltext.queryNodes('peerReviews', 'late') YIELD node, score
@@ -430,11 +436,11 @@ The procedures for full-text indexes are listed in the table below:
 
 | Use full-text node index.
 | https://neo4j.com/docs/operations-manual/current/procedures/built-in-procedures/#procedure_db_index_fulltext_queryNodes[`db.index.fulltext.queryNodes()`]
-| Query the given full-text index. Returns the matching nodes and their Lucene query score, ordered by score. This procedure is deprecated as of Neo4j 2026.10.
+| Query the given full-text index. Returns the matching nodes and their Lucene query score, ordered by score. This procedure is deprecated in Cypher 25 as of Neo4j 2026.10.
 
 | Use full-text relationship index.
 | https://neo4j.com/docs/operations-manual/current/procedures/built-in-procedures/#procedure_db_index_fulltext_queryRelationships[`db.index.fulltext.queryRelationships()`]
-| Query the given full-text index. Returns the matching relationships and their Lucene query score, ordered by score. This procedure is deprecated as of Neo4j 2026.10.
+| Query the given full-text index. Returns the matching relationships and their Lucene query score, ordered by score. This procedure is deprecated in Cypher 25 as of Neo4j 2026.10.
 
 |===
 
@@ -443,7 +449,7 @@ The procedures for full-text indexes are listed in the table below:
 
 * Full-text indexes support the indexing of both nodes and relationships.
 * Full-text indexes include only property values of types `STRING` or `LIST<STRING>`.
-* Full-text indexes are accessed via Cypher procedures.
+* Full-text indexes can be queried with the `SEARCH` clause or Cypher procedures.
 * Full-text indexes return the _score_ for each result from a query.
 * Full-text indexes support configuring custom analyzers, including analyzers that are not included with Lucene itself.
 * Full-text indexes can be queried using the Lucene query language.
