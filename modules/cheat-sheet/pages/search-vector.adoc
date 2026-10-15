@@ -1,0 +1,102 @@
+= link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/clauses/search/#vector-search[SEARCH VECTOR^]
+
+====
+[source, cypher, role=test-skip]
+----
+[OPTIONAL] MATCH pattern
+  SEARCH binding_variable IN (
+    VECTOR INDEX index_name
+    FOR query_vector
+    [WHERE ...]
+    LIMIT top_k
+  ) [SCORE AS score_alias]
+----
+
+[.description]
+Use the `VECTOR INDEX` variation of `SEARCH` to query a vector index for similar nodes or relationships.
+The optional `WHERE` subclause applies an xref:ROOT:clauses/search.adoc#vector-search-filtering[in-index filter], and the optional `SCORE` subclause returns each result's similarity score.
+
+The enclosing `MATCH` or `OPTIONAL MATCH` pattern is subject to xref:ROOT:clauses/search.adoc#limitations[specific restrictions].
+See the <<search-vector-post-filter,post-filter example>> for how to apply additional predicates after vector search.
+====
+
+====
+[source, cypher, role=test-skip]
+----
+MATCH (node)
+  SEARCH node IN (
+    VECTOR INDEX moviePlots
+    FOR vector([1, 2, 3], 3, INTEGER)
+    LIMIT 4
+  )
+RETURN node.title AS title
+----
+
+[.description]
+Query a node vector index without adding predicates to the `MATCH` pattern.
+The `FOR` expression can evaluate to a `VECTOR` or a list of integer or floating-point values, supplied as a literal, parameter, or property.
+The same syntax supports relationship vector indexes when the binding variable is a relationship.
+====
+
+====
+[source, cypher, role=test-skip]
+----
+MATCH (node)
+  SEARCH node IN (
+    VECTOR INDEX moviePlots
+    FOR vector([1, 2, 3], 3, INTEGER)
+    LIMIT 4
+  ) SCORE AS similarityScore
+RETURN node.title AS title, similarityScore
+----
+
+[.description]
+Return the similarity score for each result by binding it with `SCORE AS`.
+====
+
+[[search-vector-post-filter]]
+====
+[source, cypher, role=test-skip]
+----
+MATCH (node)
+  SEARCH node IN (
+    VECTOR INDEX contentEmbeddings
+    FOR vector([1, 2, 3], 3, INTEGER)
+    LIMIT 4
+  )
+MATCH (node:Movie)
+  WHERE node.genre = 'SciFi'
+RETURN node
+----
+
+[.description]
+Post-filter the top four vector-search results with a second `MATCH`.
+The `WHERE` subclause belongs to the second `MATCH`; it and the `Movie` label predicate are applied after `SEARCH`, so fewer than the requested number of results may be returned.
+
+
+This pattern is preferred to making the post-filter part of the initial `MATCH` because it makes the post-filter behavior explicit.
+For more information, see xref:ROOT:clauses/search.adoc#vector-search-filtering[vector search with filters].
+====
+
+====
+[source, cypher, role=test-skip]
+----
+MATCH (node)
+  SEARCH node IN (
+    VECTOR INDEX moviePlots
+    FOR vector([1, 2, 3], 3, INTEGER)
+    WHERE node.releaseDate > date('1990')
+    LIMIT 4
+  )
+RETURN node.title AS title, node.releaseDate.year AS year
+----
+
+[.description]
+Use xref:ROOT:clauses/search.adoc#vector-search-filtering[an in-index `WHERE` filter] to return the requested number of matching vector-search results.
+Supported predicates include property comparisons, multiple predicates joined by `AND`, and `IN` (introduced in Neo4j 2026.06).
+Earlier versions do not support `IN` within the `WHERE` subclause of `SEARCH`.
+
+
+See xref:ROOT:clauses/search.adoc#vector-search-filtering-predicates[predicates for vector search with filters] for the complete restrictions.
+In-index filtering can also be combined with the post-filtering pattern shown above.
+====
