@@ -575,6 +575,8 @@ If the transaction still fails after the maximum duration, the failure is handle
 
 `ON ERROR RETRY` increases query robustness by handling transient errors without manual intervention.
 It is particularly suitable for xref:subqueries/subqueries-in-transactions.adoc#concurrent-transactions[concurrent transactions], reducing the likelihood of a query failing due to xref:subqueries/subqueries-in-transactions.adoc#deadlocks[deadlocks].
+For concurrent transactions, `PROFILE` reports the number of retries.
+For more information, see xref:subqueries/subqueries-in-transactions.adoc#concurrency-statistics[Measuring concurrency with `PROFILE`].
 
 
 .Basic retry with default duration
@@ -811,6 +813,7 @@ This allows `CALL` subqueries to utilize multiple CPU cores simultaneously, whic
 The concurrency value is optional.
 If not specified, a default value based on the amount of available CPU cores will be chosen.
 If a negative number is specified (which can only be done through a parameter), the concurrency will be the number of available CPU cores reduced by the absolute value of that number.
+To measure the concurrency a query achieves, see xref:subqueries/subqueries-in-transactions.adoc#concurrency-statistics[Measuring concurrency with `PROFILE`].
 
 [NOTE]
 Queries using `CONCURRENT TRANSACTIONS` can currently only use the xref:planning-and-tuning/runtimes/concepts.adoc#runtimes-slotted-runtime[slotted runtime].
@@ -1111,6 +1114,7 @@ DETACH DELETE n;
 
 Batch scheduling prevents deadlocks in concurrent transactions by ensuring that batches sharing resources never run at the same time, while batches that do not share resources run concurrently.
 This can be particularly useful when importing relationships.
+To check how much batch scheduling limits the concurrency of a query, see xref:subqueries/subqueries-in-transactions.adoc#concurrency-statistics[Measuring concurrency with `PROFILE`].
 
 The default batch scheduling strategy for all queries run against a database can be configured with the link:{neo4j-docs-base-uri}/operations-manual/current/configuration/configuration-settings/#config_dbms.cypher.transactions.default_subquery_batch_strategy[`dbms.cypher.transactions.default_subquery_batch_strategy`] setting.
 Accepted values for this setting are `NONE` (no scheduling), `AUTO` (automatic inference), and `DEFAULT` (the product default, currently `NONE`).
@@ -1335,6 +1339,163 @@ RETURN nodeStatus.transactionId as nodeTransaction,
        relationshipStatus.committed AS successfulRelationshipTransaction
 ----
 // end::subqueries_in_transactions_deadlock_prevention_task_division[]
+
+[role=label--new-Neo4j-2026.10]
+[[concurrency-statistics]]
+=== Measuring concurrency with `PROFILE`
+
+The concurrency value in `IN [n] CONCURRENT TRANSACTIONS` sets the maximum number of batches that can run at the same time.
+The concurrency a query actually achieves can be lower.
+For example, the input rows may be produced too slowly to keep all transactions busy, or xref:subqueries/subqueries-in-transactions.adoc#disjoint-by[batch scheduling with `DISJOINT BY`] may hold back batches that conflict with batches already running.
+
+To see how much concurrency a query achieved, and what limited it, prepend the query with xref:planning-and-tuning/execution-plans.adoc#reading-explain-and-profile-query-plans[`PROFILE`].
+The xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-transaction-apply[`TransactionApply`] or xref:planning-and-tuning/operators/operators-detail.adoc#query-plan-transaction-foreach[`TransactionForeach`] operator that runs the concurrent transactions then records concurrency statistics.
+The query plan shows the peak and average number of batches running at the same time in the xref:planning-and-tuning/execution-plans.adoc#query-plan-table-columns[`Concurrency` column], for example `peak 4 / avg 3.64`.
+The average shows how well the concurrency was sustained.
+
+The `Concurrency` column shows only the peak and the average.
+The complete set of statistics is included in the profiled plan returned to drivers and the HTTP API, as a map in the `concurrent-transactions` argument of the operator.
+Statistics are only recorded for `IN CONCURRENT TRANSACTIONS`, not for `IN TRANSACTIONS`.
+
+The statistics follow each batch through two states:
+
+* _Queued_: the batch is complete and waiting to start, because the concurrency limit is reached or because the batch conflicts with a running batch.
+* _Running_: the batch is being executed in its inner transaction, until that transaction has committed or rolled back.
+
+A batch that is retried with xref:subqueries/subqueries-in-transactions.adoc#on-error-retry[`ON ERROR RETRY`] passes through both states again, and each attempt is counted separately.
+The delay between retry attempts is not counted as queued time.
+
+.Concurrency statistics
+[cols="2m,5a", options="header"]
+|===
+| Statistic | Description
+
+| concurrencyLimit
+| The maximum number of batches allowed to run at the same time.
+This is the concurrency value `n` of `IN [n] CONCURRENT TRANSACTIONS`, resolved to an actual number if `n` is omitted or negative.
+
+| peakConcurrency
+| The highest number of batches running at the same time.
+
+| avgConcurrency
+| The time-weighted average number of batches running at the same time, measured from when the first batch started until the last batch finished.
+
+| peakQueuedBatches
+| The highest number of batches queued at the same time.
+
+| avgQueuedBatches
+| The time-weighted average number of queued batches, measured from when the first batch was queued until the last batch finished.
+
+| peakStartGapNanos
+| The longest time, in nanoseconds, that a batch spent queued before it started running.
+
+| avgStartGapNanos
+| The average time, in nanoseconds, that a batch spent queued before it started running.
+
+| batchesQueued
+| The number of batch attempts that were queued.
+With `DISJOINT BY`, batch scheduling can start a batch before it is full, so this can be higher than the number of rows divided by the batch size.
+
+| batchesStarted
+| The number of batch attempts that started running.
+This is lower than `batchesQueued` if the query stopped before all queued batches had run, for example because of an error.
+
+| innerTransactionsStarted
+| The number of inner transactions that were started.
+
+| innerTransactionsCommitted
+| The number of inner transactions that were committed successfully.
+The difference from `innerTransactionsStarted` is the number of inner transactions that failed and were rolled back.
+
+| retries
+| The number of times that a failed batch was scheduled to run again by `ON ERROR RETRY`.
+A retry is counted when it is scheduled, even if the query ends before the retried batch runs.
+|===
+
+Read the statistics against `concurrencyLimit`:
+
+* *`avgConcurrency` close to `concurrencyLimit`*: the transactions were busy almost all the time.
+If `avgQueuedBatches` is also high, a higher concurrency value may make the query faster if CPU cores are available.
+* *Low `avgConcurrency` and `avgQueuedBatches` close to `0`*: batches were not produced fast enough to keep the transactions busy.
+The bottleneck is the part of the query that produces the input rows, for example `LOAD CSV`.
+* *Low `avgConcurrency` and high `avgQueuedBatches`*: batches were ready but could not start.
+This happens when many batches share values for the `DISJOINT BY` expressions, because such batches cannot run at the same time, or when the part of the query after the subquery consumes the returned rows too slowly for new batches to be started.
+* *High `retries`*: many batches failed with transient errors, such as xref:subqueries/subqueries-in-transactions.adoc#deadlocks[deadlocks], and were run again.
+xref:subqueries/subqueries-in-transactions.adoc#disjoint-by[Batch scheduling with `DISJOINT BY`] can prevent deadlocks between concurrent batches.
+
+.Measure the concurrency of an import with `PROFILE`
+====
+
+This example creates 50,000 `TRANSFER` relationships between 1,000 `Account` nodes in batches of 100 rows, with 4 concurrent transactions.
+Because many rows refer to the same accounts, `DISJOINT BY (sourceId, targetId)` ensures that batches that share an account never run at the same time.
+
+.Create a key constraint
+[source, cypher]
+----
+CREATE CONSTRAINT account_id IF NOT EXISTS FOR (a:Account) REQUIRE a.id IS KEY
+----
+
+.Profile a concurrent import
+[source, cypher]
+----
+PROFILE
+UNWIND range(1, 50000) AS i
+WITH i, i % 1000 AS sourceId, (i * 7) % 1000 AS targetId
+CALL (i, sourceId, targetId) {
+  MERGE (a:Account {id: sourceId})
+  MERGE (b:Account {id: targetId})
+  CREATE (a)-[:TRANSFER {seq: i}]->(b)
+} IN 4 CONCURRENT TRANSACTIONS OF 100 ROWS
+  DISJOINT BY (sourceId, targetId)
+  ON ERROR RETRY
+----
+
+.Query plan
+[role="queryplan", subs="attributes+"]
+----
+Cypher 25
+
+Planner COST
+
+Runtime SLOTTED
+
+Runtime version {neo4j-version}
+
++----------------------+----+------------------------------------------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-------------------+
+| Operator             | Id | Details                                                                                              | Estimated Rows | Rows  | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Concurrency       |
++----------------------+----+------------------------------------------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-------------------+
+| +ProduceResults      |  0 |                                                                                                      |             10 |     0 |       0 |              0 |                    0/0 |                   |
+| |                    +----+------------------------------------------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-------------------+
+| +EmptyResult         |  1 |                                                                                                      |             10 |     0 |       0 |                |                    0/0 |                   |
+| |                    +----+------------------------------------------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-------------------+
+| +TransactionForeach  |  2 | IN $autoint_6 CONCURRENT TRANSACTIONS OF $autoint_5 ROWS DISJOINT BY (sourceId, targetId) ON ERROR R |             10 | 50000 |       0 |         661416 |               297433/4 | peak 4 / avg 3.64 |
+| |                    |    | ETRY THEN FAIL                                                                                       |                |       |         |                |                        |                   |
+| |\                   +----+------------------------------------------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-------------------+
+| | +Create            |  3 | (a)-[anon_0:TRANSFER {seq: i}]->(b)                                                                  |             10 | 50000 |  150000 |                |               193715/0 |                   |
+| | |                  +----+------------------------------------------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-------------------+
+| | +Apply             |  4 |                                                                                                      |             10 | 50000 |       0 |                |                    0/0 |                   |
+| | |\                 +----+------------------------------------------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-------------------+
+| | | +MergeUniqueNode |  5 | UNIQUE b:Account(id) WHERE id = targetId,                                                            |             10 | 50000 |  100000 |                |               100384/0 |                   |
+| | |                  +----+------------------------------------------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-------------------+
+| | +Apply             |  6 |                                                                                                      |             10 | 50000 |       0 |                |                    0/0 |                   |
+| | |\                 +----+------------------------------------------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-------------------+
+| | | +MergeUniqueNode |  7 | UNIQUE a:Account(id) WHERE id = sourceId,                                                            |             10 | 50000 |  100000 |                |               100408/0 |                   |
+| | |                  +----+------------------------------------------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-------------------+
+| | +Argument          |  8 | i, sourceId, targetId                                                                                |             10 | 50000 |       0 |                |                    0/0 |                   |
+| |                    +----+------------------------------------------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-------------------+
+| +Projection          |  9 | i % $autoint_2 AS sourceId, (i * $autoint_3) % $autoint_4 AS targetId                                |             10 | 50000 |       0 |                |                    0/0 |                   |
+| |                    +----+------------------------------------------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-------------------+
+| +Unwind              | 10 | range($autoint_0, $autoint_1) AS i                                                                   |             10 | 50000 |       0 |                |                    0/0 |                   |
++----------------------+----+------------------------------------------------------------------------------------------------------+----------------+-------+---------+----------------+------------------------+-------------------+
+
+Total database accesses: 350000, total allocated memory: 2883584
+----
+
+The `Concurrency` column of the `TransactionForeach` operator shows `peak 4 / avg 3.64`: at some point all four transactions were running, and on average 3.64 batches ran at the same time.
+The query therefore stayed close to its concurrency limit of `4` for most of its execution, and batch scheduling did not noticeably restrict it.
+The exact values vary between runs.
+
+====
 
 [[restrictions]]
 == Restrictions
