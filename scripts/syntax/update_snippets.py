@@ -279,6 +279,8 @@ if __name__ == "__main__":
 
                     reconstructed = re.sub(f"{symbol}", xref_or_link, reconstructed)
 
+            # Adds a passthrough to the plus sign, otherwise Asciidoc interprets it as
+            # an inline passthrough itself
             reconstructed = re.sub(f'"\+"', f'pass:["+"]', reconstructed, re.MULTILINE)
             fw.write(reconstructed)
 
