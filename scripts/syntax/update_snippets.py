@@ -279,6 +279,7 @@ if __name__ == "__main__":
 
                     reconstructed = re.sub(f"{symbol}", xref_or_link, reconstructed)
 
+            reconstructed = re.sub(f'"\+"', f'pass:["+"]', reconstructed, re.MULTILINE)
             fw.write(reconstructed)
 
         all_links = {link["symbol"] for link in links}
