@@ -51,8 +51,12 @@ expr IS [NOT] SAME REPRESENTATION expr
 
 The instant of a value is the point in time it denotes, regardless of the zone or offset used to write it.
 The representation of a value is its type together with its component values, including its time zone or offset where the type has one.
+
 For a `DATETIME` value, the representation is the local date-time together with the time zone or offset.
 For a `TIME` value, the representation is the local time together with the offset.
+
+Non-zoned values, such as `DATE` and `LOCAL DATETIME`, have no time zone or offset, so their instant and their representation coincide.
+For these values, instant comparison and representation comparison reduce to value comparison.
 
 The operators `IS BEFORE`, `IS AFTER`, and `IS SAME INSTANT` compare instants.
 The operator `IS SAME REPRESENTATION` compares representations, in the same way as `=`.
@@ -76,9 +80,6 @@ RETURN datetime('2020-01-01T12:00Z') IS SAME INSTANT datetime('2020-01-01T13:00+
 
 2+d|Rows: 1
 |===
-
-Non-zoned values, such as `DATE` and `LOCAL DATETIME`, have no time zone or offset, so their instant and their representation coincide.
-Instant comparison and representation comparison therefore reduce to value comparison.
 
 [[operand-rules]]
 == Operand rules
@@ -113,66 +114,25 @@ RETURN date('2020-01-01') IS BEFORE datetime('2020-01-01T00:00Z') AS beforeMixed
 4+d|Rows: 1
 |===
 
-[[operator-precedence]]
-== Precedence
-
-.Operator precedence
-[NOTE]
-====
-Operator precedence defines how Cypher groups expressions when parentheses are not present.
-The following order is relevant (higher precedence first):
-
-* Arithmetic operators: `+`, `-`, `*`, `/`, `%`, `^`
-* Chronological comparison operators, and other predicate operators such as `IN`, `STARTS WITH`, `ENDS WITH`, `CONTAINS`, `=~`, and `IS NULL`
-* Comparison operators: `=`, `<>`, `<`, `\<=`, `>`, `>=`
-* `NOT`
-* `AND`
-* `XOR`
-* `OR`
-
-This means that `a IS BEFORE b + c` compares `a` with `b + c`, and that `a IS BEFORE b = c` compares the result of `a IS BEFORE b` with `c`.
-When in doubt, add parentheses to make the intended grouping explicit.
-====
-
-A second chronological comparison requires parentheses.
-For example, `a IS BEFORE b IS BEFORE c` is not a valid chain, but the following expression is:
-
-// tag::expressions_predicates_chronological_comparison_operators_precedence[]
-[source, cypher]
-----
-RETURN (datetime('2026-10-05T09:00:00Z') IS BEFORE datetime('2026-10-05T12:00:00+02:00'))
-       AND (datetime('2026-10-05T12:00:00+02:00') IS BEFORE datetime('2026-10-05T11:00:00Z')) AS chained
-----
-// end::expressions_predicates_chronological_comparison_operators_precedence[]
-
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
-|===
-| chained
-
-| true
-
-1+d|Rows: 1
-|===
-
 [[example-graph]]
 == Example graph
 
 The following graph is used for the examples below:
-It contains three `Event` nodes, each with a `name` and an `at` property.
 
-To recreate the graph and the range index, run the following queries in an empty Neo4j database:
+image:chronological-comparison-operators-graph.svg[Chronological comparison operators example graph, width=700, role="middle", role=popup]
 
-[source, cypher, role=test-setup]
-----
-CREATE (:Event {name: 'Planning', at: datetime('2026-10-05T12:00:00+02:00')}),
-       (:Event {name: 'Review', at: datetime('2026-10-05T11:00:00Z')}),
-       (:Event {name: 'Retrospective', at: datetime('2026-10-06T09:00:00Z')})
-----
+To recreate the graph and a range index the relevant temporal property, run the following queries in an empty Neo4j database:
 
 [source, cypher, role=test-setup]
 ----
-CREATE INDEX event_at FOR (e:Event) ON (e.at)
+CREATE (:Event {name: 'Planning', startsAt: datetime('2026-10-05T12:00:00+02:00')}),
+       (:Event {name: 'Review', startsAt: datetime('2026-10-05T11:00:00Z')}),
+       (:Event {name: 'Retrospective', startsAt: datetime('2026-10-06T09:00:00Z')})
+----
+
+[source, cypher, role=test-setup]
+----
+CREATE INDEX event_startsAt FOR (e:Event) ON (e.startsAt)
 ----
 
 == Examples
@@ -182,8 +142,8 @@ CREATE INDEX event_at FOR (e:Event) ON (e.at)
 [source, cypher]
 ----
 MATCH (e:Event)
-WHERE e.at IS BEFORE datetime('2026-10-05T11:00:00Z')
-RETURN e.name AS name, e.at AS at
+WHERE e.startsAt IS BEFORE datetime('2026-10-05T11:00:00Z')
+RETURN e.name AS name, e.startsAt AS startsAt
 ORDER BY name
 ----
 // end::expressions_predicates_chronological_comparison_operators_where[]
@@ -191,7 +151,7 @@ ORDER BY name
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| name | at
+| name | startsAt
 
 | "Planning" | 2026-10-05T12:00+02:00
 
@@ -204,7 +164,7 @@ ORDER BY name
 ----
 MATCH (e:Event)
 RETURN e.name AS name,
-       CASE e.at
+       CASE e.startsAt
          WHEN IS BEFORE datetime('2026-10-05T11:00:00Z') THEN 'before'
          WHEN IS SAME INSTANT datetime('2026-10-05T11:00:00Z') THEN 'same instant'
          ELSE 'after'
@@ -230,8 +190,8 @@ ORDER BY name
 [source, cypher]
 ----
 MATCH (e:Event)
-WHERE e.at IS AFTER datetime('2026-10-05T11:00:00Z')
-RETURN e.name AS name, e.at AS at
+WHERE e.startsAt IS AFTER datetime('2026-10-05T11:00:00Z')
+RETURN e.name AS name, e.startsAt AS startsAt
 ORDER BY name
 ----
 // end::expressions_predicates_chronological_comparison_operators_indexed[]
@@ -239,7 +199,7 @@ ORDER BY name
 .Result
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| name | at
+| name | startsAt
 
 | "Retrospective" | 2026-10-06T09:00Z
 
