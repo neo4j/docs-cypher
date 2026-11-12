@@ -1,0 +1,68 @@
+name: "Generate PDF"
+run-name: "Generate ${{ inputs.publish-env }} PDF from ${{ github.ref_name }}"
+
+permissions:
+  contents: read
+
+# Mirrors docs-generate-html.yml's shape (workflow_dispatch with a publish-env input,
+# build -> publish) and its own reusable-workflow reference convention (a
+# pinned neo4j/docs-tools/...@v2 tag, not a relative path - this repo doesn't contain
+# reusable-docs-pdf-build.yml itself). Still simpler than docs-generate-html.yml in one
+# way: there's no docs-verify step (no equivalent check exists yet for a PDF), and
+# build/publish are two plain jobs rather than a reusable-workflow call plus a verify call.
+#
+# No build-ref input - see docs-generate-html.yml's own comment on why: the git ref to
+# build from is always whatever ref this run was itself dispatched against.
+#
+# Do not run this by hand. It has a workflow_dispatch trigger only because the API call that
+# starts it needs one, and it must run as its own run so that its head_branch is the branch
+# being built (which docs-publish checks), so it cannot be a workflow_call either. To build
+# now, run docs-trigger-builds.yml from the branch instead; it works out the environments the
+# same way it does for a push. publish-env is always set by the trigger, so there is nothing
+# to derive from the branch here.
+on:
+  workflow_dispatch:
+    inputs:
+      publish-env:
+        description: "The environment to publish to"
+        type: choice
+        required: true
+        options:
+        - dev
+        - prod
+
+jobs:
+
+  docs-build-pdf:
+    name: Generate PDF
+    uses: neo4j/docs-tools/.github/workflows/reusable-docs-pdf-build.yml@v2
+    with:
+      build-ref: ${{ github.ref_name }}
+      fetch-depth: 0
+      publish-env: ${{ inputs.publish-env }}
+
+  # Hand off to docs-publish (a separate repo) to actually publish this run's "pdf"
+  # artifact - same mechanism docs-generate-html.yml already uses for its "docs"
+  # artifact. docset/version come from docs-build-pdf itself (read back out of the
+  # PDF's own build path - see reusable-docs-pdf-build.yml), since there's no HTML
+  # directory tree here for docs-publish to infer them from the way it does for HTML.
+  publish-pdf:
+    name: Publish PDF
+    needs: docs-build-pdf
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish to ${{ inputs.publish-env }}
+        uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 #v4
+        with:
+          token: ${{ secrets.DOCS_DISPATCH_TOKEN }}
+          repository: neo4j/docs-publish
+          event-type: publish-pdf
+          client-payload: |-
+            {
+              "org": "${{ github.repository_owner }}",
+              "repo": "${{ github.event.repository.name }}",
+              "run_id": "${{ github.run_id }}",
+              "publish_env": "${{ inputs.publish-env }}",
+              "docset": "${{ needs.docs-build-pdf.outputs.docset }}",
+              "version": "${{ needs.docs-build-pdf.outputs.version }}"
+            }
