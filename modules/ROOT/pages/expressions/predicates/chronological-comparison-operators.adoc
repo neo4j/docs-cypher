@@ -1,0 +1,241 @@
+= Chronological comparison operators
+:description: Information about Cypher's chronological comparison operators.
+:table-caption!:
+:page-role: new-neo4j-2026.11 cypher-25-only
+
+Chronological comparison operators compare temporal values either by xref:values-and-types/temporal.adoc#cypher-temporal-instants[instant] or by representation.
+Cypher contains the following chronological comparison operators:
+
+* Ordering:
+** `IS [NOT] BEFORE`
+** `IS [NOT] AFTER`
+* Equality:
+** `IS [NOT] SAME INSTANT`
+** `IS [NOT] SAME REPRESENTATION`
+
+.Template for chronological comparison operators
+[source, syntax]
+----
+expr IS [NOT] BEFORE expr
+expr IS [NOT] AFTER expr
+expr IS [NOT] SAME INSTANT expr
+expr IS [NOT] SAME REPRESENTATION expr
+----
+
+[[operator-behavior]]
+== Operator behavior
+
+[options="header"]
+|===
+| Operator | Result
+
+| `IS [NOT] BEFORE`
+| `true` if the instant of the left operand is earlier than the instant of the right operand.
+
+| `IS [NOT] AFTER`
+| `true` if the instant of the left operand is later than the instant of the right operand.
+
+| `IS [NOT] SAME INSTANT`
+| `true` if both operands denote the same instant.
+
+| `IS [NOT] SAME REPRESENTATION`
+| `true` if both operands have the same representation.
+
+|===
+
+`NOT` negates the comparison using ternary logic.
+`true` becomes `false`, `false` becomes `true`, and `null` remains `null`.
+
+[[instant-and-representation]]
+== Instant and representation
+
+The instant of a temporal value is the point in time it denotes, regardless of the zone or offset used to write it.
+The representation of a temporal value is its component values, including its time zone or offset where the type has one.
+
+For a `DATETIME` value, the representation is the local date-time together with the time zone or offset.
+For a `TIME` value, the representation is the local time together with the offset.
+
+Non-zoned values, such as `DATE` and `LOCAL DATETIME`, have no time zone or offset, so their instant and their representation coincide.
+For these values, instant comparison and representation comparison reduce to value comparison.
+
+The operators `IS BEFORE`, `IS AFTER`, and `IS SAME INSTANT` compare instants.
+The operator `IS SAME REPRESENTATION` compares representations, in the same way as `=`.
+Consequently, two zoned values can denote the same instant and still have different representations.
+
+.Compare zoned values by instant and by representation
+// tag::expressions_predicates_chronological_comparison_operators_instant_representation[]
+[source, cypher]
+----
+RETURN datetime('2020-01-01T12:00Z') IS SAME INSTANT datetime('2020-01-01T13:00+01:00') AS sameInstant,
+       datetime('2020-01-01T12:00Z') IS SAME REPRESENTATION datetime('2020-01-01T13:00+01:00') AS sameRepresentation
+----
+// end::expressions_predicates_chronological_comparison_operators_instant_representation[]
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| sameInstant | sameRepresentation
+
+| true | false
+
+2+d|Rows: 1
+|===
+
+[[operand-rules]]
+== Operand rules
+
+Operands are compared only if both are of the same temporal type.
+The supported temporal types are: `DATE`, `LOCAL TIME`, `TIME`, `LOCAL DATETIME`, and `DATETIME`.
+
+* If either operand is `null`, every chronological comparison operator returns `null`.
+* Non-temporal values and `DURATION` values are not comparable.
+* Temporal operands of different type groups do not compare, for example `DATE` with `DATETIME`, or `LOCAL TIME` with `TIME`.
+
+For operands that do not compare, the positive ordering operators `IS BEFORE` and `IS AFTER` return `null`, while the equality operators `IS SAME INSTANT` and `IS SAME REPRESENTATION` return `false`.
+
+.Compare incompatible operands
+// tag::expressions_predicates_chronological_comparison_operators_incompatible_operands[]
+[source, cypher]
+----
+RETURN date('2020-01-01') IS BEFORE datetime('2020-01-01T00:00Z') AS beforeMixedGroups,
+       date('2020-01-01') IS SAME INSTANT datetime('2020-01-01T00:00Z') AS sameInstantMixedGroups,
+       1 IS NOT BEFORE 2 AS notBeforeNumbers,
+       1 IS NOT SAME INSTANT 2 AS notSameInstantNumbers
+----
+// end::expressions_predicates_chronological_comparison_operators_incompatible_operands[]
+
+.Result
+[role="queryresult",options="header,footer",cols="4*<m"]
+|===
+| beforeMixedGroups | sameInstantMixedGroups | notBeforeNumbers | notSameInstantNumbers
+
+| null | false | null | true
+
+4+d|Rows: 1
+|===
+
+[[example-graph]]
+== Example graph
+
+The following graph is used for the examples below:
+
+image:chronological-comparison-operators-graph.svg[Chronological comparison operators example graph, width=700, role="middle", popup]
+
+To recreate the graph and a range index on the relevant temporal property, run the following queries in an empty Neo4j database:
+
+[source, cypher, role=test-setup]
+----
+CREATE (:Event {name: 'Planning', startsAt: datetime('2026-10-05T12:00:00+02:00')}),
+       (:Event {name: 'Review', startsAt: datetime('2026-10-05T11:00:00Z')}),
+       (:Event {name: 'Retrospective', startsAt: datetime('2026-10-06T09:00:00Z')})
+----
+
+[source, cypher, role=test-setup]
+----
+CREATE INDEX event_startsAt FOR (e:Event) ON (e.startsAt)
+----
+
+[[examples]]
+== Examples
+
+.`IS BEFORE` in a `WHERE` subclause
+// tag::expressions_predicates_chronological_comparison_operators_where[]
+[source, cypher]
+----
+MATCH (e:Event)
+WHERE e.startsAt IS BEFORE datetime('2026-10-05T11:00:00Z')
+RETURN e.name AS name, e.startsAt AS startsAt
+ORDER BY name
+----
+// end::expressions_predicates_chronological_comparison_operators_where[]
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | startsAt
+
+| "Planning" | 2026-10-05T12:00+02:00
+
+2+d|Rows: 1
+|===
+
+.`CASE` expression
+// tag::expressions_predicates_chronological_comparison_operators_case[]
+[source, cypher]
+----
+MATCH (e:Event)
+RETURN e.name AS name,
+       CASE e.startsAt
+         WHEN IS BEFORE datetime('2026-10-05T11:00:00Z') THEN 'before'
+         WHEN IS SAME INSTANT datetime('2026-10-05T11:00:00Z') THEN 'same instant'
+         ELSE 'after'
+       END AS position
+ORDER BY name
+----
+// end::expressions_predicates_chronological_comparison_operators_case[]
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | position
+
+| "Planning" | "before"
+| "Retrospective" | "after"
+| "Review" | "same instant"
+
+2+d|Rows: 3
+|===
+
+.Query an indexed property
+// tag::expressions_predicates_chronological_comparison_operators_indexed[]
+[source, cypher]
+----
+MATCH (e:Event)
+WHERE e.startsAt IS AFTER datetime('2026-10-05T11:00:00Z')
+RETURN e.name AS name, e.startsAt AS startsAt
+ORDER BY name
+----
+// end::expressions_predicates_chronological_comparison_operators_indexed[]
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | startsAt
+
+| "Retrospective" | 2026-10-06T09:00Z
+
+2+d|Rows: 1
+|===
+
+[NOTE]
+====
+A range index on the compared property can be used to answer chronological comparison operators more efficiently.
+`IS SAME REPRESENTATION` uses an exact key lookup, in the same way as `=`.
+For more information, see xref:indexes/performance-indexes/using-indexes.adoc[The impact of indexes on query performance].
+====
+
+.Non-zoned temporal values
+// tag::expressions_predicates_chronological_comparison_operators_non_zoned[]
+[source, cypher]
+----
+RETURN date('2026-10-05') IS BEFORE date('2026-10-06') AS dateBefore,
+       localtime('09:00') IS AFTER localtime('10:00') AS timeAfter,
+       localdatetime('2026-10-05T12:00:00') IS SAME INSTANT localdatetime('2026-10-05T12:00:00') AS sameInstant
+----
+// end::expressions_predicates_chronological_comparison_operators_non_zoned[]
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| dateBefore | timeAfter | sameInstant
+
+| true | false | true
+
+3+d|Rows: 1
+|===
+
+[[syntax]]
+== Syntax
+
+:syntax-filename: expressions/chronological-operators
+include::partial$syntax.adoc[]
