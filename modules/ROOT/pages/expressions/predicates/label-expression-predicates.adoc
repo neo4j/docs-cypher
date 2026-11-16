@@ -6,48 +6,8 @@ You can use a label expression predicate to verify that the labels of a node or 
 Cypher supports two label expression alternatives:
 
 * Colon form (`<expr>:<label-expression>`)
-* `IS [NOT] LABELED`  form label:new[Introduced in Neo4j 2026.04] label:cypher[Cypher 25 only]
 
-[[label-expression-predicat-syntax]]
-== Syntax
-
-[[label-expression-predicate-colon-syntax]]
-=== Colon form
-
-[source, syntax]
-----
-<expr>:<label-expression>
-----
-
-Where `<expr>` is any Cypher expression and `<label-expression>` is any Cypher xref::patterns/reference/node-and-relationship-patterns.adoc#label-expressions[label expression].
-
-[[is-labeled-predicate]]
-[role=label--new-Neo4j-2026.04 label--cypher-25-only]
-=== `IS [NOT] LABELED` predicate
-
-[source, syntax]
-----
-<expr> IS LABELED <label-expression>
-<expr> IS NOT LABELED <label-expression>
-<expr> IS NOT <label-expression>
-----
-
-
-* If `<expr>` evaluates to `null`, the predicate result is `null`.
-* Otherwise, the label expression is evaluated against the node's label set or the relationship's single type, and the result is `true` or `false` equivalent to the colon form.
-* `IS NOT LABELED <label-expression>` negates the result of the entire label expression.
-  This is different from using `!` *inside* the label expression.
-For example:
-** `n IS LABELED !A&B` means the node has label `B`, and does not have label `A`.
-** `n IS NOT LABELED A&B` means the node does not have both label `A` and label `B`.
-
-
-[NOTE]
-====
-`IS [NOT] LABELED` is only valid in expression contexts, (for example, xref:clauses/where.adoc[`WHERE`], xref:clauses/return.adoc[`RETURN`], xref:clauses/with.adoc[`WITH`], on the right-hand side of xref:clauses/set.adoc[`SET`] property assignments, or in xref:expressions/conditional-expressions.adoc[`CASE`] branches).
-It cannot be used in place of a label expression inside a xref:patterns/reference/node-and-relationship-patterns.adoc#node-patterns[node pattern] or xref:patterns/reference/node-and-relationship-patterns.adoc#relationship-patterns[relationship pattern] (for example `MATCH (n IS LABELED Person)` is invalid), nor as xref:clauses/set.adoc[`SET`] / xref:clauses/remove.adoc[`REMOVE`] label specification syntax.
-In patterns and when attaching or removing labels, use the colon form instead (for example `(n:Person)`).
-====
+* `IS [NOT] LABELED` form label:new[Introduced in Neo4j 2026.04] label:cypher[Cypher 25 only]
 
 [[example-graph]]
 == Example graph
@@ -74,8 +34,19 @@ CREATE (alice:Person&Manager {name:'Alice', age: 65, skills: ['Java', 'Python']}
        (daniel)-[:REPORTS_TO]->(eskil)
 ----
 
-[node-label-expression-predicate]
-== Test whether a node has a certain label
+
+[[label-expression-predicate-colon-form]]
+== Colon form
+
+[source, syntax]
+----
+<expr>:<label-expression>
+----
+
+Where `<expr>` is any Cypher expression and `<label-expression>` is any Cypher xref::patterns/reference/node-and-relationship-patterns.adoc#label-expressions[label expression].
+
+[[node-label-expression-predicate-colon-examples]]
+=== Examples
 
 Given that `p` is a node, `p:Manager` tests whether `p` has the label `Manager` or not and results in `true` or `false`, respectively.
 
@@ -195,97 +166,8 @@ RETURN p.name AS name,
 2+d|Rows: 6
 |===
 
-[role=label--new-Neo4j-2025.07 label--cypher-25-only]
-[[dynamic-node-label-expression-predicate]]
-== Test whether a node matches a dynamic label expression
-
-If you don't know the manager labels, you can infer a list of `managerLabels` by collecting all non-`Person` labels from people with a direct report.
-You can test nodes with the label expression predicate to match a xref:patterns/reference/node-and-relationship-patterns.adoc#dynamic-label-and-type-expressions[dynamic label expression].
-`p:$any(managerLabels)` tests whether a node `p` has at least on of the label in the list `managerLabels`.
-
-// tag::predicates_label_expression_predicates_test_dynamic_node_label[]
-[source, cypher]
-----
-MATCH ()-[r]->(p:Person)
-UNWIND labels(p) AS label
-FILTER label <> "Person"
-RETURN COLLECT(label) AS managerLabels
-NEXT
-MATCH (p)
-RETURN p.name AS name, p:$any(managerLabels) AS isManager
-----
-// end::predicates_label_expression_predicates_test_dynamic_node_label[]
-
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| name | isManager
-
-| "Alice" | true
-| "Cecil" | false
-| "Cecilia" | false
-| "Charlie" | false
-| "Daniel" | true
-| "Eskil" | true
-
-2+d|Rows: 6
-|===
-
-[[is-labeled-predicate-examples]]
-[role=label--new-Neo4j-2026.04 label--cypher-25-only]
-== Examples using `IS [NOT] LABELED`
-
-.Test a node with `IS LABELED`
-// tag::predicates_label_expression_predicates_is_labeled[]
-[source, cypher]
-----
-MATCH (p:Person)
-RETURN p.name AS name, p IS LABELED Manager AS isManager
-----
-// end::predicates_label_expression_predicates_is_labeled[]
-
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| name | isManager
-
-| "Alice" | true
-| "Cecil" | false
-| "Cecilia" | false
-| "Charlie" | false
-| "Daniel" | false
-| "Eskil" | false
-
-2+d|Rows: 6
-|===
-
-.Simple `CASE` with `IS LABELED` branches
-[source, cypher]
-----
-MATCH (p:Person)
-RETURN p.name AS name,
-       CASE p
-         WHEN IS LABELED CEO THEN 'executive'
-         WHEN IS LABELED Manager|Director THEN 'lead'
-         ELSE 'ic'
-       END AS role
-ORDER BY name
-----
-
-[role="queryresult",options="header,footer",cols="2*<m"]
-|===
-| name | role
-
-| "Alice" | "lead"
-| "Cecil" | "ic"
-| "Cecilia" | "ic"
-| "Charlie" | "ic"
-| "Daniel" | "lead"
-| "Eskil" | "executive"
-
-2+d|Rows: 6
-|===
-
-[relationship-label-expression-predicate]
-== Test whether a relationship has a certain relationship type
+[[relationship-label-expression-predicate]]
+=== Test whether a relationship has a certain relationship type
 
 Given that `r` is a relationship, `r:WORKS_FOR` tests whether `r` has the relationship type `WORKS_FOR` or not and result in `true` or `false`, respectively.
 
@@ -338,3 +220,122 @@ RETURN DISTINCT
 2+d|Rows: 6
 |===
 
+[role=label--new-Neo4j-2025.07 label--cypher-25-only]
+[[dynamic-node-label-expression-predicate]]
+=== Test whether a node matches a dynamic label expression
+
+If you don't know the manager labels, you can infer a list of `managerLabels` by collecting all non-`Person` labels from people with a direct report.
+You can test nodes with the label expression predicate to match a xref:patterns/reference/node-and-relationship-patterns.adoc#dynamic-label-and-type-expressions[dynamic label expression].
+`p:$any(managerLabels)` tests whether a node `p` has at least on of the label in the list `managerLabels`.
+
+// tag::predicates_label_expression_predicates_test_dynamic_node_label[]
+[source, cypher]
+----
+MATCH ()-[r]->(p:Person)
+UNWIND labels(p) AS label
+FILTER label <> "Person"
+RETURN COLLECT(label) AS managerLabels
+NEXT
+MATCH (p)
+RETURN p.name AS name, p:$any(managerLabels) AS isManager
+----
+// end::predicates_label_expression_predicates_test_dynamic_node_label[]
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | isManager
+
+| "Alice" | true
+| "Cecil" | false
+| "Cecilia" | false
+| "Charlie" | false
+| "Daniel" | true
+| "Eskil" | true
+
+2+d|Rows: 6
+|===
+
+[[is-labeled-predicate]]
+[role=label--new-Neo4j-2026.04 label--cypher-25-only]
+== `IS [NOT] LABELED` form
+
+[source, syntax]
+----
+<expr> IS LABELED <label-expression>
+<expr> IS NOT LABELED <label-expression>
+<expr> IS NOT <label-expression>
+----
+
+* If `<expr>` evaluates to `null`, the predicate result is `null`.
+* Otherwise, the label expression is evaluated against the node's label set or the relationship's single type, and the result is `true` or `false` equivalent to the colon form.
+* `IS NOT LABELED <label-expression>` negates the result of the entire label expression.
+  This is different from using `!` *inside* the label expression.
+For example:
+** `n IS LABELED !A&B` means the node has label `B`, and does not have label `A`.
+** `n IS NOT LABELED A&B` means the node does not have both label `A` and label `B`.
+
+[NOTE]
+====
+`IS [NOT] LABELED` is only valid in expression contexts, (for example, xref:clauses/where.adoc[`WHERE`], xref:clauses/return.adoc[`RETURN`], xref:clauses/with.adoc[`WITH`], on the right-hand side of xref:clauses/set.adoc[`SET`] property assignments, or in xref:expressions/conditional-expressions.adoc[`CASE`] branches).
+It cannot be used in place of a label expression inside a xref:patterns/reference/node-and-relationship-patterns.adoc#node-patterns[node pattern] or xref:patterns/reference/node-and-relationship-patterns.adoc#relationship-patterns[relationship pattern] (for example `MATCH (n IS LABELED Person)` is invalid), nor as xref:clauses/set.adoc[`SET`] / xref:clauses/remove.adoc[`REMOVE`] label specification syntax.
+In patterns and when attaching or removing labels, use the colon form instead (for example `(n:Person)`).
+====
+
+[[is-labeled-predicate-examples]]
+=== Examples
+
+.Test a node with `IS LABELED`
+// tag::predicates_label_expression_predicates_is_labeled[]
+[source, cypher]
+----
+MATCH (p:Person)
+RETURN p.name AS name, p IS LABELED Manager AS isManager
+----
+// end::predicates_label_expression_predicates_is_labeled[]
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | isManager
+
+| "Alice" | true
+| "Cecil" | false
+| "Cecilia" | false
+| "Charlie" | false
+| "Daniel" | false
+| "Eskil" | false
+
+2+d|Rows: 6
+|===
+
+.Simple `CASE` with `IS LABELED` branches
+[source, cypher]
+----
+MATCH (p:Person)
+RETURN p.name AS name,
+       CASE p
+         WHEN IS LABELED CEO THEN 'executive'
+         WHEN IS LABELED Manager|Director THEN 'lead'
+         ELSE 'ic'
+       END AS role
+ORDER BY name
+----
+
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | role
+
+| "Alice" | "lead"
+| "Cecil" | "ic"
+| "Cecilia" | "ic"
+| "Charlie" | "ic"
+| "Daniel" | "lead"
+| "Eskil" | "executive"
+
+2+d|Rows: 6
+|===
+
+[[syntax]]
+== Syntax
+
+:syntax-filename: expressions/label-expression-predicates
+include::partial$syntax.adoc[]
