@@ -1,0 +1,327 @@
+:description: This section describes how to construct `PATH` values in Cypher.
+:table-caption!:
+
+[[cypher-paths]]
+= Paths
+
+Cypher supports the construction of xref:values-and-types/property-structural-constructed.adoc#structural-types[`PATH`] values.
+
+[NOTE]
+====
+For information about matching paths with graph patterns, see xref:patterns/index.adoc[Patterns]. +
+For information about the functions that operate on `PATH` values, such as xref:functions/list.adoc#functions-nodes[`nodes()`], xref:functions/list.adoc#functions-relationships[`relationships()`], and xref:functions/scalar.adoc#functions-length[`length()`], see xref:functions/index.adoc[Functions].
+====
+
+[[path-construction-example-graph]]
+== Example graph
+
+The following graph is used for the examples below:
+
+image::paths_example_graph.svg["Example graph of a Person node connected by a LIVES_IN relationship to a City node, which is connected by IS_IN relationships to a Country node and a Continent node",width="700",role="middle"]
+
+To recreate the graph, run the following query against an empty Neo4j database:
+
+[source, cypher, role=test-setup]
+----
+CREATE (alice:Person {name: 'Alice'})-[:LIVES_IN]->(malmo:City {name: 'Malmo'}),
+       (malmo)-[:IS_IN]->(sweden:Country {name: 'Sweden'}),
+       (sweden)-[:IS_IN]->(europe:Continent {name: 'Europe'}),
+       (bob:Person {name: 'Bob'})-[:LIVES_IN]->(atlantis:City {name: 'Atlantis'})
+----
+
+[[cypher-path-construction]]
+== Path construction
+
+A `PATH` value is an alternating sequence of nodes and relationships, beginning and ending with a node.
+The `PATH` constructor builds a `PATH` value from a comma-separated list of node and relationship values.
+
+.Syntax
+[source, syntax]
+----
+PATH [ <value expression>, <value expression> ... ]
+----
+
+The following rules apply:
+
+* Every element must evaluate to a `NODE` or a `RELATIONSHIP` value.
+* The elements must alternate between nodes and relationships, starting and ending with a node.
+* A path must contain at least three elements (a node, a relationship, and a node).
+* The resulting value has the `PATH` type.
+
+If an element evaluates to a value that is neither a node nor a relationship, the query fails with a type mismatch.
+If an element is `null`, or if the supplied nodes and relationships do not form a valid path, the query fails with `data exception - malformed path` (`22G0Z`).
+For more details, see xref:values-and-types/paths.adoc#path-construction-errors[Errors].
+
+The below query matches a pattern and constructs the same path manually.
+
+.Construct a path
+[source, cypher]
+----
+MATCH (p:Person {name: 'Alice'})-[r:LIVES_IN]->(c:City)
+RETURN PATH [p, r, c] AS path
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| path
+| (:Person {name: "Alice"})-[:LIVES_IN]->(:City {name: "Malmo"})
+1+d|Rows: 1
+|===
+
+A path can contain any number of elements, as long as nodes and relationships alternate and the path starts and ends with a node.
+
+.Construct a longer path
+[source, cypher]
+----
+MATCH (p:Person {name: 'Alice'})-[r1:LIVES_IN]->(c:City)-[r2:IS_IN]->(co:Country)-[r3:IS_IN]->(cont:Continent)
+RETURN PATH [p, r1, c, r2, co, r3, cont] AS path
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| path
+| (:Person {name: "Alice"})-[:LIVES_IN]->(:City {name: "Malmo"})-[:IS_IN]->(:Country {name: "Sweden"})-[:IS_IN]->(:Continent {name: "Europe"})
+1+d|Rows: 1
+|===
+
+The order of the elements determines the direction of the resulting path.
+The below query passes the nodes and relationship in the reverse order, producing a path that traverses the relationship in the opposite direction.
+
+.Construct a reversed path
+[source, cypher]
+----
+MATCH (c:City {name: 'Malmo'})-[r:IS_IN]->(co:Country)
+RETURN PATH [co, r, c] AS path
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| path
+| (:Country {name: "Sweden"})<-[:IS_IN]-(:City {name: "Malmo"})
+1+d|Rows: 1
+|===
+
+Elements can be any expression that evaluates to a node or a relationship, including function calls.
+
+.Construct a path from function results
+[source, cypher]
+----
+MATCH (p:Person {name: 'Alice'})-[r:LIVES_IN]->(c:City)
+RETURN PATH [startNode(r), r, endNode(r)] AS path
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| path
+| (:Person {name: "Alice"})-[:LIVES_IN]->(:City {name: "Malmo"})
+1+d|Rows: 1
+|===
+
+A relationship can be used more than once, which allows constructing a path that goes out and back along the same relationship.
+
+.Reuse a relationship in a path
+[source, cypher]
+----
+MATCH (p:Person {name: 'Alice'})-[r:LIVES_IN]->(c:City)
+RETURN PATH [p, r, c, r, p] AS path
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| path
+| (:Person {name: "Alice"})-[:LIVES_IN]->(:City {name: "Malmo"})<-[:LIVES_IN]-(:Person {name: "Alice"})
+1+d|Rows: 1
+|===
+
+The result of the `PATH` constructor is a `PATH` value, which can be verified with a xref:expressions/predicates/type-predicate-expressions.adoc[type predicate expression].
+
+.The result of the `PATH` constructor is a `PATH` value
+[source, cypher]
+----
+MATCH (p:Person {name: 'Alice'})-[r:LIVES_IN]->(c:City)
+RETURN PATH [p, r, c] IS :: PATH AS isPath
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| isPath
+| true
+1+d|Rows: 1
+|===
+
+A constructed path can be used anywhere an expression is allowed, for example in a xref:clauses/where.adoc[`WHERE`] predicate.
+
+.Use a constructed path in a `WHERE` predicate
+[source, cypher]
+----
+MATCH matched = (:Person {name: 'Alice'})-[:LIVES_IN]->(:City)
+MATCH (p:Person {name: 'Alice'})-[r:LIVES_IN]->(c:City)
+WHERE PATH [p, r, c] = matched
+RETURN c.name AS city
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| city
+| "Malmo"
+1+d|Rows: 1
+|===
+
+It can also be passed as an argument to a function that accepts a `PATH`, such as xref:functions/list.adoc#functions-nodes[`nodes()`].
+
+.Pass a constructed path to a function
+[source, cypher]
+----
+MATCH (p:Person {name: 'Alice'})-[r:LIVES_IN]->(c:City)
+RETURN nodes(PATH [p, r, c]) AS nodes
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| nodes
+| [(:Person {name: "Alice"}), (:City {name: "Malmo"})]
+1+d|Rows: 1
+|===
+
+[[path-constructor-and-subscript]]
+== The `path` variable and subscripts
+
+`PATH` is not a reserved word, and `path` is a commonly used variable name.
+Because the `PATH` constructor requires a comma after the first expression, a single expression inside brackets is never parsed as a constructor.
+Instead, `path[...]` continues to be interpreted as a xref:expressions/list-expressions.adoc#list-element-access[list element access] (or xref:expressions/list-expressions.adoc#list-slicing[list slicing]) on a variable named `path`.
+
+.Subscript on a list named `path`
+[source, cypher]
+----
+WITH [10, 20, 30] AS path, 0 AS idx
+RETURN path[idx] AS element
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| element
+| 10
+1+d|Rows: 1
+|===
+
+[[path-construction-errors]]
+== Errors
+
+The `PATH` constructor validates both the types of the supplied elements and whether they form a valid path.
+
+If an element is neither a node nor a relationship, the query fails with a type mismatch.
+The below query passes a node where a relationship is expected.
+
+.Construct a path with the wrong element kinds
+[source, cypher, role=test-fail]
+----
+MATCH (p:Person {name: 'Alice'})-[:LIVES_IN]->(c:City)-[:IS_IN]->(co:Country)
+RETURN PATH [p, c, co] AS badPath
+----
+
+.GQLSTATUS error chain
+[role="queryresult",stripes="all",cols="1"]
+|===
+| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/22NB1/[22NB1]: error: data exception - type mismatch. Type mismatch: expected Relationship but was Node
+|===
+
+The same applies to any other non-structural value, such as an `INTEGER`.
+
+.Construct a path from a non-structural value
+[source, cypher, role=test-fail]
+----
+MATCH (p:Person {name: 'Alice'})-[r:LIVES_IN]->(c:City)
+RETURN PATH [1, r, c] AS badPath
+----
+
+.GQLSTATUS error chain
+[role="queryresult",stripes="all",cols="1"]
+|===
+| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/22NB1/[22NB1]: error: data exception - type mismatch. Type mismatch: expected Node but was Integer
+|===
+
+If an element is `null`, the query fails with `data exception - malformed path` (`22G0Z`).
+This includes a literal `null`, a `null` produced by an xref:clauses/optional-match.adoc[`OPTIONAL MATCH`], and a `null` returned by a function.
+
+.Construct a path with a `null` element
+[source, cypher, role=test-fail]
+----
+MATCH (p:Person {name: 'Alice'})-[r:LIVES_IN]->(c:City)
+RETURN PATH [p, null, c] AS badPath
+----
+
+.GQLSTATUS error chain
+[role="queryresult",stripes="all",cols="1"]
+|===
+| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/22G0Z/[22G0Z]: error: data exception - malformed path
+|===
+
+The same error is raised when the supplied nodes and relationships do not form a valid path, for example when a relationship is not attached to the nodes on either side of it.
+
+.Construct a path from elements that are not connected
+[source, cypher, role=test-fail]
+----
+MATCH (b:Person {name: 'Bob'})-[r:LIVES_IN]->(c2:City {name: 'Atlantis'})
+MATCH (p:Person {name: 'Alice'})-[r2:LIVES_IN]->(c1:City {name: 'Malmo'})
+RETURN PATH [b, r, c2, r2, p] AS badPath
+----
+
+.GQLSTATUS error chain
+[role="queryresult",stripes="all",cols="1"]
+|===
+| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/22G0Z/[22G0Z]: error: data exception - malformed path
+|===
+
+Because a path must contain at least three elements, an even number of elements is rejected.
+
+.Construct a path with an even number of elements
+[source, cypher, role=test-fail]
+----
+MATCH (p:Person {name: 'Alice'})-[r:LIVES_IN]->(c:City)
+RETURN PATH [p, r] AS noEndNode
+----
+
+.GQLSTATUS error chain
+[role="queryresult",stripes="all",cols="1"]
+|===
+| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42N62/[42N62]: error: syntax error or access rule violation - variable not defined
+|===
+
+A single node is not accepted either.
+Because a single expression in brackets is parsed as a subscript rather than a constructor, `PATH [p]` refers to an element of a variable named `path` (see xref:values-and-types/paths.adoc#path-constructor-and-subscript[The `path` variable and subscripts]).
+
+.Construct a path from a single node
+[source, cypher, role=test-fail]
+----
+MATCH (p:Person {name: 'Alice'})
+RETURN PATH [p] AS singleNode
+----
+
+.GQLSTATUS error chain
+[role="queryresult",stripes="all",cols="1"]
+|===
+| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42N62/[42N62]: error: syntax error or access rule violation - variable not defined
+|===
+
+An empty list is also rejected.
+
+.Construct an empty path
+[source, cypher, role=test-fail]
+----
+RETURN PATH [] AS emptyPath
+----
+
+.GQLSTATUS error chain
+[role="queryresult",stripes="all",cols="1"]
+|===
+| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]: error: syntax error or access rule violation - invalid syntax
+|===
