@@ -1,0 +1,178 @@
+:description: Information about how to use comments and annotations in Cypher queries.
+= Comments and annotations
+
+Comments are used to add notes to queries, while annotations attach metadata to a query, providing additional context for tools or agents that process Cypher queries.
+Both comments and annotations are informational and do not affect the execution of a query.
+
+[[comments]]
+== Comments
+
+A single line comment begins with double slash (`//`) and continues to the end of the line.
+A multi-line comment begins with a slash and asterisk (`/&#42;`) and continues until it ends with an asterisk and a slash (`&#42;/`).
+Comments cannot be placed inside string literals; comment markers within a string are part of the string.
+Comments do not execute; they are purely informational.
+
+.End of line comment
+[source, cypher]
+----
+MATCH (n)
+RETURN n //This is an end of line comment
+----
+
+.Whole line comment
+[source, cypher]
+----
+MATCH (n)
+//This is a whole line comment
+RETURN n
+----
+
+.Multi-line comment
+[source, cypher]
+----
+MATCH (n) /* This is a multi line comment,
+the comment continues on this line
+but it ends on this line. */
+RETURN n
+----
+
+.Not a comment
+[source, cypher]
+----
+MATCH (n)
+WHERE n.property = '//This is NOT a comment'
+RETURN n
+----
+
+[role=label--new-Neo4j-2026.12]
+[[annotations]]
+== Annotations
+
+Cypher annotations attach metadata to queries, providing additional context or information about the query.
+Annotations are particularly useful for tools and agents that process Cypher queries, as they can convey intent, authorship, or other relevant details.
+They do not, however, affect the execution of the query.
+
+An annotation is written as `@`, a name, and parentheses containing zero or more parameters.
+Annotations are placed before the clause they apply to.
+
+
+.Annotation template
+[source, syntax]
+----
+@Name([parameter [, parameter ...]])
+----
+
+If an annotation only has one parameter, naming the parameter is optional.
+
+.Annotation describing query intent
+[source, cypher]
+----
+@Description("Fetch all active users.")
+MATCH (u:User {status: "active"})
+RETURN u.name AS activeUser
+----
+
+Annotations can have no parameters.
+
+.Annotation without parameters describing use of deprecated feature
+[source, cypher]
+----
+@Deprecated()
+MATCH (u:User {status: "active"})
+RETURN id(u) AS userId
+----
+
+Annotations can have multiple parameters. 
+If so, each parameter must be named.
+The parameter name must be unique for within the annotation, but separate annotations can have parameters with the same name.
+
+.Annotation providing information about query author
+[source, cypher]
+----
+@Author(name="John Doe", email="john.doe@example.com", year: 2023)
+MATCH (u:User {status: "active"})
+RETURN u.name AS activeUser
+----
+
+Annotations can have parameters of mixed types, including strings, numbers, booleans, lists, and maps.
+
+.Annotation providing information about query relevant configuration settings
+[source, cypher]
+----
+@Config(
+  targetEnv: "production", 
+  retryLimit: 3,
+  supportedRegions: ["us-east", "eu-west"],
+  settings: {autoCommit: true, threshold: 0.95}
+)
+MATCH (a:Account)
+RETURN a.id AS accountId,
+       a.status AS accountStatus
+----
+
+[NOTE]
+The annotations in the above example do not affect the execution of the query; they do not actually set any configuration, but purely describe settings configured elsewhere in the environment where the query is run.
+
+A query can have multiple annotations and can appear before any clause in a query.
+
+.Multiple annotations in a query
+[source, cypher]
+----
+@Author(name: "Maja", year: 2026)
+MATCH (u:User {status: "active"})-[:POSTED]->(p:Post)
+@Note("Return a count of posts per user")
+RETURN u.name AS user,
+       count(p) AS posts
+----
+
+[[annotation-parameters]]
+=== Allowed parameter value types
+
+Annotation parameters can only be literals of type:
+
+* `BOOLEAN NOT NULL`
+* `STRING NOT NULL`
+* `INTEGER NOT NULL`
+* `FLOAT NOT NULL`
+* `LIST<BOOLEAN NOT NULL> NOT NULL`
+* `LIST<STRING NOT NULL> NOT NULL`
+* `LIST<INTEGER NOT NULL> NOT NULL`
+* `LIST<FLOAT NOT NULL> NOT NULL`
+* `MAP`, where each value is one of the types above but not a `MAP`.
+Maps cannot be nested.
+
+[[invalid-annotations]]
+=== Invalid annotations
+
+The following are examples of invalid annotations:
+
+.Invalid: duplicate parameter names
+[source, cypher, role=test-fail]
+----
+@Config(timeout: 100, timeout: 200)
+MATCH (n:Label)
+RETURN n
+----
+
+.Invalid: annotations are only allowed at the clause level
+[source, cypher, role=test-fail]
+----
+MATCH (@Node(label: "TEST", properties: {}) n:Label)
+RETURN n
+----
+
+.Invalid: nested maps are not allowed as parameter values
+[source, cypher, role=test-fail]
+----
+@Meta(details: {owner: "DevOps", nested: {level: 2}})
+MATCH (n:Label)
+RETURN n
+----
+
+.Invalid: annotations cannot have expressions or variables as parameter values, only literals
+[source, cypher, role=test-fail]
+----
+MATCH (u:User)
+@Log(u.name)
+RETURN u
+----
