@@ -64,8 +64,8 @@ A variable is in scope from the clause that binds it, which means it can be used
 Only `WITH` and `RETURN` change this.
 They are projection clauses, so only the items they list stay in scope after them.
 
-Without a projection, every variable stays in scope.
-Here `SET` does not remove `c` and `p` even though it does not reference them, so both can be referenced in `RETURN`:
+Without a projection clause, variables stay in scope even if they are not referenced by every clause.
+In the below example, `SET` does not remove `c` and `p` even though it does not reference them, so both can be referenced in `RETURN`:
 
 .Variables stay in scope
 [source, cypher]
@@ -111,29 +111,12 @@ RETURN c.firstName AS customer,
 [[variables-across-composed-queries]]
 === Variables across composed queries
 
-Composed queries combine several queries into a single query, using `UNION`, `WHEN`/`ELSE` or `NEXT`.
-
-* The branches of a `UNION` and the branches of a `WHEN`/`ELSE` construct are queries of their own.
-A variable bound in one is not available in another.
-Only the returned columns come out, so the number and names of the columns must be identical in all of them, and returned expressions must be aliased using `AS`.
-are queries of their own.
-
-.Variables bound in one branch of a `UNION` or `WHEN` construct are not available to subsequent branches
-[source, cypher]
-----
-MATCH (n:Customer)
-RETURN n.firstName AS name
-UNION
-MATCH (n:Product)
-RETURN n.name AS name
-----
-
 xref:queries/composed-queries/index.adoc[Composed queries] combine several queries into a single query, using `UNION`, `WHEN`/`ELSE` or `NEXT`.
 
-* The queries of a xref:queries/composed-queries/combined-queries.adoc[`UNION`] and the branches of a xref:queries/composed-queries/conditional-queries.adoc[`WHEN`/`ELSE`] construct are queries of their own.
+* The branches of a xref:queries/composed-queries/combined-queries.adoc[`UNION`] and the branches of a xref:queries/composed-queries/conditional-queries.adoc[`WHEN`/`ELSE`] construct are queries of their own.
 A variable bound in one is not available in another.
-Only the returned columns come out, so the number and names of the columns must be identical in all of them, and returned expressions must be aliased using `AS`.
-
+The number and names of the columns must be identical in all branches, and returned expressions must be aliased using `AS`.
++
 .Variables bound in one part of a `UNION` or `WHEN` construct are not available to subsequent parts
 [source, cypher]
 ----
@@ -145,7 +128,7 @@ RETURN n.name AS name
 ----
 
 * xref:queries/composed-queries/sequential-queries.adoc[`NEXT`] passes the variables returned by one query to the next query.
-
++
 .Variables returned by one query are passed to the next query via `NEXT`
 [source, cypher]
 ----
@@ -166,7 +149,7 @@ If a `UNION` follows `NEXT`, the variables passed by `NEXT` are available in eve
 
 A xref:subqueries/index.adoc[subquery] is a query nested inside another query, with a scope of its own.
 
-The following is true for how variables work in all subqueries:
+The following is true for all subqueries:
 
 * A subquery has a scope of its own.
 * A `WITH` clause in the subquery cannot drop the variables that the subquery uses from the enclosing query.
@@ -175,16 +158,10 @@ The following is true for how variables work in all subqueries:
 The following applies only to xref:subqueries/call-subquery.adoc[`CALL`] subqueries:
 
 * A `CALL` subquery can only use the variables from the enclosing query that it imports with a xref:subqueries/call-subquery.adoc#variable-scope-clause[variable scope clause].
-For example: `CALL (c) { ... }` imports `c`, and `CALL () { ... }` imports none.
-* Imported variables cannot be aliased in the scope clause.
+* Imported variables cannot be aliased in the variable scope clause.
 * The variables that the subquery returns are available in the enclosing query afterwards.
 * A variable returned by a `CALL` subquery cannot have the same name as a variable that already exists in the enclosing query.
 To return an imported variable, give it a new name using `AS`.
-
-The following applies only to scalar subqueries (xref:subqueries/collect.adoc[`COLLECT`], xref:subqueries/count.adoc[`COUNT`], and xref:subqueries/existential.adoc[`EXISTS`]):
-
-* All variables from the enclosing query can be used inside the subquery without importing them.
-* Variables returned inside the subquery are not available in the enclosing query. Only the result of the expression is.
 
 .Importing and returning variables in a `CALL` subquery
 [source, cypher, indent=0]
@@ -202,6 +179,12 @@ RETURN c.firstName, spent
 * `p` and `total` are new variables bound inside the subquery. They are not available in the enclosing query.
 * `WITH` does not list `c`, but it cannot drop it, so `c.discount` is still available in `RETURN`.
 * `spent` is returned by the subquery, so it is available in the final `RETURN`.
+
+The following applies only to scalar subqueries (xref:subqueries/collect.adoc[`COLLECT`], xref:subqueries/count.adoc[`COUNT`], and xref:subqueries/existential.adoc[`EXISTS`]):
+
+* All variables from the enclosing query can be referenced inside the subquery without importing them.
+* Variables returned inside the subquery are not available in the enclosing query.
+Only the result of the expression is.
 
 .Using a variable from the enclosing query in a `COUNT` subquery
 [source, cypher, indent=0]
