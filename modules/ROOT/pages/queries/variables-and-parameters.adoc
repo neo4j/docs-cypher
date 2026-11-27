@@ -1,0 +1,381 @@
+:description: Information about using variables and parameters in Cypher.
+= Variables and parameters
+
+A variable holds a value that the query itself produces, such as a matched node or a computed result, while a parameter holds a value that is supplied from outside the query.
+
+[[variables]]
+== Variables
+
+A variable is a name for a value that the query produces, such as a node, a relationship, a path or a computed value, so that later parts of the query can refer to it.
+
+In this example:
+
+[source, cypher]
+----
+MATCH (c:Customer)-[b:BUYS]->(p:Product)
+WHERE p.price > 100
+RETURN c.firstName, b.quantity, p.name
+----
+
+`c`, `b` and `p` are variables.
+They are introduced in the `MATCH` pattern and used in later clauses to refer to the matched nodes and relationships.
+
+[[binding-variables]]
+=== Binding variables
+
+The following table lists the clauses that can bind variables, and what each of them binds.
+
+[options="header", cols="2,3,4a"]
+|===
+| Clause | Binds | Example
+
+| xref:clauses/match.adoc[`[OPTIONAL\] MATCH`], xref:clauses/merge.adoc[`MERGE`], xref:clauses/create.adoc#[`CREATE`]
+| A node, relationship, or path
+| `(p)`, `[r]`, `path = (p)-\->(m)`
+
+| xref:clauses/with.adoc[`WITH`], xref:clauses/return.adoc[`RETURN`]
+| The result of an expression, using `AS`
+| `WITH count(m) AS movies`, +
+`RETURN m.title AS title`
+
+| xref:clauses/let.adoc[`LET`]
+| The result of an expression
+| `LET fullName = c.firstName + ' ' + c.lastName`
+
+| xref:clauses/unwind.adoc[`UNWIND`], xref:clauses/for.adoc[`FOR`]
+| Each element of a list
+| `UNWIND [1, 2, 3] AS x`, +
+`FOR x IN [1, 2, 3]`
+
+| xref:clauses/load-csv.adoc[`LOAD CSV`]
+| Each row of a CSV file
+| `LOAD CSV FROM 'file:///people.csv' AS row`
+
+| xref:clauses/show.adoc#using-show-with-yield[`YIELD`]
+| Each column returned by a procedure call or a `SHOW` command
+| `CALL db.labels() YIELD label`, +
+`SHOW INDEXES YIELD name, type`
+|===
+
+[[variable-scope]]
+=== Variable scope
+
+A variable is in scope from the clause that binds it, which means it can be used in the clauses that follow.
+Only `WITH` and `RETURN` change this.
+They are projection clauses, so only the items they list stay in scope after them.
+
+Without a projection clause, variables stay in scope even if they are not referenced by every clause.
+In the below example, `SET` does not remove `c` and `p` even though it does not reference them, so both can be referenced in `RETURN`:
+
+.Variables stay in scope
+[source, cypher]
+----
+MATCH (c:Customer)-[b:BUYS {status: 'paid'}]->(p:Product)
+SET b.status = 'shipped'
+RETURN c.firstName AS customer,
+       p.name AS product,
+       b.status AS status
+----
+
+Using `WITH`, only the listed items stay in scope.
+In the below example, `c` is not listed in the `WITH` clause, so it can no longer be used in `RETURN` and the query fails:
+
+.Variables not referenced by projection clause are dropped from the query scope
+[source, cypher, role=test-fail]
+----
+MATCH (c:Customer)-[:BUYS]->(p:Product)
+WITH count(p) AS numPurchases
+RETURN c.firstName AS customer,
+       numPurchases
+----
+
+.GQLSTATUS error chain
+[role="queryresult",stripes="all",cols="1"]
+|===
+| link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42N62/[42N62]: syntax error or access rule violation - variable not defined. Variable `c` not defined.
+
+link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42001/[42001]: syntax error or access rule violation - invalid syntax
+|===
+
+In order for `c` to remain in the query scope, it must be referenced by the `WITH` clause.
+
+.Variables referenced by projection clause remain in the query scope
+[source, cypher]
+----
+MATCH (c:Customer)-[:BUYS]->(p:Product)
+WITH c, count(p) AS numPurchases
+RETURN c.firstName AS customer,
+       numPurchases
+----
+
+[[variables-across-composed-queries]]
+=== Variables across composed queries
+
+xref:queries/composed-queries/index.adoc[Composed queries] combine several queries into a single query, using `UNION`, `WHEN`/`ELSE` or `NEXT`.
+
+* The branches of a xref:queries/composed-queries/combined-queries.adoc[`UNION`] and the branches of a xref:queries/composed-queries/conditional-queries.adoc[`WHEN`/`ELSE`] construct are queries of their own.
+A variable bound in one is not available in another.
+The number and names of the columns must be identical in all branches, and returned expressions must be aliased using `AS`.
++
+.Variables bound in one part of a `UNION` or `WHEN` construct are not available to subsequent parts
+[source, cypher]
+----
+MATCH (n:Customer)
+RETURN n.firstName AS name
+UNION
+MATCH (n:Product)
+RETURN n.name AS name
+----
+
+* xref:queries/composed-queries/sequential-queries.adoc[`NEXT`] passes the variables returned by one query to the next query.
++
+.Variables returned by one query are passed to the next query via `NEXT`
+[source, cypher]
+----
+MATCH (c:Customer)
+RETURN c AS customer
+
+NEXT
+
+MATCH (customer)-[:BUYS]->(:Product {name: 'Chocolate'})
+RETURN customer.firstName AS chocolateCustomer
+----
+
+[NOTE]
+If a `UNION` follows `NEXT`, the variables passed by `NEXT` are available in every query of the `UNION`.
+
+[[variables-subqueries]]
+=== Subqueries
+
+A xref:subqueries/index.adoc[subquery] is a query nested inside another query, with a scope of its own.
+
+The following is true for all subqueries:
+
+* A subquery has a scope of its own.
+* A `WITH` clause in the subquery cannot drop the variables that the subquery uses from the enclosing query.
+* New variables can be bound in the subquery, but not with the name of a variable that the subquery uses from the enclosing query.
+
+The following applies only to xref:subqueries/call-subquery.adoc[`CALL`] subqueries:
+
+* A `CALL` subquery can only use the variables from the enclosing query that it imports with a xref:subqueries/call-subquery.adoc#variable-scope-clause[variable scope clause].
+* Imported variables cannot be aliased in the variable scope clause.
+* The variables that the subquery returns are available in the enclosing query afterwards.
+* A variable returned by a `CALL` subquery cannot have the same name as a variable that already exists in the enclosing query.
+To return an imported variable, give it a new name using `AS`.
+
+.Importing and returning variables in a `CALL` subquery
+[source, cypher, indent=0]
+----
+MATCH (c:Customer)
+CALL (c) {
+  MATCH (c)-[:BUYS]->(p:Product)
+  WITH sum(p.price) AS total
+  RETURN total * (1 - c.discount) AS spent
+}
+RETURN c.firstName, spent
+----
+
+* `CALL (c)` imports `c`, so the subquery can use it.
+* `p` and `total` are new variables bound inside the subquery. They are not available in the enclosing query.
+* `WITH` does not list `c`, but it cannot drop it, so `c.discount` is still available in `RETURN`.
+* `spent` is returned by the subquery, so it is available in the final `RETURN`.
+
+The following applies only to scalar subqueries (xref:subqueries/collect.adoc[`COLLECT`], xref:subqueries/count.adoc[`COUNT`], and xref:subqueries/existential.adoc[`EXISTS`]):
+
+* All variables from the enclosing query can be referenced inside the subquery without importing them.
+* Variables returned inside the subquery are not available in the enclosing query.
+Only the result of the expression is.
+
+.Using a variable from the enclosing query in a `COUNT` subquery
+[source, cypher, indent=0]
+----
+MATCH (c:Customer)
+RETURN c.firstName,
+       COUNT {
+         MATCH (c)-[:BUYS]->(p:Product)
+         WHERE p.price > 100
+       } AS expensivePurchases
+----
+
+* `c` is used in the subquery without being imported.
+* `p` is a new variable bound inside the subquery, and it is not available outside it.
+* Only the result of the expression comes out of the subquery.
+
+[[parameters]]
+== Parameters
+
+Cypher supports querying with parameters.
+A parameterized query is a query in which placeholders are used for parameters and the parameter values are supplied at execution time.
+This means developers do not have to resort to string building to create a query.
+Additionally, parameters make caching of execution plans much easier for Cypher, thus leading to faster query execution times.
+
+[[valid-parameter-values-and-names]]
+=== Valid parameter values and names
+
+Parameters can be used for:
+
+* Literals and expressions.
+* Node and relationship ids.
+* Properties, when referenced dynamically (for more information, see xref:clauses/where.adoc#filter-on-dynamic-properties[`WHERE` -> Filter on dynamic properties]).
+* Node labels and relationship types, when referenced dynamically (for more information, see xref:clauses/match.adoc#dynamic-match[`MATCH` using dynamic node labels and relationship types]).
+
+Parameters cannot be used for the following constructs, as these form part of the query structure that is compiled into a query plan:
+
+* Property keys; `MATCH (n) WHERE n.$param = 'something'` is invalid.
+* Relationship types; `MATCH (n)-[:$param]->(m)` is invalid.
+* Node labels; `MATCH (n:$param)` is invalid.
+
+Parameter names can start with and contain underscores, letters, numbers, and combining marks such as accents (e.g., `é`).
+Currency symbols (e.g., `$` and `€`), non-printable Unicode control characters that only affect formatting (e.g., `\t` for Tab), punctuation (e.g., `!`), and whitespaces are not allowed in any position of a parameter name.
+For example, `$héllo`, `$0param`, and `$_param` are valid, while `$€value`, `$hello!`, and `$bad param` are not.
+
+Setting parameters when running a query is dependent on the client environment.
+For example:
+
+[[set-a-parameter]]
+=== Set a parameter
+
+* To set a parameter in Cypher Shell use `+:param name => 'Joe'+`.
+  For more information refer to link:{neo4j-docs-base-uri}/operations-manual/current/cypher-shell/#cypher-shell-parameters[Operations Manual -> Cypher Shell - Query Parameters].
+* For Neo4j Browser use the same syntax as Cypher Shell, `+:param name => 'Joe'+`.
+* When using drivers, the syntax is dependent on the language choice.
+  See the examples in _Transactions_ in the link:{docs-base-uri}[Neo4j Driver manuals].
+* For usage via the Neo4j HTTP API, see the link:{neo4j-docs-base-uri}/http-api/current/[HTTP API documentation].
+
+We provide below a comprehensive list of examples of parameter usage.
+In these examples, parameters are given in JSON; the exact manner in which they are to be submitted depends upon the driver being used.
+
+[[examples]]
+=== Examples
+
+.String parameter
+[source, parameters]
+----
+{
+  "name": "Johan"
+}
+----
+
+.Query
+[source,cypher]
+----
+MATCH (n:Person)
+WHERE n.name = $name
+RETURN n
+----
+
+.Query
+[source,cypher]
+----
+MATCH (n:Person {name: $name})
+RETURN n
+----
+
+.Regular expression parameter
+[source, parameters]
+----
+{
+  "regex": ".*h.*"
+}
+----
+
+.Query
+[source,cypher]
+----
+MATCH (n:Person)
+WHERE n.name =~ $regex
+RETURN n.name
+----
+
+
+.Parameters
+[source, parameters]
+----
+{
+  "props": {
+    "name": "Andy",
+    "position": "Developer"
+  }
+}
+----
+
+.Create node with properties
+[source,cypher]
+----
+CREATE ($props)
+----
+
+
+.Parameters
+[source, parameters]
+----
+{
+  "props": [ {
+    "awesome": true,
+    "name": "Andy",
+    "position": "Developer"
+  }, {
+    "children": 3,
+    "name": "Michael",
+    "position": "Developer"
+  } ]
+}
+----
+
+.Create multiple nodes with properties
+[source,cypher]
+----
+UNWIND $props AS properties
+CREATE (n:Person)
+SET n = properties
+RETURN n
+----
+
+.Parameters
+[source, parameters]
+----
+{
+  "s": 1,
+  "l": 1
+}
+----
+
+.`SKIP` and `LIMIT` with parameters
+[source,cypher]
+----
+MATCH (n:Person)
+RETURN n.name
+SKIP $s
+LIMIT $l
+----
+
+////
+[source, cypher, role=test-setup]
+----
+CREATE INDEX My_index FOR (c:Country) on c.name
+----
+////
+
+.Parameters
+[source, parameters]
+----
+{
+  "indexname" : "My_index"
+}
+----
+
+.Call procedure with parameterized argument
+[source,cypher]
+----
+CALL db.resampleIndex($indexname)
+----
+
+[[auto-parameterization]]
+=== Auto-parameterization
+
+Cypher automatically replaces the literals in a query with parameters, even if the query already uses some parameters of its own.
+This allows queries that are identical except for their literals to reuse the same query plan.
+It is not recommended to rely on this behavior.
+Use parameters yourself wherever it is appropriate.
+
+For more information, see xref:planning-and-tuning/caching.adoc#parameter-types-and-cache-key[Parameter types and the executable query cache]
